@@ -1,0 +1,307 @@
+# Tukhnanutha — Project Objective & Alignment Check
+
+This file exists so any Claude Code session opened in this repo starts from the actual business
+objective, not just the code. `CLAUDE.md` documents *what the code does*; this file documents
+*what it's for* and *whether current work still points at it*. Update the "Current state" section
+whenever the direction changes — don't let it go stale.
+
+## 1. Context
+
+PFE (ESPRIT final-year thesis) by Ines ROUATBI, hosted by **Tukhnanutha** (Bizerte; rep. Rayen Ben
+Amor), 05-03-2026 → 05-09-2026. Part of Tukhnanutha's **ANEO** ecosystem.
+
+## 2. Official objective (from `ANEO_Presentation.pptx`)
+
+**General objective**: build a **Physics-Constrained FNO** neural operator that reconstructs the
+3D wind field (u, v, w) over Tunisia from the sparse ANEO sensor network (measurements at
+z≈25–30m only), extrapolated up through the atmospheric column to **1000m altitude**, producing
+~2.5M virtual 3D nodes. Intended end use: near-real-time input to a **3D visualization / web
+application**.
+
+- OS1 — Spatial reconstruction: learn the horizontal field from sparse ANEO measurements.
+- OS2 — Physical constraints: enforce anelastic mass conservation ∇·(ρv)=0 in the loss.
+- DSO1 — RMSE(wind) ≤ 0.5 m/s at measured points.
+- DSO2 — mass-conservation residual ≤ 1e-4.
+- DSO3 — spatial smoothness score.
+- DSO4 — inference < 1s/timestamp.
+
+**Scope directive (Rayen, 2026-07-17): reconstruct the full atmospheric state, not wind-only.**
+Every model currently outputs only `wind_u_m_s`, `wind_v_m_s`, `wind_w_m_s` even though it's fed
+7 physical variables as input (`temperature_c`, `air_density_kg_m3`, `relative_humidity_pct`,
+`pressure_pa`, plus u/v/w — see `NUMERIC_INPUT_COLS` in `fno2D.ipynb` cell 3). The rule going
+forward: **whatever variable is an input must also be an output** — the reconstructed field
+should cover temperature, density, humidity, and pressure alongside wind, not just wind. This is
+a scope correction, not a new feature request; treat any model whose target set is narrower than
+its input set as incomplete against the objective.
+
+## 3. Data reality check (important constraint, easy to miss)
+
+> **Superseded on 2026-09-28 — read §5 first.** The `aneo_dataset_3d_v2` generator run emits
+> **virtual 3D nodes at all 12 levels** (849,184 nodes, 25–1000 m ASL), so the constraint below no
+> longer binds: a 3D-supervised operator *is* trainable against that dataset. The paragraph is kept
+> because it still describes the *physical* sensor network (one real altitude per point) — the 3D
+> targets are generator output, not measurements, which is what the mass-conservation and
+> ground-condition penalties exist to keep honest.
+
+The ANEO grid (`aneo_grid_points.csv`) stores **one altitude per point** (`z_rel_m` ≈ 25–30m
+AGL). There is no ground truth at 100m/500m/1000m. This means:
+
+- A "native" fully 3D-supervised operator (learning u/v/w as a function of x, y, *and* z from
+  data) **cannot be trained** — there's nothing to supervise it against above sensor height.
+- The 0–1000m column can only be produced by combining (a) a model that reconstructs the
+  horizontal field well at sensor height, with (b) a **physics-based vertical extrapolation**
+  (log-wind/power-law profile + mass conservation) projecting that field upward.
+- This is *not* a shortcut — it's the correct design given the data. "FNO 3D" in the deliverable
+  name means "physics-constrained operator whose output is used to build a 3D field," not
+  "operator with a literal 3D spectral convolution."
+
+**Separate, related gap flagged by Rayen (2026-07-17): the horizontal grid itself isn't flat.**
+Grid points are ~500m–1km apart in the real ANEO network (the `data_4x` synthetic dataset uses a
+denser 50m raster over a 50km×25km test region, but `z_terrain_m` there already spans 0–526m,
+σ≈109m — so even at that spacing, adjacent cells sit at meaningfully different altitudes because
+Tunisian terrain isn't flat). Confirmed in code (`fno2D.ipynb`, `PhysicsConstrainedLoss.forward`):
+the mass-conservation term computes only `div = d(ρu)/dx + d(ρv)/dy` with a constant `dx=50.0` —
+a flat-plane 2D divergence. Two concrete problems:
+1. `∂(ρw)/∂z` is entirely absent from `div`, even though the model predicts `w_pred` and applies a
+   `w=0` ground boundary condition two lines later. The anelastic constraint ∇·(ρv)=0 (DSO2) is
+   being scored against an incomplete equation.
+2. No terrain-slope/metric correction — `z_terrain_m` is only used as a normalized static *input*
+   feature (`alt_grid`), never inside the physics loss, so a step of `dx` in x/y is silently
+   treated as a step at constant altitude when it's actually a step along sloped terrain.
+This is the same forked `PhysicsConstrainedLoss` pattern the other 7 notebooks copy, so likely
+affects all of them, not just `fno2D.ipynb`. Not yet fixed — recorded here so DSO2 numbers from
+any of these notebooks are read as provisional until the divergence includes the vertical term and
+a terrain correction.
+
+## 4. Planned timeline (Gantt, Mars–Septembre 2026)
+
+| Task | Content | Planned month |
+|---|---|---|
+| T1 | Understand wind dynamics | Mars |
+| T2 | Data prep & analysis | Avril |
+| T3 | Design FNO 3D | Mai |
+| T4 | Physics constraints | Juin |
+| T5 | Training | Juin |
+| T6 | 3D reconstruction + visualization | Juillet |
+| T7 | Performance evaluation | Juillet |
+| T8 | Visualization & interpretation | Juillet–Août |
+| T9 | Deployment & tests (→ web app integration) | Août |
+
+## 5. Current state (snapshot as of 2026-10-11)
+
+**The drift flagged in July is resolved.** The project converged on a single architecture, the
+dataset was regenerated with true 3D targets, and the work has moved into T6–T9.
+
+What changed since July:
+
+- **One architecture, actually 3D.** `notebooks/current/fno3d_v7_1.ipynb` (dated 2026-10-01, v2→v7
+  iterated between Sep 25 and Oct 1) is a genuine **PC-FNO3D**: `SpectralConv3d` over (z, y, x),
+  25 input channels, output u/v/w on 12 ASL levels × 250 × 500 (~1.5 M nodes per instant),
+  ~453 M parameters. The 2D fork and the 6 competing architectures are closed — moved to
+  `notebooks/archive/`.
+- **Dataset regenerated** (`aneo_dataset_3d_v2`, 2026-09-28): 100 days, 1000 instants, surface grid
+  1000×500 at 50 m, 3D nodes 500×250 at 100 m on levels
+  25/50/75/100/150/200/300/400/500/650/800/1000 m ASL. Day-level train/val/test split (70/15/15) in
+  `split_days.json`. Generator QC (`qc/qc_summary.json`) passes every check — mass residual max
+  6.4e-12, spatial/temporal correlations, hydrostatic error p99 — **except** direction-sector
+  balance (0.095 vs 0.10 threshold), i.e. the 0° sector is slightly under-represented. Worth a line
+  in the report; not a blocker.
+- **The vertical dimension is now supervised, not extrapolated.** The `reconstruct_3d` post-hoc
+  step that §3 was built around is obsolete: the operator predicts the column directly and BLOC 12
+  reconstructs a full instant in one forward pass.
+- **DSO targets are encoded in code, not just slides**: DSO1 (RMSE ≤ 0.5 m/s and R² ≥ 0.95 per
+  level, u/v — plus an extended R² ≥ 0.95 on w), DSO2 (mass residual RMS ≤ 1e-4), DSO3 (roughness
+  ratio ≤ 1.1), DSO4 (< 1 s per instant), DSO5 (RMSE ≤ 0.7 m/s with 25 % of sensors). Evaluation
+  runs on **synoptic instants**; fast episodes are reported separately as a stress test.
+- **Deliverables drafted** (2026-10-01/02): `docs/presentations/PC-FNO3D evaluation.pptx`,
+  `PC-FNO3D recontruction part2.pptx`, `PC-FNO3D deployment part3.pptx`, a French version, plus
+  `docs/PC-FNO3D notions du projet et rôle de chaque bloc.pdf` and `Tenseurs du notebook
+  PC-FNO3D.pdf`.
+- **Infrastructure built 2026-10-11** (this repo's `src/pcfno3d/`): the notebook is ported
+  block-by-block into an installable package with a CLI, YAML configs for local/Colab/test, a
+  FastAPI inference service, a Dockerfile, a web export format + viewer, a synthetic mini-dataset
+  generator, and 30 CPU tests. The whole pipeline — cache → train → DSO evaluation → 3D
+  reconstruction → web export — was run end to end on the mini-dataset. See `README.md`.
+
+What is **not** verified and should not be assumed:
+
+- **No trained checkpoint exists on this machine.** Training runs live on Google Drive
+  (`/content/drive/MyDrive/aneo_fno3d_runs/v7`), which is not synced locally, so no DSO1–DSO5 result
+  has been reproduced here. The numbers in the October decks come from Colab runs; treat them as
+  the source of truth only after re-running `python -m pcfno3d evaluate` against the current
+  checkpoint and keeping `test_summary.json`.
+- The package port is **behaviour-checked, not numerically diffed** against the notebook: it was
+  written from the notebook's BLOC 0–12 code and passes its own tests, but no run has compared its
+  loss/metric values against the notebook's on the real dataset. Do that once, on one instant,
+  before trusting it for reported figures.
+- T9 is **scaffolded, not deployed**: the API and Docker image exist and the API is tested in
+  memory, but nothing is running anywhere, and there is no CI, no monitoring, and no decision on
+  where it will be hosted.
+
+Next concrete steps, in order: (1) copy `best_dso_v7.pt` + `norm_stats.json` off Drive into
+`artifacts/runs/v7/`; (2) run `python -m pcfno3d evaluate` and archive `test_summary.json` as the
+reference DSO result; (3) cross-check one instant against the notebook; (4) stand the API up
+somewhere and point the viewer at it; (5) write the report around the archived evaluation.
+
+## 5bis. Previous snapshot (2026-07-17) — kept as history
+
+- T1/T2 landed 2–3 months late (EDA/cleaning notebooks dated July 9; ANEO data generated June 1
+  instead of April).
+- T3–T5 forked into **6 competing 2D architectures** (FNO2D ×3 variants, UNet-FNO, GNN, DeepONet,
+  ResNet/ViT baselines) instead of converging on one model — see `CLAUDE.md`.
+- The **vertical extrapolation step exists but was left behind**: an older pipeline
+  (`aneo_physical_db_multitime_v3_progress/.../data_4x/ANEO_FNO2D_Model.ipynb` +
+  `05_evaluation.ipynb`, dated June) has a working `reconstruct_3d` function producing 7-level
+  (25–1000m) U/V/W fields with logged MAE/R² (R² for u ≈ 0.80–0.98 — but see the re-run below,
+  which shows this is checkpoint-dependent and should not be assumed current). None of the 8
+  newer top-level notebooks call or reproduce this step — confirmed by grepping all of them for
+  `reconstruct_3d` / `z_levels` (zero matches).
+- **`05_evaluation.ipynb` was re-run 2026-07-17**, but against `models/best_model.pth` — the old
+  June FNO2D checkpoint at **epoch 2 only** (val loss 0.072) — not any of the 6 newer
+  architectures. Fresh numbers (`figures_evaluation/metrics_summary.csv`, 28 test snapshots):
+  global RMSE u=0.453, v=0.675, w=0.014, R² u=0.002, v=0.804, w=0.914; R² u drops to **-0.578** in
+  the calme regime. Against DSO1 (RMSE ≤ 0.5 m/s), u passes but v fails in every regime. This is
+  materially worse than the "0.80–0.98" figure above — that number came from a different, more
+  converged run, and the epoch-2 checkpoint should not be treated as representative of the
+  pipeline's ceiling.
+- A Drive export dumped the same day
+  (`aneo_physical_db_multitime_v3_progress/.../data_4x/v1/*.zip`) shows the 6-architecture
+  benchmark is further behind than it looks: only DeepONet (`best_deeponet_model.pth`, saved
+  Jul 14) and ResNet (`best_convresnet_model.pth`, saved Jul 15) have a saved checkpoint. The new
+  FNO2D, ViT, and GNN folders in that export are empty — no checkpoint, no figures — meaning
+  those three either failed during that training job or never got that far. "6 competing
+  architectures" currently means 2 trained candidates, not 6.
+- T6, T7, T8, T9 have not started for the current generation of models: no head-to-head DSO1–DSO4
+  evaluation across the 6 architectures (the one evaluation run that exists targets the old June
+  checkpoint, not the new ones), no visualization code, no API/backend, no deployment or
+  web-integration code anywhere in the repo.
+
+**Scan of `data_4x/Colab Notebooks-20260717T220940Z-1-001/` (2026-07-17, ~22:10) — supersedes the
+"6 architectures = 2 trained candidates" read above.** This is a Google-Drive-synced copy of 4
+notebooks (`fno2D.ipynb`, `vit.ipynb`, `DeepOnet.ipynb`, `ResNet.ipynb` — no GNN) with their
+**executed outputs still embedded**, exported ~20min after the `v1/` zip snapshot used above.
+Reading the actual execution logs (not just checkpoint files on disk) changes the ranking:
+
+| Model | Test-set R² (u / v / w) | RMSE u / v (m/s) | Notes |
+|---|---|---|---|
+| **FNO2D (new)** | **0.987 / 0.989 / 0.997** | not directly printed, but MAE_u≈0.03–0.16, MAE_v≈0.11–0.22 | Resumed from an epoch-2 checkpoint, trained 150 more epochs, best at epoch 124, R²avg=0.9912. By far the strongest result seen anywhere in this project. |
+| ResNet | 0.969 / 0.981 / 0.993 | 0.146 / 0.259 | Passes DSO1 (≤0.5 m/s) clearly. |
+| DeepOnet | 0.913 / 0.964 / 0.914 | 0.239 / 0.356 | Passes DSO1, weaker than ResNet. |
+| ViT (new) | 0.618 / 0.884 / 0.962 | not printed | R²avg=0.8225 — confirms baseline-only status. |
+| FNO2D (old, epoch 2) | 0.002 / 0.804 / 0.914 | u=0.453, v=0.675 | Superseded — this is the checkpoint `05_evaluation.ipynb` was scored against; not representative. |
+
+**FNO2D (new) is the clear frontrunner** — this effectively answers step 2 below, *if the weights
+can be recovered*. That's the catch:
+
+**Checkpoint declared lost (Rayen, 2026-07-17), then recovered (2026-07-18).** `fno2D.ipynb`'s
+`MODEL_DIR` is `Path("/content/aneo_work") / "aneo_models"` — Colab's local ephemeral disk, wiped
+on disconnect — with no `shutil`/Drive-copy step anywhere in the notebook at the time (confirmed
+by grep). Fixed in the repo copy of `fno2D.ipynb` on 2026-07-17: added `DRIVE_MODEL_DIR = DATA_DIR
+/ "models"` and a `shutil.copy2` after every best-checkpoint save plus one at end of training, so
+this can't happen again going forward.
+
+**Update 2026-07-18: the checkpoint itself was recovered**, not re-trained. Rayen added
+`data_4x/aneo_backup/aneo_backup/` (2GB: `aneo_models/best_fno2d_model.pth` 845MB,
+`aneo_tensors/` 1.2GB of cached `.npy` day/hour tensors, `aneo_output/` metrics CSVs,
+`aneo_figures/`). Loaded and verified directly (`torch.load`, weights_only=False):
+
+- `epoch=129`, `val_loss=0.01545`, `r2=0.9903` (`r2_u=0.9849`, `r2_v=0.9890`, `r2_w=0.9972`) — this
+  is the same run referenced in the "checkpoint declared lost" entry above (R²avg 0.9903 vs. the
+  0.9912 read off the execution log — same league, likely a couple epochs later at early-stop).
+  Checkpoint dict keys (`r2_u`, `val_l_mass`, `val_l_bc`, …) match exactly what the current
+  `fno2D.ipynb` cell 13 writes, so it loads with cell 14 as-is.
+- `aneo_output/fno2d_evaluation_results.csv` (24 test snapshots, produced by cell 14's per-snapshot
+  loop) — **DSO1 passes cleanly across the board**: RMSE u ∈ [0.034, 0.211], RMSE v ∈ [0.113, 0.269],
+  both always ≤ 0.5 m/s. This is the first evidence in the project of DSO1 passing on *any*
+  checkpoint of the new architecture (the epoch-2 checkpoint `05_evaluation.ipynb` scored earlier
+  failed v in every regime — see below, unchanged).
+- `aneo_output/reconstruction_3d_results.csv` also exists (24 rows, `ws_25m/100m/300m/1000m` per
+  day/hour) — **but no cell in the current local `fno2D.ipynb` produces this file** (grepped for
+  `reconstruct_3d`/`Z_LEVELS`/`reconstruction_3d`: zero matches; cell 14 only writes
+  `fno2d_evaluation_results.csv`, cell 16 is the single-snapshot PyVista viz). This must have come
+  from an extra cell run in Colab that never made it back into the local notebook copy, or a
+  different script entirely — **provenance unconfirmed, ask Rayen before trusting these numbers or
+  treating step 3 below as done**. The old 7-level `reconstruct_3d` in `ANEO_FNO2D_Model.ipynb` is
+  unrelated (still un-ported, still targets the stale epoch-2 checkpoint per `out.txt`/`out2.txt`).
+
+Decision going forward: don't re-run FNO2D training (old step 2) — this checkpoint is usable now.
+Step 6 renumbered below accordingly.
+
+**Full-repo rescan (2026-07-17, evening)** confirmed the above and added:
+- `fno2D.ipynb` was edited today at 22:20, right after `05_evaluation.ipynb` (22:18) and just before
+  the `v1/` export zips (22:44–22:49) — the DeepOnet/ResNet-only checkpoint situation described
+  above is corroborated, not new. Active work today is concentrated in `data_4x/` (model
+  export/evaluation) and repo root (`fno2D.ipynb`).
+- **Data hygiene, not urgent but worth a look**: `data_4x.rar` reports as ~10.5GB, wildly out of
+  line for this dataset's real size — likely corrupt or a placeholder; don't trust it as a backup
+  without checking. Full-dataset lineage is scattered across `data_full/` (complete, Apr 27),
+  `data_claude3.rar`/`data_claude4.rar` (unextracted, presumably days ~1-21, unverified), and
+  `data_claude5/`/`data_claude6/` (4 days each, Jun 1, partial) — four partial/uncertain sources
+  instead of one canonical one.
+- No `.pth`/`.pt`/`.ckpt`/`.h5` files exist anywhere outside `data_4x/models/best_model.pth` and
+  whatever's bundled inside the unopened `v1/` zips — confirms "6 architectures" is mostly notebook
+  code, not trained models.
+
+**Read**: behind schedule, and drifting from "one physics-constrained operator → extrapolate →
+visualize → deploy" toward "benchmark many 2D architectures" with no path back to the 3D output
+currently wired up.
+
+## 6. Realignment plan — how to get back on the stated objective
+
+> **Mostly executed as of 2026-10-11** (see §5): the convergence on one architecture and the move
+> to a genuinely 3D supervised operator are done. What remains from this plan is the deployment and report
+> half — kept below for the steps still open.
+
+With ~7 weeks left (internship ends 05-09-2026), the fastest path back to the objective is to
+**stop adding architectures and reconnect the pipeline that already worked**, rather than build
+a bigger model. Ordered by dependency — each step assumes the ones above it are done:
+
+0. **Done (2026-07-17/18).** Drive checkpoint save added to `fno2D.ipynb` (`shutil.copy2` to
+   `DRIVE_MODEL_DIR` on every best-epoch save + end of training), and the checkpoint itself was
+   separately recovered by Rayen and verified (`data_4x/aneo_backup/aneo_backup/aneo_models/
+   best_fno2d_model.pth`, epoch 129, R²avg=0.9903, DSO1 passes on all 24 test snapshots). **No
+   re-training needed** — architecture selection is effectively decided (R²avg=0.99 vs ResNet 0.98
+   and DeepOnet 0.93) and a usable, DSO1-passing checkpoint now exists. Before using it further,
+   copy `best_fno2d_model.pth` into wherever the working `fno2D.ipynb` session's `MODEL_DIR` points
+   (its checkpoint dict already matches what cell 13/14 expect). GNN still has no evidence of ever
+   completing a run and stays out of scope; don't train a 7th architecture.
+1. **Fix the mass-conservation term before trusting any DSO2 number.** Current `L_mass` in
+   `PhysicsConstrainedLoss` (`fno2D.ipynb` and its forked siblings) is a flat 2D divergence —
+   missing `∂(ρw)/∂z` entirely and no terrain-slope correction for `dx` (see Section 3). Any
+   DSO2 result computed before this fix is measuring the wrong equation, including the
+   `val_l_mass` numbers already logged in the recovered checkpoint's history. Do this first because
+   step 4 (DSO evaluation) is worthless until it's fixed, and it's a localized change (one loss
+   class) that doesn't block step 3.
+2. **Re-attach vertical extrapolation to the winner.** Port `reconstruct_3d` (7 levels, 25–1000m)
+   from `ANEO_FNO2D_Model.ipynb` onto the recovered FNO2D checkpoint. This is what actually
+   produces the "3D" deliverable — it's largely done, just disconnected from current work. (Do
+   not confuse this with the unverified `reconstruction_3d_results.csv` found in the recovered
+   backup — that's a 4-level wind-speed-only file of unknown provenance, not this step.)
+3. **Widen the target set to match the input set** (scope directive, Section 2) on the winning
+   architecture, before running the DSO evaluation below — otherwise the numbers only ever
+   describe wind, not the full atmospheric state the objective now requires. In `fno2D.ipynb`:
+   set `TARGET_COLS` to all of `NUMERIC_INPUT_COLS` (u,v,w first so physics-loss channel indices
+   0/1/2 stay valid), add 4 output heads (temp/density/humidity/pressure) alongside `head_u/v/w`,
+   regenerate the cached `Y.npy` tensors (currently 3-channel — add a target-set check keyed on
+   `split.json` so stale 3-channel caches aren't silently reused), and make sure the wind-gust
+   augmentation in `ANEODataset` (`Y *= scale`) only scales wind channels, not the new ones.
+4. **Run DSO1–DSO4 evaluation on the combined model** (fixed loss + FNO2D + vertical extrapolation
+   + full target set), not on the bare 2D wind-only reconstruction. RMSE and mass-conservation
+   residual should be measured on the extrapolated 3D field, since that's what the objective and
+   the web app will consume.
+5. **Start T6/T8 (visualization) and T9 (deployment) in parallel with step 4**, not after — zero
+   code exists for either. Minimum viable slice: a script that exports one reconstructed
+   timestamp (U3D/V3D/W3D + the 4 new fields) to a format the web app can consume (GeoJSON/binary
+   grid + a small serving endpoint), so the integration contract gets validated early.
+6. **Freeze architecture scope.** Treat ResNet/ViT as baselines-only, not final-deliverable
+   candidates, so effort stops splitting further.
+7. **Data hygiene, low priority, do opportunistically.** Sanity-check `data_4x.rar` (~10.5GB,
+   likely corrupt/placeholder) before relying on it as a backup; consolidate the scattered
+   `data_claude3/4/5/6` lineage into one canonical source instead of leaving 4 partial copies.
+
+## 7. Keeping this file useful
+
+Whoever picks step 1–5 above should update Section 5 with the outcome (which architecture won,
+whether the vertical extrapolation was re-attached, what the new DSO numbers are) so the next
+session — or the next person opening this repo — isn't re-deriving this from file timestamps
+again.

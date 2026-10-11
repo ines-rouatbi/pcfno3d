@@ -1,0 +1,63 @@
+# Configuration Colab — dataset et resultats sur Google Drive, cache sur le disque local
+# de la machine Colab (lecture beaucoup plus rapide que le Drive).
+#
+#   from google.colab import drive; drive.mount("/content/drive")
+#   !pip install -e /content/drive/MyDrive/PFE
+#   !python -m pcfno3d -c colab build-cache && python -m pcfno3d -c colab train
+name: v7
+
+paths:
+  data_dir: /content/drive/MyDrive/aneo_dataset_3d_v2
+  cache_dir: /content/aneo_cache_v7
+  run_dir: /content/drive/MyDrive/aneo_fno3d_runs/v7
+  cache_mirror: /content/drive/MyDrive/aneo_cache_v7   # copie de securite entre sessions
+
+model:
+  width: 48
+  modes: [6, 32, 32]
+  n_layers: 4
+  pad: [4, 8, 8]
+  proj_hidden: 128
+  local_conv: true
+  pool_surface: true
+
+train:
+  epochs: 140
+  steps_per_epoch: 400
+  val_samples: 64
+  batch_size: 1
+  accum_steps: 2
+  lr: 1.0e-3
+  weight_decay: 1.0e-4
+  warmup_phys_epochs: 10
+  num_workers: 4
+  ema_decay: 0.999
+  grad_clip: 1.0
+  save_every: 5
+  seed: 42
+
+loss:
+  lambda_mass: 1.0
+  mass_ref: 5.0e-7
+  lambda_bc: 0.1
+  lambda_smooth: 0.0
+  lambda_grad: 0.15
+  w_weight: 1.0
+  w_level_max: 25.0
+
+mask:
+  keep_train: [0.2, 1.0]
+  keep_eval: 0.5
+
+dso:
+  rmse: 0.5
+  r2: 0.95
+  r2_all: 0.95
+  mass_rms: 1.0e-4
+  roughness_range: [0.0, 1.1]
+  time_s: 1.0
+  rmse_25pct: 0.7
+  min_level_cover: 0.05
+
+terrain_smooth_m: 300.0
+f_coriolis: 8.57e-5

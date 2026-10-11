@@ -1,0 +1,1 @@
+x(position_Est-Oues);y(position_Nord-Sud);z(altitude_absolue);z_terrain(altitude_du_sol);z_rel=z-z_terrain;z?(rugosité_du_sol);t(timestamp);T(temperature);Température_potentielle_?;rho(densite_air);H(humidité);p(pression);U(Vent_horizontal_est-ouest);V (Vent_horizontal_nord-sud);w (Vent_vertical);Qualité_ANEO;mask (I_obs);Vitesse_mag

@@ -1,0 +1,57 @@
+# ---------------------------------------------------------------------------
+# Donnees et artefacts : volumineux, regenerables, jamais versionnes.
+# Le depot ne contient que du code, des configurations et des documents.
+# ---------------------------------------------------------------------------
+
+# dataset genere par ANEO (35 Go) et ses variantes historiques
+aneo_dataset_3d_v2/
+data_full/
+data_claude*/
+aneo_physical_db_multitime_v3_progress/
+
+# archives livrees avec les datasets
+*.rar
+*.zip
+*.7z
+*.tar.gz
+
+# cache de tenseurs, checkpoints, evaluations, figures, exports web
+artifacts/
+*.pt
+*.pth
+*.npy
+*.npz
+
+# ---------------------------------------------------------------------------
+# Python
+# ---------------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+.venv/
+venv/
+env/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.ipynb_checkpoints/
+
+# ---------------------------------------------------------------------------
+# Environnement et secrets
+# ---------------------------------------------------------------------------
+.env
+.env.*
+!.env.example
+
+# ---------------------------------------------------------------------------
+# Systeme et editeurs
+# ---------------------------------------------------------------------------
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/

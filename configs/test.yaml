@@ -1,0 +1,61 @@
+# Configuration de validation locale (mini-dataset) — equivalent de ANEO_TEST=1 dans le notebook.
+# Modele minuscule, deux epoques : on verifie que le pipeline tourne de bout en bout,
+# pas que le resultat est bon. Le mini-dataset se cree avec :
+#   python scripts/make_mini_dataset.py artifacts/mini
+name: test
+
+paths:
+  data_dir: artifacts/mini
+  cache_dir: artifacts/mini_cache
+  run_dir: artifacts/mini_run
+  cache_mirror: null
+
+model:
+  width: 4
+  modes: [2, 4, 4]
+  n_layers: 2
+  pad: [1, 2, 2]
+  proj_hidden: 4
+  local_conv: true
+  pool_surface: true
+
+train:
+  epochs: 2
+  steps_per_epoch: 3
+  val_samples: 2
+  batch_size: 1
+  accum_steps: 2
+  lr: 1.0e-3
+  weight_decay: 1.0e-4
+  warmup_phys_epochs: 1
+  num_workers: 0            # Windows : les workers reimporteraient le module
+  ema_decay: 0.9
+  grad_clip: 1.0
+  save_every: 1
+  seed: 42
+
+loss:
+  lambda_mass: 1.0
+  mass_ref: 5.0e-7
+  lambda_bc: 0.1
+  lambda_smooth: 0.0
+  lambda_grad: 0.15
+  w_weight: 1.0
+  w_level_max: 25.0
+
+mask:
+  keep_train: [0.2, 1.0]
+  keep_eval: 0.5
+
+dso:
+  rmse: 0.5
+  r2: 0.95
+  r2_all: 0.95
+  mass_rms: 1.0e-4
+  roughness_range: [0.0, 1.1]
+  time_s: 1.0
+  rmse_25pct: 0.7
+  min_level_cover: 0.05
+
+terrain_smooth_m: 300.0
+f_coriolis: 8.57e-5

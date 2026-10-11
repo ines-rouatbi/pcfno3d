@@ -1,0 +1,10 @@
+# Dependances du paquet pcfno3d (versions testees sur le poste de developpement).
+# Installation editable recommandee : pip install -e .
+# torch : installer la variante adaptee au materiel (CPU, CUDA 12.1, ...) depuis pytorch.org
+numpy==1.26.4
+pandas==2.3.3
+scipy==1.15.3
+pyarrow==25.0.1
+PyYAML==6.0.1
+matplotlib==3.10.6
+torch==2.2.2

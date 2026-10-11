@@ -1,0 +1,60 @@
+# Configuration de reference — PC-FNO3D v7.1
+# Reprend exactement les constantes du BLOC 1 du notebook. Les chemins supposent un poste
+# local ; sur Colab utiliser configs/colab.yaml.
+name: v7
+
+paths:
+  data_dir: aneo_dataset_3d_v2          # relatif a la racine du depot si non absolu
+  cache_dir: artifacts/cache
+  run_dir: artifacts/runs/v7
+  cache_mirror: null
+
+model:
+  width: 48
+  modes: [6, 32, 32]        # (z, y, x) : beaucoup de modes horizontaux pour les details (DSO3)
+  n_layers: 4
+  pad: [4, 8, 8]            # limite la periodicite imposee par la FFT
+  proj_hidden: 128
+  local_conv: true          # branche 3x3x3 : restitue ce que la troncature des modes enleve
+  pool_surface: true        # moyenne des capteurs par bloc 2x2 (tous les capteurs servent)
+
+train:
+  epochs: 140
+  steps_per_epoch: 400
+  val_samples: 64
+  batch_size: 1             # un instant = 1,5 million de noeuds
+  accum_steps: 2
+  lr: 1.0e-3
+  weight_decay: 1.0e-4
+  warmup_phys_epochs: 10    # montee progressive des termes physiques
+  num_workers: 4
+  ema_decay: 0.999
+  grad_clip: 1.0
+  save_every: 5
+  seed: 42
+
+loss:
+  lambda_mass: 1.0
+  mass_ref: 5.0e-7          # echelle du terme de masse (DSO2 avec marge)
+  lambda_bc: 0.1
+  lambda_smooth: 0.0        # donnees deja lisses : desactive
+  lambda_grad: 0.15         # corrige le lissage excessif (DSO3 et w)
+  w_weight: 1.0
+  w_level_max: 25.0         # plafond du poids de w par niveau
+
+mask:
+  keep_train: [0.2, 1.0]    # fraction de capteurs visibles tiree a chaque exemple
+  keep_eval: 0.5
+
+dso:
+  rmse: 0.5                 # DSO1 : m/s, u et v, a chaque niveau
+  r2: 0.95
+  r2_all: 0.95              # objectif etendu : u, v ET w
+  mass_rms: 1.0e-4          # DSO2 : kg.m-3.s-1
+  roughness_range: [0.0, 1.1]   # DSO3
+  time_s: 1.0               # DSO4 : s par instant
+  rmse_25pct: 0.7           # DSO5 : m/s avec 25 % des capteurs
+  min_level_cover: 0.05
+
+terrain_smooth_m: 300.0     # meme lissage du relief que le generateur
+f_coriolis: 8.57e-5         # s-1, latitude ~36 N

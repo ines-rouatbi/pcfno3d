@@ -1,0 +1,54 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pcfno3d"
+version = "0.1.0"
+description = "Reconstruction physiquement contrainte du champ de vent 3D sur la Tunisie (reseau ANEO)"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Proprietary — Tukhnanutha" }
+authors = [{ name = "Ines ROUATBI" }]
+maintainers = [{ name = "Tukhnanutha" }]
+keywords = ["fourier-neural-operator", "wind", "physics-informed", "ANEO"]
+
+dependencies = [
+  "numpy>=1.26,<2.0",
+  "pandas>=2.0",
+  "scipy>=1.11",
+  "pyarrow>=14.0",
+  "torch>=2.2",
+  "pyyaml>=6.0",
+  "matplotlib>=3.8",
+]
+
+[project.optional-dependencies]
+serve = ["fastapi>=0.115", "uvicorn[standard]>=0.34", "python-multipart>=0.0.20"]
+dev = ["pytest>=8.0", "ruff>=0.6"]
+
+[project.scripts]
+pcfno3d = "pcfno3d.cli:main"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src", "."]   # "." : le paquet `service` n'est pas installe
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+src = ["src", "tests", "service", "scripts"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B"]
+ignore = [
+  "E741",   # noms courts a une lettre : u, v, w, k, j, i sont les notations du domaine
+  "B905",   # zip(..., strict=) n'existe pas en 3.9 et les longueurs sont garanties ici
+]

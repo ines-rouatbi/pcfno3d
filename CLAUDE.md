@@ -1,0 +1,117 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+**Before doing any planning or direction-setting work here, read `tukhnanutha.md`.** It has the
+actual business objective (Tukhnanutha/ANEO), the DSO targets, the planned Gantt timeline, and a
+live "current state vs. plan" section — this file below only documents what the code does, not
+what it's supposed to accomplish or whether current work still points at it.
+
+## What this is
+
+A PFE (final-year engineering thesis) project on physics-informed deep learning for **wind field
+reconstruction across Tunisia**. The work converged (September–October 2026) on a single
+architecture, **PC-FNO3D**: a 3D Fourier Neural Operator that takes one instant of sparse surface
+measurements and outputs u, v, w over 12 altitude levels (25–1000 m ASL).
+
+Two things live side by side:
+
+1. **`src/pcfno3d/`** — the pipeline as an installable package (`pip install -e .`), ported
+   block-by-block from the reference notebook. This is what trains, evaluates, serves and gets
+   tested. Entry point: `python -m pcfno3d <command>`.
+2. **`notebooks/current/fno3d_v7_1.ipynb`** — the reference Colab notebook (BLOC 0 → BLOC 12),
+   kept for experimentation. **The package is the port of this notebook; when you change the
+   physics or the architecture in one, mirror it in the other** (the mapping table is in
+   `README.md`).
+
+`notebooks/archive/` holds the architectures explored and then dropped (FNO2D variants, U-Net/FNO,
+GNN, DeepONet, ResNet, ViT). They are history, not alternatives to maintain — do not "fix" them.
+
+## Commands
+
+```bash
+# local validation, no Colab, no GPU, under a minute — run this after touching the pipeline
+powershell -ExecutionPolicy Bypass -File scripts\smoke.ps1
+python -m pytest -q                       # 30 tests, CPU only, mini-dataset fixtures
+
+python -m pcfno3d info                    # effective config + which artifacts exist
+python -m pcfno3d build-cache             # day CSVs -> per-instant .npy tensors (once, slow)
+python -m pcfno3d check                   # geometry + ground-truth sanity
+python -m pcfno3d train                   # resumes automatically from artifacts/.../last.pt
+python -m pcfno3d evaluate                # test metrics + DSO1-DSO5 verdict
+python -m pcfno3d reconstruct --stem 004_120000 --altitude 120 --web
+python -m pcfno3d serve --port 8000       # needs pip install -r service/requirements.txt
+```
+
+Every command takes `-c/--config` (`default`, `test`, `colab`, or a path) and
+`--set section.key=value`. Config precedence: YAML < `--set` < `ANEO_DATA`/`ANEO_CACHE`/`ANEO_RUN`
+env vars (the notebook's test-mode variables, kept for compatibility).
+
+## Architecture of the package
+
+One module per notebook block; `Config` and `Geometry` are passed explicitly instead of the
+notebook's globals.
+
+- **`config.py`** — dataclasses for every constant of BLOC 1 (`ModelCfg`, `TrainCfg`, `LossCfg`,
+  `MaskCfg`, `DSOCfg`, `Paths`). Relative paths in a YAML resolve against the repo root, so
+  commands work from any directory.
+- **`geometry.py`** — `Geometry` holds everything instant-independent: model grid (read from
+  `meta.json`, never hardcoded), terrain, `valid` / `mass_mask` / `first_valid` masks, the 6+3
+  static input channels, and the discrete operators `grad1d` / `mass_residual` (same scheme as
+  the generator, documented in `meta.json`). Reading the 127 MB grid CSV is cached to
+  `geometry_v1.npz`, keyed by a signature — bump `GEOMETRY_CACHE_VERSION` if you change what the
+  arrays mean.
+- **`cache.py`** — day CSV → `{stem}_S.npy` (8, ny, nx) + `{stem}_Y.npy` (4, nz, ny, nx) +
+  `index.csv`. Resumable: days already in the index are skipped.
+- **`normalize.py`** — `Normalizer`; stats computed on **training days only** and written to
+  `run_dir/norm_stats.json`. **That file is part of the model** — the service cannot denormalize
+  without it, so it ships next to the checkpoint.
+- **`features.py` / `dataset.py`** — geostrophic and thermal wind fitted by least squares on the
+  *visible* sensors, 8 time/physics channels, `ANEO3D` dataset, `assemble_input` (25 channels).
+- **`model.py`** — `SpectralConv3d` + `PCFNO3D`. Two deliberate fp32 islands: the FFT and the
+  projection head. Removing either degrades DSO2 (bf16 rounding noise passes into the centered
+  differences and floors the mass residual).
+- **`losses.py`** — `PhysicsLoss`: `L_data` (w weighted per level) + `λ_grad·L_grad` +
+  `φ(t)·[λ_mass·L_mass/mass_ref + λ_bc·L_bc]`. `val_score` is the model-selection criterion.
+- **`train.py`** — `Trainer`: EMA weights (evaluated and saved, not the raw ones), OneCycle LR,
+  gradient accumulation, atomic checkpoint writes, resume from `last.pt`.
+- **`evaluate.py`** — `Evaluator`: per-level metrics **accumulated over instants** (sums of
+  squares, not per-instant averages — that's what a global R² requires), DSO1–DSO5 verdicts,
+  sensor-robustness sweep, CSV/JSON outputs under `run_dir/eval_<ckpt>/`.
+- **`inference.py`** — `WindFieldModel` + `Volume`: the only code path used in production. Loads
+  geometry, stats and weights once; `Volume` exposes `at_altitude`, `at_point`, `to_nodes_frame`,
+  `save_npz`. The checkpoint's stored architecture overrides the YAML, so an edited config can't
+  silently break loading.
+- **`reconstruct.py` / `export.py`** — npz + ANEO-shaped CSV + figures; `export_web` writes raw
+  Float32 binaries plus `manifest.json` for `web/index.html`.
+
+`service/app.py` is a thin FastAPI layer over `WindFieldModel` — it must stay thin: physics and
+numerics belong in the package, not in the API.
+
+## Conventions that matter
+
+- **u east, v north, w up.** Meteorological direction is `(270 − atan2(v, u)) mod 360` — where
+  the wind comes *from*. Getting this backwards is a silent 180° error.
+- **Coordinates** are local metric XY (`local_metric_xy_m`); `z_terrain_m`, `z_rel_m` (above
+  ground) and `z_abs_m` (ASL) are tracked separately. Model levels are ASL.
+- **Values are 0 below the terrain** in cached targets, and `NaN` in reconstructed volumes
+  (`mask_nan=True`). Never average over a field without the `valid` mask — the zeros would skew
+  every metric.
+- **`-9999.0`** is the nodata value in web exports (JSON and Float32 binaries can't carry NaN).
+- DSO metrics are computed on **synoptic instants** (whole hour, multiple of 3 h); fast episodes
+  (1 min / 10 s sampling) are a stress test reported separately, outside DSO1.
+- Levels covering less than `dso.min_level_cover` (5 %) of the domain are excluded from per-level
+  DSO verdicts — with Tunisian terrain the 25 m level is almost entirely underground.
+
+## Data and artifacts
+
+- `aneo_dataset_3d_v2/` (~35 GB, 100 days, 1000 instants) is the active dataset; `meta.json` and
+  `split_days.json` define the geometry and the train/val/test day split. QC of the generator run
+  is in `qc/qc_summary.json`.
+- `aneo_physical_db_multitime_v3_progress/` is the synthetic data generator (and its MySQL /
+  PostGIS schemas). `data_full/`, `data_claude*/` and the `.rar` archives are superseded datasets.
+- Everything generated lives under `artifacts/` and is gitignored, as are the datasets. Do not
+  regenerate or re-extract them unless the task requires it — a full generator run is multi-hour
+  and multi-GB.
+- `tests/` never touches the real dataset: `scripts/make_mini_dataset.py` synthesizes a 40×20
+  grid, 4 levels, 6 days in the exact generator format.
