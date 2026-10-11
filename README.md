@@ -133,6 +133,31 @@ Deux limites à dire franchement : la session Colab est **éphémère** (inactiv
 12 h au maximum) et l'URL change à chaque relance — ce n'est pas un hébergement ; et le
 tunnel est **public**, donc c'est la clé d'API qui protège les données, pas l'URL.
 
+### Relier l'application locale au modèle distant
+
+Pour que l'URL utilisée par les applications et les clients MCP **ne change pas** quand le
+tunnel Colab change, le service local peut se mettre en relais : aucun modèle chargé ici,
+tout `/api` et `/mcp` partent vers l'instance distante.
+
+```bash
+pcfno3d link set https://xxx.trycloudflare.com --key pcf_...   # vérifie l'amont
+pcfno3d serve                                                  # /app/ sert les données de Colab
+pcfno3d link show                                              # état et santé de l'amont
+pcfno3d link clear                                             # revenir au modèle local
+```
+
+Deux clés, et c'est voulu :
+
+```
+navigateur --(clé LOCALE)--> service local --(clé AMONT)--> Colab
+```
+
+La clé de l'instance Colab reste sur cette machine : le navigateur ne la voit jamais, et
+révoquer une clé locale ne touche pas à l'amont. Quand la session Colab redémarre, une
+seule commande est à refaire — `link set` avec la nouvelle URL. Si l'amont est tombé,
+`/api/health` passe en `degraded` et les requêtes répondent `502` avec la commande de
+réparation dans le message.
+
 Un visualiseur autonome, sans serveur, lit aussi un export de
 `reconstruct --web` :
 
@@ -146,11 +171,11 @@ python -m http.server 8080
 ```
 src/pcfno3d/        le modèle et le pipeline (portage du notebook, un module par BLOC)
 configs/            default.yaml (référence) · colab.yaml · test.yaml (mini-dataset)
-service/            app.py (web + API) · mcp_server.py · auth.py · Dockerfile
+service/            app.py · mcp_server.py · auth.py · link.py · colab.py · Dockerfile
 webapp/             l'application web servie sur /app/
 web/                visualiseur autonome d'un export, sans serveur
 scripts/            make_mini_dataset.py · smoke.ps1 · package_for_colab.py
-tests/              45 tests, tous sur CPU et mini-dataset
+tests/              55 tests, tous sur CPU et mini-dataset
 notebooks/current/  fno3d_v7_1.ipynb (référence) · pcfno3d_api_colab.ipynb (servir)
 notebooks/archive/  architectures explorées puis écartées (FNO2D, U-Net, GNN, DeepONet, ViT…)
 notebooks/data_prep/01_EDA.ipynb · 02_cleaning.ipynb

@@ -105,6 +105,13 @@ Thin by design: physics and numerics belong in `pcfno3d`, never here.
   copy. Tools in `ADMIN_TOOLS` write to disk and need the `admin` scope.
 - **`webapp/`** — plain HTML/CSS/JS, no build step and no CDN. The key lives in
   `localStorage`; every call goes through `X-API-Key`.
+- **`link.py`** — link mode: with an upstream configured (`pcfno3d link set`, or
+  `PCFNO3D_UPSTREAM`), `create_app()` returns a relay instead of loading a model — all of
+  `/api` (except `/api/health`, which describes the link) and `/mcp` are forwarded. Point
+  of the design: the local URL stays stable while a Colab tunnel URL churns. **Two
+  keyrings on purpose** — the client presents a *local* key, the relay injects the
+  *upstream* key, so the remote key never reaches the browser. A dead upstream gives `502`
+  with the repair command in the message, and `degraded` in `/api/health`.
 - **`tunnel.py` / `colab.py`** — serving from Colab, where the weights and GPU actually
   are. `serve_public()` checks the weights, mints a key, opens a Cloudflare quick tunnel,
   launches uvicorn **as a subprocess** (a notebook cell dying must not leave a half-live
@@ -114,7 +121,12 @@ Thin by design: physics and numerics belong in `pcfno3d`, never here.
   ~106 KB code-only archive to drop on the Drive (it refuses to ship `.pt`, `api_keys.json`
   or `.env`).
 
-Two things that will bite if changed carelessly:
+Three things that will bite if changed carelessly:
+
+- **`link.py` imports `Request`/`Response` at module level on purpose.** With
+  `from __future__ import annotations`, annotations are strings that FastAPI resolves
+  against *module* globals; imported inside the function, `request: Request` is read as a
+  query parameter and every relayed call returns `422`.
 
 - **`MCPPathNormalizer`** rewrites `/mcp` → `/mcp/` *before* routing. Without it Starlette
   answers `307` on the published URL, and clients that drop the body on redirect break.

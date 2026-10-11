@@ -58,3 +58,6 @@ desktop.ini
 
 # cles d'API : jamais versionnees (meme hashees)
 api_keys.json
+
+# lien vers une instance distante : contient la cle de l'amont
+upstream.json

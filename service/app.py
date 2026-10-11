@@ -49,6 +49,7 @@ from pcfno3d.inference import Volume, WindFieldModel
 from . import mcp_server
 from .auth import (ApiKeyRecord, ApiKeyStore, default_store_path, extract_key, scope_allows,
                    summarize)
+from .link import Upstream, install as install_link
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 WEBAPP_DIR = REPO_ROOT / "webapp"
@@ -395,10 +396,19 @@ def list_keys(_: ApiKeyRecord | None = Depends(require_admin)) -> dict:
 def create_app() -> FastAPI:
     """Construit une application complete : API + MCP + interface web.
 
+    Deux modes :
+      - normal : le modele est charge ici et sert les requetes ;
+      - lien   : aucun modele local, tout `/api` et `/mcp` est transmis a une instance
+                 distante (typiquement Colab). Voir service/link.py.
+
     Chaque appel cree son propre gestionnaire de sessions MCP, qui ne peut etre demarre
     qu'une fois ; c'est pour cela que l'application est produite par une fabrique plutot
     que definie au niveau du module.
     """
+    upstream = Upstream.resolve(_load_config().paths.run_dir)
+    if upstream is not None:
+        return _create_linked_app(upstream)
+
     mcp_app = mcp_server.mcp.streamable_http_app(
         streamable_http_path="/", json_response=True, stateless_http=True,
         transport_security=TransportSecuritySettings(
@@ -444,6 +454,77 @@ def create_app() -> FastAPI:
         @app.get("/", include_in_schema=False)
         def index():
             return {"service": "pcfno3d", "api": "/api/docs", "mcp": "/mcp"}
+
+    return app
+
+
+def _create_linked_app(upstream: Upstream) -> FastAPI:
+    """Mode lien : pas de modele ici, tout part vers l'amont.
+
+    L'authentification locale est conservee : le navigateur presente une cle LOCALE, et
+    c'est le service qui ajoute la cle de l'amont. Ainsi la cle de l'instance Colab ne
+    quitte jamais cette machine.
+    """
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI):
+        cfg = _load_config()
+        STATE.update({"cfg": cfg, "upstream": upstream, "volumes": {},
+                      "keys": ApiKeyStore(default_store_path(cfg.paths.run_dir))})
+        print(f"mode lien : les requetes partent vers {upstream.url} ({upstream.label})")
+        yield
+        STATE.clear()
+
+    app = FastAPI(
+        title="PC-FNO3D — champ de vent 3D (lien)",
+        version="0.1.0",
+        description=f"Relais vers une instance distante ({upstream.label}). Le modele "
+                    "tourne a distance ; cette adresse reste stable quand celle de "
+                    "l'amont change.",
+        docs_url=None, redoc_url=None, openapi_url=None,
+        lifespan=lifespan,
+    )
+    app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"],
+                       allow_headers=["*"])
+
+    @app.get("/api/health", tags=["service"])
+    async def health_lien() -> dict:
+        from .link import check
+
+        store = STATE.get("keys")
+        amont = await check(upstream)
+        out = {"status": "ok" if amont.get("joignable") else "degraded",
+               "mode": "lien",
+               "amont": upstream.public(),
+               "modele": amont.get("modele"),
+               "device": amont.get("device"),
+               "mcp": "/mcp",
+               "sante_amont": amont}
+        if store is not None:
+            out.update(summarize(store))
+        return out
+
+    # garde la cle locale obligatoire avant toute transmission
+    @app.middleware("http")
+    async def protect_link(request: Request, call_next):
+        chemin = request.url.path
+        protege = (chemin.startswith("/mcp")
+                   or (chemin.startswith("/api/") and chemin != "/api/health"))
+        store = STATE.get("keys")
+        if protege and store is not None and not store.open_mode:
+            if store.verify(extract_key(request.headers, request.query_params)) is None:
+                return JSONResponse({"detail": "cle d'API locale absente ou invalide"},
+                                    status_code=401,
+                                    headers={"WWW-Authenticate": "Bearer"})
+        return await call_next(request)
+
+    install_link(app, upstream)
+
+    if WEBAPP_DIR.exists():
+        app.mount("/app", StaticFiles(directory=WEBAPP_DIR, html=True), name="webapp")
+
+        @app.get("/", include_in_schema=False)
+        def index():
+            return RedirectResponse("/app/")
 
     return app
 

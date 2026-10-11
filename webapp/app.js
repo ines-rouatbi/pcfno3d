@@ -118,9 +118,13 @@ async function start(health) {
   el("apiExample").textContent =
     `curl -H "X-API-Key: pcf_…" \\\n  "${location.origin}/api/point?x=5000&y=5000&z=120"`;
 
+  /* en mode lien, le modèle tourne ailleurs : il faut que ça se voie */
+  const lien = health.mode === "lien"
+    ? ` · relayé vers ${(health.amont && health.amont.label) || "amont"}`
+    : "";
   setStatus(`${state.meta.modele} · ${state.meta.device} · ` +
             `${state.meta.grille.nz}×${state.meta.grille.ny}×${state.meta.grille.nx} · ` +
-            `${health.auth === "cle_api" ? "clé d'API" : "accès ouvert"}`, "ok");
+            `${health.auth === "cle_api" ? "clé d'API" : "accès ouvert"}${lien}`, "ok");
 
   await loadInstants();
   await refresh();

@@ -9,6 +9,7 @@
     export-web    volume -> binaires + manifeste pour le visualiseur
     serve         application web + API JSON + serveur MCP (fastapi + uvicorn)
     apikey        creer / lister / revoquer les cles d'API du service
+    link          relier le service local a une instance distante (Colab)
     mcp           serveur MCP en transport stdio (client local)
     info          configuration effective et etat des artefacts
 
@@ -220,6 +221,73 @@ def cmd_apikey(args) -> int:
     return 0
 
 
+def cmd_link(args) -> int:
+    """Relier le service local a une instance distante (Colab, serveur...)."""
+    cfg = _load_cfg(args)
+    try:
+        from service.link import Upstream
+    except ImportError:
+        print("lance la commande depuis la racine du depot", file=sys.stderr)
+        return 1
+
+    if args.action == "set":
+        if not args.url:
+            print("`link set` attend une URL, ex. https://xxx.trycloudflare.com",
+                  file=sys.stderr)
+            return 1
+        try:
+            upstream = Upstream(url=args.url, key=args.key, label=args.label)
+        except ValueError as exc:
+            print(f"erreur : {exc}", file=sys.stderr)
+            return 1
+        path = upstream.save(cfg.paths.run_dir)
+        print(f"lien enregistre : {upstream.url} ({upstream.label})")
+        print(f"  cle amont : {'oui' if upstream.key else 'non (amont en acces ouvert ?)'}")
+        print(f"  fichier   : {path}")
+        if not args.no_check:
+            import asyncio
+
+            from service.link import check
+            print("\nverification de l'amont...")
+            state = asyncio.run(check(upstream))
+            if state.get("joignable"):
+                print(f"  joignable : modele {state.get('modele')} sur "
+                      f"{state.get('device')} | auth {state.get('auth')}")
+            else:
+                print(f"  INJOIGNABLE : {state.get('erreur')}")
+                print("  (le lien est quand meme enregistre : relance la verification "
+                      "avec `pcfno3d link show`)")
+        print("\n`pcfno3d serve` servira desormais les donnees de l'amont.")
+        return 0
+
+    if args.action == "clear":
+        if Upstream.clear(cfg.paths.run_dir):
+            print("lien supprime : le service rechargera le modele local")
+            return 0
+        print("aucun lien enregistre")
+        return 0
+
+    upstream = Upstream.resolve(cfg.paths.run_dir)
+    if upstream is None:
+        print(f"aucun lien ({Upstream.path_for(cfg.paths.run_dir)})")
+        print("le service charge le modele local")
+        return 0
+    import asyncio
+
+    from service.link import check
+    print(f"lien      : {upstream.url} ({upstream.label})")
+    print(f"cle amont : {'oui' if upstream.key else 'non'}")
+    state = asyncio.run(check(upstream))
+    if state.get("joignable"):
+        print(f"etat      : joignable | modele {state.get('modele')} sur "
+              f"{state.get('device')} | auth {state.get('auth')}")
+    else:
+        print(f"etat      : INJOIGNABLE — {state.get('erreur')}")
+        print("            une URL de tunnel Colab change a chaque relance : "
+              "`pcfno3d link set <nouvelle URL> --key <cle>`")
+    return 0
+
+
 def cmd_mcp(args) -> int:
     """Serveur MCP en transport stdio (client local, ex. Claude Desktop)."""
     import os
@@ -310,6 +378,14 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--scope", default="read", choices=["read", "admin"],
                    help="read : lecture ; admin : + export sur disque et gestion des cles")
     s.set_defaults(func=cmd_apikey)
+
+    s = sub.add_parser("link", help="relier le service local a une instance distante")
+    s.add_argument("action", nargs="?", default="show", choices=["set", "show", "clear"])
+    s.add_argument("url", nargs="?", help="URL de l'amont, ex. https://xxx.trycloudflare.com")
+    s.add_argument("--key", help="cle d'API de l'amont (reste sur cette machine)")
+    s.add_argument("--label", default="colab", help="nom affiche de l'amont")
+    s.add_argument("--no-check", action="store_true", help="ne pas verifier l'amont")
+    s.set_defaults(func=cmd_link)
 
     s = sub.add_parser("mcp", help="serveur MCP en transport stdio")
     s.set_defaults(func=cmd_mcp)

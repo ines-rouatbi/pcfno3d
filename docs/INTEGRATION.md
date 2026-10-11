@@ -48,7 +48,28 @@ interroge le vrai modèle sans que rien soit copié.
 `run_dir`. URL stable, mais il faut descendre `best_dso_v7.pt` + `norm_stats.json` du
 Drive — et, si l'application demande des instants du dataset, construire leur cache.
 
-Dans les deux cas, les interfaces décrites ci-dessous sont identiques : seule la base
+**C — Colab, avec une adresse stable devant.** C'est le montage recommandé dès qu'une
+application doit tenir plusieurs jours. Le service local se met en relais vers Colab :
+
+```bash
+pcfno3d link set https://xxx.trycloudflare.com --key pcf_...
+pcfno3d serve --port 8000
+```
+
+L'application et les clients MCP visent alors `http://127.0.0.1:8000` **et n'en changent
+plus** ; quand la session Colab redémarre, seule la commande `link set` est à refaire.
+Deux clés distinctes, volontairement :
+
+```
+application --(clé LOCALE)--> service local --(clé AMONT)--> Colab
+```
+
+La clé de l'instance Colab ne quitte pas la machine du relais, et révoquer une clé locale
+ne touche pas à l'amont. Si l'amont est tombé, `/api/health` passe en `degraded` et les
+requêtes répondent `502` en indiquant la commande de réparation — un signal exploitable,
+pas un silence.
+
+Dans tous les cas, les interfaces décrites ci-dessous sont identiques : seule la base
 d'URL change.
 
 ## Authentification
