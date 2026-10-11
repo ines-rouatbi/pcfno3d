@@ -1,0 +1,76 @@
+# Entrainement de secours sur le VRAI dataset, mais sur un poste sans GPU.
+#
+# Raison d'etre : les poids de reference (v7, 453 M parametres) sont entraines sur Colab.
+# Quand on n'y a pas acces, cette configuration permet quand meme de servir un modele
+# issu des VRAIES donnees ANEO — vraie grille (12 niveaux, 25-1000 m), vrai relief de
+# Tunisie, vrais capteurs — au prix d'un modele beaucoup plus petit et bien moins
+# entraine. A utiliser pour eprouver la chaine de bout en bout, PAS pour annoncer des
+# resultats : les DSO ne seront pas atteints.
+#
+#   python -m pcfno3d -c local_cpu build-cache --days 2,3,14,17
+#   python -m pcfno3d -c local_cpu train
+#   python -m pcfno3d -c local_cpu evaluate
+#
+# Les dossiers de travail sont HORS OneDrive : le cache et les checkpoints pesent des
+# gigaoctets et n'ont rien a faire dans une synchronisation.
+name: local_cpu
+
+paths:
+  data_dir: aneo_dataset_3d_v2
+  cache_dir: C:/Users/inesr/AppData/Local/pcfno3d/cache_reel
+  run_dir: C:/Users/inesr/AppData/Local/pcfno3d/run_local_cpu
+  cache_mirror: null
+
+model:
+  # ~100x moins de parametres que la v7 : seul moyen de faire une passe avant sur
+  # 12 x 250 x 500 en quelques secondes de CPU
+  width: 10
+  modes: [4, 12, 12]
+  n_layers: 2
+  pad: [2, 4, 4]
+  proj_hidden: 24
+  local_conv: true
+  pool_surface: true
+
+train:
+  # mesure sur ce poste : ~3,4 s par pas (passe avant 0,7 s + arriere 2,7 s) sur la
+  # grille 12 x 250 x 500. 8 x 48 = 384 pas, soit une vingtaine de minutes.
+  epochs: 8
+  steps_per_epoch: 48
+  val_samples: 4
+  batch_size: 1
+  accum_steps: 2
+  lr: 3.0e-3            # plus eleve : tres peu de pas au total
+  weight_decay: 1.0e-4
+  warmup_phys_epochs: 2
+  num_workers: 0        # Windows : les workers reimporteraient le module
+  ema_decay: 0.99
+  grad_clip: 1.0
+  save_every: 1
+  seed: 42
+
+loss:
+  lambda_mass: 1.0
+  mass_ref: 5.0e-7
+  lambda_bc: 0.1
+  lambda_smooth: 0.0
+  lambda_grad: 0.15
+  w_weight: 1.0
+  w_level_max: 25.0
+
+mask:
+  keep_train: [0.2, 1.0]
+  keep_eval: 0.5
+
+dso:
+  rmse: 0.5
+  r2: 0.95
+  r2_all: 0.95
+  mass_rms: 1.0e-4
+  roughness_range: [0.0, 1.1]
+  time_s: 1.0
+  rmse_25pct: 0.7
+  min_level_cover: 0.05
+
+terrain_smooth_m: 300.0
+f_coriolis: 8.57e-5

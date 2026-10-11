@@ -1,0 +1,66 @@
+# Fins de ligne : LF partout, dans le depot ET dans la copie de travail.
+#
+# Pourquoi explicitement, et pourquoi LF : ce depot est edite sous Windows (dans
+# OneDrive), execute sous Linux (Colab) et relu sur macOS. Sans regle, git annonce
+# « LF will be replaced by CRLF » a chaque commit et des fichiers finissent melanges,
+# ce qui pollue les diff et casse les scripts sh executes sur Colab.
+#
+# Apres toute modification de ce fichier : `git add --renormalize .`
+* text=auto eol=lf
+
+# --- scripts dont la fin de ligne compte -------------------------------------------
+# PowerShell sous Windows : CRLF, le plus sur pour les here-strings de PS 5.1
+*.ps1   text eol=crlf
+*.psm1  text eol=crlf
+*.cmd   text eol=crlf
+*.bat   text eol=crlf
+# scripts POSIX : LF obligatoire, sinon /bin/sh refuse le shebang
+*.sh    text eol=lf
+Dockerfile text eol=lf
+
+# --- texte, normalise ---------------------------------------------------------------
+*.py    text eol=lf
+*.pyi   text eol=lf
+*.js    text eol=lf
+*.mjs   text eol=lf
+*.css   text eol=lf
+*.html  text eol=lf
+*.md    text eol=lf
+*.txt   text eol=lf
+*.csv   text eol=lf
+*.json  text eol=lf
+*.yaml  text eol=lf
+*.yml   text eol=lf
+*.toml  text eol=lf
+*.sql   text eol=lf
+*.gitignore text eol=lf
+*.gitattributes text eol=lf
+
+# les notebooks sont du JSON : du texte, mais les diff sont illisibles
+*.ipynb text eol=lf linguist-language=Jupyter
+
+# --- binaires : jamais de conversion, jamais de diff textuel ------------------------
+*.pt    binary
+*.pth   binary
+*.ckpt  binary
+*.npy   binary
+*.npz   binary
+*.bin   binary
+*.gz    binary
+*.zip   binary
+*.rar   binary
+*.7z    binary
+*.tar   binary
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.webp  binary
+*.pdf   binary
+*.pptx  binary
+*.docx  binary
+*.xlsx  binary
+*.ttf   binary
+*.woff  binary
+*.woff2 binary

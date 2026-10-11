@@ -1,0 +1,96 @@
+#!/bin/sh
+# Porte locale avant commit : refuse de versionner un secret.
+#
+# Sans dependance : ni gitleaks, ni node, ni python. Si un outil manque, ce hook ne
+# promet rien qu'il ne verifie — il fait ce qu'il annonce, et rien de plus.
+#
+# Activation (une fois par copie du depot) :
+#     git config core.hooksPath .githooks
+#
+# Ce qu'il bloque :
+#   - les fichiers qui contiennent des secrets par nature (trousseau, lien, .env)
+#   - les cles de ce projet : pcf_... (API du service), tac_... (salon des agents)
+#   - les formats de jetons courants : GitHub, AWS, Google, OpenAI, cle privee PEM
+#
+# Contournement volontaire, a n'utiliser qu'en sachant pourquoi :
+#     git commit --no-verify
+
+set -eu
+
+rouge=''
+jaune=''
+gras=''
+fin=''
+if [ -t 2 ]; then
+    rouge=$(printf '\033[31m'); jaune=$(printf '\033[33m')
+    gras=$(printf '\033[1m'); fin=$(printf '\033[0m')
+fi
+
+fichiers=$(git diff --cached --name-only --diff-filter=ACMR)
+[ -z "$fichiers" ] && exit 0
+
+faute=0
+
+# --- 1. fichiers interdits par leur nom --------------------------------------------
+for f in $fichiers; do
+    case "$(basename "$f")" in
+        api_keys.json|upstream.json|.env|.env.*|*.pem|*.key|id_rsa|id_ed25519)
+            printf '%s%sREFUSE%s %s : ce fichier contient un secret par nature.\n' \
+                "$gras" "$rouge" "$fin" "$f" >&2
+            faute=1
+            ;;
+    esac
+done
+
+# --- 2. motifs de secrets dans le contenu ajoute -----------------------------------
+# On n'inspecte que les lignes AJOUTEES, et on n'affiche jamais le secret trouve.
+motifs="
+pcf_[A-Za-z0-9_-]\{24,\}|cle d API du service PC-FNO3D
+tac_[A-Za-z0-9_-]\{24,\}|jeton du salon des agents
+gh[pousr]_[A-Za-z0-9]\{30,\}|jeton GitHub
+github_pat_[A-Za-z0-9_]\{30,\}|jeton GitHub (fin)
+AKIA[0-9A-Z]\{16\}|cle d acces AWS
+AIza[0-9A-Za-z_-]\{30,\}|cle d API Google
+sk-[A-Za-z0-9]\{32,\}|cle d API OpenAI
+-----BEGIN [A-Z ]*PRIVATE KEY-----|cle privee
+xox[baprs]-[A-Za-z0-9-]\{10,\}|jeton Slack
+"
+
+for f in $fichiers; do
+    # le binaire n'est pas inspecte : pas de faux positif sur du bruit
+    if git diff --cached --numstat -- "$f" | grep -q '^-' 2>/dev/null; then
+        continue
+    fi
+    ajouts=$(git diff --cached -U0 -- "$f" | sed -n 's/^+//p') || continue
+    [ -z "$ajouts" ] && continue
+    echo "$motifs" | while IFS='|' read -r motif libelle; do
+        [ -z "$motif" ] && continue
+        if printf '%s' "$ajouts" | grep -q -e "$motif"; then
+            n=$(printf '%s' "$ajouts" | grep -c -e "$motif")
+            printf '%s%sREFUSE%s %s : %s (%s occurrence(s), non affichee(s)).\n' \
+                "$gras" "$rouge" "$fin" "$f" "$libelle" "$n" >&2
+            echo "secret" > "$(git rev-parse --git-dir)/.secret-trouve"
+        fi
+    done
+done
+
+# le `while` tourne dans un sous-shell : on recupere son verdict par un fichier temoin
+temoin="$(git rev-parse --git-dir)/.secret-trouve"
+if [ -f "$temoin" ]; then
+    rm -f "$temoin"
+    faute=1
+fi
+
+if [ "$faute" -ne 0 ]; then
+    printf '\n%sCommit refuse : un secret ne doit jamais entrer dans l historique%s\n' \
+        "$gras" "$fin" >&2
+    printf 'Un secret retire dans un commit suivant reste lisible dans l historique :\n' >&2
+    printf '  1. retire le du commit  : git restore --staged <fichier>\n' >&2
+    printf '  2. revoque la cle       : pcfno3d apikey revoke <nom>\n' >&2
+    printf '  3. recree en une neuve  : pcfno3d apikey create <nom>\n' >&2
+    printf '\n%sSi tu sais que c est un faux positif : git commit --no-verify%s\n' \
+        "$jaune" "$fin" >&2
+    exit 1
+fi
+
+exit 0
