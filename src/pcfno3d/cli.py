@@ -7,7 +7,9 @@
     evaluate      metriques de test et verdict DSO1-DSO5              (BLOC 10)
     reconstruct   reconstruction 3D d'un instant (npz, csv, figures)  (BLOC 12)
     export-web    volume -> binaires + manifeste pour le visualiseur
-    serve         API HTTP d'inference (necessite fastapi + uvicorn)
+    serve         application web + API JSON + serveur MCP (fastapi + uvicorn)
+    apikey        creer / lister / revoquer les cles d'API du service
+    mcp           serveur MCP en transport stdio (client local)
     info          configuration effective et etat des artefacts
 
 Toute commande accepte `-c/--config` (nom dans configs/ ou chemin) et `--set a.b=valeur`.
@@ -143,11 +145,97 @@ def cmd_serve(args) -> int:
     import os
 
     cfg = _load_cfg(args)
-    os.environ.setdefault("PCFNO3D_CONFIG", str(args.config or ""))
+    os.environ.setdefault("PCFNO3D_CONFIG", str(args.config or "default"))
     os.environ.setdefault("PCFNO3D_RUN_DIR", str(cfg.paths.run_dir))
     os.environ.setdefault("PCFNO3D_DATA_DIR", str(cfg.paths.data_dir))
+    os.environ.setdefault("PCFNO3D_CACHE_DIR", str(cfg.paths.cache_dir))
+    if args.device:
+        os.environ.setdefault("PCFNO3D_DEVICE", args.device)
+    # le garde-fou anti-DNS-rebinding du MCP compare l'en-tete Host, port inclus
+    os.environ["PCFNO3D_PORT"] = str(args.port)
+    if args.host not in ("127.0.0.1", "localhost", "0.0.0.0"):
+        hosts = os.environ.get("PCFNO3D_ALLOWED_HOSTS", "")
+        extra = f"{args.host},{args.host}:{args.port}"
+        os.environ["PCFNO3D_ALLOWED_HOSTS"] = f"{hosts},{extra}".strip(",")
+
+    store = _key_store(cfg)
+    if store.open_mode:
+        print("ATTENTION : aucune cle d'API definie, le service repond sans "
+              "authentification.\n            `pcfno3d apikey create <nom>` pour en creer une.")
+    print(f"application web : http://{args.host}:{args.port}/app/")
+    print(f"API             : http://{args.host}:{args.port}/api/docs")
+    print(f"serveur MCP     : http://{args.host}:{args.port}/mcp")
     uvicorn.run("service.app:app", host=args.host, port=args.port, reload=args.reload)
     return 0
+
+
+def _key_store(cfg: Config):
+    """Le trousseau vit dans run_dir, a cote des checkpoints."""
+    from service.auth import ApiKeyStore, default_store_path
+
+    return ApiKeyStore(default_store_path(cfg.paths.run_dir))
+
+
+def cmd_apikey(args) -> int:
+    if args.action in ("create", "revoke") and not args.name:
+        print(f"`apikey {args.action}` attend un nom de cle", file=sys.stderr)
+        return 1
+    cfg = _load_cfg(args)
+    try:
+        store = _key_store(cfg)
+    except ImportError:
+        print("le module `service` n'est pas importable : lance la commande depuis la "
+              "racine du depot", file=sys.stderr)
+        return 1
+
+    if args.action == "create":
+        try:
+            secret, record = store.create(args.name, scope=args.scope)
+        except ValueError as exc:
+            print(f"erreur : {exc}", file=sys.stderr)
+            return 1
+        print(f"cle creee  : {record.name} (portee {record.scope})")
+        print(f"secret     : {secret}")
+        print("\nIl n'est affiche qu'une fois : seul son hash est conserve dans")
+        print(f"{store.path}")
+        print("\nUsage : curl -H \"X-API-Key: <secret>\" http://127.0.0.1:8000/api/meta")
+        return 0
+
+    if args.action == "revoke":
+        if store.revoke(args.name):
+            print(f"cle revoquee : {args.name}")
+            return 0
+        print(f"aucune cle active nommee '{args.name}'", file=sys.stderr)
+        return 1
+
+    rows = store.list_public()
+    if not rows:
+        print(f"aucune cle dans {store.path} (le service repond sans authentification)")
+        return 0
+    print(f"{'nom':20s} {'portee':8s} {'etat':9s} {'empreinte':14s} derniere utilisation")
+    for r in rows:
+        etat = "revoquee" if r["revoked"] else "active"
+        print(f"{r['name']:20s} {r['scope']:8s} {etat:9s} {r['empreinte']:14s} "
+              f"{r['last_used_at'] or '-'}")
+    return 0
+
+
+def cmd_mcp(args) -> int:
+    """Serveur MCP en transport stdio (client local, ex. Claude Desktop)."""
+    import os
+
+    cfg = _load_cfg(args)
+    os.environ.setdefault("PCFNO3D_CONFIG", str(args.config or "default"))
+    os.environ.setdefault("PCFNO3D_RUN_DIR", str(cfg.paths.run_dir))
+    os.environ.setdefault("PCFNO3D_DATA_DIR", str(cfg.paths.data_dir))
+    os.environ.setdefault("PCFNO3D_CACHE_DIR", str(cfg.paths.cache_dir))
+    try:
+        from service.mcp_server import main as mcp_main
+    except ImportError as exc:
+        print(f"MCP indisponible ({exc}) : pip install -r service/requirements.txt",
+              file=sys.stderr)
+        return 1
+    return mcp_main()
 
 
 def cmd_info(args) -> int:
@@ -211,10 +299,20 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--stride", type=int, default=1, help="decimation horizontale")
     s.set_defaults(func=cmd_export_web)
 
-    s = sub.add_parser("serve", help="API HTTP d'inference")
+    s = sub.add_parser("serve", help="application web + API + serveur MCP")
     s.add_argument("--host", default="127.0.0.1"), s.add_argument("--port", type=int, default=8000)
-    s.add_argument("--reload", action="store_true")
+    s.add_argument("--reload", action="store_true"), s.add_argument("--device")
     s.set_defaults(func=cmd_serve)
+
+    s = sub.add_parser("apikey", help="gerer les cles d'API du service")
+    s.add_argument("action", choices=["create", "list", "revoke"])
+    s.add_argument("name", nargs="?", help="nom de la cle (create / revoke)")
+    s.add_argument("--scope", default="read", choices=["read", "admin"],
+                   help="read : lecture ; admin : + export sur disque et gestion des cles")
+    s.set_defaults(func=cmd_apikey)
+
+    s = sub.add_parser("mcp", help="serveur MCP en transport stdio")
+    s.set_defaults(func=cmd_mcp)
 
     s = sub.add_parser("info", help="configuration effective et etat des artefacts")
     s.set_defaults(func=cmd_info)

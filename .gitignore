@@ -55,3 +55,6 @@ Thumbs.db
 desktop.ini
 .vscode/
 .idea/
+
+# cles d'API : jamais versionnees (meme hashees)
+api_keys.json

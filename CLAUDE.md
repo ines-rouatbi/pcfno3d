@@ -40,7 +40,10 @@ python -m pcfno3d check                   # geometry + ground-truth sanity
 python -m pcfno3d train                   # resumes automatically from artifacts/.../last.pt
 python -m pcfno3d evaluate                # test metrics + DSO1-DSO5 verdict
 python -m pcfno3d reconstruct --stem 004_120000 --altitude 120 --web
-python -m pcfno3d serve --port 8000       # needs pip install -r service/requirements.txt
+
+pcfno3d apikey create app-web --scope read   # secret shown once; only its hash is stored
+pcfno3d serve --port 8000                    # web app /app/ · API /api/docs · MCP /mcp
+pcfno3d mcp                                  # same MCP tools over stdio
 ```
 
 Every command takes `-c/--config` (`default`, `test`, `colab`, or a path) and
@@ -85,8 +88,36 @@ notebook's globals.
 - **`reconstruct.py` / `export.py`** — npz + ANEO-shaped CSV + figures; `export_web` writes raw
   Float32 binaries plus `manifest.json` for `web/index.html`.
 
-`service/app.py` is a thin FastAPI layer over `WindFieldModel` — it must stay thin: physics and
-numerics belong in the package, not in the API.
+## The service layer (`service/`, `webapp/`)
+
+Thin by design: physics and numerics belong in `pcfno3d`, never here.
+
+- **`app.py`** — `create_app()` is a **factory, not a module-level app**: the MCP session
+  manager can only be run once per instance, so every startup (uvicorn, each test) builds its
+  own. `app = create_app()` at the bottom is what uvicorn imports. Routes live on a module-level
+  `APIRouter` with prefix `/api`; `/app/` serves `webapp/`; `/mcp` mounts the MCP sub-app.
+- **`auth.py`** — API keys as `pcf_<32>`, stored **only as SHA-256** in
+  `run_dir/api_keys.json` (gitignored). Scopes: `read`, and `admin` which covers `read`.
+  **No keys at all = open mode**, announced in `/api/health`. `/api/health` is the one public
+  route — the web app calls it before asking for a key.
+- **`mcp_server.py`** — one `MCPServer` with 8 tools over the same `WindFieldModel`.
+  `set_model()` lets the HTTP app share its already-loaded model instead of loading a second
+  copy. Tools in `ADMIN_TOOLS` write to disk and need the `admin` scope.
+- **`webapp/`** — plain HTML/CSS/JS, no build step and no CDN. The key lives in
+  `localStorage`; every call goes through `X-API-Key`.
+
+Two things that will bite if changed carelessly:
+
+- **`MCPPathNormalizer`** rewrites `/mcp` → `/mcp/` *before* routing. Without it Starlette
+  answers `307` on the published URL, and clients that drop the body on redirect break.
+- The MCP transport enforces **DNS-rebinding protection against the `Host` header, port
+  included**. `_allowed_hosts()` builds the list from `PCFNO3D_PORT` (set by `serve`) plus
+  `PCFNO3D_ALLOWED_HOSTS`. Behind a proxy or domain, an undeclared host gets `421 Misdirected
+  Request` — that is the first thing to check if MCP works locally but not in deployment.
+
+`docs/INTEGRATION.md` is the hand-off document for whoever consumes the output: the three
+interfaces, the binary format, the conventions, and the current limits. Keep it truthful — it
+is what another team will build against.
 
 ## Conventions that matter
 

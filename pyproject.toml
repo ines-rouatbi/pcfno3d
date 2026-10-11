@@ -24,7 +24,8 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-serve = ["fastapi>=0.115", "uvicorn[standard]>=0.34", "python-multipart>=0.0.20"]
+serve = ["fastapi>=0.115", "uvicorn[standard]>=0.34", "python-multipart>=0.0.20",
+         "mcp>=2.3"]
 dev = ["pytest>=8.0", "ruff>=0.6"]
 
 [project.scripts]

@@ -62,26 +62,51 @@ from google.colab import drive; drive.mount("/content/drive")
 !python -m pcfno3d -c colab build-cache && python -m pcfno3d -c colab train
 ```
 
-## Service d'inférence et visualiseur
+## Application web, API et serveur MCP
+
+Un seul processus sert l'interface, l'API JSON et le serveur MCP :
 
 ```bash
-pip install -r service/requirements.txt
-python -m pcfno3d serve --port 8000          # http://127.0.0.1:8000/docs
+pip install -e ".[serve]"
+pcfno3d apikey create app-web --scope read   # le secret s'affiche UNE seule fois
+pcfno3d serve --port 8000
 ```
 
-| Route | Rôle |
+| | |
 |---|---|
-| `GET /health`, `GET /meta` | état du service, description de la grille |
-| `GET /instants` | instants disponibles en cache |
-| `POST /reconstruct` | volume 3D d'un instant (+ export binaire optionnel) |
-| `POST /reconstruct/upload` | reconstruction depuis un CSV de mesures de surface |
-| `GET /field?z=120` | carte du vent à une altitude quelconque (interpolée) |
-| `GET /point?x=&y=&z=` | vent en un point précis |
+| Application web | `http://127.0.0.1:8000/app/` |
+| API interactive | `http://127.0.0.1:8000/api/docs` |
+| Serveur MCP | `http://127.0.0.1:8000/mcp` |
+
+L'application web donne : carte du vent à n'importe quelle altitude (clic = lecture du
+point), profil vertical, verdict DSO, et la page d'intégration qui affiche l'URL MCP et
+les exemples `curl` prêts à copier.
+
+**Clés d'API** — seul le hash SHA-256 est conservé, dans `run_dir/api_keys.json` ; le
+secret n'est affiché qu'à la création. Deux portées : `read` (lecture, reconstruction) et
+`admin` (+ écriture d'exports, gestion des clés). La clé passe par `X-API-Key`,
+`Authorization: Bearer`, ou `?api_key=`. Sans aucune clé, le service répond sans
+authentification et le signale dans `/api/health` — confortable en local, à ne pas
+exposer au réseau.
+
+```bash
+pcfno3d apikey list        # noms, portées, empreintes — jamais de secret
+pcfno3d apikey revoke app-web
+```
+
+**Serveur MCP** — pour qu'une autre application ou un agent interroge le vent sans rien
+savoir du modèle. Outils : `grid_meta`, `list_instants`, `wind_at_point`, `wind_profile`,
+`wind_field_at_altitude`, `instant_summary`, `dso_report`, `export_instant` (admin).
+Transport streamable HTTP sur `/mcp`, ou stdio avec `pcfno3d mcp`.
+
+**Pour brancher une autre application, lire [`docs/INTEGRATION.md`](docs/INTEGRATION.md)** :
+les trois interfaces, le format binaire, les conventions (direction météo, altitudes ASL,
+`-9999` sous le relief) et les limites actuelles.
 
 Image Docker CPU : `docker build -f service/Dockerfile -t pcfno3d-api .`
 
-Le visualiseur `web/index.html` lit un export produit par `reconstruct --web`
-(`manifest.json` + binaires Float32) :
+Un visualiseur autonome, sans serveur, lit aussi un export de
+`reconstruct --web` :
 
 ```bash
 python -m http.server 8080
@@ -93,14 +118,15 @@ python -m http.server 8080
 ```
 src/pcfno3d/        le modèle et le pipeline (portage du notebook, un module par BLOC)
 configs/            default.yaml (référence) · colab.yaml · test.yaml (mini-dataset)
-service/            API HTTP d'inférence + Dockerfile
-web/                visualiseur du volume reconstruit
+service/            app.py (web + API) · mcp_server.py · auth.py · Dockerfile
+webapp/             l'application web servie sur /app/
+web/                visualiseur autonome d'un export, sans serveur
 scripts/            make_mini_dataset.py · smoke.ps1
-tests/              30 tests, tous sur CPU et mini-dataset
+tests/              38 tests, tous sur CPU et mini-dataset
 notebooks/current/  fno3d_v7_1.ipynb — le notebook de référence (Colab)
 notebooks/archive/  architectures explorées puis écartées (FNO2D, U-Net, GNN, DeepONet, ViT…)
 notebooks/data_prep/01_EDA.ipynb · 02_cleaning.ipynb
-docs/               présentations, notes techniques, Gantt, figures
+docs/               INTEGRATION.md · présentations, notes techniques, Gantt, figures
 artifacts/          cache, checkpoints, évaluations, exports — non versionné
 ```
 
