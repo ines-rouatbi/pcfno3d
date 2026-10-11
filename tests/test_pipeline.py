@@ -57,7 +57,7 @@ def test_evaluation_produit_le_verdict_dso(cfg):
                 "dso5_conforme", "mae_direction_deg", "par_niveau_synoptique"):
         assert key in summary
     assert summary["dso4_inference_s"] > 0
-    out = cfg.paths.run_dir / "eval_best"
+    out = cfg.paths.run_dir / "eval_pcfno3d" / "best"
     for name in ("test_par_niveau_synoptique.csv", "test_par_instant.csv",
                  "robustesse_capteurs.csv", "test_summary.json"):
         assert (out / name).exists(), name

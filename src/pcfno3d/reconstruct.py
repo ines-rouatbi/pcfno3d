@@ -22,12 +22,19 @@ from .inference import Volume, WindFieldModel
 
 
 def compare_to_truth(volume: Volume, y_true: np.ndarray) -> pd.DataFrame:
-    """RMSE par niveau et R2 de la vitesse, quand la verite est connue."""
+    """RMSE par niveau et R2 de la vitesse, quand la verite est connue.
+
+    Seuls les niveaux couvrant au moins `dso.min_level_cover` du domaine sont gardes,
+    comme dans l'evaluation. Le BLOC 12 du notebook se contentait de « au moins 10
+    noeuds » et affichait un R2 de -11 899 a 25 m : sur une poignee de noeuds de fond de
+    vallee, la variance de la verite est quasi nulle et le R2 n'a plus de sens.
+    """
     geom = volume.geom
+    min_cover = geom.cfg.dso.min_level_cover
     rows = []
     for k in range(geom.nz):
         m = geom.valid[k]
-        if m.sum() < 10:
+        if m.sum() < 10 or geom.cover[k] < min_cover:
             continue
         rmse = [float(np.sqrt(np.mean((p[k][m] - y_true[c, k][m]) ** 2)))
                 for c, p in enumerate((volume.u, volume.v, volume.w))]

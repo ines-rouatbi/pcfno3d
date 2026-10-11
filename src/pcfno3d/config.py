@@ -130,6 +130,19 @@ class TrainCfg:
     grad_clip: float = 1.0
     save_every: int = 5
     seed: int = 42
+    # --- raffinement a partir d'un modele deja entraine (v8) -------------------------
+    # chemin d'un checkpoint dont on reprend les POIDS (ni l'optimiseur ni l'historique) :
+    # on affine au lieu de repartir de zero. None = entrainement complet, comme la v7.
+    init_from: str | None = None
+    # critere de selection du meilleur modele :
+    #   "val_score" : loss de validation (v7) ;
+    #   "dso"       : pire rapport mesure / seuil des DSO sur la validation — c'est le
+    #                 critere qui correspond a l'objectif, la loss moyenne ne l'est pas.
+    select_by: str = "val_score"
+
+    def __post_init__(self) -> None:
+        if self.select_by not in ("val_score", "dso"):
+            raise ValueError(f"train.select_by : 'val_score' ou 'dso', recu {self.select_by!r}")
 
 
 @dataclass
@@ -143,6 +156,32 @@ class LossCfg:
     lambda_grad: float = 0.15
     w_weight: float = 1.0
     w_level_max: float = 25.0     # plafond du poids de w par niveau
+    # Poids de l'erreur de u et v PAR NIVEAU (une valeur par niveau, ou None).
+    # La loss moyenne sur tous les noeuds ne correspond pas au DSO1, qui est un MAXIMUM
+    # par niveau : la v7 echoue precisement aux niveaux hauts (650-1000 m) alors que la
+    # moyenne est bonne. Ces poids, derives de la RMSE de VALIDATION par niveau
+    # (`pcfno3d dso-weights`), donnent plus de poids aux niveaux hors seuil. None = v7.
+    # Accepte aussi le chemin du JSON ecrit par `pcfno3d dso-weights`, qui garde la trace
+    # du modele et du jeu (validation) dont les poids sont issus.
+    uv_level_weight: list[float] | str | None = None
+
+    def __post_init__(self) -> None:
+        if isinstance(self.uv_level_weight, (str, Path)):
+            import json
+
+            path = _resolve(self.uv_level_weight)
+            if not path.exists():
+                raise FileNotFoundError(f"loss.uv_level_weight : {path} introuvable "
+                                        "(produit par `pcfno3d dso-weights`)")
+            data = json.loads(path.read_text(encoding="utf-8"))
+            if data.get("jeu") == "test":
+                raise ValueError(f"{path} a ete calcule sur le TEST : l'utiliser pour "
+                                 "entrainer reviendrait a regler le modele sur son examen")
+            self.uv_level_weight = data["uv_level_weight"]
+        if self.uv_level_weight is not None:
+            self.uv_level_weight = [float(w) for w in self.uv_level_weight]
+            if any(w <= 0 for w in self.uv_level_weight):
+                raise ValueError("loss.uv_level_weight : tous les poids doivent etre > 0")
 
 
 @dataclass
@@ -151,9 +190,40 @@ class MaskCfg:
 
     keep_train: tuple[float, float] = (0.2, 1.0)
     keep_eval: float = 0.5
+    # Probabilite qu'un exemple d'entrainement garde TOUS ses capteurs.
+    # En v7 (tirage uniforme dans keep_train), le cas « tous les capteurs » est un bord
+    # de la distribution, et la v7 y est mesurablement PIRE qu'a 50 % (RMSE max u 0,705
+    # contre 0,593). C'est pourtant le cas de production. 0 = comportement v7.
+    p_full: float = 0.0
 
     def __post_init__(self) -> None:
         self.keep_train = tuple(float(k) for k in self.keep_train)   # type: ignore[assignment]
+        if not 0.0 <= float(self.p_full) <= 1.0:
+            raise ValueError(f"mask.p_full doit etre dans [0, 1], recu {self.p_full}")
+        self.p_full = float(self.p_full)
+
+
+@dataclass
+class InferenceCfg:
+    """Reconstruction en production (API, MCP, reconstruct).
+
+    tta : nombre de passes moyennees (test-time augmentation). Chaque passe masque une
+          fraction differente des capteurs, avec les caracteristiques geostrophiques et
+          thermiques RECALCULEES sur les capteurs gardes — sans quoi la passe sort de la
+          distribution d'entrainement. 1 = une seule passe, comme la v7.
+    tta_keep : fraction des capteurs gardee a chaque passe supplementaire.
+    """
+
+    tta: int = 1
+    tta_keep: float = 0.7
+
+    def __post_init__(self) -> None:
+        self.tta = int(self.tta)
+        if self.tta < 1:
+            raise ValueError("inference.tta doit etre >= 1")
+        if not 0.0 < float(self.tta_keep) <= 1.0:
+            raise ValueError("inference.tta_keep doit etre dans ]0, 1]")
+        self.tta_keep = float(self.tta_keep)
 
 
 @dataclass
@@ -175,7 +245,7 @@ class DSOCfg:
 
 SECTIONS: dict[str, type] = {
     "paths": Paths, "model": ModelCfg, "train": TrainCfg,
-    "loss": LossCfg, "mask": MaskCfg, "dso": DSOCfg,
+    "loss": LossCfg, "mask": MaskCfg, "dso": DSOCfg, "inference": InferenceCfg,
 }
 
 
@@ -191,6 +261,7 @@ class Config:
     loss: LossCfg = field(default_factory=LossCfg)
     mask: MaskCfg = field(default_factory=MaskCfg)
     dso: DSOCfg = field(default_factory=DSOCfg)
+    inference: InferenceCfg = field(default_factory=InferenceCfg)
     terrain_smooth_m: float = 300.0   # meme lissage du relief que le generateur
     f_coriolis: float = 8.57e-5       # s-1, latitude ~36 N (vent geostrophique)
 

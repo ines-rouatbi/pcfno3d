@@ -123,25 +123,88 @@ What changed since July:
   generator, and 30 CPU tests. The whole pipeline — cache → train → DSO evaluation → 3D
   reconstruction → web export — was run end to end on the mini-dataset. See `README.md`.
 
-What is **not** verified and should not be assumed:
+### v7 measured results (from `notebooks/current/fno3d_v7_resultats.ipynb`, Colab, 2026-10-01)
 
-- **No trained checkpoint exists on this machine.** Training runs live on Google Drive
-  (`/content/drive/MyDrive/aneo_fno3d_runs/v7`), which is not synced locally, so no DSO1–DSO5 result
-  has been reproduced here. The numbers in the October decks come from Colab runs; treat them as
-  the source of truth only after re-running `python -m pcfno3d evaluate` against the current
-  checkpoint and keeping `test_summary.json`.
-- The package port is **behaviour-checked, not numerically diffed** against the notebook: it was
-  written from the notebook's BLOC 0–12 code and passes its own tests, but no run has compared its
-  loss/metric values against the notebook's on the real dataset. Do that once, on one instant,
-  before trusting it for reported figures.
-- T9 is **scaffolded, not deployed**: the API and Docker image exist and the API is tested in
-  memory, but nothing is running anywhere, and there is no CI, no monitoring, and no decision on
-  where it will be hosted.
+The first real DSO numbers on record. Model `best_dso_v7.pt` = the BLOC 9 model (epoch 140; the 9b
+fine-tune never beat it). 120 synoptic test instants, 50 % of sensors visible.
 
-Next concrete steps, in order: (1) copy `best_dso_v7.pt` + `norm_stats.json` off Drive into
-`artifacts/runs/v7/`; (2) run `python -m pcfno3d evaluate` and archive `test_summary.json` as the
-reference DSO result; (3) cross-check one instant against the notebook; (4) stand the API up
-somewhere and point the viewer at it; (5) write the report around the archived evaluation.
+| DSO | target | v7 | verdict |
+|---|---|---|---|
+| DSO1 RMSE u, v per level | ≤ 0.5 m/s | max **u 0.665** (1000 m), v 0.508 (1000 m) | **fails** |
+| DSO1 global RMSE | ≤ 0.5 m/s | u **0.542**, v 0.437 | **fails** (u) |
+| DSO1 R² u, v (and w) | ≥ 0.95 | min 0.991 (w min 0.966) | passes |
+| DSO2 mass residual | ≤ 1e-4 | 2.58e-5 | passes |
+| DSO3 roughness ratio | ≤ 1.1 | 0.951 | passes |
+| DSO4 inference | < 1 s | 91 ms | passes |
+| DSO5 RMSE at 25 % sensors | ≤ 0.7 m/s | 0.646 | passes |
+
+So **v7 meets five objectives out of six**. The single failure is DSO1, and it is localised:
+every level up to 500 m passes (u ≤ 0.481, v ≤ 0.456); u then rises 0.564 (650 m) → 0.632
+(800 m) → 0.665 (1000 m), and v crosses at 1000 m only. The WMO-style criterion
+(RMSE ≤ max(0.5, 10 % of mean speed)) **passes** — in relative terms the upper-level error is
+small; the fixed 0.5 m/s bites exactly where the wind is strongest. That is worth raising with
+Tukhnanutha as a property of the target, not only of the model.
+
+Diagnosis, from the training log and the evaluation tables:
+
+- **Not overfitting.** Train and validation data loss end level (0.0050 vs 0.0053), flat from
+  epoch ~129 as the OneCycle schedule reaches zero. More regularisation would not help.
+- **Objective mismatch.** Training minimises a *mean* error over all nodes; DSO1 is a *maximum*
+  over levels. A model can have an excellent mean and still fail its worst level — which is what
+  happened. The v7 already corrected this for w (`w_level_w`) but not for u and v.
+- **Sensor-count anomaly.** v7 is *worse* with all sensors than with half (max u RMSE 0.705 at
+  100 % vs 0.593 at 50 %). Training draws coverage uniformly in [0.2, 1.0], so 100 % is an edge
+  case — yet it is the production case, and the API defaulted to it. BLOC 12's single instant at
+  100 % shows u RMSE 1.335 at 1000 m.
+- **The 9b result was confounded.** It is recorded as "fine-tuning degrades", but 9b also doubled
+  `lambda_grad` (0.15 → 0.3), which explicitly trades RMSE for roughness. It does not show that
+  fine-tuning cannot help.
+- **The BLOC 10c ensembling was never measured** — interrupted (cell `model = _model_single`), and
+  it reused the full-sensor geostrophic features on masked inputs, which put every extra pass out
+  of the training distribution.
+
+Two reporting issues found and fixed in the package (verdicts unchanged): BLOC 12 printed R² =
+−11 899 at 25 m — a 0 %-coverage level admitted by a "≥ 10 nodes" test; the notebook labels DSO3
+as "0.9–1.1" while only checking ≤ 1.1 (0.951 passes either reading).
+
+### Corrections applied (2026-10-11) — the v8 recipe
+
+Implemented in the package, all opt-in so v7 stays reproducible; `configs/colab_v8.yaml` turns
+them on; `notebooks/current/pcfno3d_v8_colab.ipynb` runs them **cheapest first**:
+
+0. **Validate the port** by re-evaluating `best_dso_v7.pt` with the package and comparing to the
+   notebook's own `eval_best_dso_v7/test_par_niveau_synoptique.csv`. If it does not reproduce v7
+   within 0.01 m/s, stop — every v7/v8 comparison would be meaningless.
+1. **Ensembling without retraining** (`evaluate --tta 8`): 8 passes on different sensor subsets,
+   features *recomputed per pass*. Directly targets the sensor-count anomaly. Must stay under 1 s
+   (8 × 91 ms ≈ 0.73 s before overheads) — the evaluation measures DSO4 in that mode.
+2. **Level weights for u, v** (`loss.uv_level_weight`), w = (RMSE_k / 0.5)², clipped, normalised
+   so L_data keeps its scale; **measured on validation only** — the config refuses a weights file
+   marked `test`.
+3. **Full-coverage examples** (`mask.p_full: 0.15`).
+4. **Fine-tune from v7, selected on the DSO score** (`train.init_from`, `train.select_by: dso`),
+   with `lambda_grad` left at 0.15. The original model is the first candidate, so fine-tuning can
+   only keep v7 or improve on it.
+
+All of it is tested on the mini-dataset (72 tests). **None of it is verified to reach DSO1** —
+that takes the v7 weights and a GPU, i.e. running the v8 notebook on Colab (~1 h 20). If neither
+v7 + ensembling nor v8 passes, the upper levels are likely information-limited: sensors sit at
+25–30 m, and the free atmosphere is tied to them only through a geostrophic wind that is a
+*single plane fit* over the whole domain. The next lever would be a spatially varying
+geostrophic estimate — an input change requiring full retraining.
+
+### Still not verified
+
+- **The package port has not yet been numerically diffed against the notebook** — step 0 of the
+  v8 notebook does exactly this, and must pass before any package-produced figure is reported.
+- **No v7 checkpoint on this machine.** It lives on the Drive (1.81 GB); the local app serves a
+  stand-in until `pcfno3d link set` points it at a Colab instance.
+- T9 is **scaffolded, not deployed**: API, MCP, Docker and the Colab tunnel exist and are tested,
+  but nothing is hosted, and there is no CI or monitoring.
+
+Next concrete steps, in order: (1) run `pcfno3d_v8_colab.ipynb` — step 0, then A; stop at the
+first configuration meeting all five DSOs; (2) serve that configuration via the Colab notebook
+and `pcfno3d link set`; (3) write the report around the archived `test_summary.json`.
 
 ## 5bis. Previous snapshot (2026-07-17) — kept as history
 

@@ -35,6 +35,7 @@ class ANEO3D(Dataset):
         self.n_samples = n_samples
         self.seed = seed
         self.keep_train = geom.cfg.mask.keep_train
+        self.p_full = geom.cfg.mask.p_full
         self.keep_eval = geom.cfg.mask.keep_eval if keep_eval is None else keep_eval
 
     def __len__(self) -> int:
@@ -44,7 +45,9 @@ class ANEO3D(Dataset):
         if self.train:
             j = int(np.random.randint(len(self.stems)))
             rng = np.random.default_rng()
-            keep = rng.uniform(*self.keep_train)
+            # p_full : une part des exemples garde TOUS ses capteurs, le cas de production,
+            # qui n'est sinon qu'un bord de la distribution uniforme (voir MaskCfg.p_full)
+            keep = 1.0 if rng.random() < self.p_full else rng.uniform(*self.keep_train)
         else:
             j = i
             rng = np.random.default_rng(self.seed + i)   # memes capteurs masques a chaque fois

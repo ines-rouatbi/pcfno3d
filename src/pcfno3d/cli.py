@@ -4,7 +4,8 @@
     stats         statistiques de normalisation                       (BLOC 5)
     check         controle de la verite terrain et de la geometrie    (BLOC 2/4)
     train         entrainement, reprise automatique                   (BLOC 9)
-    evaluate      metriques de test et verdict DSO1-DSO5              (BLOC 10)
+    evaluate      metriques de test et verdict DSO1-DSO5 (--tta N)    (BLOC 10)
+    dso-weights   poids u, v par niveau, mesures sur la VALIDATION    (v8)
     reconstruct   reconstruction 3D d'un instant (npz, csv, figures)  (BLOC 12)
     export-web    volume -> binaires + manifeste pour le visualiseur
     serve         application web + API JSON + serveur MCP (fastapi + uvicorn)
@@ -22,6 +23,8 @@ import argparse
 import json
 import sys
 from pathlib import Path
+
+import numpy as np
 
 from .config import Config
 
@@ -110,7 +113,60 @@ def cmd_evaluate(args) -> int:
     from .evaluate import evaluate
 
     cfg = _load_cfg(args)
-    evaluate(cfg, checkpoint=args.checkpoint, device=args.device)
+    evaluate(cfg, checkpoint=args.checkpoint, device=args.device,
+             tta=args.tta, tta_keep=args.tta_keep)
+    return 0
+
+
+def cmd_dso_weights(args) -> int:
+    """Poids de u, v par niveau, mesures sur la VALIDATION d'un modele existant."""
+    from . import dso
+    from .cache import load_index
+    from .dataset import make_loaders, make_splits
+    from .inference import WindFieldModel
+
+    cfg = _load_cfg(args)
+    cfg.train.num_workers = 0
+    wf = WindFieldModel(cfg, checkpoint=args.checkpoint, device=args.device)
+    splits = make_splits(cfg, load_index(cfg))
+    loader = make_loaders(cfg, wf.geom, splits)["val"]
+    if len(loader) == 0:
+        print("aucun instant de validation en cache : construis le cache des jours de "
+              "validation (split_days.json)", file=sys.stderr)
+        return 1
+    print(f"mesure sur {len(loader)} instants de VALIDATION synoptiques "
+          f"(jamais le test : il ne sert qu'au verdict)\n")
+    metrics = dso.measure(wf.model, loader, wf.geom, wf.norm, wf.device,
+                          wf.amp_dtype, wf.use_amp)
+    print(dso.describe_levels(metrics, cfg, wf.geom))
+    sc = dso.score(metrics, cfg, wf.geom)
+    print(f"\nscore DSO (validation) = {sc['score']:.3f} | limitant : {sc['limitant']} | "
+          f"RMSE max {sc['rmse_max']:.3f} m/s a {sc['niveau_le_pire_m']} m")
+
+    weights = dso.level_weights(metrics, cfg, wf.geom, floor=args.floor, cap=args.cap)
+    print("\npoids u, v par niveau :")
+    for z, w in zip(wf.geom.z_levels, weights):
+        bar = "#" * int(round(w * 10))
+        print(f"  {int(z):5d} m  {w:6.3f}  {bar}")
+
+    import json
+    out = Path(args.out) if args.out else cfg.paths.run_dir / "uv_level_weight.json"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps({
+        "uv_level_weight": weights,
+        "jeu": "validation",
+        "instants": len(loader),
+        "modele": wf.checkpoint_path.name,
+        "z_levels_asl_m": wf.geom.z_levels.tolist(),
+        "rmse_u": [None if not np.isfinite(x) else round(float(x), 4)
+                   for x in metrics.rmse()[0]],
+        "rmse_v": [None if not np.isfinite(x) else round(float(x), 4)
+                   for x in metrics.rmse()[1]],
+        "score_dso_validation": sc,
+        "floor": args.floor, "cap": args.cap,
+    }, indent=2, ensure_ascii=False), encoding="utf-8")
+    print(f"\n-> {out}")
+    print(f"   a utiliser dans la configuration : loss.uv_level_weight: {out}")
     return 0
 
 
@@ -348,7 +404,17 @@ def build_parser() -> argparse.ArgumentParser:
 
     s = sub.add_parser("evaluate", help="metriques de test et verdict DSO")
     s.add_argument("--checkpoint"), s.add_argument("--device")
+    s.add_argument("--tta", type=int, help="moyenne de N passes (defaut : inference.tta)")
+    s.add_argument("--tta-keep", type=float, help="capteurs gardes par passe (defaut 0.7)")
     s.set_defaults(func=cmd_evaluate)
+
+    s = sub.add_parser("dso-weights",
+                       help="poids u, v par niveau mesures sur la validation (v8)")
+    s.add_argument("--checkpoint"), s.add_argument("--device")
+    s.add_argument("--floor", type=float, default=0.5, help="poids minimal (defaut 0.5)")
+    s.add_argument("--cap", type=float, default=4.0, help="poids maximal (defaut 4)")
+    s.add_argument("--out", help="fichier JSON (defaut : run_dir/uv_level_weight.json)")
+    s.set_defaults(func=cmd_dso_weights)
 
     s = sub.add_parser("reconstruct", help="reconstruction 3D d'un instant")
     s.add_argument("--stem", help='instant en cache, ex. "004_120000"')

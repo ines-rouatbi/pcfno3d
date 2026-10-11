@@ -62,6 +62,26 @@ from google.colab import drive; drive.mount("/content/drive")
 !python -m pcfno3d -c colab build-cache && python -m pcfno3d -c colab train
 ```
 
+## État du modèle : v7 et corrections v8
+
+La v7 (Colab, `notebooks/current/fno3d_v7_resultats.ipynb`) respecte **5 DSO sur 6**.
+Seul le DSO1 — RMSE ≤ 0,5 m/s **à chaque niveau** — échoue, en haut de la colonne :
+u = 0,564 / 0,632 / 0,665 m/s à 650 / 800 / 1000 m. Tout passe jusqu'à 500 m ; R² ≥ 0,991
+partout ; masse 2,6e-5, rugosité 0,95, inférence 91 ms, robustesse 0,646 m/s.
+
+Les corrections v8 sont dans le paquet, désactivées par défaut (la v7 reste reproductible) :
+
+| option | cible |
+|---|---|
+| `evaluate --tta 8` | moyenne de passes **sans réentraîner** |
+| `loss.uv_level_weight` | aligner la loss sur un maximum par niveau, poids mesurés sur la **validation** |
+| `mask.p_full` | la v7 est pire avec 100 % des capteurs qu'avec 50 % |
+| `train.init_from` + `select_by: dso` | affiner depuis la v7, garder le meilleur score DSO |
+
+`notebooks/current/pcfno3d_v8_colab.ipynb` les exécute de la moins chère à la plus chère,
+**après avoir vérifié que le paquet reproduit les chiffres v7**. Elles ne sont pas encore
+mesurées sur les vraies données : rien ne dit encore qu'elles suffisent.
+
 ## Application web, API et serveur MCP
 
 Un seul processus sert l'interface, l'API JSON et le serveur MCP :
@@ -175,8 +195,8 @@ service/            app.py · mcp_server.py · auth.py · link.py · colab.py ·
 webapp/             l'application web servie sur /app/
 web/                visualiseur autonome d'un export, sans serveur
 scripts/            make_mini_dataset.py · smoke.ps1 · package_for_colab.py
-tests/              55 tests, tous sur CPU et mini-dataset
-notebooks/current/  fno3d_v7_1.ipynb (référence) · pcfno3d_api_colab.ipynb (servir)
+tests/              72 tests, tous sur CPU et mini-dataset
+notebooks/current/  fno3d_v7_1 (référence) · fno3d_v7_resultats (sorties Colab) · pcfno3d_v8_colab · pcfno3d_api_colab
 notebooks/archive/  architectures explorées puis écartées (FNO2D, U-Net, GNN, DeepONet, ViT…)
 notebooks/data_prep/01_EDA.ipynb · 02_cleaning.ipynb
 docs/               INTEGRATION.md · présentations, notes techniques, Gantt, figures

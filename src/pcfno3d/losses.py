@@ -27,6 +27,15 @@ class PhysicsLoss:
         self.cfg = cfg
         self.geom = geom
         self.norm = norm
+        # poids de u, v par niveau (DSO1 est un maximum par niveau, pas une moyenne)
+        weights = cfg.loss.uv_level_weight
+        if weights is not None:
+            if len(weights) != geom.nz:
+                raise ValueError(f"loss.uv_level_weight : {len(weights)} valeurs pour "
+                                 f"{geom.nz} niveaux")
+            self.uv_level_w = torch.tensor(weights, dtype=torch.float32, device=geom.device)
+        else:
+            self.uv_level_w = None
 
     # ------------------------------------------------------------------ loss
     def __call__(self, pred: torch.Tensor, y: torch.Tensor,
@@ -37,8 +46,12 @@ class PhysicsLoss:
         y_n = norm.normalize_target(y)
 
         err = (pred - y_n) ** 2
+        uv = err[:, :2]
+        if self.uv_level_w is not None:
+            # niveaux hors seuil DSO1 plus lourds (voir LossCfg.uv_level_weight)
+            uv = uv * self.uv_level_w[None, None, :, None, None]
         # w est tres faible en altitude : son erreur est remontee par le poids du niveau
-        err = torch.cat([err[:, :2],
+        err = torch.cat([uv,
                          err[:, 2:3] * cfg.w_weight * norm.w_level_w[None, None, :, None, None]],
                         dim=1)
         l_data = err[:, :, geom.valid_t].mean()

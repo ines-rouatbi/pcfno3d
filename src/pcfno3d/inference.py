@@ -106,6 +106,49 @@ class Volume:
         return path
 
 
+@torch.no_grad()
+def ensemble_forward(net: torch.nn.Module, geom: Geometry, norm: Normalizer,
+                     s_raw: torch.Tensor, sensor: torch.Tensor, hour: float, doy: int,
+                     k: int = 1, keep: float = 0.7, seed: int = 0,
+                     amp_dtype=torch.float32, use_amp: bool = False,
+                     tfeat: torch.Tensor | None = None) -> torch.Tensor:
+    """Moyenne de k passes avant, chacune sur un sous-ensemble different des capteurs.
+
+    Passe 0 : les capteurs fournis. Passes 1..k-1 : chacun garde avec probabilite `keep`.
+    Pour chaque passe, les 8 caracteristiques temps / physique (vent geostrophique, vent
+    thermique) sont RECALCULEES sur les capteurs gardes : c'est ainsi que le modele les a
+    vues a l'entrainement. Les reutiliser telles quelles — ce que faisait le BLOC 10c du
+    notebook — donne a chaque passe une entree qui n'existe pas dans la distribution
+    d'entrainement (des capteurs masques, mais un vent geostrophique calcule sans masque).
+
+    Entrees pour un seul instant : s_raw (1, 7, ny, nx), sensor (1, ny, nx).
+    Sortie : prediction NORMALISEE (1, 3, nz, ny, nx), comme une passe simple.
+    """
+    device = s_raw.device
+    if tfeat is None:
+        tfeat = torch.from_numpy(time_geo_features(
+            s_raw[0].float().cpu().numpy(), sensor[0].cpu().numpy() > 0.5, hour, doy, geom)
+        )[None].to(device)
+
+    with torch.autocast(device_type=device.type, dtype=amp_dtype, enabled=use_amp):
+        total = net(assemble_input(s_raw, sensor, tfeat, geom, norm)).float()
+    if k <= 1:
+        return total
+
+    s_np = s_raw[0].float().cpu().numpy()
+    base = sensor[0].cpu().numpy() > 0.5
+    rng = np.random.default_rng(seed)
+    for _ in range(k - 1):
+        kept = base & (rng.random(base.shape) < keep)
+        if kept.sum() == 0:                       # garde-fou : jamais une passe sans capteur
+            kept = base
+        sensor_i = torch.from_numpy(kept.astype(np.float32))[None].to(device)
+        tfeat_i = torch.from_numpy(time_geo_features(s_np, kept, hour, doy, geom))[None].to(device)
+        with torch.autocast(device_type=device.type, dtype=amp_dtype, enabled=use_amp):
+            total = total + net(assemble_input(s_raw, sensor_i, tfeat_i, geom, norm)).float()
+    return total / k
+
+
 class WindFieldModel:
     """Modele pret a l'emploi : geometrie + statistiques + poids, charges une seule fois."""
 
@@ -173,9 +216,16 @@ class WindFieldModel:
     # ------------------------------------------------------------------ inference
     @torch.no_grad()
     def predict(self, S: np.ndarray, hour: float, doy: int, timestamp: str | None = None,
-                keep: float = 1.0, seed: int = 0, mask_nan: bool = True) -> Volume:
-        """Reconstruit le volume a partir de la surface agregee S (8, ny, nx)."""
+                keep: float = 1.0, seed: int = 0, mask_nan: bool = True,
+                tta: int | None = None, tta_keep: float | None = None) -> Volume:
+        """Reconstruit le volume a partir de la surface agregee S (8, ny, nx).
+
+        tta / tta_keep : moyenne de plusieurs passes (voir `ensemble_forward`). Par defaut,
+        la valeur de la configuration (`inference.tta`, 1 = une seule passe).
+        """
         geom = self.geom
+        k = self.cfg.inference.tta if tta is None else int(tta)
+        k_keep = self.cfg.inference.tta_keep if tta_keep is None else float(tta_keep)
         rng = np.random.default_rng(seed)
         sensor = (S[7] > 0.5) & (rng.random(S[7].shape) < keep)
         tfeat = time_geo_features(S, sensor, hour, doy, geom)
@@ -185,9 +235,9 @@ class WindFieldModel:
         t_t = torch.from_numpy(tfeat)[None].to(self.device)
 
         t0 = time.perf_counter()
-        with torch.autocast(device_type=self.device.type, dtype=self.amp_dtype,
-                            enabled=self.use_amp):
-            pred = self.model(assemble_input(s_t, m_t, t_t, geom, self.norm))
+        pred = ensemble_forward(self.model, geom, self.norm, s_t, m_t, hour, doy, k=k,
+                                keep=k_keep, seed=seed, amp_dtype=self.amp_dtype,
+                                use_amp=self.use_amp, tfeat=t_t)
         u, v, w = (a[0].float().cpu().numpy() for a in self.norm.denorm(pred.float()))
         if self.device.type == "cuda":
             torch.cuda.synchronize()
@@ -228,6 +278,7 @@ class WindFieldModel:
             "grille": {"nz": g.nz, "ny": g.ny, "nx": g.nx, "dx_m": g.dx, "dy_m": g.dy},
             "z_levels_asl_m": g.z_levels.tolist(),
             "noeuds_valides": int(g.valid.sum()),
+            "passes_moyennees": self.cfg.inference.tta,
             "variables": ["wind_u_m_s", "wind_v_m_s", "wind_w_m_s", "wind_speed_m_s",
                           "wind_direction_deg"],
             "conventions": g.meta.raw.get("conventions", {}),

@@ -22,16 +22,18 @@ import torch
 
 from .config import Config
 from .dataset import assemble_input, eval_loader, is_synoptic, make_splits
-from .inference import WindFieldModel
+from .inference import WindFieldModel, ensemble_forward
 from .losses import PhysicsLoss
 
 ROBUSTNESS_KEEPS = (0.1, 0.25, 0.5, 1.0)
 ROBUSTNESS_INSTANTS = 40
+EVAL_NAMESPACE = "eval_pcfno3d"     # run_dir/eval_pcfno3d/<modele>[_ttaN]/
 
 
 class Evaluator:
     def __init__(self, cfg: Config, checkpoint: str | Path | None = None,
-                 device: str | None = None, verbose: bool = True) -> None:
+                 device: str | None = None, verbose: bool = True,
+                 tta: int | None = None, tta_keep: float | None = None) -> None:
         from .cache import load_index
 
         self.cfg = cfg
@@ -42,7 +44,20 @@ class Evaluator:
         self.index = load_index(cfg)
         self.splits = make_splits(cfg, self.index)
         self.loss_fn = PhysicsLoss(cfg, self.geom, self.norm)
-        self.out_dir = cfg.paths.run_dir / f"eval_{self.wf.checkpoint_path.stem}"
+        # moyenne de passes (voir inference.ensemble_forward) ; par defaut celle de la config
+        self.tta = cfg.inference.tta if tta is None else int(tta)
+        self.tta_keep = cfg.inference.tta_keep if tta_keep is None else float(tta_keep)
+        if tta is not None:
+            # le benchmark DSO4 passe par wf.predict : il doit mesurer la meme configuration
+            cfg.inference.tta, cfg.inference.tta_keep = self.tta, self.tta_keep
+        self._time_of = dict(zip(self.index["stem"],
+                                 zip(self.index["hour"], self.index["doy"])))
+        suffix = f"_tta{self.tta}" if self.tta > 1 else ""
+        # sous-dossier propre au paquet : le notebook v7 ecrit deja run_dir/eval_<modele>,
+        # et ces resultats sont la REFERENCE a laquelle on compare le paquet. Les ecraser
+        # detruirait precisement ce qu'on cherche a verifier.
+        self.out_dir = (cfg.paths.run_dir / EVAL_NAMESPACE
+                        / f"{self.wf.checkpoint_path.stem}{suffix}")
         self.out_dir.mkdir(parents=True, exist_ok=True)
 
     # ------------------------------------------------------------------ metriques
@@ -57,11 +72,18 @@ class Evaluator:
 
         for s_raw, sensor, tfeat, y, j in loader:
             s_raw, sensor, tfeat, y = (t.to(device) for t in (s_raw, sensor, tfeat, y))
-            with torch.autocast(device_type=device.type, dtype=self.wf.amp_dtype,
-                                enabled=self.wf.use_amp):
-                pred = self.wf.model(assemble_input(s_raw, sensor, tfeat, geom, norm))
-            u, v, w = norm.denorm(pred.float())
             stem = stems[int(j)]
+            if self.tta > 1:
+                hour, doy = self._time_of[stem]
+                pred = ensemble_forward(self.wf.model, geom, norm, s_raw, sensor,
+                                        float(hour), int(doy), k=self.tta, keep=self.tta_keep,
+                                        seed=int(j), amp_dtype=self.wf.amp_dtype,
+                                        use_amp=self.wf.use_amp, tfeat=tfeat)
+            else:
+                with torch.autocast(device_type=device.type, dtype=self.wf.amp_dtype,
+                                    enabled=self.wf.use_amp):
+                    pred = self.wf.model(assemble_input(s_raw, sensor, tfeat, geom, norm))
+            u, v, w = norm.denorm(pred.float())
             row = {"stem": stem, "timestamp": self.splits.stamp_of[stem]}
 
             for c, p in zip("uvw", (u, v, w)):
@@ -175,11 +197,14 @@ class Evaluator:
         rough_mean = float(res["roughness_ratio"].mean())
 
         return {
+            "produit_par": "pcfno3d",
             "modele": self.wf.checkpoint_path.name,
             "epoque": (self.wf.epoch + 1) if self.wf.epoch is not None else None,
             "instants_synoptiques": int(len(res)),
             "instants_episodes": int(len(res_ep)),
             "capteurs_visibles": cfg.mask.keep_eval,
+            "tta": self.tta,
+            "tta_keep": self.tta_keep if self.tta > 1 else None,
             "niveaux_evalues": [int(z) for z in ev["z_m"]],
             "par_niveau_synoptique": levels.to_dict(orient="records"),
             "par_niveau_episodes": levels_ep.to_dict(orient="records") if len(levels_ep) else [],
@@ -218,7 +243,9 @@ def format_report(s: dict, levels: pd.DataFrame, levels_ep: pd.DataFrame,
     dso, cover = cfg.dso, cfg.dso.min_level_cover
     L = ["=" * 78,
          f"TEST SYNOPTIQUE (DSO1) : {s['instants_synoptiques']} instants | "
-         f"capteurs visibles : {s['capteurs_visibles']:.0%}",
+         f"capteurs visibles : {s['capteurs_visibles']:.0%}"
+         + (f" | moyenne de {s['tta']} passes (garde {s['tta_keep']:.0%})"
+            if s.get("tta", 1) > 1 else " | une seule passe"),
          " Niveau | couverture | RMSE u  RMSE v  RMSE w |  R2 u    R2 v    R2 w"]
     for _, r in levels.iterrows():
         flag = "" if r["couverture"] >= cover else "  (exclu : couverture < 5 %)"
@@ -258,5 +285,7 @@ def format_report(s: dict, levels: pd.DataFrame, levels_ep: pd.DataFrame,
 
 
 def evaluate(cfg: Config, checkpoint: str | Path | None = None, device: str | None = None,
-             verbose: bool = True) -> dict:
-    return Evaluator(cfg, checkpoint=checkpoint, device=device, verbose=verbose).run()
+             verbose: bool = True, tta: int | None = None,
+             tta_keep: float | None = None) -> dict:
+    return Evaluator(cfg, checkpoint=checkpoint, device=device, verbose=verbose,
+                     tta=tta, tta_keep=tta_keep).run()

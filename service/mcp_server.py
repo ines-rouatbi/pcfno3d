@@ -278,10 +278,22 @@ def dso_report() -> dict:
     evaluation n'a encore ete archivee, le dit explicitement plutot que d'inventer
     des chiffres.
     """
+    from pcfno3d.evaluate import EVAL_NAMESPACE
+
     wf = get_model()
-    out = wf.cfg.paths.run_dir / f"eval_{wf.checkpoint_path.stem}" / "test_summary.json"
-    if not out.exists():
-        candidates = sorted(wf.cfg.paths.run_dir.glob("eval_*/test_summary.json"))
+    run_dir, stem = wf.cfg.paths.run_dir, wf.checkpoint_path.stem
+    tta = wf.cfg.inference.tta
+    # ordre de preference : l'evaluation qui correspond EXACTEMENT a ce qui est servi
+    # (meme modele, meme nombre de passes), puis celle du modele sans moyenne, puis
+    # celle ecrite par le notebook v7 (eval_<modele>/), puis n'importe laquelle
+    preferes = [run_dir / EVAL_NAMESPACE / (f"{stem}_tta{tta}" if tta > 1 else stem),
+                run_dir / EVAL_NAMESPACE / stem,
+                run_dir / f"eval_{stem}"]
+    out = next((p / "test_summary.json" for p in preferes
+                if (p / "test_summary.json").exists()), None)
+    if out is None:
+        candidates = sorted(run_dir.glob(f"{EVAL_NAMESPACE}/*/test_summary.json")) \
+            + sorted(run_dir.glob("eval_*/test_summary.json"))
         if not candidates:
             return {"disponible": False,
                     "message": "aucune evaluation archivee ; lancer "

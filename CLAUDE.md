@@ -22,7 +22,15 @@ Two things live side by side:
 2. **`notebooks/current/fno3d_v7_1.ipynb`** — the reference Colab notebook (BLOC 0 → BLOC 12),
    kept for experimentation. **The package is the port of this notebook; when you change the
    physics or the architecture in one, mirror it in the other** (the mapping table is in
-   `README.md`).
+   `README.md`). `fno3d_v7_resultats.ipynb` is the same pipeline **with its Colab outputs** —
+   the only record of real v7 DSO numbers. Read its BLOC 9/10/12 outputs before claiming
+   anything about model quality; `tukhnanutha.md` §5 summarises them.
+
+**State of the model (2026-10-11):** v7 meets 5 of 6 DSOs. Only DSO1 (RMSE ≤ 0.5 m/s per
+level) fails, at 650–1000 m. The v8 corrections (`configs/colab_v8.yaml`,
+`notebooks/current/pcfno3d_v8_colab.ipynb`) are implemented and tested but **not yet run** —
+do not report them as fixing DSO1 until that notebook's step 0 (port validation) and its
+evaluations have actually passed.
 
 `notebooks/archive/` holds the architectures explored and then dropped (FNO2D variants, U-Net/FNO,
 GNN, DeepONet, ResNet, ViT). They are history, not alternatives to maintain — do not "fix" them.
@@ -80,7 +88,13 @@ notebook's globals.
   gradient accumulation, atomic checkpoint writes, resume from `last.pt`.
 - **`evaluate.py`** — `Evaluator`: per-level metrics **accumulated over instants** (sums of
   squares, not per-instant averages — that's what a global R² requires), DSO1–DSO5 verdicts,
-  sensor-robustness sweep, CSV/JSON outputs under `run_dir/eval_<ckpt>/`.
+  sensor-robustness sweep. Writes to **`run_dir/eval_pcfno3d/<ckpt>[_ttaN]/`**, never
+  `run_dir/eval_<ckpt>/`: that folder holds the *notebook's* v7 results, which are the reference
+  the package is validated against. Overwriting it would destroy the comparison.
+- **`dso.py`** — measure DSOs on a loader, the DSO score (worst measured/threshold ratio, same
+  definition as notebook BLOC 9b), and per-level u/v weights. **Anything that tunes training
+  (weights, model selection) is measured on validation, never test** — `LossCfg` refuses a weights
+  file marked `"jeu": "test"`.
 - **`inference.py`** — `WindFieldModel` + `Volume`: the only code path used in production. Loads
   geometry, stats and weights once; `Volume` exposes `at_altitude`, `at_point`, `to_nodes_frame`,
   `save_npz`. The checkpoint's stored architecture overrides the YAML, so an edited config can't

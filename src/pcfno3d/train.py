@@ -47,6 +47,8 @@ class Trainer:
         self.loss_fn = PhysicsLoss(cfg, self.geom, self.norm)
 
         self.model = build_model(cfg, self.geom.c_in).to(self.device)
+        if cfg.train.init_from:
+            self._init_from(Path(cfg.train.init_from))
         self.ema_model = copy.deepcopy(self.model).eval()
         for p in self.ema_model.parameters():
             p.requires_grad_(False)
@@ -70,6 +72,42 @@ class Trainer:
             print(f"device : {self.device} | {self.geom.summary()}")
             print(f"parametres : {count_parameters(self.model) / 1e6:.2f} M")
             print(self.splits.summary())
+
+    # ------------------------------------------------------------------ affinage
+    def _init_from(self, path: Path) -> None:
+        """Reprend les POIDS d'un modele entraine (pas l'optimiseur) pour l'affiner.
+
+        L'architecture doit etre identique : des poids de largeur 48 ne vont pas dans un
+        modele de largeur 10. On le verifie avant de charger, pour echouer avec un message
+        plutot qu'avec une erreur de forme de tenseur.
+        """
+        from .model import model_cfg_from_checkpoint
+
+        if not path.exists():
+            raise FileNotFoundError(f"train.init_from : {path} introuvable")
+        ck = torch.load(path, map_location=self.device, weights_only=False)
+        saved = model_cfg_from_checkpoint(ck)
+        if saved is not None:
+            mine = self.cfg.model
+            diff = [name for name in ("width", "modes", "n_layers", "proj_hidden", "local_conv")
+                    if getattr(saved, name) != getattr(mine, name)]
+            if diff:
+                raise ValueError(
+                    f"train.init_from : architecture differente sur {diff} "
+                    f"(checkpoint {[getattr(saved, n) for n in diff]}, "
+                    f"config {[getattr(mine, n) for n in diff]})")
+        self.model.load_state_dict(ck["model"])
+        if self.verbose:
+            print(f"affinage a partir de {path.name} "
+                  f"(epoque {ck.get('epoch', -1) + 1} du modele d'origine)")
+
+    def _dso_selection(self) -> dict:
+        """Score DSO sur la validation : le critere de selection de la v8."""
+        from . import dso
+
+        metrics = dso.measure(self.ema_model, self.loaders["val"], self.geom, self.norm,
+                              self.device, self.amp_dtype, self.use_amp)
+        return dso.score(metrics, self.cfg, self.geom)
 
     # ------------------------------------------------------------------ EMA
     def _ema_update(self) -> None:
@@ -144,8 +182,39 @@ class Trainer:
         return {k: v / n for k, v in acc.items()}, r2
 
     # ------------------------------------------------------------------ boucle
+    def _save_best(self, epoch: int, score: float, extra: dict | None = None) -> None:
+        m = self.cfg.model
+        payload = {
+            "model": self.ema_model.state_dict(), "epoch": epoch, "val_score": score,
+            "config": {"WIDTH": m.width, "MODES": list(m.modes), "N_LAYERS": m.n_layers,
+                       "PAD": list(m.pad), "PROJ_HIDDEN": m.proj_hidden, "C_IN": self.geom.c_in,
+                       "LOCAL_CONV": m.local_conv, "POOL_SURFACE": m.pool_surface},
+        }
+        payload.update(extra or {})
+        self._save_atomic(self.cfg.paths.ckpt_best, payload)
+
+    def _baseline_for_finetune(self) -> None:
+        """En affinage selectionne sur les DSO, le modele d'origine est le premier candidat.
+
+        Sans cela, la premiere epoque d'affinage serait enregistree comme « meilleure » meme
+        si elle degrade le modele de depart — ce qui est arrive au BLOC 9b de la v7. Ici,
+        l'affinage ne peut que garder l'original ou faire mieux.
+        """
+        sel = self._dso_selection()
+        self.best_val = sel["score"]
+        self._save_best(-1, sel["score"], {"dso_val": sel, "origine": "init_from"})
+        self.history.append({"epoch": -1, "val_score": sel["score"], "select_by": "dso",
+                             "dso": sel, "note": "modele d'origine, avant affinage"})
+        if self.verbose:
+            print(f"depart (modele d'origine) : score DSO = {sel['score']:.3f} | limitant "
+                  f"{sel['limitant']} | RMSE max {sel['rmse_max']:.3f} m/s a "
+                  f"{sel['niveau_le_pire_m']} m")
+
     def fit(self) -> list[dict]:
         cfg = self.cfg
+        if (cfg.train.init_from and cfg.train.select_by == "dso"
+                and self.start_epoch == 0 and not self.history):
+            self._baseline_for_finetune()
         for epoch in range(self.start_epoch, cfg.train.epochs):
             self.model.train()
             phys_w = physics_weight(epoch, cfg.train.warmup_phys_epochs)
@@ -179,23 +248,21 @@ class Trainer:
             tr = {k: v / n for k, v in tr.items()}
             va, r2 = self.validate()
             score = self.loss_fn.val_score(va)
+            dso_sel = None
+            if cfg.train.select_by == "dso":
+                dso_sel = self._dso_selection()
+                score = dso_sel["score"]
             rec = {"epoch": epoch, "phys_w": phys_w,
                    "lr": self.optimizer.param_groups[0]["lr"], "train": tr, "val": va,
                    "val_r2_u": r2[0], "val_r2_v": r2[1], "val_r2_w": r2[2],
-                   "val_score": score, "time_s": time.time() - t0}
+                   "val_score": score, "select_by": cfg.train.select_by, "dso": dso_sel,
+                   "time_s": time.time() - t0}
             self.history.append(rec)
 
             improved = score < self.best_val
             if improved:
                 self.best_val = score
-                m = cfg.model
-                self._save_atomic(cfg.paths.ckpt_best, {
-                    "model": self.ema_model.state_dict(), "epoch": epoch, "val_score": score,
-                    "config": {"WIDTH": m.width, "MODES": list(m.modes),
-                               "N_LAYERS": m.n_layers, "PAD": list(m.pad),
-                               "PROJ_HIDDEN": m.proj_hidden, "C_IN": self.geom.c_in,
-                               "LOCAL_CONV": m.local_conv, "POOL_SURFACE": m.pool_surface},
-                })
+                self._save_best(epoch, score, {"dso_val": dso_sel} if dso_sel else None)
             self._save_atomic(cfg.paths.ckpt_last, {
                 "model": self.ema_model.state_dict(), "model_raw": self.model.state_dict(),
                 "optimizer": self.optimizer.state_dict(), "ema_steps": self.ema_steps,
@@ -209,7 +276,10 @@ class Trainer:
                       f"train data={tr['data']:.4f} mass={tr['mass']:.2e} | "
                       f"val data={va['data']:.4f} mass={va['mass']:.2e} bc={va['bc']:.3f} "
                       f"grad={va['grad']:.3f} | R2 u={r2[0]:.3f} v={r2[1]:.3f} w={r2[2]:.3f} "
-                      f"| {rec['time_s']:.0f} s{' *' if improved else ''}")
+                      + (f"| DSO {dso_sel['score']:.3f} ({dso_sel['limitant']}, RMSE max "
+                         f"{dso_sel['rmse_max']:.3f} a {dso_sel['niveau_le_pire_m']} m) "
+                         if dso_sel else "")
+                      + f"| {rec['time_s']:.0f} s{' *' if improved else ''}")
             if (epoch + 1) % cfg.train.save_every == 0 or epoch == cfg.train.epochs - 1:
                 self._mirror_cache_dir()
 

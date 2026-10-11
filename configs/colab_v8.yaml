@@ -1,0 +1,91 @@
+# PC-FNO3D v8 — corrections visant le DSO1, la seule cible que la v7 manque.
+#
+# Bilan de la v7 (best_dso_v7.pt, 120 instants synoptiques de test, 50 % des capteurs) :
+#   DSO1 RMSE <= 0,5 m/s par niveau ........ NON CONFORME  (650 m : u 0,564 | 800 m : u 0,632
+#                                                           | 1000 m : u 0,665, v 0,508)
+#   DSO1 R2 >= 0,95 ......................... conforme (min 0,991)
+#   DSO2 residu de masse ................... conforme (2,58e-5 pour 1e-4)
+#   DSO3 rugosite .......................... conforme (0,951)
+#   DSO4 inference ......................... conforme (91 ms)
+#   DSO5 RMSE a 25 % des capteurs .......... conforme (0,646 pour 0,7)
+# Tous les niveaux jusqu'a 500 m passent ; l'erreur monte avec l'altitude au-dessus.
+#
+# Ce que la v8 change, et pourquoi (detail dans tukhnanutha.md, section 5) :
+#   1. loss.uv_level_weight : la loss moyenne sur tous les noeuds ne correspond pas au
+#      DSO1, qui est un MAXIMUM par niveau. Poids derives de la VALIDATION.
+#   2. train.select_by: dso : garder le modele sur le score DSO, pas sur la loss.
+#   3. mask.p_full : la v7 est PIRE avec tous les capteurs qu'avec la moitie
+#      (RMSE max u 0,705 contre 0,593) ; c'est pourtant le cas de production.
+#   4. affinage depuis la v7 (init_from) au lieu de 4 h 40 d'entrainement complet, en
+#      gardant lambda_grad a 0,15 : le BLOC 9b de la v7 avait affine en le DOUBLANT (0,3),
+#      ce qui privilegie la rugosite aux depens de la RMSE — son echec ne disait donc rien
+#      de l'affinage en lui-meme.
+#
+# A lancer par notebooks/current/pcfno3d_v8_colab.ipynb, qui fait d'abord le test le
+# moins cher : la moyenne de passes sur la v7, sans rien reentrainer.
+name: v8
+
+paths:
+  data_dir: /content/drive/MyDrive/aneo_dataset_3d_v2
+  cache_dir: /content/aneo_cache_v7          # meme cache que la v7 : memes tenseurs
+  run_dir: /content/drive/MyDrive/aneo_fno3d_runs/v8   # JAMAIS v7 : on ne l'ecrase pas
+  cache_mirror: /content/drive/MyDrive/aneo_cache_v7
+
+model:                      # architecture v7 a l'identique : les poids s'y chargent
+  width: 48
+  modes: [6, 32, 32]
+  n_layers: 4
+  pad: [4, 8, 8]
+  proj_hidden: 128
+  local_conv: true
+  pool_surface: true
+
+train:
+  init_from: /content/drive/MyDrive/aneo_fno3d_runs/v7/best_dso_v7.pt
+  select_by: dso
+  epochs: 25                # ~2 min par epoque sur A100 + selection DSO : ~1 h
+  steps_per_epoch: 400
+  val_samples: 64
+  batch_size: 1
+  accum_steps: 2
+  lr: 1.0e-4                # affinage : 10x plus bas que l'entrainement v7
+  weight_decay: 1.0e-4
+  warmup_phys_epochs: 1     # la physique est deja pleinement active dans la v7
+  num_workers: 4
+  ema_decay: 0.999
+  grad_clip: 1.0
+  save_every: 5
+  seed: 42
+
+loss:
+  lambda_mass: 1.0
+  mass_ref: 5.0e-7
+  lambda_bc: 0.1
+  lambda_smooth: 0.0
+  lambda_grad: 0.15         # INCHANGE (le 9b l'avait double : c'est ce qu'on ecarte)
+  w_weight: 1.0
+  w_level_max: 25.0
+  # ecrit par : pcfno3d -c colab dso-weights --out .../v8/uv_level_weight.json
+  uv_level_weight: /content/drive/MyDrive/aneo_fno3d_runs/v8/uv_level_weight.json
+
+mask:
+  keep_train: [0.2, 1.0]
+  keep_eval: 0.5
+  p_full: 0.15
+
+dso:
+  rmse: 0.5
+  r2: 0.95
+  r2_all: 0.95
+  mass_rms: 1.0e-4
+  roughness_range: [0.0, 1.1]
+  time_s: 1.0
+  rmse_25pct: 0.7
+  min_level_cover: 0.05
+
+inference:
+  tta: 1                    # a passer a 8 seulement si l'evaluation le justifie
+  tta_keep: 0.7
+
+terrain_smooth_m: 300.0
+f_coriolis: 8.57e-5
