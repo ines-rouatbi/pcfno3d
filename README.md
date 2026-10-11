@@ -82,6 +82,28 @@ Les corrections v8 sont dans le paquet, désactivées par défaut (la v7 reste r
 **après avoir vérifié que le paquet reproduit les chiffres v7**. Elles ne sont pas encore
 mesurées sur les vraies données : rien ne dit encore qu'elles suffisent.
 
+### Servir la v7 en attendant la v8
+
+Deux voies, le même modèle :
+
+| voie | vitesse | il faut |
+|---|---|---|
+| **Colab** (recommandée) | 0,091 s par instant (GPU) | exécuter `pcfno3d_api_colab.ipynb`, puis `pcfno3d link set <URL> --key <clé>` |
+| **ce poste** | 13,7 s par instant (CPU, 5 Go) | télécharger du Drive `aneo_fno3d_runs/v7/best_dso_v7.pt` et `norm_stats.json` |
+
+Pour la voie locale :
+
+```bash
+python scripts/install_v7_weights.py C:/Users/inesr/Downloads   # vérifie PUIS installe
+python -m pcfno3d -c local_v7 serve --port 8000
+```
+
+L'installeur refuse un fichier tronqué, des poids d'une autre architecture
+(chargement strict) ou des statistiques incohérentes, et fait une passe d'essai sur un vrai
+instant avant de copier quoi que ce soit : un téléchargement raté ne remplace jamais un
+modèle qui fonctionne. Sur CPU, le DSO4 (< 1 s) n'est pas tenu ; les valeurs, elles, sont
+celles de la v7.
+
 ## Application web, API et serveur MCP
 
 Un seul processus sert l'interface, l'API JSON et le serveur MCP :
@@ -194,8 +216,8 @@ configs/            default.yaml (référence) · colab.yaml · test.yaml (mini-
 service/            app.py · mcp_server.py · auth.py · link.py · colab.py · Dockerfile
 webapp/             l'application web servie sur /app/
 web/                visualiseur autonome d'un export, sans serveur
-scripts/            make_mini_dataset.py · smoke.ps1 · package_for_colab.py
-tests/              72 tests, tous sur CPU et mini-dataset
+scripts/            make_mini_dataset.py · smoke.ps1 · package_for_colab.py · install_v7_weights.py
+tests/              80 tests, tous sur CPU et mini-dataset
 notebooks/current/  fno3d_v7_1 (référence) · fno3d_v7_resultats (sorties Colab) · pcfno3d_v8_colab · pcfno3d_api_colab
 notebooks/archive/  architectures explorées puis écartées (FNO2D, U-Net, GNN, DeepONet, ViT…)
 notebooks/data_prep/01_EDA.ipynb · 02_cleaning.ipynb

@@ -7,6 +7,7 @@ C'est l'objet que le service HTTP garde en memoire.
 
 from __future__ import annotations
 
+import threading
 import time
 from pathlib import Path
 
@@ -174,6 +175,10 @@ class WindFieldModel:
                                          cfg.loss.w_level_max)
         self.amp_dtype = torch.bfloat16 if self.device.type == "cuda" else torch.float32
         self.use_amp = self.device.type == "cuda"
+        # une seule passe avant a la fois : sur CPU, la v7 prend ~5 Go par passe, et
+        # l'application web lance 3-4 requetes en parallele a chaque instant. Sans verrou,
+        # chacune lancerait sa propre passe et la machine saturerait sa memoire.
+        self._lock = threading.Lock()
         self.epoch = ck.get("epoch")
         self.val_score = ck.get("val_score")
         if verbose:
@@ -234,14 +239,16 @@ class WindFieldModel:
         m_t = torch.from_numpy(sensor.astype(np.float32))[None].to(self.device)
         t_t = torch.from_numpy(tfeat)[None].to(self.device)
 
-        t0 = time.perf_counter()
-        pred = ensemble_forward(self.model, geom, self.norm, s_t, m_t, hour, doy, k=k,
-                                keep=k_keep, seed=seed, amp_dtype=self.amp_dtype,
-                                use_amp=self.use_amp, tfeat=t_t)
-        u, v, w = (a[0].float().cpu().numpy() for a in self.norm.denorm(pred.float()))
-        if self.device.type == "cuda":
-            torch.cuda.synchronize()
-        elapsed = time.perf_counter() - t0
+        with self._lock:
+            t0 = time.perf_counter()
+            pred = ensemble_forward(self.model, geom, self.norm, s_t, m_t, hour, doy, k=k,
+                                    keep=k_keep, seed=seed, amp_dtype=self.amp_dtype,
+                                    use_amp=self.use_amp, tfeat=t_t)
+            u, v, w = (a[0].float().cpu().numpy() for a in self.norm.denorm(pred.float()))
+            if self.device.type == "cuda":
+                torch.cuda.synchronize()
+            elapsed = time.perf_counter() - t0
+            del pred
 
         if mask_nan:
             u = np.where(geom.valid, u, np.nan)

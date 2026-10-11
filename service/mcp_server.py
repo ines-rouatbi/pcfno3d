@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -51,6 +52,7 @@ en metres au-dessus du niveau de la mer (ASL) ; sous le relief, les valeurs sont
 # ---------------------------------------------------------------------------- modele
 _MODEL: WindFieldModel | None = None
 _VOLUMES: dict[str, Any] = {}
+_VOLUME_LOCK = threading.Lock()
 MAX_CACHED_VOLUMES = 4
 
 
@@ -95,11 +97,19 @@ def _volume(stem: str | None):
     """Volume d'un instant, memorise : une reconstruction coute une passe avant."""
     wf = get_model()
     stem = stem or _default_stem(wf)
-    if stem not in _VOLUMES:
-        _VOLUMES[stem] = wf.predict_stem(stem)
-        if len(_VOLUMES) > MAX_CACHED_VOLUMES:
-            _VOLUMES.pop(next(iter(_VOLUMES)))
-    return stem, _VOLUMES[stem]
+    volume = _VOLUMES.get(stem)
+    if volume is not None:
+        return stem, volume
+    # meme double verification que l'API : deux outils appeles ensemble sur un nouvel
+    # instant ne doivent pas lancer deux passes avant
+    with _VOLUME_LOCK:
+        volume = _VOLUMES.get(stem)
+        if volume is None:
+            volume = wf.predict_stem(stem)
+            _VOLUMES[stem] = volume
+            if len(_VOLUMES) > MAX_CACHED_VOLUMES:
+                _VOLUMES.pop(next(iter(_VOLUMES)))
+    return stem, volume
 
 
 def _clean(x: float) -> float | None:

@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import os
 import tempfile
+import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -59,6 +60,7 @@ EXPORT_FILES = {"u.bin", "v.bin", "w.bin", "speed.bin", "direction.bin", "terrai
 
 # etat du processus : une seule application est active a la fois
 STATE: dict = {}
+_VOLUME_LOCK = threading.Lock()
 
 
 # ---------------------------------------------------------------------------- contexte
@@ -181,14 +183,24 @@ def _volume_for(stem: str | None, keep: float = 1.0) -> Volume:
         stem = str(rows["stem"].iloc[0])
     cache = STATE.setdefault("volumes", {})
     cache_key = f"{stem}:{keep:.3f}"
-    if cache_key not in cache:
-        try:
-            cache[cache_key] = wf.predict_stem(stem, keep=keep)
-        except KeyError as exc:
-            raise HTTPException(404, f"instant inconnu : {stem}") from exc
-        if len(cache) > MAX_CACHED_VOLUMES:
-            cache.pop(next(iter(cache)))
-    return cache[cache_key]
+    volume = cache.get(cache_key)
+    if volume is not None:
+        return volume
+    # double verification sous verrou : l'application web demande la carte, le resume et
+    # les fleches EN MEME TEMPS pour un nouvel instant. La premiere requete calcule, les
+    # autres attendent et relisent le cache — sinon chacune relancerait la meme passe
+    # (13 s et 5 Go chacune pour la v7 sur CPU).
+    with _VOLUME_LOCK:
+        volume = cache.get(cache_key)
+        if volume is None:
+            try:
+                volume = wf.predict_stem(stem, keep=keep)
+            except KeyError as exc:
+                raise HTTPException(404, f"instant inconnu : {stem}") from exc
+            cache[cache_key] = volume
+            if len(cache) > MAX_CACHED_VOLUMES:
+                cache.pop(next(iter(cache)))
+    return volume
 
 
 class ReconstructRequest(BaseModel):
