@@ -20,6 +20,37 @@ pcfno3d serve --port 8000                          # ou l'image Docker
 - API interactive : `http://127.0.0.1:8000/api/docs`
 - Serveur MCP : `http://127.0.0.1:8000/mcp`
 
+## Où tourne le modèle : poste local ou Colab
+
+Les poids entraînés et le GPU vivent sur le Google Drive / Colab de Rayen. Deux montages
+possibles, selon ce dont l'application a besoin.
+
+**A — Colab, c'est le plus direct.** Le notebook
+`notebooks/current/pcfno3d_api_colab.ipynb` ouvre le service là où le modèle est déjà,
+derrière une URL publique :
+
+```python
+from service.colab import serve_public
+info = serve_public(config="colab", key_name="app-externe", scope="read")
+print(info["public_url"], info["mcp_url"], info["api_key"])
+```
+
+L'application reçoit alors une base `https://xxx.trycloudflare.com` et une clé, et
+interroge le vrai modèle sans que rien soit copié.
+
+> **Ce montage est fait pour une démonstration ou une intégration, pas pour de la
+> production.** La session Colab est éphémère (inactivité ~90 min, 12 h au maximum), donc
+> **l'URL change à chaque relance** : une application qui la code en dur se cassera.
+> Prévois la base d'API comme une configuration, pas comme une constante. Le tunnel est
+> public : seule la clé protège les données.
+
+**B — poste local ou serveur.** `pcfno3d serve` avec les checkpoints copiés dans
+`run_dir`. URL stable, mais il faut descendre `best_dso_v7.pt` + `norm_stats.json` du
+Drive — et, si l'application demande des instants du dataset, construire leur cache.
+
+Dans les deux cas, les interfaces décrites ci-dessous sont identiques : seule la base
+d'URL change.
+
 ## Authentification
 
 Une clé a la forme `pcf_<32 caractères>`. Seul son **hash SHA-256** est conservé
@@ -166,7 +197,10 @@ const at = (k, j, i) => {
 
 - **Les instants servis sont ceux du cache local**, construit depuis le dataset ANEO. Pour
   un instant nouveau, il faut passer `POST /api/reconstruct/upload` avec un CSV de mesures
-  de surface. Il n'y a pas d'ingestion temps réel.
+  de surface — ce chemin ne demande aucun cache, seulement les poids. Il n'y a pas
+  d'ingestion temps réel.
+- **Sur Colab, l'URL n'est pas stable** (voir plus haut) : à traiter comme une
+  configuration rechargeable, jamais comme une constante compilée.
 - **Un seul modèle est chargé par processus**, choisi au démarrage
   (`best_dso_v7.pt`, sinon `best.pt`). Changer de modèle demande un redémarrage.
 - Les volumes sont mis en cache en mémoire (4 instants au plus) : un balayage de

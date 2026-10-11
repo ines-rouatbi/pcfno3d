@@ -105,6 +105,34 @@ les trois interfaces, le format binaire, les conventions (direction météo, alt
 
 Image Docker CPU : `docker build -f service/Dockerfile -t pcfno3d-api .`
 
+### Servir depuis Colab (le GPU et les poids y sont déjà)
+
+Plutôt que de descendre les checkpoints, on ouvre le modèle là où il est entraîné : une
+URL publique donne accès à l'API, au MCP et à l'application web, et une autre application
+envoie ses requêtes directement au vrai modèle.
+
+```bash
+python scripts/package_for_colab.py      # artifacts/pcfno3d_code.zip, 106 Ko, code seul
+```
+
+Dépose l'archive à la racine de ton Drive, puis ouvre
+[`notebooks/current/pcfno3d_api_colab.ipynb`](notebooks/current/pcfno3d_api_colab.ipynb)
+dans Colab. Le cœur du notebook tient en un appel :
+
+```python
+from service.colab import serve_public
+info = serve_public(config="colab", key_name="app-externe", scope="read")
+# -> URL publique, clé d'API, URL MCP, déclaration client prête à copier
+```
+
+Il vérifie les poids, crée la clé, ouvre un tunnel Cloudflare, démarre uvicorn et attend
+`/api/health`. Le tunnel est ouvert **avant** le service : son nom d'hôte est tiré au
+hasard et le transport MCP refuse un `Host` non déclaré.
+
+Deux limites à dire franchement : la session Colab est **éphémère** (inactivité ~90 min,
+12 h au maximum) et l'URL change à chaque relance — ce n'est pas un hébergement ; et le
+tunnel est **public**, donc c'est la clé d'API qui protège les données, pas l'URL.
+
 Un visualiseur autonome, sans serveur, lit aussi un export de
 `reconstruct --web` :
 
@@ -121,9 +149,9 @@ configs/            default.yaml (référence) · colab.yaml · test.yaml (mini-
 service/            app.py (web + API) · mcp_server.py · auth.py · Dockerfile
 webapp/             l'application web servie sur /app/
 web/                visualiseur autonome d'un export, sans serveur
-scripts/            make_mini_dataset.py · smoke.ps1
-tests/              38 tests, tous sur CPU et mini-dataset
-notebooks/current/  fno3d_v7_1.ipynb — le notebook de référence (Colab)
+scripts/            make_mini_dataset.py · smoke.ps1 · package_for_colab.py
+tests/              45 tests, tous sur CPU et mini-dataset
+notebooks/current/  fno3d_v7_1.ipynb (référence) · pcfno3d_api_colab.ipynb (servir)
 notebooks/archive/  architectures explorées puis écartées (FNO2D, U-Net, GNN, DeepONet, ViT…)
 notebooks/data_prep/01_EDA.ipynb · 02_cleaning.ipynb
 docs/               INTEGRATION.md · présentations, notes techniques, Gantt, figures

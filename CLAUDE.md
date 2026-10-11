@@ -105,6 +105,14 @@ Thin by design: physics and numerics belong in `pcfno3d`, never here.
   copy. Tools in `ADMIN_TOOLS` write to disk and need the `admin` scope.
 - **`webapp/`** — plain HTML/CSS/JS, no build step and no CDN. The key lives in
   `localStorage`; every call goes through `X-API-Key`.
+- **`tunnel.py` / `colab.py`** — serving from Colab, where the weights and GPU actually
+  are. `serve_public()` checks the weights, mints a key, opens a Cloudflare quick tunnel,
+  launches uvicorn **as a subprocess** (a notebook cell dying must not leave a half-live
+  server), and waits on `/api/health`. The tunnel is opened *before* the service on
+  purpose — see the Host note below. Driven by
+  `notebooks/current/pcfno3d_api_colab.ipynb`; `scripts/package_for_colab.py` builds the
+  ~106 KB code-only archive to drop on the Drive (it refuses to ship `.pt`, `api_keys.json`
+  or `.env`).
 
 Two things that will bite if changed carelessly:
 
@@ -114,6 +122,9 @@ Two things that will bite if changed carelessly:
   included**. `_allowed_hosts()` builds the list from `PCFNO3D_PORT` (set by `serve`) plus
   `PCFNO3D_ALLOWED_HOSTS`. Behind a proxy or domain, an undeclared host gets `421 Misdirected
   Request` — that is the first thing to check if MCP works locally but not in deployment.
+  The SDK matches **exact hosts or `host:*` only** — no subdomain wildcard — which is why a
+  random tunnel hostname must be known before the service starts, hence the tunnel-first
+  ordering in `colab.py`.
 
 `docs/INTEGRATION.md` is the hand-off document for whoever consumes the output: the three
 interfaces, the binary format, the conventions, and the current limits. Keep it truthful — it
