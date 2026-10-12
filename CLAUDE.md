@@ -41,8 +41,9 @@ with `load_state_dict(assign=True)`: loading costs ~0 RAM. **torch 2.2 requires 
 **State of the model (2026-10-11):** v7 meets 5 of 6 DSOs. Only DSO1 (RMSE ≤ 0.5 m/s per
 level) fails, at 650–1000 m. On Colab (2026-10-12) the package reproduced v7's DSO table
 **exactly** (step 0, 0.0000 m/s at every level), and 8-pass ensembling (step A) made every level
-*worse* — it is rejected for DSO1. Fine-tuning (step C) has not run yet: do not report v8 as
-fixing DSO1 until its evaluation (step D) says so.
+*worse* — it is rejected for DSO1. Fine-tuning (v8, steps C/D) did not fix it either:
+1000 m u 0.649 / v 0.529 vs v7 0.665 / 0.508, global v worse — v8 is not better than v7, which
+stays the served model. Remaining lever: a spatially varying geostrophic input (full retrain).
 
 `notebooks/archive/` holds the architectures explored and then dropped (FNO2D variants, U-Net/FNO,
 GNN, DeepONet, ResNet, ViT). They are history, not alternatives to maintain — do not "fix" them.

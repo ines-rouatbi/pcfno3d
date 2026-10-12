@@ -228,16 +228,28 @@ geostrophic estimate — an input change requiring full retraining.
   1000 m (u 0.557, v 0.597) — 650 m passes on validation (0.484). Weights: 1.32 at 800 m, 1.43 at
   1000 m, 0.72–0.95 at 100–650 m.
 - The cache was rebuilt from the dataset in 19 min on that runtime (estimated 1 h).
-- Step C (fine-tuning) had not been run yet at the time of writing.
+- **Step C (fine-tuning, 25 epochs, 147 s each)**: validation DSO score 1.193 -> **1.183**
+  (epoch 25), i.e. < 1 % better. Validation data loss flat at 0.0053 from epoch 11 while train
+  loss kept falling (0.0052 -> 0.0046): the model learns nothing more that generalises.
+- **Step D, v8 single pass on test (120 synoptic instants)**: DSO1 still **fails**. Upper
+  levels: 650 m u 0.562 / v 0.424, 800 m u 0.623 / v 0.489, 1000 m u 0.649 / v 0.529 (v7: 0.564 /
+  0.408, 0.632 / 0.466, 0.665 / 0.508). u improves by <= 0.016, v gets worse by up to 0.023;
+  global u 0.535 (v7 0.542), v 0.452 (v7 0.437). Vector RMSE at 1000 m is identical (0.837 both).
+  DSO2 2.50e-5, DSO3 0.950, DSO4 104 ms, DSO5 0.641: still met. **Net: v8 is not better than v7.**
+- **Conclusion of the v8 campaign**: neither ensembling nor fine-tuning with level weights,
+  full-coverage examples and DSO selection moves the 650–1000 m error meaningfully. That supports
+  the information-limit hypothesis below (one domain-wide geostrophic plane is the only link
+  between 25–30 m sensors and the free atmosphere). v7 stays the served model.
 
 ### Still not verified
 
-- **Whether fine-tuning (v8, step C) reaches DSO1.** Ensembling alone does not (see above).
+- **Whether a spatially varying geostrophic input can reach DSO1** — untested; needs a full
+  retraining (~140 epochs x ~145 s ≈ 5–6 h of A100).
 - T9 is **scaffolded, not deployed**: API, MCP, Docker and the Colab tunnel exist and are tested,
   and v7 runs locally, but nothing is hosted, and there is no CI or monitoring.
 
-Next concrete steps, in order: (1) run step C then D of `pcfno3d_v8_colab.ipynb` (steps 0, A, B
-are done and stored on the Drive); (2) serve that configuration via the Colab notebook
+Next concrete steps, in order: (1) decide with Tukhnanutha between reporting v7 against the OMM
+criterion (met) and funding an input-architecture change for DSO1; (2) serve that configuration via the Colab notebook
 and `pcfno3d link set`; (3) write the report around the archived `test_summary.json`.
 
 ## 5bis. Previous snapshot (2026-07-17) — kept as history
