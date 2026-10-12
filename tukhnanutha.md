@@ -212,16 +212,32 @@ geostrophic estimate — an input change requiring full retraining.
   Weights are memory-mapped (+0.03 GB RAM at load instead of ~3.6 GB), and the service computes
   each instant once even when the web app sends parallel requests.
 
+### v8 notebook, first run (Colab A100, 2026-10-12)
+
+- **Step 0 passed exactly**: the package re-evaluated `best_dso_v7.pt` on the 120 synoptic test
+  instants and matched the notebook's BLOC 10 table at **all 12 levels with a 0.0000 m/s maximum
+  deviation** (u 0.665 / v 0.508 at 1000 m, global u 0.542). Every number the package produces
+  is now comparable to the v7 notebook.
+- **Step A (8-pass ensembling, keep 0.7) is rejected**: worse at every level — 1000 m u 0.672,
+  global u 0.579 (vs 0.542), DSO5 0.684 (vs 0.646), and DSO4 930 ms, close to the 1 s limit.
+  Likely cause: under the DSO1 protocol (50 % of sensors visible) each pass keeps 70 % of those,
+  i.e. sees only 35 % of the sensors; averaging does not give back the information dropped.
+  Only at 100 % sensors does it help (robustness sweep: u max 0.705 → 0.615, v 0.516 → 0.482) —
+  relevant to serving with all sensors, not to the DSO1 verdict, and 8x the compute.
+- **Step B (validation)**: score 1.193; out of threshold only at 800 m (u 0.572, v 0.562) and
+  1000 m (u 0.557, v 0.597) — 650 m passes on validation (0.484). Weights: 1.32 at 800 m, 1.43 at
+  1000 m, 0.72–0.95 at 100–650 m.
+- The cache was rebuilt from the dataset in 19 min on that runtime (estimated 1 h).
+- Step C (fine-tuning) had not been run yet at the time of writing.
+
 ### Still not verified
 
-- **A full numerical reproduction of the notebook's DSO table by the package** — structure is
-  confirmed, one instant is sane, but the 120-instant comparison is step 0 of
-  `pcfno3d_v8_colab.ipynb` and must pass before any package-produced figure is reported.
+- **Whether fine-tuning (v8, step C) reaches DSO1.** Ensembling alone does not (see above).
 - T9 is **scaffolded, not deployed**: API, MCP, Docker and the Colab tunnel exist and are tested,
   and v7 runs locally, but nothing is hosted, and there is no CI or monitoring.
 
-Next concrete steps, in order: (1) run `pcfno3d_v8_colab.ipynb` — step 0, then A; stop at the
-first configuration meeting all five DSOs; (2) serve that configuration via the Colab notebook
+Next concrete steps, in order: (1) run step C then D of `pcfno3d_v8_colab.ipynb` (steps 0, A, B
+are done and stored on the Drive); (2) serve that configuration via the Colab notebook
 and `pcfno3d link set`; (3) write the report around the archived `test_summary.json`.
 
 ## 5bis. Previous snapshot (2026-07-17) — kept as history
