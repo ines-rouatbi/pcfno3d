@@ -52,6 +52,10 @@ class Paths:
     # interruption — comme le faisait le BLOC 9 du notebook v7. None = ecriture directe dans
     # run_dir (poste local, ou run_dir est deja un disque rapide).
     local_dir: Path | None = None
+    # Ou vivent les exports du visualiseur (binaires + manifeste, un dossier par instant).
+    # None = run_dir/web. Sur Colab : le disque local, car 166 instants pesent ~1 Go et se
+    # regenerent en ~1 min sur GPU ; inutile de les stocker sur le Drive.
+    web_dir: Path | None = None
 
     def __post_init__(self) -> None:
         # un chemin relatif dans un YAML est relatif a la racine du depot, pas au cwd :
@@ -63,6 +67,13 @@ class Paths:
             self.cache_mirror = _resolve(self.cache_mirror)
         if self.local_dir is not None:
             self.local_dir = _resolve(self.local_dir)
+        if self.web_dir is not None:
+            self.web_dir = _resolve(self.web_dir)
+
+    @property
+    def web_root(self) -> Path:
+        """Racine des exports du visualiseur : un sous-dossier recon_<stem> par instant."""
+        return self.web_dir if self.web_dir is not None else self.run_dir / "web"
 
     def mkdirs(self) -> None:
         dirs = [self.cache_dir, self.run_dir, self.run_dir / "figures"]

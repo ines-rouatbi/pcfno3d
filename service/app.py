@@ -275,7 +275,7 @@ def reconstruct(req: ReconstructRequest,
     }
     if req.export:
         name = f"recon_{req.stem or 'latest'}"
-        out["export"] = str(export_web(volume, wf.cfg.paths.run_dir / "web" / name,
+        out["export"] = str(export_web(volume, wf.cfg.paths.web_root / name,
                                        stride=req.stride))
     return out
 
@@ -381,7 +381,7 @@ def dso(_: ApiKeyRecord | None = Depends(require_read)) -> dict:
 @router.get("/export/{stem}/manifest.json", tags=["donnees"])
 def export_manifest(stem: str, _: ApiKeyRecord | None = Depends(require_read)):
     """Manifeste d'un export deja produit (POST /api/reconstruct avec export=true)."""
-    path = model().cfg.paths.run_dir / "web" / f"recon_{stem}" / "manifest.json"
+    path = model().cfg.paths.web_root / f"recon_{stem}" / "manifest.json"
     if not path.exists():
         raise HTTPException(404, f"aucun export pour {stem}")
     return FileResponse(path, media_type="application/json")
@@ -392,7 +392,7 @@ def export_file(stem: str, name: str, _: ApiKeyRecord | None = Depends(require_r
     """Binaire Float32 d'un export (u.bin, v.bin, w.bin, speed.bin, terrain.bin)."""
     if name not in EXPORT_FILES:
         raise HTTPException(404, "fichier inconnu")
-    path = model().cfg.paths.run_dir / "web" / f"recon_{stem}" / name
+    path = model().cfg.paths.web_root / f"recon_{stem}" / name
     if not path.exists():
         raise HTTPException(404, f"{name} absent pour {stem}")
     return FileResponse(path, media_type="application/octet-stream")

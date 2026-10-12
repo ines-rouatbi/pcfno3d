@@ -331,7 +331,7 @@ def export_instant(stem: str | None = None, stride: int = 2) -> dict:
 
     stem, volume = _volume(stem)
     wf = get_model()
-    out = export_web(volume, wf.cfg.paths.run_dir / "web" / f"recon_{stem}",
+    out = export_web(volume, wf.cfg.paths.web_root / f"recon_{stem}",
                      stride=max(1, min(int(stride), 8)))
     manifest = json.loads((out / "manifest.json").read_text(encoding="utf-8"))
     return {"stem": stem, "dossier": str(out), "manifeste": manifest}

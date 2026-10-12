@@ -149,7 +149,7 @@ def reconstruct(cfg: Config, stem: str | None = None, csv: str | Path | None = N
 
     if web:
         from .export import export_web
-        result["web"] = str(export_web(volume, cfg.paths.run_dir / "web" / name))
+        result["web"] = str(export_web(volume, cfg.paths.web_root / name))
 
     if verbose:
         print(f"sauvegarde : {name}_3d.npz et {name}_3d.csv ({len(nodes):,} noeuds) -> {out_dir}")

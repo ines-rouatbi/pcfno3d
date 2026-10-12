@@ -23,6 +23,40 @@ from .inference import Volume
 NODATA = -9999.0
 
 
+def export_split(wf, split: str = "test", stride: int = 2, synoptic_only: bool = False,
+                 verbose: bool = True) -> dict:
+    """Exporte tous les instants d'un jeu (`test` par defaut) avec UN SEUL modele charge.
+
+    Un instant deja exporte (manifeste present : il est ecrit en dernier) est saute, donc
+    la commande se relance sans tout refaire. Ecrit dans `cfg.paths.web_root/recon_<stem>`,
+    la ou l'API (`/api/export/...`) les sert.
+    """
+    from .cache import load_index
+    from .dataset import is_synoptic
+
+    cfg = wf.cfg
+    index = load_index(cfg)
+    rows = index[index["split"] == split]
+    if synoptic_only:
+        rows = rows[[is_synoptic(str(t)) for t in rows["timestamp"]]]
+    if rows.empty:
+        raise ValueError(f"aucun instant du jeu '{split}' dans le cache {cfg.paths.cache_dir}")
+    faits = sautes = 0
+    for stem in rows["stem"].astype(str):
+        out = cfg.paths.web_root / f"recon_{stem}"
+        if (out / "manifest.json").exists():
+            sautes += 1
+            continue
+        export_web(wf.predict_stem(stem), out, stride=stride)
+        faits += 1
+        if verbose and faits % 20 == 0:
+            print(f"  {faits + sautes}/{len(rows)} instants exportes", flush=True)
+    if verbose:
+        print(f"export '{split}' : {faits} nouveau(x), {sautes} deja la -> {cfg.paths.web_root}")
+    return {"exportes": faits, "deja_la": sautes, "total": int(len(rows)),
+            "dossier": str(cfg.paths.web_root)}
+
+
 def export_web(volume: Volume, out_dir: str | Path, stride: int = 1,
                fields: tuple[str, ...] = ("u", "v", "w", "speed")) -> Path:
     """Ecrit les binaires + le manifeste. `stride` decime horizontalement (2 = 4x plus leger)."""

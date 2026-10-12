@@ -120,3 +120,32 @@ def test_meta_du_service(cfg):
     meta = WindFieldModel(cfg, device="cpu", verbose=False).meta()
     assert meta["grille"]["nz"] == len(meta["z_levels_asl_m"])
     assert meta["noeuds_valides"] > 0
+
+
+def test_export_par_lot_des_instants_de_test(cfg, index, norm, tmp_path):
+    """export-web --split test : un modele charge une fois, un dossier par instant, dans
+    paths.web_dir (Colab : disque local), et une relance ne refait rien."""
+    import json as _json
+
+    from pcfno3d.cache import load_index
+    from pcfno3d.export import export_split
+    from pcfno3d.inference import WindFieldModel
+
+    from pcfno3d.train import Trainer
+
+    if not cfg.paths.ckpt_best.exists():
+        Trainer(cfg, device="cpu", verbose=False).fit()
+    cfg.paths.web_dir = tmp_path / "web"
+    try:
+        wf = WindFieldModel(cfg, device="cpu", verbose=False)
+        n = int((load_index(cfg)["split"] == "test").sum())
+        r = export_split(wf, split="test", stride=2, verbose=False)
+        assert r == {"exportes": n, "deja_la": 0, "total": n, "dossier": str(tmp_path / "web")}
+        dossiers = sorted((tmp_path / "web").glob("recon_*"))
+        assert len(dossiers) == n
+        m = _json.loads((dossiers[0] / "manifest.json").read_text(encoding="utf-8"))
+        assert m["grille"]["stride"] == 2
+        assert (dossiers[0] / "u.bin").stat().st_size == 4 * m["grille"]["nz"] *             m["grille"]["ny"] * m["grille"]["nx"]
+        assert export_split(wf, split="test", stride=2, verbose=False)["exportes"] == 0
+    finally:
+        cfg.paths.web_dir = None

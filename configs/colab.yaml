@@ -17,6 +17,8 @@ paths:
   # checkpoints a chaque epoque sur le disque local de Colab, recopies sur le Drive
   # toutes les train.save_every epoques (comme le BLOC 9 du notebook v7)
   local_dir: /content/run_local_v7
+  # exports du visualiseur (atom.zelqane.com) : disque local, regeneres a chaque session
+  web_dir: /content/pcfno3d_web
 
 model:
   width: 48

@@ -181,13 +181,16 @@ def cmd_reconstruct(args) -> int:
 
 
 def cmd_export_web(args) -> int:
-    from .export import export_web
+    from .export import export_split, export_web
     from .inference import WindFieldModel
 
     cfg = _load_cfg(args)
     wf = WindFieldModel(cfg, checkpoint=args.checkpoint, device=args.device)
+    if args.split:
+        export_split(wf, split=args.split, stride=args.stride)
+        return 0
     volume = wf.predict_csv(args.csv) if args.csv else wf.predict_stem(args.stem)
-    out = export_web(volume, args.out or (cfg.paths.run_dir / "web" / "latest"),
+    out = export_web(volume, args.out or (cfg.paths.web_root / "latest"),
                      stride=args.stride)
     print(f"export web -> {out}")
     return 0
@@ -432,6 +435,8 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--stem"), s.add_argument("--csv"), s.add_argument("--out")
     s.add_argument("--checkpoint"), s.add_argument("--device")
     s.add_argument("--stride", type=int, default=1, help="decimation horizontale")
+    s.add_argument("--split", choices=["train", "val", "test"],
+                   help="exporte TOUS les instants de ce jeu (un modele charge une fois)")
     s.set_defaults(func=cmd_export_web)
 
     s = sub.add_parser("serve", help="application web + API + serveur MCP")
