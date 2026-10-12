@@ -349,6 +349,8 @@ async function loadDso() {
       return;
     }
     const s = body.resume;
+    const src = s.source || null;          /* evaluation importee d'un notebook ? */
+    const ou = src ? src.materiel : "ce serveur";
     const verdict = (ok) =>
       `<span class="verdict ${ok ? "ok" : "ko"}">${ok ? "CONFORME" : "NON CONFORME"}</span>`;
     const rows = [
@@ -359,7 +361,9 @@ async function loadDso() {
       ["DSO2", `résidu de masse moyen = ${s.dso2_rms_moyen?.toExponential(2)}`,
        s.dso2_conforme],
       ["DSO3", `rugosité prédiction / vérité = ${fmt(s.dso3_rugosite, 3)}`, s.dso3_conforme],
-      ["DSO4", `inférence = ${(s.dso4_inference_s * 1000).toFixed(0)} ms`, s.dso4_conforme],
+      ["DSO4", `inférence = ${(s.dso4_inference_s * 1000).toFixed(0)} ms, mesurée sur ${ou}` +
+               (src ? ` — sur ce poste sans GPU, compter ~20 s par instant` : ""),
+       s.dso4_conforme],
       ["DSO5", `RMSE à 25 % de capteurs = ${fmt(s.dso5_rmse_25pct, 3)} m/s`, s.dso5_conforme],
     ];
     const levels = (s.par_niveau_synoptique || []).filter((r) => r.couverture >= 0.05);
@@ -369,8 +373,12 @@ async function loadDso() {
         `<tr><td><b>${k}</b></td><td>${label}</td><td>${verdict(!!ok)}</td></tr>`).join("")}
       </tbody></table>
       <p class="muted small">Modèle <code>${s.modele}</code> · époque ${s.epoque ?? "—"} ·
-        ${s.instants_synoptiques} instants synoptiques ·
+        ${s.instants_synoptiques} instants synoptiques de test ·
+        ${Math.round((s.capteurs_visibles ?? 0.5) * 100)} % des capteurs visibles ·
         MAE direction ${fmt(s.mae_direction_deg, 2)}°</p>
+      ${src ? `<p class="small"><b>Source :</b> évaluation faite par le notebook
+        <code>${src.notebook}</code> (BLOC ${src.bloc}) sur ${src.materiel}, importée telle
+        quelle — rien n'est recalculé sur ce poste. ${src.precision}.</p>` : ""}
       ${levels.length ? `<div class="scroll-x"><table>
         <thead><tr><th>Niveau</th><th>Couverture</th><th>RMSE u</th><th>RMSE v</th>
         <th>RMSE w</th><th>R² u</th><th>R² v</th><th>R² w</th></tr></thead><tbody>
@@ -378,7 +386,18 @@ async function loadDso() {
           <td>${(r.couverture * 100).toFixed(1)} %</td>
           <td>${fmt(r.rmse_u, 3)}</td><td>${fmt(r.rmse_v, 3)}</td><td>${fmt(r.rmse_w, 3)}</td>
           <td>${fmt(r.r2_u, 4)}</td><td>${fmt(r.r2_v, 4)}</td><td>${fmt(r.r2_w, 4)}</td>
-          </tr>`).join("")}</tbody></table></div>` : ""}`;
+          </tr>`).join("")}</tbody></table></div>` : ""}
+      ${(s.robustesse || []).length ? `<h3>Robustesse au nombre de capteurs</h3>
+        <div class="scroll-x"><table>
+        <thead><tr><th>Capteurs visibles</th><th>RMSE max u</th><th>RMSE max v</th>
+        <th>R² min u</th><th>R² min v</th></tr></thead><tbody>
+        ${s.robustesse.map((r) => `<tr><td>${Math.round(r.capteurs_visibles * 100)} %</td>
+          <td>${fmt(r.rmse_u_max, 3)}</td><td>${fmt(r.rmse_v_max, 3)}</td>
+          <td>${fmt(r.r2_u_min, 4)}</td><td>${fmt(r.r2_v_min, 4)}</td></tr>`).join("")}
+        </tbody></table></div>
+        <p class="muted small">L'erreur devrait baisser quand on ajoute des capteurs. Si
+        100 % fait moins bien que 50 %, le modèle n'a presque jamais vu tous les capteurs à
+        l'entraînement — c'est ce que corrige <code>mask.p_full</code> en v8.</p>` : ""}`;
   } catch (err) {
     node.innerHTML = `<p class="err">${err.message}</p>`;
   }

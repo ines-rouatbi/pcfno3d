@@ -311,9 +311,9 @@ def dso_report() -> dict:
                     "modele": wf.checkpoint_path.name}
         out = candidates[-1]
     summary = json.loads(out.read_text(encoding="utf-8"))
-    # on ne renvoie pas les tableaux complets : le detail est dans les CSV a cote
-    summary.pop("robustesse", None)
-    return {"disponible": True, "source": str(out), "resume": summary}
+    # la table de robustesse (4 lignes) est gardee : c'est elle qui montre qu'un modele
+    # fait mieux avec moins de capteurs, le defaut que corrige mask.p_full
+    return {"disponible": True, "fichier": str(out), "resume": summary}
 
 
 @mcp.tool()
