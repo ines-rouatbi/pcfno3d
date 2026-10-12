@@ -117,6 +117,31 @@ class ApiKeyStore:
         self.save()
         return secret, record
 
+    def register_hash(self, name: str, key_hash: str, scope: str = "read") -> ApiKeyRecord:
+        """Enregistre une cle dont on ne connait que l'EMPREINTE (SHA-256).
+
+        Pour un deploiement ou la cle a ete generee ailleurs et remise de main a main :
+        le serveur n'a jamais besoin du secret, et l'empreinte peut figurer dans un
+        notebook sans rien reveler. Idempotent : une empreinte deja active est renvoyee
+        telle quelle.
+        """
+        key_hash = key_hash.strip().lower()
+        if len(key_hash) != 64 or any(c not in "0123456789abcdef" for c in key_hash):
+            raise ValueError("empreinte attendue : SHA-256 en hexadecimal (64 caracteres)")
+        if scope not in SCOPES:
+            raise ValueError(f"portee inconnue : {scope} (attendu {SCOPES})")
+        for r in self.records:
+            if r.key_hash == key_hash and not r.revoked:
+                if r.scope != scope:
+                    raise ValueError(f"cette empreinte existe deja avec la portee {r.scope}")
+                return r
+        if any(r.name == name and not r.revoked for r in self.records):
+            raise ValueError(f"une cle active s'appelle deja '{name}'")
+        record = ApiKeyRecord(name=name, key_hash=key_hash, scope=scope)
+        self.records.append(record)
+        self.save()
+        return record
+
     def revoke(self, name: str) -> bool:
         found = False
         for r in self.records:

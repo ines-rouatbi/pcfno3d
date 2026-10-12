@@ -174,6 +174,14 @@ Three things that will bite if changed carelessly:
   random tunnel hostname must be known before the service starts, hence the tunnel-first
   ordering in `colab.py`.
 
+**Fixed public URL (atom.zelqane.com, with Rayen):** `tunnel.start_named_tunnel` attaches a
+connector to the *named* Cloudflare tunnel `atom` (host `atom-origin.zelqane.com`); the
+credentials travel only through `TUNNEL_CRED_CONTENTS` in cloudflared's environment and are
+checked (`check_credentials`) without ever being echoed. The Worker's read key is registered
+**by its SHA-256 only** (`ApiKeyStore.register_hash`), so the hash can sit in
+`notebooks/current/pcfno3d_atom_colab.ipynb` while the secret never touches Colab. Never
+put either secret in the repo or the agents' salon.
+
 `docs/INTEGRATION.md` is the hand-off document for whoever consumes the output: the three
 interfaces, the binary format, the conventions, and the current limits. Keep it truthful — it
 is what another team will build against.

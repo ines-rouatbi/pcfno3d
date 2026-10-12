@@ -14,10 +14,17 @@ connaitre le nom avant de lancer uvicorn.
 
 Un quick tunnel est PUBLIC : l'URL suffit a atteindre le service. C'est la cle d'API qui
 protege les donnees, pas l'obscurite de l'URL.
+
+Tunnel NOMME (`start_named_tunnel`) : le nom d'hote est fixe une fois pour toutes cote
+Cloudflare (ex. atom-origin.zelqane.com) ; on ne fait que rattacher un connecteur avec les
+identifiants du tunnel. L'URL survit donc aux redemarrages de Colab. Les identifiants
+passent par l'environnement du seul processus cloudflared (TUNNEL_CRED_CONTENTS) : jamais
+sur disque, jamais dans un journal, jamais dans un message d'erreur.
 """
 
 from __future__ import annotations
 
+import json
 import os
 import platform
 import re
@@ -88,6 +95,70 @@ class Tunnel:
     @property
     def alive(self) -> bool:
         return self.process.poll() is None
+
+
+REGISTERED = "Registered tunnel connection"
+CRED_FIELDS = ("AccountTag", "TunnelSecret", "TunnelID")
+
+
+def check_credentials(credentials: str, tunnel_id: str) -> None:
+    """Verifie la forme des identifiants SANS jamais en afficher le contenu."""
+    try:
+        data = json.loads(credentials)
+    except (TypeError, ValueError):
+        raise ValueError("identifiants du tunnel illisibles : JSON attendu (le contenu du "
+                         "fichier d'identifiants remis par Rayen, tel quel)") from None
+    if not isinstance(data, dict):
+        raise ValueError("identifiants du tunnel : objet JSON attendu")
+    missing = [k for k in CRED_FIELDS if not data.get(k)]
+    if missing:
+        raise ValueError(f"identifiants du tunnel incomplets : champ(s) {missing} absent(s)")
+    if str(data["TunnelID"]).lower() != tunnel_id.lower():
+        raise ValueError("ces identifiants sont ceux d'un AUTRE tunnel que celui attendu "
+                         f"({tunnel_id})")
+
+
+def start_named_tunnel(tunnel_id: str, hostname: str, credentials: str, port: int = 8000,
+                       timeout: float = 90.0, log_path: str | Path = "/tmp/cloudflared.log",
+                       binary_dir: str | Path = "/tmp",
+                       command: list[str] | None = None) -> Tunnel:
+    """Rattache un connecteur au tunnel nomme `tunnel_id` et attend sa premiere connexion.
+
+    Args:
+        tunnel_id: identifiant du tunnel (public, pas un secret).
+        hostname: nom d'hote public du tunnel, ex. atom-origin.zelqane.com.
+        credentials: contenu JSON des identifiants du tunnel (SECRET).
+        command: remplace l'executable cloudflared (tests uniquement).
+    """
+    check_credentials(credentials, tunnel_id)
+    exe = command or [str(ensure_cloudflared(binary_dir))]
+    log_path = Path(log_path)
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    log_path.write_text("", encoding="utf-8")
+
+    env = {**os.environ, "TUNNEL_METRICS": "127.0.0.1:0", "TUNNEL_CRED_CONTENTS": credentials}
+    with open(log_path, "ab") as log:
+        process = subprocess.Popen(
+            [*exe, "tunnel", "--no-autoupdate", "run", "--url", f"http://127.0.0.1:{port}",
+             tunnel_id],
+            stdout=log, stderr=subprocess.STDOUT, env=env)
+    del env
+
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        text = log_path.read_text(encoding="utf-8", errors="replace")
+        if REGISTERED in text:
+            return Tunnel(public_url=f"https://{hostname}", host=hostname, process=process,
+                          log_path=log_path)
+        if process.poll() is not None:
+            raise RuntimeError(f"cloudflared s'est arrete (code {process.returncode}). "
+                               f"Journal : {log_path}\n" + text[-1500:])
+        time.sleep(0.5)
+
+    process.terminate()
+    raise TimeoutError(f"aucune connexion du tunnel {tunnel_id} apres {timeout:.0f} s. "
+                       f"Journal : {log_path}\n"
+                       + log_path.read_text(encoding="utf-8", errors="replace")[-1500:])
 
 
 def start_tunnel(port: int = 8000, timeout: float = 60.0,

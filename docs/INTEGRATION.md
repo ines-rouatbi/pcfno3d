@@ -69,6 +69,28 @@ ne touche pas à l'amont. Si l'amont est tombé, `/api/health` passe en `degrade
 requêtes répondent `502` en indiquant la commande de réparation — un signal exploitable,
 pas un silence.
 
+**D — Colab derrière une URL fixe publique : `atom.zelqane.com` (en place, octobre 2026).**
+C'est le montage retenu avec Rayen pour la visualisation 3D :
+
+```
+navigateur --> atom.zelqane.com          Worker de Rayen : page 3D, injecte la clé côté serveur
+           --> atom-origin.zelqane.com   tunnel Cloudflare NOMMÉ « atom » (URL fixe)
+           --> Colab                     cloudflared --> service sur 127.0.0.1:8000 (GPU)
+```
+
+Le notebook `notebooks/current/pcfno3d_atom_colab.ipynb` le démarre :
+`serve_public(..., named_tunnel={...}, key_hash=...)`. Deux secrets, remis de la main à la
+main, jamais par le salon ni par git :
+
+- les **identifiants du tunnel** (Rayen → Ines), en secret Colab `TUNNEL_CRED_CONTENTS`. Ils
+  ne vont qu'au processus cloudflared, jamais sur disque ;
+- la **clé de lecture** du Worker (Ines → Rayen). Colab ne connaît que son **empreinte**
+  SHA-256, écrite dans le notebook : le serveur vérifie la clé sans jamais l'avoir eue.
+
+L'URL survit aux redémarrages de Colab, mais le service ne vit que pendant la session :
+hors session, la page de Rayen affiche « service endormi ». Le contrôle d'hôte du MCP est
+réglé sur `atom-origin.zelqane.com` (sans quoi `/mcp` répond `421`).
+
 Dans tous les cas, les interfaces décrites ci-dessous sont identiques : seule la base
 d'URL change.
 

@@ -162,3 +162,78 @@ def test_service_demarre_en_sous_processus_et_repond(cfg, index, norm, monkeypat
     finally:
         stop(info)
     assert info["process"].poll() is not None
+
+
+def test_service_derriere_tunnel_nomme_cle_par_empreinte(cfg, index, norm, monkeypatch, tmp_path):
+    """Montage atom : URL fixe (Host atom-origin.zelqane.com), cle connue par son empreinte.
+
+    Le tunnel est simule (pas de reseau public dans une suite de tests) mais tout le reste
+    est reel : uvicorn en sous-processus, controle d'hote du MCP, cle verifiee par hash.
+    """
+    import subprocess
+    import sys
+    import urllib.error
+    import urllib.request
+
+    import service.tunnel as tunnel_mod
+    from pcfno3d.train import Trainer
+    from service.auth import generate_key, hash_key
+    from service.colab import serve_public, stop, summary
+
+    if not cfg.paths.ckpt_best.exists():
+        Trainer(cfg, device="cpu", verbose=False).fit()
+    for var, path in (("PCFNO3D_DATA_DIR", cfg.paths.data_dir),
+                      ("PCFNO3D_CACHE_DIR", cfg.paths.cache_dir),
+                      ("PCFNO3D_RUN_DIR", cfg.paths.run_dir)):
+        monkeypatch.setenv(var, str(path))
+
+    port, host = 8912, "atom-origin.zelqane.com"
+    vus = {}
+
+    def faux_tunnel(tunnel_id, hostname, credentials, port=8000, **_):
+        vus.update(id=tunnel_id, hostname=hostname, credentials=credentials)
+        proc = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(120)"])
+        # l'URL « publique » pointe en local : le controle d'hote se teste par l'en-tete Host
+        return tunnel_mod.Tunnel(public_url=f"http://127.0.0.1:{port}", host=hostname,
+                                 process=proc, log_path=tmp_path / "cf.log")
+
+    monkeypatch.setattr(tunnel_mod, "start_named_tunnel", faux_tunnel)
+    secret = generate_key()
+    import uuid
+    # nom unique : le dossier de run des tests persiste d'une session a l'autre, et une cle
+    # active du meme nom avec une autre empreinte est refusee (rotation = revocation d'abord)
+    info = serve_public(config="test", port=port, key_name=f"atom-{uuid.uuid4().hex[:8]}",
+                        device="cpu",
+                        named_tunnel={"id": "e552f718", "hostname": host,
+                                      "credentials": "{secret-du-tunnel}"},
+                        key_hash=hash_key(secret), wait=240.0,
+                        log_path=cfg.paths.run_dir / "colab_service_atom.log")
+    try:
+        assert vus["hostname"] == host and vus["credentials"] == "{secret-du-tunnel}"
+        assert info["api_key"] is None                  # le secret n'est jamais sur Colab
+        assert "remise de main a main" in summary(info)
+        assert "secret-du-tunnel" not in summary(info)
+
+        base = f"http://127.0.0.1:{port}"
+
+        def mcp(host_header):
+            payload = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/list",
+                                  "params": {}}).encode("utf-8")
+            req = urllib.request.Request(
+                f"{base}/mcp", data=payload,
+                headers={"Host": host_header, "X-API-Key": secret,
+                         "Content-Type": "application/json",
+                         "Accept": "application/json, text/event-stream"})
+            return urllib.request.urlopen(req, timeout=60)
+
+        with mcp(host) as r:                            # l'hote du tunnel est accepte
+            assert len(json.loads(r.read().decode("utf-8"))["result"]["tools"]) == 8
+        with pytest.raises(urllib.error.HTTPError) as exc:
+            mcp("autre.exemple.com")                    # un hote non declare est refuse
+        assert exc.value.code == 421
+
+        req = urllib.request.Request(f"{base}/api/meta", headers={"X-API-Key": secret})
+        with urllib.request.urlopen(req, timeout=60) as r:
+            assert json.loads(r.read().decode("utf-8"))["grille"]["nz"] > 0
+    finally:
+        stop(info)

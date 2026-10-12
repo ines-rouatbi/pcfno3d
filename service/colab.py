@@ -102,7 +102,9 @@ def check_model_files(cfg) -> Path:
 def serve_public(config: str = "colab", port: int = 8000, key_name: str = "colab",
                  scope: str = "read", device: str | None = None, tunnel: bool = True,
                  build_days: list[int] | None = None, wait: float = 300.0,
-                 log_path: str | Path = "/tmp/pcfno3d_service.log") -> dict:
+                 log_path: str | Path = "/tmp/pcfno3d_service.log",
+                 named_tunnel: dict | None = None,
+                 key_hash: str | None = None) -> dict:
     """Demarre le service (API + MCP + interface) et l'expose par un tunnel public.
 
     Args:
@@ -116,6 +118,12 @@ def serve_public(config: str = "colab", port: int = 8000, key_name: str = "colab
             d'instants, seules les routes qui partent d'un CSV de surface fonctionnent.
         wait: delai d'attente du premier /api/health.
         log_path: journal du service.
+        named_tunnel: {"id", "hostname", "credentials"} pour un tunnel NOMME a URL fixe
+            (au lieu d'un quick tunnel). `credentials` est secret : il n'est transmis
+            qu'au processus cloudflared.
+        key_hash: empreinte SHA-256 d'une cle remise de main a main. Elle est enregistree
+            (portee `scope`, nom `key_name`) au lieu de creer une nouvelle cle : le
+            secret ne passe jamais par Colab.
 
     Returns:
         Un dictionnaire : public_url, api_key, mcp_url, health, checkpoint, process...
@@ -135,7 +143,15 @@ def serve_public(config: str = "colab", port: int = 8000, key_name: str = "colab
         build_cache(cfg, geom, days=build_days)
         del geom
 
-    api_key, renamed = ensure_api_key(cfg, name=key_name, scope=scope)
+    if key_hash:
+        from .auth import ApiKeyStore, default_store_path
+        record = ApiKeyStore(default_store_path(cfg.paths.run_dir)).register_hash(
+            key_name, key_hash, scope=scope)
+        api_key, renamed = None, False
+        print(f"cle '{record.name}' ({record.scope}) enregistree par son empreinte "
+              f"{record.key_hash[:12]}... : le secret n'est pas sur cette machine")
+    else:
+        api_key, renamed = ensure_api_key(cfg, name=key_name, scope=scope)
 
     tun = None
     base_url = f"http://127.0.0.1:{port}"
@@ -150,7 +166,15 @@ def serve_public(config: str = "colab", port: int = 8000, key_name: str = "colab
     if device:
         env["PCFNO3D_DEVICE"] = device
 
-    if tunnel:
+    if tunnel and named_tunnel:
+        from .tunnel import start_named_tunnel
+        print(f"rattachement au tunnel nomme {named_tunnel['hostname']}...")
+        tun = start_named_tunnel(named_tunnel["id"], named_tunnel["hostname"],
+                                 named_tunnel["credentials"], port=port)
+        base_url = tun.public_url
+        env["PCFNO3D_ALLOWED_HOSTS"] = f"{tun.host},{tun.host}:443"
+        print(f"tunnel : {tun.public_url} (URL fixe)")
+    elif tunnel:
         from .tunnel import start_tunnel
         print("ouverture du tunnel public...")
         tun = start_tunnel(port=port)
@@ -196,6 +220,17 @@ def serve_public(config: str = "colab", port: int = 8000, key_name: str = "colab
 
 def summary(info: dict) -> str:
     """Le texte a partager a l'application qui consomme les donnees."""
+    if info["api_key"] is None:
+        return "\n".join([
+            "", "=" * 72, "SERVICE PC-FNO3D EN LIGNE (tunnel nomme)", "=" * 72,
+            f"  URL fixe        : {info['public_url']}",
+            f"  sante (public)  : {info['public_url']}/api/health",
+            f"  serveur MCP     : {info['mcp_url']}",
+            f"  modele          : {info['checkpoint']}  "
+            f"({(info.get('health') or {}).get('device', '?')})",
+            "  cle d'API       : celle remise de main a main (non affichee : seule son",
+            "                    empreinte est sur cette machine)",
+            "=" * 72])
     base = info["public_url"]
     health = info.get("health") or {}
     lines = [
