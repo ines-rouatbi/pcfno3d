@@ -252,6 +252,12 @@ class DSOCfg:
     time_s: float = 1.0               # DSO4 : temps d'inference par instant (s)
     rmse_25pct: float = 0.7           # DSO5 : RMSE max avec 25 % des capteurs
     min_level_cover: float = 0.05     # niveau ignore s'il couvre moins de 5 % du domaine
+    # DSO1 REVISE, PROPOSE (pas encore valide par Tukhnanutha) : RMSE u, v par niveau
+    # <= max(omm_floor ; omm_rel x vitesse moyenne du niveau), la tolerance de l'OMM sur la
+    # mesure du vent (0,5 m/s jusqu'a 5 m/s, 10 % au-dela). Il COMPLETE le DSO1 officiel
+    # (`rmse`), il ne le remplace pas : les deux verdicts sont toujours affiches.
+    omm_floor: float = 0.5
+    omm_rel: float = 0.10
 
     def __post_init__(self) -> None:
         self.roughness_range = tuple(float(r) for r in self.roughness_range)  # type: ignore[assignment]

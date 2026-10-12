@@ -57,6 +57,12 @@ def test_evaluation_produit_le_verdict_dso(cfg):
                 "dso5_conforme", "mae_direction_deg", "par_niveau_synoptique"):
         assert key in summary
     assert summary["dso4_inference_s"] > 0
+    # DSO1 revise propose : tolerance OMM par niveau, jamais en dessous du seuil officiel
+    ev = [r for r in summary["par_niveau_synoptique"] if r["couverture"] >= cfg.dso.min_level_cover]
+    for r in ev:
+        assert r["seuil_omm"] == max(cfg.dso.omm_floor, cfg.dso.omm_rel * r["vitesse_moyenne"])
+        assert r["seuil_omm"] >= cfg.dso.rmse
+    assert summary["critere_omm"] == all(max(r["rmse_u"], r["rmse_v"]) <= r["seuil_omm"] for r in ev)
     out = cfg.paths.run_dir / "eval_pcfno3d" / "best"
     for name in ("test_par_niveau_synoptique.csv", "test_par_instant.csv",
                  "robustesse_capteurs.csv", "test_summary.json"):

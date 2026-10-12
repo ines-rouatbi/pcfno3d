@@ -358,6 +358,10 @@ async function loadDso() {
       ["DSO1", "R² u, v ≥ 0,95 par niveau", s.dso1_r2],
       ["DSO1", `RMSE global u = ${fmt(s.dso1_rmse_global_u, 3)} · v = ` +
                `${fmt(s.dso1_rmse_global_v, 3)} m/s`, s.dso1_rmse_global_conforme],
+      ["DSO1 révisé (proposé)", "RMSE u, v ≤ max(0,5 m/s ; 10 % de la vitesse moyenne " +
+       "du niveau) — tolérance OMM sur la mesure du vent. Proposition à valider avec " +
+       "Tukhnanutha : elle complète le DSO1 officiel ci-dessus, elle ne le remplace pas.",
+       s.critere_omm],
       ["DSO2", `résidu de masse moyen = ${s.dso2_rms_moyen?.toExponential(2)}`,
        s.dso2_conforme],
       ["DSO3", `rugosité prédiction / vérité = ${fmt(s.dso3_rugosite, 3)}`, s.dso3_conforme],

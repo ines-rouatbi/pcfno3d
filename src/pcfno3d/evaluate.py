@@ -185,6 +185,9 @@ class Evaluator:
 
     def _verdicts(self, levels, levels_ep, res, res_ep, res_all, robust, timing) -> dict:
         cfg = self.cfg
+        # tolerance OMM du niveau : sert au DSO1 revise propose (voir DSOCfg)
+        levels["seuil_omm"] = np.maximum(cfg.dso.omm_floor,
+                                         cfg.dso.omm_rel * levels["vitesse_moyenne"])
         ev = levels[levels["couverture"] >= cfg.dso.min_level_cover]
         dso = cfg.dso
 
@@ -214,9 +217,9 @@ class Evaluator:
             "dso1_rmse_global_u": glob["u"],
             "dso1_rmse_global_v": glob["v"],
             "dso1_rmse_global_conforme": bool(max(glob.values()) <= dso.rmse),
-            # critere OMM : RMSE <= max(0.5 m/s ; 10 % de la vitesse moyenne du niveau)
-            "critere_omm": bool((ev[["rmse_u", "rmse_v"]].max(axis=1)
-                                 <= np.maximum(0.5, 0.10 * ev["vitesse_moyenne"])).all()),
+            # DSO1 revise PROPOSE : RMSE <= tolerance OMM du niveau (le DSO1 officiel reste
+            # `dso1_rmse`, juge au seuil fixe `dso.rmse`)
+            "critere_omm": bool((ev[["rmse_u", "rmse_v"]].max(axis=1) <= ev["seuil_omm"]).all()),
             "dso2_rms_moyen": float(res["mass_rms"].mean()),
             "dso2_rms_p95": float(res["mass_rms"].quantile(0.95)),
             "dso2_rms_max": float(res["mass_rms"].max()),
@@ -258,8 +261,9 @@ def format_report(s: dict, levels: pd.DataFrame, levels_ep: pd.DataFrame,
           f"      R2 u, v, w >= {dso.r2_all} a chaque niveau       -> {ok(s['dso1_r2_uvw'])}",
           f"      RMSE GLOBAL u = {s['dso1_rmse_global_u']:.3f}  v = {s['dso1_rmse_global_v']:.3f}"
           f" m/s (seuil {dso.rmse}) -> {ok(s['dso1_rmse_global_conforme'])}",
-          f"      (info) critere OMM : RMSE <= max(0.5 ; 10 % de la vitesse) -> "
-          f"{ok(s['critere_omm'])}",
+          f"      (info) critere OMM : RMSE <= max({dso.omm_floor} ; "
+          f"{dso.omm_rel:.0%} de la vitesse) -> {ok(s['critere_omm'])}"
+          "  [DSO1 revise PROPOSE, a valider avec Tukhnanutha]",
           f"DSO2  RMS residu moyen = {s['dso2_rms_moyen']:.2e} (seuil {dso.mass_rms:.0e}) -> "
           f"{ok(s['dso2_conforme'])} | p95 = {s['dso2_rms_p95']:.2e} | "
           f"max = {s['dso2_rms_max']:.2e}",
