@@ -38,10 +38,33 @@ def keep(path: Path) -> bool:
     return True
 
 
+VERSION_FILE = "PCFNO3D_VERSION.txt"
+
+
+def version_stamp() -> str:
+    """Commit et date du code embarque : le notebook l'affiche et refuse une archive trop
+    ancienne (une copie oubliee sur le Drive, d'avant une correction)."""
+    import subprocess
+    from datetime import datetime
+
+    try:
+        sha = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=REPO_ROOT,
+                             capture_output=True, text=True, check=True).stdout.strip()
+        dirty = subprocess.run(["git", "status", "--porcelain", "--", "src", "service",
+                                "configs"], cwd=REPO_ROOT, capture_output=True, text=True,
+                               check=True).stdout.strip()
+    except (OSError, subprocess.CalledProcessError):
+        sha, dirty = "inconnu", ""
+    return (f"commit {sha}{' + modifications non commitees' if dirty else ''}\n"
+            f"archive {datetime.now().isoformat(timespec='seconds')}\n")
+
+
 def build(out_path: Path) -> tuple[int, int]:
     out_path.parent.mkdir(parents=True, exist_ok=True)
     count = 0
     with zipfile.ZipFile(out_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr(VERSION_FILE, version_stamp())
+        count += 1
         for name in INCLUDE_FILES:
             src = REPO_ROOT / name
             if src.exists():
