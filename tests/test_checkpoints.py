@@ -109,6 +109,24 @@ def test_reprise_dans_une_session_neuve(cfg, index, norm, tmp_path):
     assert torch.load(c.paths.ckpt_last, weights_only=False)["epoch"] == 2
 
 
+def test_relancer_un_entrainement_termine_ne_touche_a_rien(cfg, index, norm, tmp_path):
+    """L'etape D du notebook v8 relance `train` avant d'evaluer, au cas ou l'etape C
+    aurait ete sautee ou coupee. Sur un entrainement termine, cette relance ne doit
+    rien entrainer ni reecrire : un best.pt plus recent ferait juger perimes les
+    verdicts deja calcules, et les ferait refaire a chaque execution."""
+    from pcfno3d.train import Trainer
+
+    c = _cfg(cfg, tmp_path, epochs=2, save_every=2)
+    Trainer(c, device="cpu", verbose=False).fit()
+    avant = {f: (c.paths.run_dir / f).stat().st_mtime_ns for f in ("best.pt", "last.pt")}
+
+    shutil.rmtree(c.paths.local_dir)               # nouvelle session Colab
+    relance = Trainer(c, device="cpu", verbose=False)
+    assert relance.start_epoch == 2
+    assert relance.fit() == relance.history and relance.syncs == []
+    assert {f: (c.paths.run_dir / f).stat().st_mtime_ns for f in avant} == avant
+
+
 def test_reprise_prefere_le_local_de_la_meme_session(cfg, index, norm, tmp_path):
     """Meme session : le local est plus recent que le Drive (copie periodique en retard)."""
     from pcfno3d.train import Trainer
