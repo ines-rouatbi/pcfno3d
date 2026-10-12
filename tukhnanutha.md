@@ -123,7 +123,7 @@ What changed since July:
   generator, and 30 CPU tests. The whole pipeline — cache → train → DSO evaluation → 3D
   reconstruction → web export — was run end to end on the mini-dataset. See `README.md`.
 
-### v7 measured results (from `notebooks/current/fno3d_v7_resultats.ipynb`, Colab, 2026-10-01)
+### v7 measured results (from `notebooks/current/fno3d_v7.ipynb`, Colab, 2026-10-01)
 
 The first real DSO numbers on record. Model `best_dso_v7.pt` = the BLOC 9 model (epoch 140; the 9b
 fine-tune never beat it). 120 synoptic test instants, 50 % of sensors visible.
@@ -193,14 +193,32 @@ v7 + ensembling nor v8 passes, the upper levels are likely information-limited: 
 *single plane fit* over the whole domain. The next lever would be a spatially varying
 geostrophic estimate — an input change requiring full retraining.
 
+### v7 served locally (2026-10-12)
+
+- **The right v7 is `notebooks/current/fno3d_v7.ipynb`** (confirmed by the user). Checked block by
+  block, comments stripped: its model code is **identical** to `fno3d_v7_1.ipynb`, the commented
+  copy the package was ported from. The only difference is `MAP_ALTITUDE` (1000 m vs 120 m), a
+  plotting parameter; the package now defaults to 1000 m as well — on the real domain the ground
+  reaches 677 m, so 120 m ASL is underground over much of the map.
+- **The real weights are installed** (`AppData/Local/pcfno3d/runs/v7`, sha256 `b2529442…`) and
+  served on port 8000 with `-c local_v7`. The installer confirmed epoch 140 and selection score
+  1.19523 — the model the notebook evaluated — and **all 453.3 M parameters loaded under
+  `strict=True`**: the port is structurally identical. `norm_stats.json` matches BLOC 5's printout
+  exactly.
+- **One real test instant reconstructed** (`017_120000`, all sensors): u 0.09–0.24, v 0.11–0.31,
+  w ≈ 0.01 m/s RMSE across levels. A sanity check, not a validation: that instant is calm
+  (1–2 m/s at 300 m), and absolute error grows with wind speed.
+- **CPU only**: 15–25 s per instant here vs 91 ms on Colab's GPU, so DSO4 is not met locally.
+  Weights are memory-mapped (+0.03 GB RAM at load instead of ~3.6 GB), and the service computes
+  each instant once even when the web app sends parallel requests.
+
 ### Still not verified
 
-- **The package port has not yet been numerically diffed against the notebook** — step 0 of the
-  v8 notebook does exactly this, and must pass before any package-produced figure is reported.
-- **No v7 checkpoint on this machine.** It lives on the Drive (1.81 GB); the local app serves a
-  stand-in until `pcfno3d link set` points it at a Colab instance.
+- **A full numerical reproduction of the notebook's DSO table by the package** — structure is
+  confirmed, one instant is sane, but the 120-instant comparison is step 0 of
+  `pcfno3d_v8_colab.ipynb` and must pass before any package-produced figure is reported.
 - T9 is **scaffolded, not deployed**: API, MCP, Docker and the Colab tunnel exist and are tested,
-  but nothing is hosted, and there is no CI or monitoring.
+  and v7 runs locally, but nothing is hosted, and there is no CI or monitoring.
 
 Next concrete steps, in order: (1) run `pcfno3d_v8_colab.ipynb` — step 0, then A; stop at the
 first configuration meeting all five DSOs; (2) serve that configuration via the Colab notebook

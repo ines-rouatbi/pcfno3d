@@ -421,7 +421,8 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--csv", help="CSV de mesures de surface d'un instant")
     s.add_argument("--checkpoint"), s.add_argument("--device")
     s.add_argument("--keep", type=float, default=1.0, help="fraction de capteurs utilises")
-    s.add_argument("--altitude", type=float, default=120.0, help="altitude ASL de la carte")
+    s.add_argument("--altitude", type=float, default=1000.0,
+                   help="altitude ASL de la carte (defaut 1000 m, comme MAP_ALTITUDE du notebook v7)")
     s.add_argument("--section-row", type=int, help="ligne iy de la coupe verticale")
     s.add_argument("--no-figures", action="store_true")
     s.add_argument("--web", action="store_true", help="exporte aussi pour le visualiseur")

@@ -78,13 +78,16 @@ def check_checkpoint(ckpt_path: Path, cfg, geom) -> dict:
     if size < MIN_CHECKPOINT_BYTES:
         raise ValueError(f"{ckpt_path.name} ne fait que {size / 1e9:.2f} Go (la v7 fait "
                          "1,81 Go) : telechargement incomplet ?")
-    ck = torch.load(ckpt_path, map_location="cpu", weights_only=False)
+    # fichier mappe + modele construit sur `meta` : verifier 1,8 Go de poids ne coute
+    # presque aucune RAM (meme methode que WindFieldModel sur CPU)
+    ck = torch.load(str(ckpt_path), map_location="cpu", weights_only=False, mmap=True)
     if "model" not in ck:
         raise ValueError(f"{ckpt_path.name} : pas de cle 'model' — ce n'est pas un "
                          "checkpoint du pipeline")
-    model = build_model(cfg, geom.c_in)
+    with torch.device("meta"):
+        model = build_model(cfg, geom.c_in)
     # strict=True : la moindre cle manquante ou en trop est une erreur, pas un avertissement
-    model.load_state_dict(ck["model"], strict=True)
+    model.load_state_dict(ck["model"], strict=True, assign=True)
     return {"epoch": ck.get("epoch"), "val_score": ck.get("val_score"), "model": model}
 
 

@@ -91,7 +91,7 @@ def plot_map_and_section(volume: Volume, altitude: float, out_path: Path,
 
 def reconstruct(cfg: Config, stem: str | None = None, csv: str | Path | None = None,
                 checkpoint: str | Path | None = None, keep: float = 1.0,
-                altitude: float = 120.0, section_row: int | None = None,
+                altitude: float = 1000.0, section_row: int | None = None,
                 figures: bool = True, web: bool = False, device: str | None = None,
                 verbose: bool = True) -> dict:
     """Reconstruit un instant et ecrit npz + csv (+ figures, + export web)."""
@@ -139,6 +139,10 @@ def reconstruct(cfg: Config, stem: str | None = None, csv: str | Path | None = N
             print(table.to_string(index=False))
 
     if figures:
+        # 1000 m par defaut (le haut de la grille v7) : on le ramene dans la grille si
+        # celle-ci est moins haute, plutot que d'echouer sur « altitude hors domaine »
+        levels = wf.geom.z_levels
+        altitude = float(min(max(altitude, levels[0]), levels[-1]))
         fig = plot_map_and_section(volume, altitude, out_dir / f"{name}_carte_coupe.png",
                                    section_row)
         result["figure"] = str(fig)

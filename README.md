@@ -64,7 +64,7 @@ from google.colab import drive; drive.mount("/content/drive")
 
 ## État du modèle : v7 et corrections v8
 
-La v7 (Colab, `notebooks/current/fno3d_v7_resultats.ipynb`) respecte **5 DSO sur 6**.
+La v7 (Colab, `notebooks/current/fno3d_v7.ipynb`) respecte **5 DSO sur 6**.
 Seul le DSO1 — RMSE ≤ 0,5 m/s **à chaque niveau** — échoue, en haut de la colonne :
 u = 0,564 / 0,632 / 0,665 m/s à 650 / 800 / 1000 m. Tout passe jusqu'à 500 m ; R² ≥ 0,991
 partout ; masse 2,6e-5, rugosité 0,95, inférence 91 ms, robustesse 0,646 m/s.
@@ -218,7 +218,7 @@ webapp/             l'application web servie sur /app/
 web/                visualiseur autonome d'un export, sans serveur
 scripts/            make_mini_dataset.py · smoke.ps1 · package_for_colab.py · install_v7_weights.py
 tests/              80 tests, tous sur CPU et mini-dataset
-notebooks/current/  fno3d_v7_1 (référence) · fno3d_v7_resultats (sorties Colab) · pcfno3d_v8_colab · pcfno3d_api_colab
+notebooks/current/  fno3d_v7_1 (référence) · fno3d_v7 (LA v7, avec ses sorties Colab) · pcfno3d_v8_colab · pcfno3d_api_colab
 notebooks/archive/  architectures explorées puis écartées (FNO2D, U-Net, GNN, DeepONet, ViT…)
 notebooks/data_prep/01_EDA.ipynb · 02_cleaning.ipynb
 docs/               INTEGRATION.md · présentations, notes techniques, Gantt, figures

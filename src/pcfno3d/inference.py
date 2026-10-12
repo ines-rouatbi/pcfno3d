@@ -64,15 +64,27 @@ class Volume:
         for name, field in (("u", self.u), ("v", self.v), ("w", self.w)):
             col = self.at_altitude(z_asl_m, field)
             vals[name] = float(col[j, i])
+        z_terrain = float(g.zt[j, i])
+        # un point sous le relief n'a pas de vent : on le DIT, au lieu de renvoyer des null
+        # sans explication (le relief atteint 677 m sur le domaine reel : 120 m ASL est
+        # souvent sous terre)
+        underground = not np.isfinite(vals["u"])
+
+        def clean(x: float) -> float | None:
+            return None if not np.isfinite(x) else x
+
         speed = float(np.hypot(vals["u"], vals["v"]))
+        direction = float((270.0 - np.degrees(np.arctan2(vals["v"], vals["u"]))) % 360.0)
         return {
             "ix": i * g.stride, "iy": j * g.stride,
             "x_m": i * g.dx, "y_m": j * g.dy,
-            "z_asl_m": z_asl_m, "z_terrain_m": float(g.zt[j, i]),
-            "wind_u_m_s": vals["u"], "wind_v_m_s": vals["v"], "wind_w_m_s": vals["w"],
-            "wind_speed_m_s": speed,
-            "wind_direction_deg": float((270.0 - np.degrees(
-                np.arctan2(vals["v"], vals["u"]))) % 360.0),
+            "z_asl_m": z_asl_m, "z_terrain_m": z_terrain,
+            "z_agl_m": round(z_asl_m - z_terrain, 2),
+            "sous_le_relief": underground,
+            "wind_u_m_s": clean(vals["u"]), "wind_v_m_s": clean(vals["v"]),
+            "wind_w_m_s": clean(vals["w"]),
+            "wind_speed_m_s": clean(speed),
+            "wind_direction_deg": clean(direction),
             "timestamp_utc": self.timestamp,
         }
 
@@ -161,14 +173,29 @@ class WindFieldModel:
 
         self.checkpoint_path = Path(checkpoint) if checkpoint \
             else cfg.paths.checkpoint_for_inference()
-        ck = torch.load(self.checkpoint_path, map_location=self.device, weights_only=False)
+        # Sur CPU, les poids sont MAPPES depuis le fichier au lieu d'etre copies en RAM, et
+        # le modele est construit sur le peripherique `meta` (aucune allocation) puis
+        # rattache directement a ces tenseurs. Mesure sur la v7 (1,81 Go) : +0,03 Go de RAM
+        # au chargement, contre ~3,6 Go en chargeant le fichier puis en le recopiant dans un
+        # modele deja alloue. Les pages des poids appartiennent au cache du fichier : le
+        # systeme peut les evincer sous pression memoire et les relire du disque.
+        mapped = self.device.type == "cpu"
+        # str() : sous torch 2.2, mmap exige un nom de fichier, pas un Path
+        ck = torch.load(str(self.checkpoint_path), map_location=self.device, weights_only=False,
+                        mmap=mapped)
         saved = model_cfg_from_checkpoint(ck)
         if saved is not None:
             # l'architecture du checkpoint fait foi : un YAML modifie ne doit pas la casser
             cfg.model = saved
             self.geom.pool_surface_enabled = saved.pool_surface
-        self.model = build_model(cfg, self.geom.c_in).to(self.device)
-        self.model.load_state_dict(ck["model"])
+        if mapped:
+            with torch.device("meta"):
+                self.model = build_model(cfg, self.geom.c_in)
+            # strict : la moindre cle manquante ou de forme differente est une erreur
+            self.model.load_state_dict(ck["model"], strict=True, assign=True)
+        else:
+            self.model = build_model(cfg, self.geom.c_in).to(self.device)
+            self.model.load_state_dict(ck["model"])
         self.model.eval()
 
         self.norm = Normalizer.from_file(cfg.paths.norm_stats, self.geom,

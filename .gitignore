@@ -61,3 +61,6 @@ api_keys.json
 
 # lien vers une instance distante : contient la cle de l'amont
 upstream.json
+
+# statistiques de normalisation : artefact d'un run, jamais versionne
+norm_stats.json

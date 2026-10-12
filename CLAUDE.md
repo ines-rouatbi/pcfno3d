@@ -22,9 +22,21 @@ Two things live side by side:
 2. **`notebooks/current/fno3d_v7_1.ipynb`** — the reference Colab notebook (BLOC 0 → BLOC 12),
    kept for experimentation. **The package is the port of this notebook; when you change the
    physics or the architecture in one, mirror it in the other** (the mapping table is in
-   `README.md`). `fno3d_v7_resultats.ipynb` is the same pipeline **with its Colab outputs** —
+   `README.md`). `fno3d_v7.ipynb` is the same pipeline **with its Colab outputs** —
    the only record of real v7 DSO numbers. Read its BLOC 9/10/12 outputs before claiming
    anything about model quality; `tukhnanutha.md` §5 summarises them.
+
+**`fno3d_v7.ipynb` is THE v7** (user-confirmed). Its model code is identical block by block to
+`fno3d_v7_1.ipynb` — the commented copy the package was ported from — so the port tracks the
+right version; only `MAP_ALTITUDE` (a plot setting) differs. Re-run that comparison
+(comments stripped) before assuming any other notebook matches.
+
+**Serving v7 locally:** `configs/local_v7.yaml`, weights installed by
+`scripts/install_v7_weights.py` into `AppData/Local/pcfno3d/runs/v7` (outside OneDrive — 1.81 GB).
+On CPU, `WindFieldModel` memory-maps the checkpoint and builds the model on the `meta` device
+with `load_state_dict(assign=True)`: loading costs ~0 RAM. **torch 2.2 requires a `str` path for
+`mmap=True`** — a `Path` raises. CPU inference is 15–25 s per instant, hence the compute lock in
+`WindFieldModel.predict` and the double-checked caches in `service/app.py` and `mcp_server.py`.
 
 **State of the model (2026-10-11):** v7 meets 5 of 6 DSOs. Only DSO1 (RMSE ≤ 0.5 m/s per
 level) fails, at 650–1000 m. The v8 corrections (`configs/colab_v8.yaml`,

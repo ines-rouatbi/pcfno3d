@@ -102,7 +102,9 @@ async function start(health) {
   const alt = el("alt");
   alt.min = levels[0];
   alt.max = levels[levels.length - 1];
-  alt.value = Math.min(120, levels[levels.length - 1]);
+  /* altitude de depart = niveau le plus haut, comme MAP_ALTITUDE du notebook v7 :
+     sur le domaine reel le relief atteint 677 m, donc 120 m est souvent sous terre */
+  alt.value = levels[levels.length - 1];
   el("levelTicks").innerHTML =
     `<span>${levels[0]} m</span><span>${levels[levels.length - 1]} m</span>`;
   el("pz").value = alt.value;
@@ -249,16 +251,18 @@ async function queryPoint(x, y, z) {
     el("pointInfo").innerHTML = `
       <dt>Position</dt><dd>${Math.round(point.x_m)} ; ${Math.round(point.y_m)} m</dd>
       <dt>Relief</dt><dd>${point.z_terrain_m.toFixed(0)} m</dd>
-      <dt>Altitude</dt><dd>${point.z_asl_m} m ASL</dd>
+      <dt>Altitude</dt><dd>${point.z_asl_m} m ASL (${fmt(point.z_agl_m, 0)} m sol)</dd>
+      ${point.sous_le_relief ? `<dt>État</dt><dd class="err">sous le relief — pas de vent ici</dd>` : ""}
       <dt>Vitesse</dt><dd>${fmt(point.wind_speed_m_s)} m/s</dd>
       <dt>Direction</dt><dd>${fmt(point.wind_direction_deg, 1)}°</dd>
       <dt>u ; v</dt><dd>${fmt(point.wind_u_m_s)} ; ${fmt(point.wind_v_m_s)} m/s</dd>
       <dt>w</dt><dd>${fmt(point.wind_w_m_s, 3)} m/s</dd>`;
     drawProfile(prof);
     if (state.field) drawMap(state.field, true);
-    el("mapHint").textContent =
-      `${fmt(point.wind_speed_m_s)} m/s · ${fmt(point.wind_direction_deg, 0)}° ` +
-      `à ${point.z_asl_m} m`;
+    el("mapHint").textContent = point.sous_le_relief
+      ? `sous le relief à ${point.z_asl_m} m (sol à ${point.z_terrain_m.toFixed(0)} m)`
+      : `${fmt(point.wind_speed_m_s)} m/s · ${fmt(point.wind_direction_deg, 0)}° ` +
+        `à ${point.z_asl_m} m`;
   } catch (err) {
     setStatus(err.message, "err");
   }
