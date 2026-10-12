@@ -11,6 +11,9 @@ paths:
   cache_dir: /content/aneo_cache_v7
   run_dir: /content/drive/MyDrive/aneo_fno3d_runs/v7
   cache_mirror: /content/drive/MyDrive/aneo_cache_v7   # copie de securite entre sessions
+  # checkpoints a chaque epoque sur le disque local de Colab, recopies sur le Drive
+  # toutes les train.save_every epoques (comme le BLOC 9 du notebook v7)
+  local_dir: /content/run_local_v7
 
 model:
   width: 48

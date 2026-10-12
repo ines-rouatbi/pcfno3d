@@ -97,7 +97,16 @@ notebook's globals.
 - **`losses.py`** — `PhysicsLoss`: `L_data` (w weighted per level) + `λ_grad·L_grad` +
   `φ(t)·[λ_mass·L_mass/mass_ref + λ_bc·L_bc]`. `val_score` is the model-selection criterion.
 - **`train.py`** — `Trainer`: EMA weights (evaluated and saved, not the raw ones), OneCycle LR,
-  gradient accumulation, atomic checkpoint writes, resume from `last.pt`.
+  gradient accumulation, atomic checkpoint writes, resume from `last.pt`. **Two-tier
+  checkpoints** when `paths.local_dir` is set (both Colab configs): `last.pt` (~7 GB — model,
+  EMA, Adam state) and `best.pt` go to the fast local disk every epoch, and `_sync()` copies them
+  to `run_dir` (the Drive) every `save_every` epochs, at the end, and on interruption — `best.pt`
+  only if it changed. Resume prefers the local copy, falls back to the Drive one in a fresh
+  session. Writing straight to the Drive cost ~75 s per epoch. Don't extend `train.epochs` on a
+  resume: OneCycle's schedule length is baked into the saved scheduler state.
+- **The cache is never copied during training.** It doesn't change once built; `build-cache`
+  mirrors only the days it just built (`cache.mirror_day`, index last). An earlier version
+  re-copied the whole cache (~28 GB for v7) to the Drive every 5 epochs.
 - **`evaluate.py`** — `Evaluator`: per-level metrics **accumulated over instants** (sums of
   squares, not per-instant averages — that's what a global R² requires), DSO1–DSO5 verdicts,
   sensor-robustness sweep. Writes to **`run_dir/eval_pcfno3d/<ckpt>[_ttaN]/`**, never

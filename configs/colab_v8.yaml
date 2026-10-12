@@ -30,6 +30,9 @@ paths:
   cache_dir: /content/aneo_cache_v7          # meme cache que la v7 : memes tenseurs
   run_dir: /content/drive/MyDrive/aneo_fno3d_runs/v8   # JAMAIS v7 : on ne l'ecrase pas
   cache_mirror: /content/drive/MyDrive/aneo_cache_v7
+  # checkpoints ecrits ici a chaque epoque (disque local de Colab, rapide), recopies sur
+  # le Drive toutes les train.save_every epoques : last.pt pese ~7 Go
+  local_dir: /content/run_local_v8
 
 model:                      # architecture v7 a l'identique : les poids s'y chargent
   width: 48

@@ -66,6 +66,8 @@ class Trainer:
         self.use_amp = self.device.type == "cuda"
 
         self.start_epoch, self.best_val, self.history = 0, float("inf"), []
+        self._best_dirty = False        # best.pt de travail plus recent que le durable
+        self.syncs: list[dict] = []      # trace des copies vers le durable (tests, journal)
         self._resume()
 
         if verbose:
@@ -118,10 +120,43 @@ class Trainer:
             for pe, p in zip(self.ema_model.parameters(), self.model.parameters()):
                 pe.mul_(d).add_(p.detach(), alpha=1 - d)
 
+    # ------------------------------------------------------------------ emplacements
+    # Deux niveaux, comme le BLOC 9 du notebook v7 :
+    #   « travail » : ou l'on ecrit a chaque epoque — paths.local_dir s'il est defini
+    #                 (disque local de Colab), sinon run_dir directement ;
+    #   « durable » : run_dir (le Drive sur Colab), alimente par _sync() toutes les
+    #                 `save_every` epoques, a la fin, et sur interruption.
+    @property
+    def _work_dir(self) -> Path:
+        return self.cfg.paths.local_dir or self.cfg.paths.run_dir
+
+    @property
+    def _split(self) -> bool:
+        """Vrai si le travail et le durable sont deux dossiers differents."""
+        local = self.cfg.paths.local_dir
+        return local is not None and local.resolve() != self.cfg.paths.run_dir.resolve()
+
+    @property
+    def _last_work(self) -> Path:
+        return self._work_dir / "last.pt"
+
+    @property
+    def _best_work(self) -> Path:
+        return self._work_dir / "best.pt"
+
     # ------------------------------------------------------------------ reprise
     def _resume(self) -> None:
-        path = self.cfg.paths.ckpt_last
-        if not path.exists():
+        """Reprend de last.pt : le local d'abord (meme session), sinon le durable.
+
+        Une session Colab neuve n'a plus son disque local : on repart alors de la derniere
+        copie durable (au plus `save_every` epoques de retard), et on ramene best.pt en local
+        pour que la comparaison des epoques suivantes reste juste.
+        """
+        candidates = [self._last_work]
+        if self._split:
+            candidates.append(self.cfg.paths.ckpt_last)
+        path = next((p for p in candidates if p.exists()), None)
+        if path is None:
             return
         ck = torch.load(path, map_location=self.device, weights_only=False)
         self.model.load_state_dict(ck.get("model_raw", ck["model"]))
@@ -132,10 +167,16 @@ class Trainer:
         self.start_epoch = ck["epoch"] + 1
         self.best_val = ck["best_val"]
         self.history = ck["history"]
+        if self._split and path == self.cfg.paths.ckpt_last:
+            if self.cfg.paths.ckpt_best.exists() and not self._best_work.exists():
+                self._copy_atomic(self.cfg.paths.ckpt_best, self._best_work)
         if self.verbose:
+            origine = "copie durable" if path == self.cfg.paths.ckpt_last and self._split \
+                else "disque de travail"
             print(f"reprise a l'epoque {self.start_epoch} "
-                  f"(meilleure val = {self.best_val:.5f}) depuis {path.name}")
+                  f"(meilleure val = {self.best_val:.5f}) depuis {path} ({origine})")
 
+    # ------------------------------------------------------------------ ecritures
     def _save_atomic(self, path: Path, payload: dict) -> None:
         """Ecrit via un fichier temporaire : un checkpoint n'est jamais a moitie ecrit."""
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -143,13 +184,34 @@ class Trainer:
         torch.save(payload, tmp)
         os.replace(tmp, path)
 
-    def _mirror_cache_dir(self) -> None:
-        """Copie du cache vers `cache_mirror` (Drive) si configure."""
-        mirror = self.cfg.paths.cache_mirror
-        if mirror is None:
+    @staticmethod
+    def _copy_atomic(src: Path, dst: Path) -> None:
+        """Copie via un fichier temporaire : le Drive ne voit jamais un fichier a moitie copie."""
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        tmp = dst.with_name(dst.name + ".tmp")
+        shutil.copy2(src, tmp)
+        os.replace(tmp, dst)
+
+    def _sync(self, reason: str = "") -> None:
+        """Copie le travail vers le durable. best.pt seulement s'il a change depuis.
+
+        Sans local_dir, tout est deja ecrit dans run_dir : rien a faire.
+        """
+        if not self._split:
             return
-        mirror.mkdir(parents=True, exist_ok=True)
-        shutil.copytree(self.cfg.paths.cache_dir, mirror, dirs_exist_ok=True)
+        t0 = time.time()
+        copied = []
+        if self._best_dirty and self._best_work.exists():
+            self._copy_atomic(self._best_work, self.cfg.paths.ckpt_best)
+            self._best_dirty = False
+            copied.append("best.pt")
+        if self._last_work.exists():
+            self._copy_atomic(self._last_work, self.cfg.paths.ckpt_last)
+            copied.append("last.pt")
+        self.syncs.append({"raison": reason, "fichiers": copied})
+        if self.verbose and copied:
+            print(f"      -> {', '.join(copied)} recopie(s) vers {self.cfg.paths.run_dir} "
+                  f"({time.time() - t0:.0f} s{', ' + reason if reason else ''})")
 
     # ------------------------------------------------------------------ validation
     @torch.no_grad()
@@ -191,7 +253,8 @@ class Trainer:
                        "LOCAL_CONV": m.local_conv, "POOL_SURFACE": m.pool_surface},
         }
         payload.update(extra or {})
-        self._save_atomic(self.cfg.paths.ckpt_best, payload)
+        self._save_atomic(self._best_work, payload)
+        self._best_dirty = True
 
     def _baseline_for_finetune(self) -> None:
         """En affinage selectionne sur les DSO, le modele d'origine est le premier candidat.
@@ -215,6 +278,24 @@ class Trainer:
         if (cfg.train.init_from and cfg.train.select_by == "dso"
                 and self.start_epoch == 0 and not self.history):
             self._baseline_for_finetune()
+            # le modele d'origine est le premier candidat : il doit etre durable tout de suite
+            self._sync("modele d'origine")
+        termine = False
+        try:
+            self._epochs()
+            termine = True
+        finally:
+            if not termine:
+                # interruption (cellule arretee, erreur) : on sauve ce qui peut l'etre.
+                # Une session Colab coupee net ne passe pas ici — d'ou les copies regulieres.
+                try:
+                    self._sync("interruption")
+                except Exception as exc:                  # noqa: BLE001
+                    print(f"      !! copie vers {cfg.paths.run_dir} impossible : {exc}")
+        return self.history
+
+    def _epochs(self) -> None:
+        cfg = self.cfg
         for epoch in range(self.start_epoch, cfg.train.epochs):
             self.model.train()
             phys_w = physics_weight(epoch, cfg.train.warmup_phys_epochs)
@@ -263,12 +344,14 @@ class Trainer:
             if improved:
                 self.best_val = score
                 self._save_best(epoch, score, {"dso_val": dso_sel} if dso_sel else None)
-            self._save_atomic(cfg.paths.ckpt_last, {
+            # ~7 Go (modele, EMA, etat d'Adam) : sur le disque de travail, a chaque epoque
+            self._save_atomic(self._last_work, {
                 "model": self.ema_model.state_dict(), "model_raw": self.model.state_dict(),
                 "optimizer": self.optimizer.state_dict(), "ema_steps": self.ema_steps,
                 "scheduler": self.scheduler.state_dict(), "epoch": epoch,
                 "best_val": self.best_val, "history": self.history,
             })
+            # quelques ko : directement dans run_dir, pour suivre l'entrainement depuis le Drive
             cfg.paths.history.write_text(json.dumps(self.history, indent=1), encoding="utf-8")
 
             if self.verbose:
@@ -281,9 +364,7 @@ class Trainer:
                          if dso_sel else "")
                       + f"| {rec['time_s']:.0f} s{' *' if improved else ''}")
             if (epoch + 1) % cfg.train.save_every == 0 or epoch == cfg.train.epochs - 1:
-                self._mirror_cache_dir()
-
-        return self.history
+                self._sync(f"epoque {epoch + 1}")
 
 
 def train(cfg: Config, device: str | None = None, verbose: bool = True) -> list[dict]:

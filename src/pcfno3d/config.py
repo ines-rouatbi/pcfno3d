@@ -41,8 +41,17 @@ class Paths:
     data_dir: Path = REPO_ROOT / "aneo_dataset_3d_v2"
     cache_dir: Path = REPO_ROOT / "artifacts" / "cache"
     run_dir: Path = REPO_ROOT / "artifacts" / "runs" / "v7"
-    # copie de securite du cache (Google Drive sur Colab) ; None = pas de copie
+    # copie de securite du cache (Google Drive sur Colab) ; None = pas de copie.
+    # Alimentee par build-cache, pour les SEULS jours nouvellement construits : le cache ne
+    # change jamais pendant l'entrainement, il n'y a donc rien a recopier a ce moment-la.
     cache_mirror: Path | None = None
+    # Disque local rapide pour les checkpoints PENDANT l'entrainement (Colab : /content/...).
+    # last.pt pese ~7 Go (modele, EMA, etat d'Adam) : l'ecrire sur le Drive a chaque epoque
+    # coute ~75 s par epoque. Avec local_dir, on ecrit en local a chaque epoque et on
+    # recopie dans run_dir toutes les `train.save_every` epoques, a la fin, et sur
+    # interruption — comme le faisait le BLOC 9 du notebook v7. None = ecriture directe dans
+    # run_dir (poste local, ou run_dir est deja un disque rapide).
+    local_dir: Path | None = None
 
     def __post_init__(self) -> None:
         # un chemin relatif dans un YAML est relatif a la racine du depot, pas au cwd :
@@ -52,9 +61,14 @@ class Paths:
         self.run_dir = _resolve(self.run_dir)
         if self.cache_mirror is not None:
             self.cache_mirror = _resolve(self.cache_mirror)
+        if self.local_dir is not None:
+            self.local_dir = _resolve(self.local_dir)
 
     def mkdirs(self) -> None:
-        for d in (self.cache_dir, self.run_dir, self.run_dir / "figures"):
+        dirs = [self.cache_dir, self.run_dir, self.run_dir / "figures"]
+        if self.local_dir is not None:
+            dirs.append(self.local_dir)
+        for d in dirs:
             d.mkdir(parents=True, exist_ok=True)
 
     # fichiers nommes une seule fois, pour que tous les modules pointent au meme endroit

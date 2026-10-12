@@ -109,14 +109,46 @@ def build_cache(cfg: Config, geom: Geometry, days: Iterable[int] | None = None,
         header = not index_path.exists()
         df.to_csv(index_path, mode="a", header=header, index=False)
         done.add(day)
+        mirrored = mirror_day(cfg, [r["stem"] for r in rows])
         if verbose:
-            print(f"jour {day:03d} : {len(rows):4d} instants -> {cache_dir.name}")
+            print(f"jour {day:03d} : {len(rows):4d} instants -> {cache_dir.name}"
+                  + (f" (+ copie : {mirrored} fichiers)" if mirrored else ""))
 
     index = load_index(cfg)
     if verbose:
         counts = index["split"].value_counts().to_dict()
         print(f"cache : {len(index)} instants ({counts})")
     return index
+
+
+def mirror_day(cfg: Config, stems: list[str]) -> int:
+    """Copie vers `paths.cache_mirror` les tenseurs d'UN jour qui vient d'etre construit.
+
+    Jour par jour, et l'index en dernier : si la copie s'interrompt, l'index du miroir ne
+    designe jamais un fichier absent. On ne recopie jamais tout le cache — il fait ~28 Go
+    pour la v7 et ne change pas une fois construit.
+    """
+    import os
+    import shutil
+
+    mirror = cfg.paths.cache_mirror
+    if mirror is None or mirror.resolve() == cfg.paths.cache_dir.resolve():
+        return 0
+    mirror.mkdir(parents=True, exist_ok=True)
+    n = 0
+    for stem in stems:
+        for suffix in ("_S.npy", "_Y.npy"):
+            src = cfg.paths.cache_dir / f"{stem}{suffix}"
+            if src.exists():
+                shutil.copy2(src, mirror / src.name)
+                n += 1
+    index = cfg.paths.index_csv
+    if index.exists():
+        tmp = mirror / "index.csv.tmp"
+        shutil.copy2(index, tmp)
+        os.replace(tmp, mirror / "index.csv")
+        n += 1
+    return n
 
 
 def load_index(cfg: Config) -> pd.DataFrame:
