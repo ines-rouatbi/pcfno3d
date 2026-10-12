@@ -16,6 +16,6 @@ Correspondance notebook -> module :
     BLOC 11/12 -> pcfno3d.reconstruct (+ pcfno3d.export pour le web)
 """
 
-__version__ = "0.3.1"
+__version__ = "0.3.2"
 
 __all__ = ["__version__"]

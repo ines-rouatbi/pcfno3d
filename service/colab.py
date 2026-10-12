@@ -37,8 +37,11 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def _health(base_url: str, timeout: float = 5.0) -> dict | None:
+    # un User-Agent explicite : Cloudflare refuse souvent celui de urllib par defaut
+    req = urllib.request.Request(f"{base_url}/api/health",
+                                 headers={"User-Agent": "pcfno3d-colab/1.0"})
     try:
-        with urllib.request.urlopen(f"{base_url}/api/health", timeout=timeout) as r:  # noqa: S310
+        with urllib.request.urlopen(req, timeout=timeout) as r:  # noqa: S310
             return json.loads(r.read().decode("utf-8"))
     except (urllib.error.URLError, OSError, json.JSONDecodeError, TimeoutError):
         return None
@@ -194,7 +197,10 @@ def serve_public(config: str = "colab", port: int = 8000, key_name: str = "colab
             cwd=str(REPO_ROOT), env=env, stdout=log, stderr=subprocess.STDOUT)
 
     try:
-        health = wait_for_health(base_url, timeout=wait, log_path=log_path)
+        # on attend le service EN LOCAL : verifier sa propre URL publique depuis Colab
+        # echouait (2026-10-12) alors que le service repondait 200 de l'exterieur, et
+        # l'echec faisait tout arreter. L'acces public se verifie ensuite, sans rien couper.
+        health = wait_for_health(f"http://127.0.0.1:{port}", timeout=wait, log_path=log_path)
     except Exception:
         process.terminate()
         if tun:
