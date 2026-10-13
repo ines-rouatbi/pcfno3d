@@ -25,7 +25,7 @@ class ANEO3D(Dataset):
 
     def __init__(self, stems, hours, doys, geom: Geometry, train: bool,
                  n_samples: int | None = None, seed: int = 0,
-                 keep_eval: float | None = None) -> None:
+                 keep_eval: float | None = None, spacing_m: float | None = None) -> None:
         self.stems = list(stems)
         self.hours = list(hours)
         self.doys = list(doys)
@@ -37,6 +37,9 @@ class ANEO3D(Dataset):
         self.keep_train = geom.cfg.mask.keep_train
         self.p_full = geom.cfg.mask.p_full
         self.keep_eval = geom.cfg.mask.keep_eval if keep_eval is None else keep_eval
+        # evaluation seulement : reseau REGULIER (un capteur tous les spacing_m), au lieu
+        # d'une fraction aleatoire de la couche de surface synthetique, quasi continue
+        self.spacing_m = spacing_m
 
     def __len__(self) -> int:
         return self.n_samples if self.n_samples else len(self.stems)
@@ -55,10 +58,28 @@ class ANEO3D(Dataset):
         stem = self.stems[j]
         S = np.load(self.cache_dir / f"{stem}_S.npy")
         Y = np.load(self.cache_dir / f"{stem}_Y.npy")
-        sensor = (S[7] > 0.5) & (rng.random(S[7].shape) < keep)
+        if not self.train and self.spacing_m:
+            sensor = (S[7] > 0.5) & lattice_mask(S[7].shape, self.spacing_m, self.geom.dx, rng)
+        else:
+            sensor = (S[7] > 0.5) & (rng.random(S[7].shape) < keep)
         tfeat = time_geo_features(S, sensor, self.hours[j], self.doys[j], self.geom)
         return (torch.from_numpy(S[:N_SURF]), torch.from_numpy(sensor.astype(np.float32)),
                 torch.from_numpy(tfeat), torch.from_numpy(Y), j)
+
+
+def lattice_mask(shape: tuple[int, int], spacing_m: float, dx_m: float,
+                 rng: np.random.Generator) -> np.ndarray:
+    """Un capteur tous les `spacing_m` metres, grille decalee au hasard (graine fixe).
+
+    Approche la densite d'un vrai reseau (Rayen : points ANEO espaces de ~500 m a 1 km),
+    bien plus epars que la couche synthetique d'entrainement. Ce n'est PAS la disposition
+    reelle des capteurs, seulement sa densite.
+    """
+    k = max(int(round(spacing_m / dx_m)), 1)
+    oy, ox = (int(o) for o in rng.integers(0, k, size=2))
+    m = np.zeros(shape, dtype=bool)
+    m[oy::k, ox::k] = True
+    return m
 
 
 def assemble_input(s_raw: torch.Tensor, sensor: torch.Tensor, tfeat: torch.Tensor,
@@ -144,8 +165,10 @@ def make_loaders(cfg: Config, geom: Geometry, splits: Splits) -> dict[str, DataL
 
 
 def eval_loader(cfg: Config, geom: Geometry, splits: Splits, idx: np.ndarray, seed: int,
-                keep: float | None = None) -> tuple[DataLoader, np.ndarray]:
+                keep: float | None = None,
+                spacing_m: float | None = None) -> tuple[DataLoader, np.ndarray]:
     """Un loader deterministe sur un sous-ensemble du test (DSO1, episodes, robustesse)."""
     te_s, te_h, te_d = splits.test
-    ds = ANEO3D(te_s[idx], te_h[idx], te_d[idx], geom, train=False, seed=seed, keep_eval=keep)
+    ds = ANEO3D(te_s[idx], te_h[idx], te_d[idx], geom, train=False, seed=seed, keep_eval=keep,
+                spacing_m=spacing_m)
     return DataLoader(ds, batch_size=1), te_s[idx]

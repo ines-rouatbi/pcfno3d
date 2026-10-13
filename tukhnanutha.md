@@ -241,6 +241,27 @@ geostrophic estimate — an input change requiring full retraining.
   the information-limit hypothesis below (one domain-wide geostrophic plane is the only link
   between 25–30 m sensors and the free atmosphere). v7 stays the served model.
 
+### Sensor density check (2026-10-13, first look)
+
+Every evaluation so far masks a *dense synthetic* surface layer (494,006 points at 50 m per
+instant; ~62,000 visible at 50 %). A real ANEO network has points ~500 m–1 km apart.
+`scripts/eval_reseau.py` (mask `lattice_mask`, eval only) replaces the random 50 % by a regular
+lattice. First run on CPU, **8 test instants of a single day (17) — indicative only** (R² is
+meaningless on 8 instants of one day):
+
+| level | 50 % random (~62k) | 300 m (~13.9k) | 500 m (~5k) | 1 km (~1.25k) |
+|---|---|---|---|---|
+| 100 m u / v | 0.186 / 0.155 | 0.390 / 0.222 | 0.451 / 0.259 | 0.490 / 0.258 |
+| 300 m u / v | 0.165 / 0.169 | 0.301 / 0.385 | 0.325 / 0.472 | 0.369 / 0.489 |
+| 500 m u / v | 0.344 / 0.208 | 0.436 / 0.461 | 0.426 / 0.568 | 0.457 / 0.594 |
+| 1000 m u / v | 0.909 / 0.242 | 0.918 / 0.488 | 0.912 / 0.589 | 0.867 / 0.595 |
+
+Reading: at realistic density the low/mid levels lose 2–3x (the model was never trained below
+~20 % of the dense layer), v degrades at every level, and u at 650–1000 m — already the DSO1
+failure — barely moves (it is dominated by the large-scale offset, not by sensor density).
+To confirm on the 120 synoptic instants (GPU), then retrain with sparse-lattice masks; the real
+sensor coordinates (requested from Tukhnanutha) would replace the lattice.
+
 ### Still not verified
 
 - **Whether a spatially varying geostrophic input can reach DSO1** — untested; needs a full
