@@ -376,6 +376,20 @@ class Config:
                 setattr(self.paths, attr, Path(os.environ[var]))
         self.paths.__post_init__()
 
+    def apply_service_env(self) -> "Config":
+        """Chemins imposes par le service : PCFNO3D_RUN_DIR / _DATA_DIR / _CACHE_DIR.
+
+        Un seul endroit pour ces variables : le service web (service/app.py) et le
+        lanceur Colab (service/colab.serve_public) doivent resoudre les MEMES chemins,
+        sinon le lanceur verifie un checkpoint ailleurs que la ou le service le lira.
+        """
+        for var, key in (("PCFNO3D_RUN_DIR", "paths.run_dir"),
+                         ("PCFNO3D_DATA_DIR", "paths.data_dir"),
+                         ("PCFNO3D_CACHE_DIR", "paths.cache_dir")):
+            if os.environ.get(var):
+                self.apply_overrides({key: Path(os.environ[var])})
+        return self
+
     # ---------------------------------------------------------------- utilitaires
     def to_dict(self) -> dict[str, Any]:
         return _unbuild(self)

@@ -6,6 +6,7 @@ quelques secondes.
 
 from __future__ import annotations
 
+import socket
 import subprocess
 import sys
 from pathlib import Path
@@ -14,6 +15,31 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "src"))
+
+
+def _free_ports(n: int = 1) -> list[int]:
+    """n ports TCP libres, attribues par le systeme (bind sur le port 0).
+
+    Les n sockets sont ouverts EN MEME TEMPS, donc les ports sont distincts entre eux.
+    Aucun port fixe dans les tests : deux suites pytest lancees en parallele sur le meme
+    poste se disputaient 8911, 8921... (Errno 10048 sous Windows).
+    """
+    socks = []
+    try:
+        for _ in range(n):
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.bind(("127.0.0.1", 0))
+            socks.append(s)
+        return [s.getsockname()[1] for s in socks]
+    finally:
+        for s in socks:
+            s.close()
+
+
+@pytest.fixture(scope="session")
+def free_ports():
+    """Fonction : free_ports(n) -> n ports libres distincts."""
+    return _free_ports
 
 
 @pytest.fixture(scope="session")

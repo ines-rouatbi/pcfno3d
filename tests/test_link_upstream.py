@@ -23,8 +23,6 @@ pytest.importorskip("mcp")
 pytest.importorskip("httpx")
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-PORT_AMONT = 8921
-PORT_LIEN = 8922
 
 
 def _get(url: str, key: str | None = None, timeout: float = 90.0):
@@ -52,8 +50,9 @@ def _base_env(cfg) -> dict:
 
 
 @pytest.fixture(scope="module")
-def paire(cfg, index, norm, tmp_path_factory):
+def paire(cfg, index, norm, tmp_path_factory, free_ports):
     """(base du lien, cle locale, cle amont, processus) — deux services qui tournent."""
+    port_amont, port_lien = free_ports(2)
     from pcfno3d.train import Trainer
     from service.auth import ApiKeyStore, default_store_path
     from service.colab import wait_for_health
@@ -66,26 +65,26 @@ def paire(cfg, index, norm, tmp_path_factory):
     amont_store = ApiKeyStore(default_store_path(cfg.paths.run_dir))
     cle_amont, _ = amont_store.create("test-amont", scope="read")
     env_amont = {**_base_env(cfg), "PCFNO3D_RUN_DIR": str(cfg.paths.run_dir),
-                 "PCFNO3D_PORT": str(PORT_AMONT)}
+                 "PCFNO3D_PORT": str(port_amont)}
     log_amont = cfg.paths.run_dir / "amont.log"
-    p_amont = _launch(PORT_AMONT, env_amont, log_amont)
+    p_amont = _launch(port_amont, env_amont, log_amont)
 
     # --- lien : un run_dir separe, sans modele, qui ne contient que le lien et sa cle
     run_lien = tmp_path_factory.mktemp("run_lien")
     lien_store = ApiKeyStore(default_store_path(run_lien))
     cle_locale, _ = lien_store.create("test-navigateur", scope="read")
-    Upstream(url=f"http://127.0.0.1:{PORT_AMONT}", key=cle_amont,
+    Upstream(url=f"http://127.0.0.1:{port_amont}", key=cle_amont,
              label="faux-colab").save(run_lien)
     env_lien = {**_base_env(cfg), "PCFNO3D_RUN_DIR": str(run_lien),
-                "PCFNO3D_PORT": str(PORT_LIEN)}
+                "PCFNO3D_PORT": str(port_lien)}
     log_lien = run_lien / "lien.log"
-    p_lien = _launch(PORT_LIEN, env_lien, log_lien)
+    p_lien = _launch(port_lien, env_lien, log_lien)
 
     try:
-        wait_for_health(f"http://127.0.0.1:{PORT_AMONT}", timeout=240, log_path=log_amont)
-        wait_for_health(f"http://127.0.0.1:{PORT_LIEN}", timeout=240, log_path=log_lien)
-        yield (f"http://127.0.0.1:{PORT_LIEN}", cle_locale, cle_amont,
-               f"http://127.0.0.1:{PORT_AMONT}", run_lien)
+        wait_for_health(f"http://127.0.0.1:{port_amont}", timeout=240, log_path=log_amont)
+        wait_for_health(f"http://127.0.0.1:{port_lien}", timeout=240, log_path=log_lien)
+        yield (f"http://127.0.0.1:{port_lien}", cle_locale, cle_amont,
+               f"http://127.0.0.1:{port_amont}", run_lien)
     finally:
         for p in (p_lien, p_amont):
             p.terminate()
@@ -216,7 +215,8 @@ def test_application_web_servie_en_mode_lien(paire):
     assert "PC-FNO3D" in page
 
 
-def test_amont_injoignable_donne_un_message_actionnable(cfg, tmp_path_factory, index, norm):
+def test_amont_injoignable_donne_un_message_actionnable(cfg, tmp_path_factory, index, norm,
+                                                       free_ports):
     """Une URL de tunnel Colab morte doit produire un 502 qui dit quoi faire."""
     from service.auth import ApiKeyStore, default_store_path
     from service.colab import wait_for_health
@@ -225,20 +225,22 @@ def test_amont_injoignable_donne_un_message_actionnable(cfg, tmp_path_factory, i
     run_lien = tmp_path_factory.mktemp("run_lien_mort")
     store = ApiKeyStore(default_store_path(run_lien))
     cle, _ = store.create("navigateur", scope="read")
-    # port ferme : simule un tunnel dont la session Colab est terminee
-    Upstream(url="http://127.0.0.1:8929", key="pcf_amont", label="colab-mort").save(run_lien)
+    # port libre et laisse ferme : simule un tunnel dont la session Colab est terminee
+    port_mort, port_lien = free_ports(2)
+    Upstream(url=f"http://127.0.0.1:{port_mort}", key="pcf_amont",
+             label="colab-mort").save(run_lien)
 
-    env = {**_base_env(cfg), "PCFNO3D_RUN_DIR": str(run_lien), "PCFNO3D_PORT": "8923"}
+    env = {**_base_env(cfg), "PCFNO3D_RUN_DIR": str(run_lien), "PCFNO3D_PORT": str(port_lien)}
     log = run_lien / "lien.log"
-    p = _launch(8923, env, log)
+    p = _launch(port_lien, env, log)
     try:
-        health = wait_for_health("http://127.0.0.1:8923", timeout=180, log_path=log)
+        health = wait_for_health(f"http://127.0.0.1:{port_lien}", timeout=180, log_path=log)
         assert health["mode"] == "lien"
         assert health["status"] == "degraded"             # l'amont est injoignable
         assert health["sante_amont"]["joignable"] is False
 
         with pytest.raises(urllib.error.HTTPError) as exc:
-            _get("http://127.0.0.1:8923/api/meta", key=cle)
+            _get(f"http://127.0.0.1:{port_lien}/api/meta", key=cle)
         assert exc.value.code == 502
         detail = json.loads(exc.value.read().decode("utf-8"))["detail"]
         assert "injoignable" in detail
