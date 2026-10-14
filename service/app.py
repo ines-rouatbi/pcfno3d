@@ -224,9 +224,8 @@ def _refus_a_journaliser(ip: str | None) -> int | None:
             courant[1] += 1
             return None
         regroupes = courant[1] if courant is not None else 0
-        if len(etat) > 10_000:                       # memoire bornee
-            for cle in [k for k, v in etat.items() if v[0] != minute]:
-                del etat[cle]
+        if len(etat) >= 10_000:                      # memoire bornee, cout O(1) amorti :
+            etat.clear()                             # on oublie tout plutot que de parcourir
         etat[ip] = [minute, 0]
     return regroupes
 

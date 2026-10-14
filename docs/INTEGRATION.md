@@ -135,8 +135,10 @@ avertissement au démarrage et dans `/api/health` (`"auth": "ouvert"`), et n'a d
 tant qu'aucune clé n'existe. Même actif, **il ne sert sans clé que les requêtes directes
 de la boucle locale** : adresse `127.0.0.1` / `::1` et aucun en-tête de proxy
 (`X-Forwarded-For`, `Forwarded`, `CF-Connecting-IP`, `X-Real-IP`) ; toute autre requête
-reçoit `401`. Un `uvicorn --host 0.0.0.0` ou un reverse proxy local ne l'ouvrent donc pas
-au réseau. `pcfno3d serve` refuse de démarrer avec `--host` autre que
+reçoit `401`. Un `uvicorn --host 0.0.0.0` ou un proxy HTTP local qui pose ces en-têtes
+(nginx, cloudflared, ngrok) ne l'ouvrent donc pas au réseau ; un relais TCP sans en-tête
+(`ssh -R`, socat, proxy userland de Docker) arrive, lui, depuis la boucle locale : ne
+l'utilisez jamais avec le mode ouvert. `pcfno3d serve` refuse de démarrer avec `--host` autre que
 `127.0.0.1`/`localhost` dès que l'opt-in est demandé (option ou variable) ; il est ignoré
 si `PCFNO3D_ALLOWED_HOSTS` est renseigné (proxy, domaine), et **jamais transmis** au
 service lancé par `service.colab.serve_public` (Colab, tunnels).
