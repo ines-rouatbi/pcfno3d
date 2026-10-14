@@ -119,7 +119,9 @@ class Volume:
             direction=self.direction.astype(np.float32), z_levels=g.z_levels,
             x_m=np.arange(g.nx) * g.dx, y_m=np.arange(g.ny) * g.dy,
             z_terrain=g.zt.astype(np.float32), timestamp=str(self.timestamp),
-            correction=json.dumps(self.correction or None))
+            # cle presente SEULEMENT si une correction a ete appliquee : desactivee, le .npz
+            # garde exactement les cles de main
+            **({"correction": json.dumps(self.correction)} if self.correction else {}))
         return path
 
 
@@ -211,8 +213,11 @@ class WindFieldModel:
         # chacune lancerait sa propre passe et la machine saturerait sa memoire.
         self._lock = threading.Lock()
         # correction post-modele du vent moyen par niveau (lot M1) : strictement opt-in
-        from .correction import load_correction
+        from .correction import check_top_level, load_correction, refuse_tta
         self.correction = load_correction(cfg.inference.correction)
+        if self.correction is not None:
+            refuse_tta(cfg.inference.tta, self.correction)   # ajustee sur une seule passe
+            check_top_level(self.geom)                        # refus au chargement, pas en service
         self.epoch = ck.get("epoch")
         self.val_score = ck.get("val_score")
         if verbose:
@@ -265,6 +270,9 @@ class WindFieldModel:
         geom = self.geom
         k = self.cfg.inference.tta if tta is None else int(tta)
         k_keep = self.cfg.inference.tta_keep if tta_keep is None else float(tta_keep)
+        if self.correction is not None:
+            from .correction import refuse_tta
+            refuse_tta(k, self.correction)
         rng = np.random.default_rng(seed)
         sensor = (S[7] > 0.5) & (rng.random(S[7].shape) < keep)
         tfeat = time_geo_features(S, sensor, hour, doy, geom)

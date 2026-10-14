@@ -239,7 +239,8 @@ class InferenceCfg:
     tta_keep : fraction des capteurs gardee a chaque passe supplementaire.
     correction : chemin du JSON de correction post-modele du vent moyen par niveau (lot M1,
           pcfno3d.correction ; format de couche_limite_v7.json ecrit par le BLOC 10h). None =
-          aucune correction : la sortie de v7 est alors identique bit a bit.
+          aucune correction : la sortie de v7 est alors identique bit a bit. Incompatible
+          avec tta > 1 (ValueError) : la correction n'a ete ajustee que sur une seule passe.
     """
 
     tta: int = 1
@@ -255,6 +256,10 @@ class InferenceCfg:
         self.tta_keep = float(self.tta_keep)
         if self.correction is not None:
             self.correction = _resolve(self.correction)
+            if self.tta > 1:
+                # ajustee sur UNE passe : refusee sur un champ moyenne (lot M1)
+                from .correction import TTA_INCOMPATIBLE
+                raise ValueError(TTA_INCOMPATIBLE)
 
 
 @dataclass

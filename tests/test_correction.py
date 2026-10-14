@@ -67,6 +67,16 @@ def instant(cfg, geom, index):
     return S, sensor, tfeat, u, v
 
 
+def _script():
+    """Le script de la session GPU, charge comme module."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "m1_repro", Path(__file__).resolve().parents[1] / "scripts" / "m1_reproduction_colab.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
 def _json_aleatoire(geom, seed=1, variante="1.2", utilise=True) -> dict:
     from pcfno3d.correction import FEATURES_10H
     rng = np.random.default_rng(seed)
@@ -189,6 +199,24 @@ def test_coefficients_connus_decalage_exact(geom, instant):
     np.testing.assert_array_equal(vc, v)                                # v non utilise : intact
 
 
+def test_niveau_du_haut_non_evalue_refuse(geom, instant, monkeypatch):
+    """x3 lit le vent des capteurs dans la ligne du niveau du haut : s'il n'est pas evalue,
+    cette ligne est nulle et l'angle serait faux sans bruit -> ValueError, comme l'ajustement."""
+    from pcfno3d.correction import MeanWindCorrection, fit_correction
+    S, sensor, tfeat, u, v = instant
+    corr = MeanWindCorrection(_json_aleatoire(geom))
+    assert geom.nz - 1 in geom.eval_levels()
+    sans_haut = [k for k in geom.eval_levels() if k != geom.nz - 1]
+    monkeypatch.setattr(geom, "eval_levels", lambda: sans_haut)
+    with pytest.raises(ValueError, match="niveau du haut"):
+        corr.shifts(S, sensor, tfeat, u, v, geom)
+    with pytest.raises(ValueError, match="niveau du haut"):
+        corr.apply(u, v, S, sensor, tfeat, geom)
+    X, G, T = np.zeros((4, geom.nz, 13)), np.zeros((4, 10)), np.zeros((4, geom.nz, 2))
+    with pytest.raises(ValueError, match="niveau du haut"):
+        fit_correction(X, G, T, X, G, T, geom)
+
+
 def test_json_incompatible_refuse(geom):
     from pcfno3d.correction import MeanWindCorrection
     data = _json_aleatoire(geom)
@@ -236,6 +264,50 @@ def test_ajustement_retrouve_un_decalage_connu(geom):
     assert rapport["variante"] in ("1.2", "calc")
 
 
+def test_critere_du_script_predictions_et_non_coefficients(geom):
+    """Les 30 caracteristiques sont colineaires (su*stab = su*stab+ + su*stab-) : on peut
+    deplacer les coefficients bien au-dela de 1e-6 sans changer une seule prediction. Le
+    script doit accepter ce cas (ecart de coef seulement imprime) et refuser un vrai ecart
+    de prediction ou de niveaux « utilise »."""
+    import copy
+
+    from pcfno3d.correction import FEATURES_10H, fit_correction
+    mod = _script()
+    rng = np.random.default_rng(7)
+
+    def tirage(n):
+        X, G = rng.normal(0, 2, (n, geom.nz, 13)), rng.normal(0, 4, (n, 10))
+        return X, G, rng.normal(0, 1, (n, geom.nz, 2))
+
+    tr, va, te = tirage(300), tirage(80), tirage(50)
+    fige, _ = fit_correction(*tr, *va, geom)
+    jeux = {"validation": va[:2], "test": te[:2]}
+
+    a, p, m = (FEATURES_10H.index(n) + 1 for n in ("su*stab", "su*stab+", "su*stab-"))
+    colin = copy.deepcopy(fige)
+    for par in colin["niveaux"].values():           # direction nulle exacte de la colinearite
+        par["coef"][a] += 0.05 * par["sd"][a - 1]
+        par["coef"][p] -= 0.05 * par["sd"][p - 1]
+        par["coef"][m] -= 0.05 * par["sd"][m - 1]
+    ok, msgs = mod.compare_json(colin, fige)
+    assert ok and "information" in msgs[-1]
+    ecart_coef = max(abs(c1 - c2) for n in fige["niveaux"] for c1, c2 in
+                     zip(colin["niveaux"][n]["coef"], fige["niveaux"][n]["coef"]))
+    assert ecart_coef > 1e-3                         # l'ancien critere (1e-6) aurait refuse
+    ok, msgs = mod.compare_predictions(colin, fige, jeux, geom)
+    assert ok, msgs
+
+    faux = copy.deepcopy(fige)
+    nom = next(iter(faux["niveaux"]))
+    faux["niveaux"][nom]["coef"][0] += 1e-3          # decalage de 1e-3 m/s : vrai ecart
+    assert mod.compare_json(faux, fige)[0]
+    assert not mod.compare_predictions(faux, fige, jeux, geom)[0]
+
+    autre = copy.deepcopy(fige)
+    autre["niveaux"][nom]["utilise"] = not autre["niveaux"][nom]["utilise"]
+    assert not mod.compare_json(autre, fige)[0]
+
+
 # ------------------------------------------------------------------ integration
 @pytest.fixture(scope="module")
 def trained(cfg, index, norm):
@@ -245,9 +317,11 @@ def trained(cfg, index, norm):
     return cfg
 
 
-def test_desactivee_sortie_du_modele_seul_bit_a_bit(trained, geom, instant):
-    """correction: null (defaut) -> exactement la sortie du modele, sans aucun recalage."""
+def test_desactivee_sortie_du_modele_seul_bit_a_bit(trained, geom, instant, tmp_path):
+    """correction: null (defaut) -> exactement la sortie du modele, sans aucun recalage, et
+    des fichiers .npz / manifest.json sans cle `correction` (identiques a main)."""
     from pcfno3d.dataset import assemble_input
+    from pcfno3d.export import export_web
     from pcfno3d.inference import WindFieldModel
     assert trained.inference.correction is None
     wf = WindFieldModel(trained, device="cpu", verbose=False)
@@ -263,6 +337,10 @@ def test_desactivee_sortie_du_modele_seul_bit_a_bit(trained, geom, instant):
                                        torch.from_numpy(tfeat[None]), wf.geom, wf.norm))
     u = wf.norm.denorm(pred.float())[0][0].numpy()
     np.testing.assert_array_equal(vol.u, np.where(wf.geom.valid, u, np.nan))
+    assert "correction" not in np.load(vol.save_npz(tmp_path / "v.npz")).files
+    manifest = json.loads((export_web(vol, tmp_path / "web") / "manifest.json")
+                          .read_text(encoding="utf-8"))
+    assert "correction" not in manifest
 
 
 def test_activee_sha256_dans_meta_exports_et_evaluation(trained, geom, instant, tmp_path):
@@ -294,17 +372,43 @@ def test_activee_sha256_dans_meta_exports_et_evaluation(trained, geom, instant, 
     assert ev.out_dir.name.endswith(f"_corr{sha[:8]}")
 
 
+def test_correction_et_tta_refusees_ensemble(trained, geom, tmp_path):
+    """La correction n'a ete ajustee que sur UNE passe : tta > 1 est refuse partout."""
+    import copy
+
+    from pcfno3d.config import InferenceCfg
+    from pcfno3d.evaluate import Evaluator
+    from pcfno3d.inference import WindFieldModel
+
+    path = tmp_path / "couche_limite_v7.json"
+    path.write_text(json.dumps(_json_aleatoire(geom, seed=8)), encoding="utf-8")
+    with pytest.raises(ValueError, match="tta > 1 sont incompatibles"):
+        InferenceCfg(tta=4, correction=path)
+    cfg = copy.deepcopy(trained)
+    cfg.apply_overrides({"inference.correction": path})
+    with pytest.raises(ValueError, match="tta > 1 sont incompatibles"):
+        cfg.apply_overrides({"inference.tta": 4})
+    cfg.inference.tta = 1
+    cfg2 = copy.deepcopy(cfg)
+    cfg2.inference.tta = 4                           # contourne __post_init__ : refus au chargement
+    with pytest.raises(ValueError, match="tta > 1 sont incompatibles"):
+        WindFieldModel(cfg2, device="cpu", verbose=False)
+    wf = WindFieldModel(cfg, device="cpu", verbose=False)
+    S = np.load(next(cfg.paths.cache_dir.glob("*_S.npy")))
+    with pytest.raises(ValueError, match="tta > 1 sont incompatibles"):
+        wf.predict(S, 12.0, 100, tta=2)
+    with pytest.raises(ValueError, match="tta > 1 sont incompatibles"):
+        Evaluator(copy.deepcopy(cfg), device="cpu", verbose=False, tta=2)
+
+
 def test_script_de_reproduction_bout_en_bout(trained, geom):
     """Le script de la session GPU tourne sur le mini-jeu (CPU) : il ecrit dans
-    reproduction_paquet/ seulement, ne touche pas au JSON fige, et retrouve un JSON fige
-    produit par le meme ajustement (comparaison a 1e-6)."""
-    import importlib.util
+    reproduction_paquet/ seulement, ne touche pas au JSON fige, et valide un JSON fige
+    produit par le meme ajustement (structure, predictions a 1e-4 m/s). Codes de retour :
+    2 sans JSON fige, 0 portage valide, 1 predictions differentes, 3 JSON fige modifie."""
     import shutil
 
-    spec = importlib.util.spec_from_file_location(
-        "m1_repro", Path(__file__).resolve().parents[1] / "scripts" / "m1_reproduction_colab.py")
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
+    mod = _script()
 
     run = trained.paths.run_dir
     sets = [f"paths.data_dir={trained.paths.data_dir}", f"paths.cache_dir={trained.paths.cache_dir}",
@@ -337,7 +441,34 @@ def test_script_de_reproduction_bout_en_bout(trained, geom):
         assert mod.main(argv) == 0
         assert hashlib.sha256(fige.read_bytes()).hexdigest() == avant      # fige intact
         assert {p.name for p in repro_dir.iterdir()} == {
-            "couche_limite_v7_paquet.json", "rapport_ajustement.json", "comparaison_test.json"}
+            "couche_limite_v7_paquet.json", "rapport_ajustement.json", "comparaison_test.json",
+            "keep1_informatif.json"}
+        keep1 = json.loads((repro_dir / "keep1_informatif.json").read_text(encoding="utf-8"))
+        assert {r["z_m"] for r in keep1} == {int(wf.geom.z_levels[k])
+                                             for k in wf.geom.eval_levels()}
+
+        # vrai ecart de prediction (constante +0,01 m/s a un niveau utilise) -> code 1
+        faux = json.loads(json.dumps(data))
+        nom = next(n for n, p in faux["niveaux"].items() if p["utilise"])
+        faux["niveaux"][nom]["coef"][0] += 0.01
+        fige.write_text(json.dumps(faux, indent=2), encoding="utf-8")
+        assert mod.main(argv) == 1
+        fige.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+        # JSON fige modifie pendant le script -> code 3 (if explicite, pas un assert)
+        vrai_sha = mod.sha256
+        appels = []
+
+        def sha_qui_change(path):
+            appels.append(path)
+            h = vrai_sha(path)
+            return h if path != fige or appels.count(fige) == 1 else "modifie"
+
+        mod.sha256 = sha_qui_change
+        try:
+            assert mod.main(argv) == 3
+        finally:
+            mod.sha256 = vrai_sha
     finally:
         fige.unlink(missing_ok=True)
         shutil.rmtree(repro_dir, ignore_errors=True)

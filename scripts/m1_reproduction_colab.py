@@ -10,12 +10,24 @@ A lancer dans la session Colab de confirmation, apres 10i, depuis le depot insta
 2. Ecrit son JSON UNIQUEMENT dans run_dir/reproduction_paquet/ : les fichiers figes
    (couche_limite_v7.json, geostrophique_v2_v7.json, correction_moyenne_v7.json et leurs CSV)
    ne sont jamais ouverts en ecriture.
-3. Compare ce JSON au couche_limite_v7.json FIGE : variante, alpha, niveaux corriges, puis
-   mu / sd / coef a 1e-6 ; affiche les sha256 des deux fichiers.
-4. Applique la correction FIGEE et la reproduite au test synoptique (graine 2000, 50 %) et
-   compare les RMSE par niveau aux chiffres de desktop-d3, au millieme.
+3. Critere de validite du portage, contre le couche_limite_v7.json FIGE :
+   a) meme variante rho_sl, meme alpha, memes caracteristiques, memes niveaux « utilise » ;
+   b) memes PREDICTIONS de la ridge (vent moyen cible de chaque niveau / composante utilise,
+      instant par instant, sur la validation ET sur le test synoptique) a 1e-4 m/s pres ;
+   c) RMSE par niveau du test synoptique (graine 2000, 50 %) avec la correction figee et la
+      reproduite egales aux chiffres de desktop-d3 au millieme.
+   Les ecarts de mu / sd / coef sont imprimes POUR INFORMATION seulement : les 30
+   caracteristiques sont exactement colineaires (su*stab = su*stab+ + su*stab-, idem sv) et
+   alpha vaut 0,01, donc un ecart relatif de 1e-7 sur les moyennes (numpy float32 contre
+   torch bf16 -> fp32 du notebook) deplace les coefficients d'environ 3e-4 sans changer les
+   predictions. Les sha256 des deux fichiers sont affiches.
+4. INFORMATIF (sans effet sur le code de retour) : test synoptique a keep = 1,0 (tous les
+   capteurs, comme predict() en production), modele seul contre corrige, RMSE par niveau.
+   L'ajustement et la validation sont a 50 % des capteurs : on verifie l'absence de
+   degradation hors de la distribution d'ajustement.
 
-Code de retour 0 seulement si 3 et 4 passent. Lecture seule de tout le reste.
+Codes de retour : 0 portage valide (a, b et c) ; 1 portage non valide ; 2 JSON fige absent ;
+3 JSON fige modifie pendant le script. Lecture seule de tout le reste.
 """
 
 from __future__ import annotations
@@ -37,7 +49,7 @@ sys.path[:0] = [str(REPO / "src")]
 ATTENDU = {100: (0.416, 0.382), 150: (0.418, 0.381), 200: (0.393, 0.368), 300: (0.365, 0.344),
            400: (0.368, 0.347), 500: (0.380, 0.351), 650: (0.413, 0.339), 800: (0.404, 0.362),
            1000: (0.419, 0.355)}
-TOL_COEF, TOL_RMSE = 1e-6, 1e-3
+TOL_PRED, TOL_RMSE = 1e-4, 1e-3                   # m/s : predictions de la ridge, RMSE
 SEED_TR, SEED_VA, SEED_TE = 4000, 1000, 2000          # graines des BLOCS 10f / 10 du notebook
 
 
@@ -72,14 +84,19 @@ def collecte(wf, cfg, splits, stems, hours, doys, seed):
 
 
 @torch.no_grad()
-def rmse_test(wf, cfg, splits, correction):
+def test_synoptique(splits) -> np.ndarray:
+    """Indices des instants synoptiques du test (ceux du DSO1)."""
+    from pcfno3d.dataset import is_synoptic
+    return np.array([i for i, s in enumerate(splits.test[0]) if is_synoptic(splits.stamp_of[s])])
+
+
+@torch.no_grad()
+def rmse_test(wf, cfg, splits, correction, keep: float = 0.5):
     """RMSE u, v par niveau evalue, test synoptique, avec la correction donnee (ou None)."""
-    from pcfno3d.dataset import assemble_input, eval_loader, is_synoptic
+    from pcfno3d.dataset import assemble_input, eval_loader
 
     geom, norm = wf.geom, wf.norm
-    te_s = splits.test[0]
-    syn = np.array([i for i, s in enumerate(te_s) if is_synoptic(splits.stamp_of[s])])
-    loader, _ = eval_loader(cfg, geom, splits, syn, SEED_TE, keep=0.5)
+    loader, _ = eval_loader(cfg, geom, splits, test_synoptique(splits), SEED_TE, keep=keep)
     acc = np.zeros((2, geom.nz, 2))                          # (composante, niveau, [n, sse])
     for s_raw, sensor, tfeat, y, _ in loader:
         with torch.autocast(device_type=wf.device.type, dtype=wf.amp_dtype, enabled=wf.use_amp):
@@ -99,6 +116,8 @@ def rmse_test(wf, cfg, splits, correction):
 
 
 def compare_json(repro: dict, fige: dict) -> tuple[bool, list[str]]:
+    """Critere (a) : variante, alpha, caracteristiques, niveaux « utilise ». Les ecarts de
+    mu / sd / coef sont imprimes pour information (colinearite exacte, voir l'en-tete)."""
     msgs, ok = [], True
     for key in ("variante_rho_sl", "ridge_alpha", "features"):
         same = repro[key] == fige[key]
@@ -106,17 +125,59 @@ def compare_json(repro: dict, fige: dict) -> tuple[bool, list[str]]:
         msgs.append(f"  {key:16s} : {'identique' if same else f'DIFFERENT {repro[key]!r} / {fige[key]!r}'}")
     if set(repro["niveaux"]) != set(fige["niveaux"]):
         return False, msgs + ["  niveaux : cles differentes"]
-    pire = 0.0
-    for nom, a in repro["niveaux"].items():
-        b = fige["niveaux"][nom]
-        if a["utilise"] != b["utilise"]:
-            ok = False
-            msgs.append(f"  {nom} : utilise {a['utilise']} / fige {b['utilise']}")
-        for champ in ("mu", "sd", "coef"):
-            pire = max(pire, float(np.max(np.abs(np.asarray(a[champ]) - np.asarray(b[champ])))))
-    ok &= pire <= TOL_COEF
-    msgs.append(f"  ecart max mu/sd/coef : {pire:.2e} (tolerance {TOL_COEF:g}) -> "
-                f"{'OK' if pire <= TOL_COEF else 'ECART'}")
+    ecarts = {"mu": 0.0, "sd": 0.0, "coef": 0.0}
+    utilise_ok = True
+    for nom, pa in repro["niveaux"].items():
+        pb = fige["niveaux"][nom]
+        if pa["utilise"] != pb["utilise"]:
+            utilise_ok = False
+            msgs.append(f"  {nom} : utilise {pa['utilise']} / fige {pb['utilise']}")
+        for champ in ecarts:
+            ecarts[champ] = max(ecarts[champ], float(np.max(np.abs(
+                np.asarray(pa[champ]) - np.asarray(pb[champ])))))
+    ok &= utilise_ok
+    msgs.append(f"  niveaux utilises : {'identiques' if utilise_ok else 'DIFFERENTS'}")
+    msgs.append("  (information) ecart max " + " | ".join(f"{c} {e:.2e}" for c, e in ecarts.items())
+                + " -- non bloquant : caracteristiques colineaires, alpha 0,01")
+    return ok, msgs
+
+
+def cibles(data: dict, X: np.ndarray, G: np.ndarray, geom) -> dict[str, np.ndarray]:
+    """Vent moyen cible predit par la ridge, instant par instant, pour chaque niveau /
+    composante du JSON present sur la grille : {"800_u": (n,), ...}."""
+    from pcfno3d.correction import ridge_pred, x3
+
+    out = {}
+    for k in geom.eval_levels():
+        for c in "uv":
+            nom = f"{int(geom.z_levels[k])}_{c}"
+            par = data["niveaux"].get(nom)
+            if par is not None:
+                out[nom] = ridge_pred(par, x3(X, G, k, data["variante_rho_sl"]))
+    return out
+
+
+def compare_predictions(repro: dict, fige: dict, jeux: dict, geom) -> tuple[bool, list[str]]:
+    """Critere (b) : predictions de la ridge egales a TOL_PRED pres, pour chaque niveau /
+    composante utilise (dans l'un ou l'autre JSON), sur chaque jeu {nom: (X, G)}."""
+    utilises = {n for d in (repro, fige) for n, p in d["niveaux"].items() if p["utilise"]}
+    msgs, ok = [], True
+    for nom_jeu, (X, G) in jeux.items():
+        pa, pb = cibles(repro, X, G, geom), cibles(fige, X, G, geom)
+        noms = sorted(utilises & set(pa) & set(pb))
+        manque = sorted(utilises - (set(pa) & set(pb)))
+        pire, ou = 0.0, "-"
+        for n in noms:
+            e = float(np.max(np.abs(pa[n] - pb[n]))) if len(pa[n]) else 0.0
+            if not e <= pire:                                # un NaN compte comme un ecart
+                pire, ou = e, n
+        bon = bool(pire <= TOL_PRED) and not manque
+        ok &= bon
+        if manque:
+            msgs.append(f"  {nom_jeu:10s} : niveaux utilises absents de la grille {manque}")
+        msgs.append(f"  {nom_jeu:10s} : {len(X)} instants x {len(noms)} niveaux/composantes, "
+                    f"ecart max {pire:.2e} m/s ({ou}, tolerance {TOL_PRED:g}) -> "
+                    f"{'OK' if bon else 'ECART'}")
     return ok, msgs
 
 
@@ -165,10 +226,18 @@ def main(argv: list[str] | None = None) -> int:
     print(f"variante rho_sl {rapport['variante']} | alpha {rapport['alpha']:g} -> {repro_path}")
 
     fige = json.loads(fige_path.read_text(encoding="utf-8"))
-    print("\n1) JSON reproduit / JSON fige du notebook")
+    print("\n1a) JSON reproduit / JSON fige du notebook : structure")
     print(f"  sha256 fige      : {sha_fige_avant}")
     print(f"  sha256 reproduit : {sha256(repro_path)}")
     ok_json, msgs = compare_json(data, fige)
+    print("\n".join(msgs))
+
+    te_s, te_h, te_d = splits.test
+    syn = test_synoptique(splits)
+    te = collecte(wf, cfg, splits, te_s[syn], te_h[syn], te_d[syn], SEED_TE)
+    print("\n1b) Predictions de la ridge (vent moyen cible par instant) : reproduit / fige")
+    ok_pred, msgs = compare_predictions(data, fige, {"validation": va[:2], "test": te[:2]},
+                                        wf.geom)
     print("\n".join(msgs))
 
     print("\n2) Test synoptique (graine 2000, 50 % des capteurs) : RMSE u / v")
@@ -196,10 +265,32 @@ def main(argv: list[str] | None = None) -> int:
               f"{'' if ecart <= TOL_RMSE else '  <- ECART'}")
     (out / "comparaison_test.json").write_text(json.dumps(lignes, indent=2), encoding="utf-8")
 
-    assert sha256(fige_path) == sha_fige_avant, "le JSON fige a change pendant le script !"
+    print("\n3) INFORMATIF, sans effet sur le verdict : test synoptique a keep = 1,0 (tous les "
+          "capteurs,\n   comme predict() en production) ; la correction a ete ajustee a 50 %")
+    k_seul = rmse_test(wf, cfg, splits, None, keep=1.0)
+    k_corr = rmse_test(wf, cfg, splits, MeanWindCorrection.load(fige_path), keep=1.0)
+    print(" niveau | modele seul   | corr. figee   | delta u  delta v")
+    keep1, degrades = [], []
+    for z in k_seul:
+        du, dv = k_corr[z][0] - k_seul[z][0], k_corr[z][1] - k_seul[z][1]
+        degrade = bool(max(du, dv) > TOL_RMSE)
+        if degrade:
+            degrades.append(z)
+        keep1.append({"z_m": z, "modele_seul": k_seul[z], "corrige": k_corr[z],
+                      "delta": (du, dv), "degrade": degrade})
+        print(f"  {z:5d} | {k_seul[z][0]:.3f} {k_seul[z][1]:.3f} | {k_corr[z][0]:.3f} "
+              f"{k_corr[z][1]:.3f} | {du:+.3f}  {dv:+.3f}{'  <- DEGRADATION' if degrade else ''}")
+    print("  keep = 1,0 : " + (f"DEGRADATION a {degrades} m" if degrades
+                               else "aucune degradation") + " (informatif)")
+    (out / "keep1_informatif.json").write_text(json.dumps(keep1, indent=2), encoding="utf-8")
+
+    if sha256(fige_path) != sha_fige_avant:                 # pas d'assert : python -O l'ote
+        print(f"ERREUR : le JSON fige {fige_path} a change pendant le script", file=sys.stderr)
+        return 3
     print(f"\nJSON fige intact (sha256 inchange). Sorties : {out}")
-    verdict = ok_json and ok_rmse
-    print(f"VERDICT : JSON {'OK' if ok_json else 'ECART'} | RMSE {'OK' if ok_rmse else 'ECART'} "
+    verdict = ok_json and ok_pred and ok_rmse
+    print(f"VERDICT : structure {'OK' if ok_json else 'ECART'} | predictions "
+          f"{'OK' if ok_pred else 'ECART'} | RMSE {'OK' if ok_rmse else 'ECART'} "
           f"-> {'PORTAGE VALIDE' if verdict else 'PORTAGE NON VALIDE'}")
     return 0 if verdict else 1
 

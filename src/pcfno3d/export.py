@@ -101,8 +101,10 @@ def export_web(volume: Volume, out_dir: str | Path, stride: int = 1,
         "champs": written,
         "inference_s": volume.inference_s,
         "capteurs_utilises": volume.n_sensors,
-        "correction": getattr(volume, "correction", None),
     }
+    if getattr(volume, "correction", None):
+        # seulement si active : desactivee, le manifeste reste celui de main
+        manifest["correction"] = volume.correction
     (out_dir / "manifest.json").write_text(json.dumps(manifest, indent=2, ensure_ascii=False),
                                            encoding="utf-8")
     return out_dir

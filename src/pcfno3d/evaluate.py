@@ -48,6 +48,9 @@ class Evaluator:
         # moyenne de passes (voir inference.ensemble_forward) ; par defaut celle de la config
         self.tta = cfg.inference.tta if tta is None else int(tta)
         self.tta_keep = cfg.inference.tta_keep if tta_keep is None else float(tta_keep)
+        if self.wf.correction is not None:
+            from .correction import refuse_tta
+            refuse_tta(self.tta, self.wf.correction)          # correction M1 : une seule passe
         if tta is not None:
             # le benchmark DSO4 passe par wf.predict : il doit mesurer la meme configuration
             cfg.inference.tta, cfg.inference.tta_keep = self.tta, self.tta_keep

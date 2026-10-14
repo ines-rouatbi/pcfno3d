@@ -45,6 +45,26 @@ FEATURES_10H = FEATURES_10F + ["ug_v2/10", "vg_v2/10", "stabilite_Pa_km", "su*st
 ALPHAS_10H = (0.01, 0.1, 1.0, 10.0, 100.0)
 Z_HIGH_M = 650                              # niveaux du score de selection (>= 650 m)
 
+TTA_INCOMPATIBLE = (
+    "correction M1 et inference.tta > 1 sont incompatibles : la correction a ete ajustee (BLOC "
+    "10h) sur la sortie d'UNE seule passe du modele ; appliquee au champ moyenne de plusieurs "
+    "passes, elle sortirait de sa distribution d'ajustement. Choisir inference.tta = 1 ou "
+    "inference.correction = null.")
+
+
+def refuse_tta(tta: int, correction: MeanWindCorrection | None) -> None:
+    """ValueError si une correction est active avec une moyenne de plusieurs passes."""
+    if correction is not None and int(tta) > 1:
+        raise ValueError(TTA_INCOMPATIBLE)
+
+
+def check_top_level(geom: Geometry) -> None:
+    """x3 lit le vent moyen des capteurs dans X[:, nz-1], qui n'est rempli que si le niveau du
+    haut est evalue : sinon l'angle de rotation serait faux sans bruit. On refuse."""
+    if geom.nz - 1 not in geom.eval_levels():
+        raise ValueError("correction M1 : le niveau du haut doit etre evalue (x3 y lit le vent "
+                         "moyen des capteurs, comme le BLOC 10h)")
+
 
 # ---------------------------------------------------------------------- BLOC 10g
 def geostrophic_v2(S: np.ndarray, sensor: np.ndarray, geom: Geometry) -> np.ndarray:
@@ -167,9 +187,8 @@ def fit_correction(X_tr, G_tr, T_tr, X_va, G_va, T_va, geom: Geometry,
     Tous les choix se font sur la VALIDATION (jamais le test). Renvoie (JSON, rapport) ; le
     JSON a exactement le format de couche_limite_v7.json ecrit par le BLOC 10h.
     """
+    check_top_level(geom)
     levels = geom.eval_levels()
-    if geom.nz - 1 not in levels:
-        raise ValueError("le niveau du haut doit etre evalue (x3 y lit le vent des capteurs)")
     high = [k for k in levels if geom.z_levels[k] >= Z_HIGH_M] or levels
 
     def rmse(pred, t):
@@ -248,6 +267,7 @@ class MeanWindCorrection:
     def shifts(self, S: np.ndarray, sensor: np.ndarray, tfeat: np.ndarray, u: np.ndarray,
                v: np.ndarray, geom: Geometry) -> dict[tuple[int, int], float]:
         """{(niveau, composante 0/1) : decalage a ajouter aux noeuds valides du niveau}."""
+        check_top_level(geom)
         X = instant_features(S, sensor, tfeat, u, v, geom)[None]
         G = geo_row(S, sensor, geom)[None]
         out = {}
