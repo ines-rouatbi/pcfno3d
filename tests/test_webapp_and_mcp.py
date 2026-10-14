@@ -383,8 +383,8 @@ def _instant_csv(cfg, corrompre: bool = False, part: float = 1.0) -> bytes:
     return df.to_csv(index=False).encode("utf-8")
 
 
-def test_upload_conforme_joint_le_rapport_qualite(open_client, env):
-    r = open_client.post("/api/reconstruct/upload",
+def test_upload_conforme_joint_le_rapport_qualite(client, env):
+    r = client.post("/api/reconstruct/upload",
                          files={"file": ("instant.csv", _instant_csv(env), "text/csv")})
     assert r.status_code == 200, r.text
     body = r.json()
@@ -397,9 +397,9 @@ def test_upload_conforme_joint_le_rapport_qualite(open_client, env):
 
 
 @pytest.mark.parametrize("part", [0.9, 0.5, 0.25])
-def test_upload_panne_partielle_reconstruit(open_client, env, part):
+def test_upload_panne_partielle_reconstruit(client, env, part):
     """DSO5 : un sous-ensemble de stations est reconstruit (200), jamais refuse (422)."""
-    r = open_client.post("/api/reconstruct/upload",
+    r = client.post("/api/reconstruct/upload",
                          files={"file": ("instant.csv", _instant_csv(env, part=part),
                                          "text/csv")})
     assert r.status_code == 200, r.text
@@ -414,8 +414,8 @@ def test_upload_panne_partielle_reconstruit(open_client, env, part):
         assert set(q["motifs"]) <= set(body["avertissements"])
 
 
-def test_upload_non_conforme_renvoie_422_et_le_rapport(open_client, env):
-    r = open_client.post("/api/reconstruct/upload",
+def test_upload_non_conforme_renvoie_422_et_le_rapport(client, env):
+    r = client.post("/api/reconstruct/upload",
                          files={"file": ("instant.csv", _instant_csv(env, corrompre=True),
                                          "text/csv")})
     assert r.status_code == 422, r.text
