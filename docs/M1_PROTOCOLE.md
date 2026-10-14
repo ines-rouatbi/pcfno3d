@@ -29,3 +29,23 @@ par niveau prédisant le décalage moyen du niveau) est retenue. La règle est �
   de v8 sans accord de Rayen.
 - **Mesure** : cellule BLOC 10i du notebook Colab fno3d_v7.ipynb, la règle étant imprimée
   avant tout calcul.
+
+## Avenant n° 1 (2026-10-14, décision de Rayen, salon #332) — avant toute mesure
+
+Objet : le mode de calcul de l'intervalle de confiance de **C2** (épisodes). Rien d'autre ne change :
+seuils, niveaux, C1, C3 et la règle de décision restent ceux de la section précédente.
+
+- **Constat** : les 46 instants d'épisodes ne sont pas indépendants. Ils tombent sur les jours de test
+  4, 97 et 11, soit environ **3 situations** : 18 instants « rafales » à 1 min d'écart,
+  18 « lever du soleil » et 10 « rafales 10 s ». Un bootstrap sur les instants sous-estime l'IC.
+- **C2 utilise un bootstrap PAR BLOCS** : blocs de **6 instants consécutifs**, rééchantillonnés
+  **à l'intérieur de chaque épisode**, en conservant la taille de chaque épisode (18 / 18 / 10).
+  Le bootstrap reste apparié (même tirage avant / après), avec 1000 tirages. Pour C1, l'IC
+  rapporté rééchantillonne le test synoptique par jours entiers.
+- **Pour information, hors règle** : l'IC par instants est calculé et publié à côté.
+- **Réserve, à reproduire telle quelle dans le rapport** : ce bootstrap stratifié est
+  **conditionnel aux 3 situations**. Il corrige l'autocorrélation à l'intérieur d'un épisode,
+  mais ne mesure pas la variabilité d'un épisode à l'autre. Avec 3 épisodes, aucune méthode ne
+  le peut, et C2 a donc une **puissance limitée**.
+- **Mise en œuvre** : cellule BLOC 10i, avec `BOOTSTRAP = "blocs"` et `BLOC_LEN = 6`, imprimés
+  avec la règle avant tout calcul.
