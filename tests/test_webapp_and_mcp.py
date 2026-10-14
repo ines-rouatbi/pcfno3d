@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import os
 
+import numpy as np
 import pytest
 
 pytest.importorskip("fastapi")
@@ -362,8 +363,9 @@ def test_reconstruction_depuis_des_stations_reelles(client):
 
 
 # ---------------------------------------------------------------------------- contrat ANEO
-def _instant_csv(cfg, corrompre: bool = False) -> bytes:
-    """Les stations du premier instant d'un jour du mini-dataset, en CSV."""
+def _instant_csv(cfg, corrompre: bool = False, part: float = 1.0) -> bytes:
+    """Les stations du premier instant d'un jour du mini-dataset, en CSV ; `part` garde
+    une station sur 1/part (panne partielle repartie sur le domaine)."""
     import pandas as pd
 
     meta = json.loads((cfg.paths.data_dir / "meta.json").read_text(encoding="utf-8"))
@@ -371,6 +373,9 @@ def _instant_csv(cfg, corrompre: bool = False) -> bytes:
     df = pd.read_csv(day)
     df = df[(df["timestamp_utc"] == df["timestamp_utc"].iloc[0])
             & (df["point_id"] < meta["noeuds_3d"]["point_id_debut"])]
+    if part < 1.0:
+        rng = np.random.default_rng(0)
+        df = df[rng.random(len(df)) < part]
     if corrompre:
         df = df.astype({"temperature_c": object})
         df.iloc[0, df.columns.get_loc("temperature_c")] = "abc"
@@ -384,10 +389,29 @@ def test_upload_conforme_joint_le_rapport_qualite(open_client, env):
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["capteurs_utilises"] > 0
+    assert body["statut_qualite"] == "conforme"
     q = body["qualite"]
     assert q["verdict"] == "conforme" and q["erreurs"] == []
     # ~10 % de capteurs manquants dans le mini-dataset : un avertissement, pas un refus
-    assert any("interpolees" in a for a in q["avertissements"])
+    assert any("interpolees" in a for a in body["avertissements"])
+
+
+@pytest.mark.parametrize("part", [0.9, 0.5, 0.25])
+def test_upload_panne_partielle_reconstruit(open_client, env, part):
+    """DSO5 : un sous-ensemble de stations est reconstruit (200), jamais refuse (422)."""
+    r = open_client.post("/api/reconstruct/upload",
+                         files={"file": ("instant.csv", _instant_csv(env, part=part),
+                                         "text/csv")})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["capteurs_utilises"] > 0 and body["vitesse_max_m_s"] > 0
+    assert body["statut_qualite"] in ("conforme", "quarantaine")
+    q = body["qualite"]
+    assert q["qualite"]["fraicheur"]["stations_muettes"]["nombre"] == 0
+    assert q["qualite"]["fraicheur"]["stations_absentes"]["nombre"] > 0
+    assert any("absente" in a for a in body["avertissements"])
+    if body["statut_qualite"] == "quarantaine":
+        assert set(q["motifs"]) <= set(body["avertissements"])
 
 
 def test_upload_non_conforme_renvoie_422_et_le_rapport(open_client, env):

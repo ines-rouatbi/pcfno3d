@@ -1,10 +1,14 @@
 """Contrat de donnees ANEO (cahier des charges, section 8) : schema, coherence, qualite.
 
-Tout fichier de mesures passe par ce controle AVANT d'entrer dans la chaine de
-reconstruction (cache, API d'upload). Il en sort un rapport JSON lisible et un verdict :
+Le controle est branche a deux endroits : la commande `pcfno3d validate` (avec mise en
+quarantaine optionnelle) et l'upload de l'API (`POST /api/reconstruct/upload`, seul
+chemin ou le rapport est joint a la reconstruction). `build-cache` ne l'appelle PAS :
+valider les fichiers journaliers avant de construire le cache reste une etape manuelle.
+Il en sort un rapport JSON lisible et un verdict :
 
-    conforme      le fichier entre dans la chaine (eventuellement avec des avertissements)
+    conforme      le fichier peut entrer dans la chaine (avertissements eventuels)
     quarantaine   structure correcte mais qualite degradee : un humain decide
+                  (a l'upload : reconstruction servie, statut_qualite = quarantaine)
     rejet         le fichier viole le contrat (critere DE1) : il n'entre pas
 
 Trois etages, tous en validation PARESSEUSE (lazy) : on collecte TOUTES les erreurs au
@@ -21,9 +25,12 @@ Definitions retenues (voir docs/CONTRAT_ANEO.md) :
 - valeur interpolee ou signalee : mask_i_obs = 0, OU source interpolee, OU
   aneo_quality_score < QUALITE_SIGNALEE.
 - absence : couple (station, instant) sans ligne, ou avec u, v ou T manquant.
-- valeur figee : meme valeur exacte de u, v ou T sur >= N_INSTANTS_FIGEE instants
-  consecutifs du fichier.
-- station muette : au moins une absence, OU une valeur figee.
+- valeur figee : meme valeur exacte de u, v ou T sur une serie d'au moins
+  N_INSTANTS_FIGEE instants consecutifs couvrant au moins DUREE_FIGEE_S ; pour le vent,
+  le calme (vitesse < VITESSE_CALME) ne compte pas (u = v = 0 est une mesure plausible).
+- station muette : au moins une absence, OU une valeur figee. Profil upload
+  (`Seuils.upload()`) : une station sans AUCUNE ligne est une panne connue (« absente »),
+  ni muette ni comptee dans le seuil de rejet des stations valides.
 - station valide (a un instant) : presente, mesuree (ni interpolee ni signalee), toutes
   variables dans leur plage, densite coherente, non figee.
 - couverture : part de stations valides par tuile carree de TUILE_M metres.
@@ -31,7 +38,9 @@ Definitions retenues (voir docs/CONTRAT_ANEO.md) :
 
 from __future__ import annotations
 
+import csv
 import datetime as dt
+import gzip
 import json
 import re
 import shutil
@@ -53,8 +62,12 @@ TOL_DENSITE_REL = 0.02
 # plus fin du generateur : episodes 10 s ; les episodes minute et les heures synoptiques
 # (3 h) en sont des multiples).
 PAS_ATTENDU_S = 10
-# Valeur figee : meme valeur exacte sur au moins 3 instants consecutifs.
+# Valeur figee : meme valeur exacte sur au moins 3 instants consecutifs ET 30 min. En
+# duree, pas en nombre d'instants : a 10 s, trois valeurs egales (quantification a 0,1)
+# sont banales. Le calme (vitesse < 0,5 m/s) n'est pas un anemometre bloque.
 N_INSTANTS_FIGEE = 3
+DUREE_FIGEE_S = 1800.0
+VITESSE_CALME = 0.5
 VARS_FIGEES = ("wind_u_m_s", "wind_v_m_s", "temperature_c")
 # Score de qualite en dessous duquel une valeur est « signalee » (= real.min_quality).
 QUALITE_SIGNALEE = 0.5
@@ -62,7 +75,8 @@ QUALITE_SIGNALEE = 0.5
 TUILE_M = 1000.0
 
 # --- rejet : le fichier n'entre pas dans la chaine
-REJET_PART_ANOMALIES = 0.01          # > 1 % des lignes hors plage ou densite incoherente
+REJET_PART_ANOMALIES = 0.01          # > 1 % des lignes STATIONS hors plage ou densite
+                                     # incoherente (les noeuds 3D ne diluent pas le seuil)
 REJET_STATIONS_VALIDES = 0.30        # < 30 % de couples (station, instant) valides
 # --- quarantaine : structure correcte, qualite a revoir par un humain
 QUARANTAINE_STATIONS_VALIDES = 0.70  # < 70 % de stations valides au pire instant
@@ -76,11 +90,19 @@ AVERT_INTERPOLEES = 0.05             # > 5 % de valeurs interpolees ou signalees
 
 @dataclass
 class Seuils:
-    """Seuils du verdict ; les valeurs par defaut sont les constantes ci-dessus."""
+    """Seuils du verdict ; les valeurs par defaut sont les constantes ci-dessus.
+
+    absences_connues : une station sans aucune ligne dans le fichier est une panne connue
+    (« absente ») : elle n'est ni muette, ni comptee dans le seuil de REJET des stations
+    valides (calcule alors sur les stations presentes). Active dans le profil upload.
+    """
 
     tol_densite_rel: float = TOL_DENSITE_REL
     pas_attendu_s: int = PAS_ATTENDU_S
     n_instants_figee: int = N_INSTANTS_FIGEE
+    duree_figee_s: float = DUREE_FIGEE_S
+    vitesse_calme: float = VITESSE_CALME
+    absences_connues: bool = False
     qualite_signalee: float = QUALITE_SIGNALEE
     tuile_m: float = TUILE_M
     rejet_part_anomalies: float = REJET_PART_ANOMALIES
@@ -90,6 +112,13 @@ class Seuils:
     quarantaine_muettes: float = QUARANTAINE_MUETTES
     quarantaine_tuiles_vides: float = QUARANTAINE_TUILES_VIDES
     avert_interpolees: float = AVERT_INTERPOLEES
+
+    @classmethod
+    def upload(cls) -> Seuils:
+        """Profil de `POST /api/reconstruct/upload` : un instant, souvent un sous-ensemble
+        de stations (panne partielle, DSO5). Le modele reconstruit avec les capteurs
+        presents (masque a 0 ailleurs) : seul un fichier faux doit etre refuse."""
+        return cls(absences_connues=True)
 
 
 # =============================================================================== SCHEMA 8.1
@@ -130,6 +159,11 @@ BLOQUANT, MESURE = "bloquant", "mesure"
 # identifiant de regle -> (section du cahier, gravite, message)
 REGLES: dict[str, tuple[str, str, str]] = {
     "fichier_illisible": ("8.1", BLOQUANT, "fichier CSV illisible"),
+    "fichier_vide": ("8.1", BLOQUANT, "fichier sans aucune ligne de donnees"),
+    "separateur_invalide": ("8.1", BLOQUANT,
+                            "separateur de champs invalide : le contrat attend la virgule"),
+    "jour_multiple": ("8.1", BLOQUANT,
+                      "le fichier couvre plusieurs dates UTC (un fichier = un jour)"),
     "ligne_malformee": ("8.1", BLOQUANT, "ligne au nombre de champs incorrect"),
     "colonne_absente": ("8.1", BLOQUANT, "colonne obligatoire absente"),
     "valeur_manquante": ("8.1", BLOQUANT, "valeur obligatoire manquante"),
@@ -160,6 +194,7 @@ COLONNES_EXEMPLE = {
     "pas_incompatible": ["timestamp_utc"],
     "hour_utc_incoherent": ["timestamp_utc", "hour_utc"],
     "day_index_incoherent": ["timestamp_utc", "day_index"],
+    "jour_multiple": ["point_id", "timestamp_utc"],
     "jour_du_fichier": ["timestamp_utc", "day_index"],
     "source_incoherente": ["point_id", "source_type"],
     "densite_incoherente": ["pressure_pa", "temperature_c", "air_density_kg_m3"],
@@ -217,50 +252,94 @@ class Grille:
 
 
 # =============================================================================== LECTURE
+TAILLE_LOT = 16 << 20                 # octets lus par lot (lecture en flux)
+RELECTURE_MAX = 64 << 20              # au-dela (8 Mo si .gz), pas de relecture pandas/python
+
+
+def _entete(path: Path) -> str:
+    opener = gzip.open if path.name.endswith(".gz") else open
+    with opener(path, "rt", encoding="utf-8", errors="replace") as f:
+        return f.readline().strip("\r\n")
+
+
+def _lire_par_lots(path: Path, types: dict, node_id_start: int | None) -> pd.DataFrame:
+    """Lecture EN FLUX : chaque lot est converti puis filtre (surface_seule) avant le
+    suivant, pour ne jamais tenir en memoire les ~1,35 M lignes de noeuds 3D par instant
+    d'un fichier journalier complet."""
+    import pyarrow.csv as pacsv
+
+    reader = pacsv.open_csv(path, read_options=pacsv.ReadOptions(block_size=TAILLE_LOT),
+                            convert_options=pacsv.ConvertOptions(column_types=types))
+    frames, offset = [], 0
+    for batch in reader:
+        df = batch.to_pandas()
+        df.index = np.arange(offset, offset + len(df))
+        offset += len(df)
+        if node_id_start is not None and "point_id" in df.columns:
+            df = df[~(pd.to_numeric(df["point_id"], errors="coerce") >= node_id_start)]
+        frames.append(df)
+    if not frames:
+        return pd.DataFrame(columns=reader.schema.names)
+    return pd.concat(frames) if len(frames) > 1 else frames[0]
+
+
 def lire_csv(path: str | Path, surface_seule: bool = False,
              node_id_start: int | None = None) -> tuple[pd.DataFrame | None, list[dict]]:
     """CSV (eventuellement .gz) -> DataFrame BRUT, sans rien convertir de force.
 
-    pyarrow infere les types colonne par colonne : une colonne qui contient « abc » reste
-    du texte, et c'est le schema qui le signale (au lieu d'une exception a la premiere
-    valeur). En cas d'echec (lignes au mauvais nombre de champs), relecture par pandas en
-    texte, et les lignes malformees sont collectees au lieu d'interrompre la lecture.
+    1. lecture en flux typee (pyarrow infere les types sur le premier lot) ;
+    2. si un lot contredit ces types (« abc » dans une colonne reelle), relecture en flux
+       avec toutes les colonnes en texte : c'est le schema qui signale la valeur ;
+    3. si des lignes n'ont pas le bon nombre de champs, relecture tolerante par pandas qui
+       les collecte — seulement pour un petit fichier (RELECTURE_MAX) ; un gros fichier
+       est declare illisible avec le message de pyarrow.
 
     L'index du DataFrame est le numero de ligne de donnees (0 = ligne 2 du fichier) :
     les erreurs du rapport citent les lignes du fichier, meme apres `surface_seule`.
     """
     import pyarrow as pa_
-    import pyarrow.compute as pc
-    import pyarrow.csv as pacsv
 
+    path = Path(path)
+    filtre = node_id_start if surface_seule else None
+    try:
+        entete = _entete(path)
+    except (OSError, EOFError, gzip.BadGzipFile) as exc:
+        return None, [_erreur("fichier_illisible", None, 1, [], [str(exc)[:300]])]
+    if not entete:
+        return None, [_erreur("fichier_vide", None, 1, [], ["fichier sans en-tete"])]
+    for sep in (";", "\t", "|"):
+        if entete.count(sep) > entete.count(","):
+            return None, [_erreur("separateur_invalide", None, 1, [1],
+                                  [f"separateur {sep!r} detecte dans l'en-tete : {entete[:120]}"])]
+    noms = next(csv.reader([entete]))
+
+    df, err = None, None
+    for types in ({"timestamp_utc": pa_.string(), "source_type": pa_.string()},
+                  {n: pa_.string() for n in noms}):
+        try:
+            df = _lire_par_lots(path, types, filtre)
+            break
+        except (pa_.ArrowException, OSError, ValueError) as exc:
+            err = exc
     erreurs: list[dict] = []
-    try:
-        opts = pacsv.ConvertOptions(column_types={"timestamp_utc": "string",
-                                                  "source_type": "string"})
-        table = pacsv.read_csv(path, convert_options=opts)
-        table = table.append_column("_ligne", pa_.array(np.arange(table.num_rows)))
-        if surface_seule and node_id_start is not None and "point_id" in table.column_names:
-            try:
-                table = table.filter(pc.less(table.column("point_id"), node_id_start))
-            except (pa_.ArrowException, TypeError):     # point_id non numerique : tout garder
-                pass
-        df = table.to_pandas()
-        return df.set_index("_ligne").rename_axis(None), erreurs
-    except (pa_.ArrowException, OSError, ValueError):
-        pass                                             # relecture tolerante ci-dessous
-
-    mauvaises: list[list[str]] = []
-    try:
-        df = pd.read_csv(path, dtype=str, engine="python",
-                         on_bad_lines=lambda bad: mauvaises.append(bad) or None)
-    except Exception as exc:                             # noqa: BLE001 - tout est rapporte
-        erreurs.append(_erreur("fichier_illisible", None, 1, [], [str(exc)[:300]]))
+    if df is None:
+        limite = RELECTURE_MAX // 8 if path.name.endswith(".gz") else RELECTURE_MAX
+        if path.stat().st_size > limite:
+            return None, [_erreur("fichier_illisible", None, 1, [], [str(err)[:300]])]
+        mauvaises: list[list[str]] = []
+        try:
+            df = pd.read_csv(path, dtype=str, engine="python",
+                             on_bad_lines=lambda bad: mauvaises.append(bad) or None)
+        except Exception as exc:                         # noqa: BLE001 - tout est rapporte
+            return None, [_erreur("fichier_illisible", None, 1, [], [str(exc)[:300]])]
+        if mauvaises:
+            erreurs.append(_erreur("ligne_malformee", None, len(mauvaises), [],
+                                   [",".join(b) for b in mauvaises[:N_EXEMPLES]]))
+        if filtre is not None and "point_id" in df.columns:
+            df = df[~(pd.to_numeric(df["point_id"], errors="coerce") >= filtre)]
+    if len(df) == 0:
+        erreurs.append(_erreur("fichier_vide", None, 1, [], [entete[:120]]))
         return None, erreurs
-    if mauvaises:
-        erreurs.append(_erreur("ligne_malformee", None, len(mauvaises), [],
-                               [",".join(b) for b in mauvaises[:N_EXEMPLES]]))
-    if surface_seule and node_id_start is not None and "point_id" in df.columns:
-        df = df[~(pd.to_numeric(df["point_id"], errors="coerce") >= node_id_start)]
     return df, erreurs
 
 
@@ -371,6 +450,15 @@ def _jour_coherent(df: pd.DataFrame) -> pd.Series:
     return pd.Series(rows.isin(list(good)), index=df.index) | ~known
 
 
+def _jour_unique(df: pd.DataFrame) -> pd.Series:
+    """Un fichier = un jour UTC : les lignes d'une autre date que la date majoritaire
+    sont signalees, que le nom du fichier suive ou non le motif journalier."""
+    d = df["_ts"].dt.normalize()
+    if d.notna().sum() == 0:
+        return pd.Series(True, index=df.index)
+    return d.isna() | (d == d.mode().iloc[0])
+
+
 def _jour_du_fichier(df: pd.DataFrame, jour: tuple[int, pd.Timestamp]) -> pd.Series:
     day, date = jour
     ts, di = df["_ts"], df["day_index"]
@@ -446,6 +534,7 @@ def schema_type(grille: Grille, presentes: set[str], seuils: Seuils | None = Non
         checks.append(pa.Check(_sans_doublon, error="doublon"))
     if "_ts" in has:
         checks.append(pa.Check(_croissant, error="horodatage_decroissant"))
+        checks.append(pa.Check(_jour_unique, error="jour_multiple"))
         checks.append(pa.Check(lambda df: _aligne(df, seuils.pas_attendu_s),
                                error="pas_incompatible"))
     if {"_ts", "hour_utc"} <= has:
@@ -559,22 +648,41 @@ def _r(x, n: int = 4):
     return None if x is None or not np.isfinite(x) else round(float(x), n)
 
 
+def _stat(fn, x, n: int = 3):
+    """min / mediane / max sur les valeurs finies, None s'il n'y en a pas (sans warning)."""
+    x = np.asarray(x, float)
+    x = x[np.isfinite(x)]
+    return _r(fn(x), n) if x.size else None
+
+
 def _ids(mask: np.ndarray, offset: int = 1) -> dict:
     ids = np.nonzero(mask)[0] + offset
     return {"nombre": int(ids.size), "ids": ids[:N_IDS].tolist(),
             "tronque": bool(ids.size > N_IDS)}
 
 
-def valeurs_figees(vals: np.ndarray, n: int) -> np.ndarray:
-    """(stations, instants) -> cellules appartenant a une serie de >= n valeurs egales."""
+def valeurs_figees(vals: np.ndarray, n: int, temps_s: np.ndarray | None = None,
+                   duree_s: float = 0.0, actif: np.ndarray | None = None) -> np.ndarray:
+    """(stations, instants) -> cellules d'une serie de valeurs egales assez longue.
+
+    Une serie compte si elle a >= n valeurs ET couvre >= duree_s secondes (temps_s : date
+    de chaque instant, en s). actif (stations, instants) : cellules ou une egalite a un
+    sens (ex. vent hors calme) ; une cellule inactive coupe la serie.
+    """
     ns, nk = vals.shape
     if nk < n or n < 2:
         return np.zeros((ns, nk), dtype=bool)
     eq = (vals[:, 1:] == vals[:, :-1]) & np.isfinite(vals[:, 1:])     # (ns, nk-1)
+    if actif is not None:
+        eq &= actif[:, 1:] & actif[:, :-1]
     run = np.zeros((ns, nk), dtype=int)           # egalites consecutives se terminant en k
     for k in range(1, nk):
         run[:, k] = np.where(eq[:, k - 1], run[:, k - 1] + 1, 0)
     out = run >= n - 1
+    if temps_s is not None and duree_s > 0:
+        t = np.asarray(temps_s, float)
+        debut = np.arange(nk)[None, :] - run                          # premier instant
+        out &= (t[None, :] - t[debut]) >= duree_s
     for k in range(nk - 2, -1, -1):
         out[:, k] |= out[:, k + 1] & eq[:, k]
     return out
@@ -640,9 +748,15 @@ def indicateurs(dfc: pd.DataFrame, grille: Grille, seuils: Seuils | None = None)
     anom = mat(anomalie[st.index].to_numpy(), False)
     figee = np.zeros((n_st, n_inst), dtype=bool)
     figees_par_var = {}
+    temps_s = (instants - instants[0]) / np.timedelta64(1, "s")
+    series = {v: mat(st[v].to_numpy(dtype=float), np.nan) for v in VARS_FIGEES}
+    with np.errstate(invalid="ignore"):
+        hors_calme = (np.hypot(series["wind_u_m_s"], series["wind_v_m_s"])
+                      >= seuils.vitesse_calme)
     for var in VARS_FIGEES:
-        f = valeurs_figees(mat(st[var].to_numpy(dtype=float), np.nan),
-                           seuils.n_instants_figee)
+        f = valeurs_figees(series[var], seuils.n_instants_figee, temps_s,
+                           seuils.duree_figee_s,
+                           actif=hors_calme if var.startswith("wind_") else None)
         figees_par_var[var] = int(f.any(axis=1).sum())
         figee |= f
     mesure = present & ~manque
@@ -653,6 +767,8 @@ def indicateurs(dfc: pd.DataFrame, grille: Grille, seuils: Seuils | None = None)
     k_worst = int(np.argmin(par_instant))
     stations_valides = {
         "part": _r(valid.sum() / (n_st * n_inst)),
+        # sur les seuls couples presents : seuil de rejet du profil upload (panne connue)
+        "part_presentes": _r(valid.sum() / max(int(present.sum()), 1)),
         "part_pire_instant": _r(par_instant[k_worst]),
         "pire_instant": pd.Timestamp(instants[k_worst]).isoformat(),
         "par_instant": {pd.Timestamp(t).isoformat(): _r(x)
@@ -676,13 +792,16 @@ def indicateurs(dfc: pd.DataFrame, grille: Grille, seuils: Seuils | None = None)
     # --- 3. fraicheur : absences, stations muettes, valeurs figees
     absence = ~mesure
     figee_station = figee.any(axis=1)
-    muette = absence.any(axis=1) | figee_station
+    jamais_la = ~present.any(axis=1)
+    # profil upload : une station sans aucune ligne est une panne connue, pas une muette
+    compte = absence & ~jamais_la[:, None] if seuils.absences_connues else absence
+    muette = compte.any(axis=1) | figee_station
     has_any = mesure.any(axis=1)
     last = np.where(has_any, n_inst - 1 - np.argmax(mesure[:, ::-1], axis=1), 0)
     retard = (instants[-1] - instants[last]) / np.timedelta64(1, "s")
     fraicheur = {
         "absences": int(absence.sum()),
-        "stations_absentes": _ids(~present.any(axis=1)),
+        "stations_absentes": _ids(jamais_la),
         "stations_muettes": {**_ids(muette), "part": _r(muette.sum() / n_st)},
         "stations_sans_mesure_dernier_instant": int(absence[:, -1].sum()),
         "retard_max_s": _r(retard[has_any].max(), 1) if has_any.any() else None,
@@ -710,21 +829,27 @@ def indicateurs(dfc: pd.DataFrame, grille: Grille, seuils: Seuils | None = None)
         "part_tuiles_vides_pire_instant": _r(vides.max()),
         "densite_stations_valides_km2": {
             "moyenne": _r(valid.sum() / n_inst / area_km2.sum(), 3),
-            "min": _r(np.nanmin(dens), 3), "mediane": _r(np.nanmedian(dens), 3),
-            "max": _r(np.nanmax(dens), 3)},
+            "min": _stat(np.min, dens), "mediane": _stat(np.median, dens),
+            "max": _stat(np.max, dens)},
         # part de stations valides par tuile (moyenne sur les instants), lignes = y
         "part_valide_par_tuile": [[_r(x, 3) for x in row]
                                   for row in frac.reshape(nty, ntx)],
     }
 
     n_anom = int(anomalie.sum())
+    n_anom_st = int((anomalie & is_station).sum())
+    n_rows_st = int(is_station.sum())
     return {
         "instants": n_inst, "stations_declarees": n_st,
         "stations_valides": stations_valides,
         "interpolees_ou_signalees": interpolees,
         "hors_plage": hors_plage,
         "densite": densite,
-        "anomalies": {"lignes": n_anom, "part_lignes": _r(n_anom / max(n_rows, 1), 6)},
+        # part calculee sur les lignes STATIONS : les noeuds 3D (~73 % des lignes d'un
+        # fichier journalier) dilueraient le seuil de rejet
+        "anomalies": {"lignes": n_anom, "lignes_stations": n_anom_st,
+                      "lignes_noeuds_3d": n_anom - n_anom_st,
+                      "part_lignes_stations": _r(n_anom_st / max(n_rows_st, 1), 6)},
         "fraicheur": fraicheur,
         "couverture": couverture,
     }
@@ -748,15 +873,17 @@ def verdict(erreurs: list[dict], q: dict | None,
         return "rejet", rejet, avert
 
     an = q["anomalies"]
-    if an["part_lignes"] > s.rejet_part_anomalies:
-        rejet.append(f"{_pct(an['part_lignes'])} des lignes hors plage ou de densite "
-                     f"incoherente (> {_pct(s.rejet_part_anomalies)})")
+    if an["part_lignes_stations"] > s.rejet_part_anomalies:
+        rejet.append(f"{_pct(an['part_lignes_stations'])} des lignes stations hors plage ou "
+                     f"de densite incoherente (> {_pct(s.rejet_part_anomalies)})")
     elif an["lignes"]:
         quar.append(f"{an['lignes']} ligne(s) hors plage ou de densite incoherente")
 
     sv = q["stations_valides"]
-    if sv["part"] < s.rejet_stations_valides:
-        rejet.append(f"stations valides {_pct(sv['part'])} "
+    part = sv["part_presentes"] if s.absences_connues else sv["part"]
+    if part < s.rejet_stations_valides:
+        base = " des stations presentes" if s.absences_connues else ""
+        rejet.append(f"stations valides {_pct(part)}{base} "
                      f"(< {_pct(s.rejet_stations_valides)}) : reconstruction impossible")
     elif sv["part_pire_instant"] < s.quarantaine_stations_valides:
         quar.append(f"stations valides {_pct(sv['part_pire_instant'])} a "

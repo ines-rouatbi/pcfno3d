@@ -181,8 +181,10 @@ MUTATIONS = {
     "pas_incompatible": lambda d: _set(d, 30, 9, "timestamp_utc", "2025-01-07 09:00:05"),
     "hour_utc_incoherent": lambda d: _set(d, 3, 6, "hour_utc", 7),
     "day_index_incoherent": lambda d: _set(d, 3, 6, "day_index", 5),
-    "hors_plage": lambda d: _set(d, 3, 6, "wind_v_m_s", -75.0),
-    "densite_incoherente": lambda d: _set(d, 3, 6, "air_density_kg_m3", 1.32),
+    "jour_multiple": lambda d: _set(d, 30, 9, "timestamp_utc", "2025-01-08 09:00:00"),
+    # sur un noeud 3D : une anomalie de mesure isolee, hors du seuil de rejet (stations)
+    "hors_plage": lambda d: _set(d, 27, 6, "wind_v_m_s", -75.0),
+    "densite_incoherente": lambda d: _set(d, 27, 6, "air_density_kg_m3", 1.32),
 }
 
 
@@ -222,6 +224,55 @@ def test_densite_temperature_virtuelle_et_tolerance(brut, grille):
         d.loc[i, "air_density_kg_m3"] = round(rho_gp[i] * facteur, 5)
         r = valider_dataframe(d, grille)
         assert ("densite_incoherente" not in _regles(r)) is attendu, facteur
+
+
+def test_part_d_anomalies_sur_les_lignes_stations(brut, grille):
+    """Une anomalie sur 96 lignes stations (1,04 %) rejette, meme si les 24 lignes de
+    noeuds 3D la dilueraient sous 1 % ; la meme sur un noeud met en quarantaine."""
+    r = valider_dataframe(_set(brut.copy(), 3, 6, "wind_v_m_s", -75.0), grille)
+    an = r["qualite"]["anomalies"]
+    assert an["lignes_stations"] == 1 and an["part_lignes_stations"] == pytest.approx(1 / 96,
+                                                                                    abs=1e-5)
+    assert r["verdict"] == "rejet"
+    r = valider_dataframe(_set(brut.copy(), 27, 6, "wind_v_m_s", -75.0), grille)
+    assert r["qualite"]["anomalies"]["lignes_noeuds_3d"] == 1
+    assert r["verdict"] == "quarantaine"
+
+
+def test_valeurs_figees_en_duree_et_hors_calme():
+    vals = np.array([[3.0, 3.0, 3.0, 3.0]])
+    dix_s = np.array([0.0, 10.0, 20.0, 30.0])
+    assert not valeurs_figees(vals, 3, dix_s, 1800.0).any()      # 30 s : banal a 10 s
+    demi_h = np.array([0.0, 900.0, 1800.0, 2700.0])
+    assert valeurs_figees(vals, 3, demi_h, 1800.0).all()
+    assert not valeurs_figees(vals[:, :2], 3, demi_h[:2], 0.0).any()   # 2 instants
+    calme = np.zeros((1, 4), dtype=bool)
+    assert not valeurs_figees(vals, 3, demi_h, 1800.0, actif=calme).any()
+
+
+def test_calme_n_est_pas_un_anemometre_fige(brut, grille):
+    d = brut.copy()
+    d.loc[d["point_id"] == 1, ["wind_u_m_s", "wind_v_m_s"]] = 0.0     # calme sur 9 h
+    d.loc[d["point_id"] == 2, ["wind_u_m_s", "wind_v_m_s"]] = 1.0     # 1,4 m/s fige 9 h
+    fr = valider_dataframe(d, grille)["qualite"]["fraicheur"]
+    assert fr["valeurs_figees"]["ids"] == [2]
+
+
+def test_profil_upload_panne_partielle(brut, grille):
+    """Un instant avec 50 % puis 25 % des stations : panne connue, pas un rejet."""
+    instant = brut[brut["hour_utc"] == 0]
+    for garde in (12, 6):
+        d = instant[(instant["point_id"] > 24) | (instant["point_id"] <= garde)]
+        r = valider_dataframe(d, grille, Seuils.upload())
+        assert r["verdict"] != "rejet", r["motifs"]
+        fr = r["qualite"]["fraicheur"]
+        assert fr["stations_muettes"]["nombre"] == 0
+        assert fr["stations_absentes"]["nombre"] == 24 - garde
+        assert r["qualite"]["stations_valides"]["part_presentes"] >= 0.8
+        # le profil par defaut (fichier journalier) les compte comme muettes
+        assert valider_dataframe(d, grille)["qualite"]["fraicheur"]["stations_muettes"][
+            "nombre"] == 24 - garde
+    assert valider_dataframe(d, grille)["verdict"] == "rejet"          # 25 % sans profil
 
 
 def test_valeurs_figees():
@@ -280,7 +331,20 @@ def test_fichier_illisible_et_lignes_malformees(tmp_path, grille):
     vide = tmp_path / "vide.csv"
     vide.write_bytes(b"")
     r = valider_fichier(vide, grille)
-    assert r["verdict"] == "rejet" and "fichier_illisible" in _regles(r)
+    assert r["verdict"] == "rejet" and _regles(r) == {"fichier_vide"}
+
+    entete = tmp_path / "entete.csv"
+    entete.write_text((DATA / "conforme.csv").read_text(encoding="utf-8").splitlines()[0]
+                      + "\n", encoding="utf-8")
+    r = valider_fichier(entete, grille)
+    assert r["verdict"] == "rejet" and _regles(r) == {"fichier_vide"}
+
+    pv = tmp_path / "point_virgule.csv"
+    pv.write_text((DATA / "conforme.csv").read_text(encoding="utf-8").replace(",", ";"),
+                  encoding="utf-8")
+    r = valider_fichier(pv, grille)
+    assert r["verdict"] == "rejet" and _regles(r) == {"separateur_invalide"}
+    assert "';'" in _erreur(r, "separateur_invalide")["exemples"][0]
 
     texte = (DATA / "conforme.csv").read_text(encoding="utf-8").splitlines()
     texte[5] += ",champ_en_trop"
@@ -354,3 +418,47 @@ def test_cli_validate(tmp_path, capsys):
     assert not (q / "conforme.csv").exists()
     assert [r["verdict"] for r in json.loads(out.read_text(encoding="utf-8"))] == \
         ["conforme", "quarantaine"]
+
+
+# ---------------------------------------------------------------------- lecture en flux
+def test_lecture_par_lots_filtre_chaque_lot(mini_dataset, monkeypatch):
+    """surface_seule filtre lot par lot ; les numeros de ligne restent ceux du fichier."""
+    import pcfno3d.contract as contract
+
+    path = sorted(mini_dataset.glob("aneo_observations_day_*"))[0]
+    g = Grille.depuis_meta(mini_dataset)
+    entier = pd.read_csv(path)
+    monkeypatch.setattr(contract, "TAILLE_LOT", 16 << 10)        # ~30 lots
+    df, erreurs = lire_csv(path, surface_seule=True, node_id_start=g.node_id_start)
+    assert not erreurs
+    attendu = entier[entier["point_id"] < g.node_id_start]
+    assert df.index.tolist() == attendu.index.tolist()
+    assert np.allclose(df["wind_u_m_s"].to_numpy(), attendu["wind_u_m_s"].to_numpy())
+
+
+def test_type_faux_dans_un_lot_tardif(tmp_path, monkeypatch, grille):
+    import pcfno3d.contract as contract
+
+    lignes = (DATA / "conforme.csv").read_text(encoding="utf-8").splitlines()
+    champs = lignes[-1].split(",")
+    champs[4] = "abc"                                            # temperature_c
+    lignes[-1] = ",".join(champs)
+    f = tmp_path / "tardif.csv"
+    f.write_text("\n".join(lignes) + "\n", encoding="utf-8")
+    monkeypatch.setattr(contract, "TAILLE_LOT", 2048)
+    r = valider_fichier(f, grille)
+    e = _erreur(r, "type_reel", "temperature_c")
+    assert e["lignes"] == [len(lignes)] and e["exemples"] == ["abc"]
+
+
+def test_gros_fichier_sans_relecture_python(tmp_path, monkeypatch, grille):
+    import pcfno3d.contract as contract
+
+    lignes = (DATA / "conforme.csv").read_text(encoding="utf-8").splitlines()
+    lignes[5] += ",champ_en_trop"
+    f = tmp_path / "gros.csv"
+    f.write_text("\n".join(lignes) + "\n", encoding="utf-8")
+    monkeypatch.setattr(contract, "RELECTURE_MAX", 1000)          # « gros » : pas de pandas
+    r = valider_fichier(f, grille)
+    assert r["verdict"] == "rejet" and _regles(r) == {"fichier_illisible"}
+    assert "columns" in r["erreurs"][0]["exemples"][0]

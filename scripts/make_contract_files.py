@@ -8,7 +8,7 @@ synoptiques (pas de 3 h) :
                    interpolees declarees : verdict « conforme », sans avertissement
     corrompu.csv   types faux, hors plage, doublons, point_id inconnu, mask et source
                    invalides, heure et pas incoherents, densite fausse : verdict « rejet »
-    panne.csv      stations muettes (absentes 3 instants), anemometres figes, 30 % de
+    panne.csv      stations muettes (absentes 3 instants), anemometres figes, 33 % de
                    valeurs interpolees : verdict « quarantaine »
 
 plus meta.json, la grille declaree. Deterministe (graine fixe) :

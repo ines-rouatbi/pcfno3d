@@ -1,8 +1,11 @@
 # Contrat de données ANEO (cahier des charges §8.1–8.3, critère DE1)
 
-Tout fichier de mesures est contrôlé **avant** d'entrer dans la chaîne (cache, API
-d'upload). Code : `src/pcfno3d/contract.py`. Seuils : constantes en tête du module
-(classe `Seuils` pour les surcharger).
+Le contrôle est branché à **deux** endroits : la commande `pcfno3d validate` (avec
+quarantaine optionnelle) et l'upload de l'API. **`build-cache` ne l'appelle pas** : valider
+les fichiers journaliers avant de construire le cache reste une étape manuelle
+(`pcfno3d validate … --quarantine`). Le rapport n'est **joint à une reconstruction qu'à
+l'upload**. Code : `src/pcfno3d/contract.py`. Seuils : constantes en tête du module (classe
+`Seuils` pour les surcharger ; `Seuils.upload()` pour le profil de l'API).
 
 ```bash
 pcfno3d validate fichier.csv [autres...] [--meta meta.json] [--quarantine DIR] [--copier]
@@ -12,18 +15,33 @@ pcfno3d validate fichier.csv [autres...] [--meta meta.json] [--quarantine DIR] [
 Code de retour : **0** conforme (avertissements compris), **1** quarantaine, **2** rejet.
 Sans `--meta`, la grille déclarée est `paths.data_dir/meta.json` de la configuration.
 `--report` écrit le rapport (un objet pour un fichier, une liste pour plusieurs).
-`--surface-seule` ignore les nœuds 3D (fichiers journaliers complets : ~1,5 M de nœuds par instant).
+`--surface-seule` ignore les nœuds 3D (fichiers journaliers complets : ~1,35 M de nœuds
+par instant). La lecture se fait **en flux** (lots de 16 Mo, `pyarrow.csv.open_csv`), chaque
+lot filtré avant le suivant ; si un lot contredit les types inférés, relecture en flux tout
+en texte. La relecture tolérante pandas (lignes au mauvais nombre de champs) n'est tentée
+que sous 64 Mo (8 Mo compressé) ; au-delà, `fichier_illisible` avec le message de pyarrow.
 
-API : `POST /api/reconstruct/upload` valide le CSV ; non conforme (rejet **ou**
-quarantaine) → `422`, corps `{"detail": ..., "qualite": <rapport>}` ; conforme → la
-reconstruction, rapport joint sous `qualite`.
+**API** : `POST /api/reconstruct/upload` valide le CSV avec le **profil upload**
+(`Seuils.upload()`) : une station **absente** du CSV (aucune ligne) est une panne connue,
+que le modèle traite (capteur indisponible, DSO5) — elle n'est ni muette ni comptée dans
+le seuil de rejet des stations valides, calculé alors sur les stations présentes.
+
+| verdict | réponse |
+|---|---|
+| `rejet` | `422`, corps `{"detail": ..., "qualite": <rapport>}` |
+| `quarantaine` | `200` : reconstruction + `statut_qualite: "quarantaine"`, `avertissements` (motifs compris), `qualite` |
+| `conforme` | `200` : reconstruction + `statut_qualite: "conforme"`, `avertissements`, `qualite` |
+
+Mesuré sur un instant du mini-dataset (800 stations) : 100 % et 90 % des stations →
+conforme (avertissements) ; 50 % et 25 % → quarantaine (moins de 70 % des stations
+déclarées valides), reconstruction servie ; ~90 % des stations présentes restent valides.
 
 ## Verdicts
 
 | verdict | effet | déclenché par |
 |---|---|---|
-| `rejet` | n'entre pas | une erreur **bloquante** ; > 1 % des lignes hors plage ou de densité incohérente ; < 30 % de couples (station, instant) valides |
-| `quarantaine` | un humain décide | toute anomalie de mesure (≤ 1 %) ; < 70 % de stations valides au pire instant ; > 25 % de valeurs interpolées ou signalées ; > 5 % de stations muettes ; > 20 % de tuiles sans station valide |
+| `rejet` | n'entre pas | une erreur **bloquante** ; > 1 % des lignes **stations** hors plage ou de densité incohérente (les nœuds 3D, ~73 % des lignes d'un fichier journalier, ne diluent pas le seuil) ; < 30 % de couples (station, instant) valides (profil upload : des couples présents) |
+| `quarantaine` | un humain décide | toute anomalie de mesure (stations ≤ 1 %, ou sur un nœud 3D) ; < 70 % de stations valides au pire instant ; > 25 % de valeurs interpolées ou signalées ; > 5 % de stations muettes ; > 20 % de tuiles sans station valide |
 | `conforme` | entre | le reste ; **avertissements** si > 5 % d'interpolées, une station muette, figée ou absente, une tuile vide |
 
 **Quarantaine** (`controler`, `mettre_en_quarantaine`, option `--quarantine DIR`) : le
@@ -66,6 +84,8 @@ sans u, v ou T, la station est « sans mesure » à cet instant.
 
 | règle (`regle`) | gravité | définition |
 |---|---|---|
+| `fichier_vide` | bloquant | fichier vide ou en-tête seul |
+| `separateur_invalide` | bloquant | `;`, tabulation ou barre verticale plus fréquent que `,` dans l'en-tête |
 | `doublon` | bloquant | couple (point_id, instant) déjà vu ; instant comparé après lecture (`T`/espace, fuseau) |
 | `point_id_inconnu` | bloquant | hors de 1…nx·ny (stations) et de `point_id_debut`…+`nombre` (nœuds) |
 | `source_incoherente` | bloquant | source « nœud 3D » sur une station, ou l'inverse |
@@ -73,6 +93,7 @@ sans u, v ou T, la station est « sans mesure » à cet instant.
 | `pas_incompatible` | bloquant | instant non multiple de **10 s** depuis minuit UTC (`--pas`) |
 | `hour_utc_incoherent` | bloquant | `hour_utc` ≠ heure de `timestamp_utc` |
 | `day_index_incoherent` | bloquant | un `day_index` pour deux dates, ou l'inverse (le couple majoritaire fait foi) |
+| `jour_multiple` | bloquant | ligne d'une autre date UTC que la date majoritaire : un fichier = un jour, quel que soit son nom |
 | `jour_du_fichier` | bloquant | nom `aneo_observations_day_XXX_YYYYMMDD_…` : date ≠ YYYYMMDD ou day_index ≠ XXX |
 | `densite_incoherente` | mesure | \|ρ − p/(R_d·T_v)\| / (p/(R_d·T_v)) > **2 %** |
 | `hors_plage` | mesure | valeur hors de la plage §8.1 |
@@ -96,7 +117,7 @@ lignes exploitables seulement (point_id connu, instant lisible et aligné, sans 
 | `stations_valides` | présente, mesurée, ni interpolée ni signalée, dans les plages, densité cohérente, non figée — part globale, au pire instant, par instant |
 | `interpolees_ou_signalees` | `mask_i_obs = 0` **ou** source interpolée **ou** `aneo_quality_score < 0,5` ; `interpolees_non_declarees` = mask 1 mais source interpolée |
 | `hors_plage.<variable>` | nombre, part, nombre de stations touchées, min, max, manquantes |
-| `fraicheur` | `absences` (station sans ligne ou sans u/v/T à un instant) ; **station muette** = au moins une absence **ou** une valeur figée ; **valeur figée** = même valeur exacte de u, v ou T sur ≥ **3** instants consécutifs ; retard de la dernière mesure |
+| `fraicheur` | `absences` (station sans ligne ou sans u/v/T à un instant) ; **station muette** = au moins une absence **ou** une valeur figée ; **valeur figée** = même valeur exacte de u, v ou T sur ≥ **3** instants consécutifs couvrant ≥ **30 min** (à 10 s, trois valeurs égales sont banales), le **calme** (vitesse < 0,5 m/s) ne comptant pas pour le vent ; profil upload : une station sans aucune ligne est « absente », pas muette ; retard de la dernière mesure |
 | `couverture` | tuiles de **1 000 m** (`--tuile`) : part de tuiles sans station valide (pire instant), densité de stations valides par km² (moyenne, min, médiane, max), grille `part_valide_par_tuile` (lignes = y) pour l'indice de couverture des nœuds virtuels |
 
 ## Rapport JSON

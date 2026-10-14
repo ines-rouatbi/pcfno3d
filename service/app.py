@@ -480,11 +480,14 @@ async def reconstruct_upload(file: UploadFile = File(...), keep: float = 1.0,
                              _: ApiKeyRecord | None = Depends(require_read)):
     """Reconstruction depuis un CSV de mesures de surface d'un seul instant.
 
-    Le fichier passe d'abord par le contrat de donnees ANEO (pcfno3d.contract) : non
-    conforme (rejet ou quarantaine) -> 422 et le rapport dans `qualite` ; conforme, avec
-    ou sans avertissements -> la reconstruction, rapport joint sous `qualite`.
+    Le fichier passe d'abord par le contrat de donnees ANEO (pcfno3d.contract), profil
+    upload (`Seuils.upload()`) : les stations absentes du CSV sont une panne CONNUE, que
+    le modele traite (capteur_dispo = 0, DSO5). Seul un REJET (erreur bloquante, plus de
+    1 % d'anomalies sur les stations, moins de 30 % de stations presentes valides) renvoie
+    422 avec le rapport sous `qualite`. Conforme ou en quarantaine -> la reconstruction,
+    avec `statut_qualite`, `avertissements` (motifs de quarantaine compris) et `qualite`.
     """
-    from pcfno3d.contract import Grille, valider_fichier
+    from pcfno3d.contract import Grille, Seuils, valider_fichier
 
     wf = model()
     data = await file.read()
@@ -495,8 +498,8 @@ async def reconstruct_upload(file: UploadFile = File(...), keep: float = 1.0,
         tmp_path = Path(tmp.name)
     try:
         rapport = valider_fichier(tmp_path, Grille.depuis_meta(wf.geom.meta.raw),
-                                  nom=file.filename or tmp_path.name)
-        if rapport["verdict"] != "conforme":
+                                  Seuils.upload(), nom=file.filename or tmp_path.name)
+        if rapport["verdict"] == "rejet":
             return JSONResponse(status_code=422, content={
                 "detail": f"CSV non conforme au contrat ANEO ({rapport['verdict']}) : "
                           + " ; ".join(rapport["motifs"]),
@@ -510,6 +513,8 @@ async def reconstruct_upload(file: UploadFile = File(...), keep: float = 1.0,
     return {"timestamp_utc": volume.timestamp, "capteurs_utilises": volume.n_sensors,
             "inference_s": round(volume.inference_s, 4),
             "vitesse_max_m_s": round(float(volume.speed[valid].max()), 3),
+            "statut_qualite": rapport["verdict"],
+            "avertissements": rapport["motifs"] + rapport["avertissements"],
             "qualite": rapport}
 
 
