@@ -213,8 +213,15 @@ class WindFieldModel:
                   f"| {self.device} | {self.geom.summary()}")
 
     # ------------------------------------------------------------------ entrees
-    def surface_from_csv(self, path: str | Path) -> tuple[np.ndarray, float, int, str]:
-        """Mesures de surface d'un instant -> (S (8, ny, nx), heure, jour de l'annee, date)."""
+    def surface_from_csv(self, path: str | Path, exclure: dict | None = None
+                         ) -> tuple[np.ndarray, float, int, str]:
+        """Mesures de surface d'un instant -> (S (8, ny, nx), heure, jour de l'annee, date).
+
+        exclure : {instant: point_id} a masquer (capteur indisponible), typiquement les
+        stations que le contrat de donnees juge fausses (pcfno3d.contract). Toute station
+        dont une variable n'est pas finie est masquee aussi, et sa valeur mise a 0 : un NaN
+        traverserait la moyenne par blocs (NaN * 0 = NaN) et toute la sortie serait NaN.
+        """
         cols = ["point_id", "timestamp_utc", "mask_i_obs"] + SURF_VARS
         df = pd.read_csv(path, usecols=cols)
         df = df[df["point_id"] < self.geom.node_id_start]
@@ -224,11 +231,19 @@ class WindFieldModel:
         first = df["timestamp_utc"].iloc[0]
         df = df[df["timestamp_utc"] == first]
         stamp = pd.Timestamp(first)
+        if stamp.tzinfo is not None:
+            stamp = stamp.tz_convert(None)
+        vals = np.stack([pd.to_numeric(df[v], errors="coerce").to_numpy(np.float64)
+                         for v in SURF_VARS])
+        dispo = pd.to_numeric(df["mask_i_obs"], errors="coerce").fillna(0).to_numpy() > 0.5
+        dispo &= np.isfinite(vals).all(axis=0)
+        if exclure:
+            dispo &= ~np.isin(df["point_id"].to_numpy(), exclure.get(stamp, []))
+        vals = np.where(np.isfinite(vals), vals, 0.0)
         S = np.zeros((8, self.geom.ny_s * self.geom.nx_s), dtype=np.float32)
         flat = self.geom.pid_to_surf[df["point_id"].values]
-        for ci, var in enumerate(SURF_VARS):
-            S[ci, flat] = df[var].values
-        S[7, flat] = df["mask_i_obs"].values
+        S[:7, flat] = vals
+        S[7, flat] = dispo
         S = self.geom.pool_surface(S)
         hour = stamp.hour + stamp.minute / 60 + stamp.second / 3600
         return S, hour, int(stamp.dayofyear), str(stamp)
@@ -288,8 +303,9 @@ class WindFieldModel:
         S, hour, doy, stamp = self.surface_from_cache(stem)
         return self.predict(S, hour, doy, timestamp=stamp, keep=keep, seed=seed)
 
-    def predict_csv(self, path: str | Path, keep: float = 1.0, seed: int = 0) -> Volume:
-        S, hour, doy, stamp = self.surface_from_csv(path)
+    def predict_csv(self, path: str | Path, keep: float = 1.0, seed: int = 0,
+                    exclure: dict | None = None) -> Volume:
+        S, hour, doy, stamp = self.surface_from_csv(path, exclure)
         return self.predict(S, hour, doy, timestamp=stamp, keep=keep, seed=seed)
 
     def benchmark(self, S: np.ndarray, hour: float, doy: int, n: int = 20,

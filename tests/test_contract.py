@@ -462,3 +462,53 @@ def test_gros_fichier_sans_relecture_python(tmp_path, monkeypatch, grille):
     r = valider_fichier(f, grille)
     assert r["verdict"] == "rejet" and _regles(r) == {"fichier_illisible"}
     assert "columns" in r["erreurs"][0]["exemples"][0]
+
+
+def test_profil_upload_mask_zero_est_une_panne_connue(brut, grille):
+    """Un instant complet ou 75 % des lignes sont en mask_i_obs = 0 (encodage du dataset
+    pour un capteur manquant) : rejete par le profil journalier, pas a l'upload."""
+    d = brut[brut["hour_utc"] == 0].copy()
+    d.loc[d["point_id"].between(1, 18), "mask_i_obs"] = 0
+    up = valider_dataframe(d, grille, Seuils.upload())
+    assert up["verdict"] == "quarantaine", up["motifs"]
+    sv = up["qualite"]["stations_valides"]
+    assert sv["lignes_mesurees"] == 6 and sv["part_mesurees"] == 1.0
+    assert up["qualite"]["fraicheur"]["stations_muettes"]["nombre"] == 0
+    assert valider_dataframe(d, grille)["verdict"] == "rejet"
+
+
+def test_upload_plancher_d_anomalies_et_masque(brut, grille):
+    """1 station fausse sur 24 (4 % > 1 %) : quarantaine a l'upload, station a masquer ;
+    6 stations fausses (> 5 lignes) : rejet."""
+    d = brut[brut["hour_utc"] == 0].copy()
+    d.loc[d["point_id"] == 4, "temperature_c"] = 99.0
+    d.loc[d["point_id"] == 9, ["wind_u_m_s", "wind_v_m_s", "temperature_c"]] = np.nan
+    masque: dict = {}
+    r = valider_dataframe(d, grille, Seuils.upload(), masque=masque)
+    assert r["verdict"] == "quarantaine", r["motifs"]
+    assert "_masque" not in r["qualite"]
+    json.dumps(r)
+    assert masque[pd.Timestamp("2025-01-07 00:00:00")].tolist() == [4, 9]
+    assert r["qualite"]["stations_a_masquer"]["ids"] == [4, 9]
+    assert valider_dataframe(d, grille)["verdict"] == "rejet"      # profil journalier
+    d.loc[d["point_id"].between(10, 15), "relative_humidity_pct"] = 130.0
+    assert valider_dataframe(d, grille, Seuils.upload())["verdict"] == "rejet"
+
+
+def test_inference_masque_les_stations_exclues_et_les_nan(geom, mini_dataset, tmp_path):
+    """Le modele ne recoit ni la valeur signalee (99 degC), ni un NaN (sortie toute NaN)."""
+    from pcfno3d.inference import WindFieldModel
+
+    wf = WindFieldModel.__new__(WindFieldModel)          # seule la geometrie sert ici
+    wf.geom = geom
+    df = pd.read_csv(sorted(mini_dataset.glob("aneo_observations_day_*"))[0])
+    df = df[(df["timestamp_utc"] == df["timestamp_utc"].iloc[0])
+            & (df["point_id"] < geom.node_id_start)].copy()
+    df.loc[df["point_id"] == 4, ["temperature_c", "mask_i_obs"]] = [99.0, 1]
+    df.loc[df["point_id"] == 3, ["wind_u_m_s", "wind_v_m_s", "temperature_c"]] = np.nan
+    f = tmp_path / "instant.csv"
+    df.to_csv(f, index=False)
+    brut, *_ = wf.surface_from_csv(f)
+    assert np.isfinite(brut).all() and brut[3].max() > 50.0
+    S, *_ = wf.surface_from_csv(f, {pd.Timestamp(df["timestamp_utc"].iloc[0]): np.array([4])})
+    assert np.isfinite(S).all() and S[3].max() < 30.0

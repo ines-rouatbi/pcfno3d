@@ -78,6 +78,7 @@ TUILE_M = 1000.0
 REJET_PART_ANOMALIES = 0.01          # > 1 % des lignes STATIONS hors plage ou densite
                                      # incoherente (les noeuds 3D ne diluent pas le seuil)
 REJET_STATIONS_VALIDES = 0.30        # < 30 % de couples (station, instant) valides
+REJET_ANOMALIES_MIN_LIGNES_UPLOAD = 5  # upload : rejet si anomalies > 1 % ET > 5 lignes
 # --- quarantaine : structure correcte, qualite a revoir par un humain
 QUARANTAINE_STATIONS_VALIDES = 0.70  # < 70 % de stations valides au pire instant
 QUARANTAINE_INTERPOLEES = 0.25       # > 25 % de valeurs interpolees ou signalees
@@ -92,9 +93,13 @@ AVERT_INTERPOLEES = 0.05             # > 5 % de valeurs interpolees ou signalees
 class Seuils:
     """Seuils du verdict ; les valeurs par defaut sont les constantes ci-dessus.
 
-    absences_connues : une station sans aucune ligne dans le fichier est une panne connue
-    (« absente ») : elle n'est ni muette, ni comptee dans le seuil de REJET des stations
-    valides (calcule alors sur les stations presentes). Active dans le profil upload.
+    absences_connues : profil upload. Une station sans ligne, ou dont la ligne se declare
+    non mesuree (mask_i_obs = 0, source interpolee) ou n'a pas u/v/T, est une PANNE CONNUE
+    (c'est l'encodage du dataset pour un capteur manquant) : elle n'est pas muette, et le
+    seuil de REJET des stations valides ne compte que les lignes qui se declarent mesurees.
+    rejet_anomalies_min_lignes : plancher absolu ; le rejet pour anomalies exige aussi
+    STRICTEMENT plus de lignes que ce plancher (un instant de 50 stations ne doit pas etre
+    rejete pour une seule station fausse : elle est masquee, le fichier en quarantaine).
     """
 
     tol_densite_rel: float = TOL_DENSITE_REL
@@ -106,6 +111,7 @@ class Seuils:
     qualite_signalee: float = QUALITE_SIGNALEE
     tuile_m: float = TUILE_M
     rejet_part_anomalies: float = REJET_PART_ANOMALIES
+    rejet_anomalies_min_lignes: int = 0
     rejet_stations_valides: float = REJET_STATIONS_VALIDES
     quarantaine_stations_valides: float = QUARANTAINE_STATIONS_VALIDES
     quarantaine_interpolees: float = QUARANTAINE_INTERPOLEES
@@ -118,7 +124,8 @@ class Seuils:
         """Profil de `POST /api/reconstruct/upload` : un instant, souvent un sous-ensemble
         de stations (panne partielle, DSO5). Le modele reconstruit avec les capteurs
         presents (masque a 0 ailleurs) : seul un fichier faux doit etre refuse."""
-        return cls(absences_connues=True)
+        return cls(absences_connues=True,
+                   rejet_anomalies_min_lignes=REJET_ANOMALIES_MIN_LIGNES_UPLOAD)
 
 
 # =============================================================================== SCHEMA 8.1
@@ -761,6 +768,10 @@ def indicateurs(dfc: pd.DataFrame, grille: Grille, seuils: Seuils | None = None)
         figee |= f
     mesure = present & ~manque
     valid = mesure & ~interp & ~anom & ~figee
+    # lignes qui se DECLARENT mesurees : ni mask_i_obs = 0, ni source interpolee, avec u/v/T
+    declaree = mesure & ~mat(mask0 | src_interp, False)
+    # a masquer avant l'inference : presente, mais valeurs fausses ou inutilisables
+    a_masquer = present & (manque | anom | figee)
 
     # --- 1. stations valides
     par_instant = valid.sum(axis=0) / n_st
@@ -769,6 +780,9 @@ def indicateurs(dfc: pd.DataFrame, grille: Grille, seuils: Seuils | None = None)
         "part": _r(valid.sum() / (n_st * n_inst)),
         # sur les seuls couples presents : seuil de rejet du profil upload (panne connue)
         "part_presentes": _r(valid.sum() / max(int(present.sum()), 1)),
+        # sur les lignes qui se declarent mesurees : seuil de rejet du profil upload
+        "part_mesurees": _r(valid.sum() / max(int(declaree.sum()), 1)),
+        "lignes_mesurees": int(declaree.sum()),
         "part_pire_instant": _r(par_instant[k_worst]),
         "pire_instant": pd.Timestamp(instants[k_worst]).isoformat(),
         "par_instant": {pd.Timestamp(t).isoformat(): _r(x)
@@ -793,9 +807,9 @@ def indicateurs(dfc: pd.DataFrame, grille: Grille, seuils: Seuils | None = None)
     absence = ~mesure
     figee_station = figee.any(axis=1)
     jamais_la = ~present.any(axis=1)
-    # profil upload : une station sans aucune ligne est une panne connue, pas une muette
-    compte = absence & ~jamais_la[:, None] if seuils.absences_connues else absence
-    muette = compte.any(axis=1) | figee_station
+    # profil upload : absence = panne connue (sans ligne, mask 0, interpolee, sans u/v/T) ;
+    # seule une valeur figee rend la station muette
+    muette = figee_station if seuils.absences_connues else absence.any(axis=1) | figee_station
     has_any = mesure.any(axis=1)
     last = np.where(has_any, n_inst - 1 - np.argmax(mesure[:, ::-1], axis=1), 0)
     retard = (instants[-1] - instants[last]) / np.timedelta64(1, "s")
@@ -852,6 +866,11 @@ def indicateurs(dfc: pd.DataFrame, grille: Grille, seuils: Seuils | None = None)
                       "part_lignes_stations": _r(n_anom_st / max(n_rows_st, 1), 6)},
         "fraicheur": fraicheur,
         "couverture": couverture,
+        "stations_a_masquer": {**_ids(a_masquer.any(axis=1)),
+                               "couples": int(a_masquer.sum())},
+        # retire par valider_dataframe (non JSON) : point_id a masquer, par instant
+        "_masque": {pd.Timestamp(t): (np.nonzero(a_masquer[:, k])[0] + 1)
+                    for k, t in enumerate(instants) if a_masquer[:, k].any()},
     }
 
 
@@ -873,16 +892,17 @@ def verdict(erreurs: list[dict], q: dict | None,
         return "rejet", rejet, avert
 
     an = q["anomalies"]
-    if an["part_lignes_stations"] > s.rejet_part_anomalies:
+    if (an["part_lignes_stations"] > s.rejet_part_anomalies
+            and an["lignes_stations"] > s.rejet_anomalies_min_lignes):
         rejet.append(f"{_pct(an['part_lignes_stations'])} des lignes stations hors plage ou "
                      f"de densite incoherente (> {_pct(s.rejet_part_anomalies)})")
     elif an["lignes"]:
         quar.append(f"{an['lignes']} ligne(s) hors plage ou de densite incoherente")
 
     sv = q["stations_valides"]
-    part = sv["part_presentes"] if s.absences_connues else sv["part"]
+    part = sv["part_mesurees"] if s.absences_connues else sv["part"]
     if part < s.rejet_stations_valides:
-        base = " des stations presentes" if s.absences_connues else ""
+        base = " des lignes declarees mesurees" if s.absences_connues else ""
         rejet.append(f"stations valides {_pct(part)}{base} "
                      f"(< {_pct(s.rejet_stations_valides)}) : reconstruction impossible")
     elif sv["part_pire_instant"] < s.quarantaine_stations_valides:
@@ -908,6 +928,10 @@ def verdict(erreurs: list[dict], q: dict | None,
     if fr["stations_absentes"]["nombre"]:
         avert.append(f"{fr['stations_absentes']['nombre']} station(s) absente(s) du fichier")
 
+    nm = q["stations_a_masquer"]["nombre"]
+    if nm:
+        avert.append(f"{nm} station(s) a masquer avant reconstruction (hors plage, densite, "
+                     "figee ou sans u/v/T)")
     tv = q["couverture"]["part_tuiles_vides_pire_instant"]
     if tv > s.quarantaine_tuiles_vides:
         quar.append(f"tuiles sans station valide {_pct(tv)} "
@@ -925,10 +949,13 @@ def verdict(erreurs: list[dict], q: dict | None,
 # =============================================================================== API
 def valider_dataframe(brut: pd.DataFrame, grille: Grille, seuils: Seuils | None = None,
                       nom: str | None = None,
-                      erreurs_lecture: list[dict] | None = None) -> dict:
+                      erreurs_lecture: list[dict] | None = None,
+                      masque: dict | None = None) -> dict:
     """Valide un DataFrame BRUT (tel que lu, sans conversion) et renvoie le rapport.
 
     L'index doit etre le numero de ligne de donnees (0 = ligne 2 du fichier).
+    masque : dict rempli (s'il est fourni) par {instant: point_id des stations a masquer
+    avant l'inference} — hors plage, densite incoherente, figees, sans u/v/T.
     """
     seuils = seuils or Seuils()
     erreurs = list(erreurs_lecture or [])
@@ -939,6 +966,9 @@ def valider_dataframe(brut: pd.DataFrame, grille: Grille, seuils: Seuils | None 
     erreurs += _valider_pandera(schema_type(grille, presentes, seuils, jour), dfc, brut)
     q = (indicateurs(dfc, grille, seuils) if {"point_id", "timestamp_utc"} <= presentes
          else None)
+    a_masquer = q.pop("_masque") if q is not None else {}
+    if masque is not None:
+        masque.update(a_masquer)
     v, motifs, avert = verdict(erreurs, q, seuils)
     extra = sorted(set(brut.columns) - set(COLONNES))
     if extra:
@@ -973,11 +1003,15 @@ def valider_dataframe(brut: pd.DataFrame, grille: Grille, seuils: Seuils | None 
 
 
 def valider_fichier(path: str | Path, grille: Grille, seuils: Seuils | None = None,
-                    nom: str | None = None, surface_seule: bool = False) -> dict:
+                    nom: str | None = None, surface_seule: bool = False,
+                    masque: dict | None = None) -> dict:
     """Lit et valide un fichier de mesures ; ne leve pas d'exception sur un fichier faux.
 
     surface_seule : ignore les noeuds 3D a la lecture (fichiers journaliers complets du
-    dataset reel, ~1,5 million de noeuds par instant).
+    dataset reel, ~1,5 million de noeuds par instant). La lecture en flux ne borne la
+    memoire que pour la partie 3D : les lignes STATIONS gardees restent en memoire
+    (~1 Ko par ligne avec les colonnes converties, soit ~0,5 Go par instant pour les
+    500 000 stations de la grille reelle, et N x 0,5 Go pour un jour a N instants).
     """
     path = Path(path)
     nom = nom or path.name
@@ -988,7 +1022,7 @@ def valider_fichier(path: str | Path, grille: Grille, seuils: Seuils | None = No
                    "motifs": motifs, "avertissements": avert, "resume": {"lignes": 0},
                    "erreurs": erreurs, "qualite": None, "seuils": asdict(seuils or Seuils())}
     else:
-        rapport = valider_dataframe(brut, grille, seuils, nom, erreurs)
+        rapport = valider_dataframe(brut, grille, seuils, nom, erreurs, masque)
     rapport["taille_octets"] = path.stat().st_size
     return rapport
 

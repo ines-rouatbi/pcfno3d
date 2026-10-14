@@ -91,8 +91,10 @@ notebook's globals.
   quality indicators, verdict `conforme` / `quarantaine` / `rejet` with the thresholds as
   constants at the top of the module, and the quarantine move/copy (never deletes).
   `pcfno3d validate` and `POST /api/reconstruct/upload` use it (`build-cache` does
-  NOT). Upload uses `Seuils.upload()`: absent stations are a known outage (DSO5), only a
-  `rejet` gives 422; quarantine still reconstructs, with `statut_qualite`. Spec,
+  NOT). Upload uses `Seuils.upload()`: absent / `mask_i_obs=0` / no-u-v-T stations are a
+  known outage (DSO5), only a `rejet` gives 422; quarantine still reconstructs, with
+  `statut_qualite`. Stations the contract flags (out of range, frozen, NaN) are masked
+  before inference (`predict_csv(exclure=...)`; NaN is always masked there). Spec,
   thresholds and spec-vs-files gaps: `docs/CONTRAT_ANEO.md`; fixtures in
   `tests/data/contract/` (regenerate with `scripts/make_contract_files.py`).
 - **`cache.py`** — day CSV → `{stem}_S.npy` (8, ny, nx) + `{stem}_Y.npy` (4, nz, ny, nx) +

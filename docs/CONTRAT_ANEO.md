@@ -20,11 +20,24 @@ par instant). La lecture se fait **en flux** (lots de 16 Mo, `pyarrow.csv.open_c
 lot filtré avant le suivant ; si un lot contredit les types inférés, relecture en flux tout
 en texte. La relecture tolérante pandas (lignes au mauvais nombre de champs) n'est tentée
 que sous 64 Mo (8 Mo compressé) ; au-delà, `fichier_illisible` avec le message de pyarrow.
+**Limite** : le flux ne borne la mémoire que pour la partie 3D. Les lignes stations gardées
+restent en mémoire (~1 Ko par ligne avec les colonnes converties) : ~0,5 Go par instant
+pour les ~500 000 stations de la grille réelle, donc ~N × 0,5 Go pour un jour à N instants.
 
 **API** : `POST /api/reconstruct/upload` valide le CSV avec le **profil upload**
-(`Seuils.upload()`) : une station **absente** du CSV (aucune ligne) est une panne connue,
-que le modèle traite (capteur indisponible, DSO5) — elle n'est ni muette ni comptée dans
-le seuil de rejet des stations valides, calculé alors sur les stations présentes.
+(`Seuils.upload()`). Une station **absente** du CSV, ou dont la ligne se déclare non mesurée
+(`mask_i_obs = 0`, source interpolée — c'est l'encodage du dataset pour un capteur
+manquant) ou n'a pas u/v/T, est une **panne connue** que le modèle traite (capteur
+indisponible, DSO5) : elle n'est pas muette, et le seuil de rejet de 30 % ne compte que les
+lignes qui se déclarent mesurées (`part_mesurees`). Le rejet pour anomalies exige > 1 % des
+lignes stations **et** > 5 lignes (un instant de 50 stations n'est pas rejeté pour une
+station fausse). Un gzip est reconnu à ses octets magiques, quel que soit le nom envoyé.
+
+Les stations que le contrat juge **fausses** (hors plage, densité incohérente, figées, sans
+u/v/T) sont **masquées avant l'inférence** (`qualite.stations_a_masquer`, capteur
+indisponible) : le modèle ne reçoit jamais une valeur que le rapport signale. Toute valeur
+non finie est aussi masquée (et mise à 0) dans `WindFieldModel.surface_from_csv` : un NaN
+traverserait la moyenne par blocs et rendrait toute la sortie NaN.
 
 | verdict | réponse |
 |---|---|
@@ -35,12 +48,15 @@ le seuil de rejet des stations valides, calculé alors sur les stations présent
 Mesuré sur un instant du mini-dataset (800 stations) : 100 % et 90 % des stations →
 conforme (avertissements) ; 50 % et 25 % → quarantaine (moins de 70 % des stations
 déclarées valides), reconstruction servie ; ~90 % des stations présentes restent valides.
+Instant complet avec 25 % visibles via `mask_i_obs` → quarantaine, `part_mesurees` = 1,0 ;
+une station à 99 °C → quarantaine, station masquée ; une station sans u/v/T → conforme,
+station masquée. Tous en `200`, champ fini.
 
 ## Verdicts
 
 | verdict | effet | déclenché par |
 |---|---|---|
-| `rejet` | n'entre pas | une erreur **bloquante** ; > 1 % des lignes **stations** hors plage ou de densité incohérente (les nœuds 3D, ~73 % des lignes d'un fichier journalier, ne diluent pas le seuil) ; < 30 % de couples (station, instant) valides (profil upload : des couples présents) |
+| `rejet` | n'entre pas | une erreur **bloquante** ; > 1 % des lignes **stations** hors plage ou de densité incohérente (les nœuds 3D, ~73 % des lignes d'un fichier journalier, ne diluent pas le seuil) ; < 30 % de couples (station, instant) valides (profil upload : des lignes déclarées mesurées ; anomalies : il faut aussi > 5 lignes) |
 | `quarantaine` | un humain décide | toute anomalie de mesure (stations ≤ 1 %, ou sur un nœud 3D) ; < 70 % de stations valides au pire instant ; > 25 % de valeurs interpolées ou signalées ; > 5 % de stations muettes ; > 20 % de tuiles sans station valide |
 | `conforme` | entre | le reste ; **avertissements** si > 5 % d'interpolées, une station muette, figée ou absente, une tuile vide |
 
@@ -117,7 +133,7 @@ lignes exploitables seulement (point_id connu, instant lisible et aligné, sans 
 | `stations_valides` | présente, mesurée, ni interpolée ni signalée, dans les plages, densité cohérente, non figée — part globale, au pire instant, par instant |
 | `interpolees_ou_signalees` | `mask_i_obs = 0` **ou** source interpolée **ou** `aneo_quality_score < 0,5` ; `interpolees_non_declarees` = mask 1 mais source interpolée |
 | `hors_plage.<variable>` | nombre, part, nombre de stations touchées, min, max, manquantes |
-| `fraicheur` | `absences` (station sans ligne ou sans u/v/T à un instant) ; **station muette** = au moins une absence **ou** une valeur figée ; **valeur figée** = même valeur exacte de u, v ou T sur ≥ **3** instants consécutifs couvrant ≥ **30 min** (à 10 s, trois valeurs égales sont banales), le **calme** (vitesse < 0,5 m/s) ne comptant pas pour le vent ; profil upload : une station sans aucune ligne est « absente », pas muette ; retard de la dernière mesure |
+| `fraicheur` | `absences` (station sans ligne ou sans u/v/T à un instant) ; **station muette** = au moins une absence **ou** une valeur figée ; **valeur figée** = même valeur exacte de u, v ou T sur ≥ **3** instants consécutifs couvrant ≥ **30 min** (à 10 s, trois valeurs égales sont banales), le **calme** (vitesse < 0,5 m/s) ne comptant pas pour le vent ; profil upload : une absence (sans ligne, mask 0, interpolée, sans u/v/T) est une panne connue, seule une valeur figée rend muette ; retard de la dernière mesure |
 | `couverture` | tuiles de **1 000 m** (`--tuile`) : part de tuiles sans station valide (pire instant), densité de stations valides par km² (moyenne, min, médiane, max), grille `part_valide_par_tuile` (lignes = y) pour l'indice de couverture des nœuds virtuels |
 
 ## Rapport JSON

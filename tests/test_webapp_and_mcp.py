@@ -7,6 +7,7 @@ fastapi ou le SDK MCP ne sont pas installes : le paquet reste utilisable sans le
 from __future__ import annotations
 
 import json
+import math
 import os
 
 import numpy as np
@@ -363,7 +364,7 @@ def test_reconstruction_depuis_des_stations_reelles(client):
 
 
 # ---------------------------------------------------------------------------- contrat ANEO
-def _instant_csv(cfg, corrompre: bool = False, part: float = 1.0) -> bytes:
+def _instant_csv(cfg, corrompre: bool = False, part: float = 1.0, modifier=None) -> bytes:
     """Les stations du premier instant d'un jour du mini-dataset, en CSV ; `part` garde
     une station sur 1/part (panne partielle repartie sur le domaine)."""
     import pandas as pd
@@ -380,7 +381,17 @@ def _instant_csv(cfg, corrompre: bool = False, part: float = 1.0) -> bytes:
         df = df.astype({"temperature_c": object})
         df.iloc[0, df.columns.get_loc("temperature_c")] = "abc"
         df = pd.concat([df, df.iloc[[5]]])
+    if modifier is not None:
+        df = modifier(df.copy())
     return df.to_csv(index=False).encode("utf-8")
+
+
+def _upload(client, data: bytes, name: str = "instant.csv"):
+    r = client.post("/api/reconstruct/upload", files={"file": (name, data, "text/csv")})
+    assert r.status_code == 200, r.text
+    body = r.json()                     # JSON strict : un NaN aurait deja donne un 500
+    assert math.isfinite(body["vitesse_max_m_s"]) and body["capteurs_utilises"] > 0
+    return body
 
 
 def test_upload_conforme_joint_le_rapport_qualite(client, env):
@@ -425,3 +436,50 @@ def test_upload_non_conforme_renvoie_422_et_le_rapport(client, env):
     assert q["verdict"] == "rejet"
     regles = {e["regle"] for e in q["erreurs"]}
     assert {"type_reel", "doublon"} <= regles
+
+
+def test_upload_25_pct_visibles_par_le_masque(client, env):
+    """Encodage du dataset : capteur manquant = ligne mask_i_obs = 0. Panne connue."""
+    def masquer(df):
+        rng = np.random.default_rng(1)
+        df.loc[rng.random(len(df)) >= 0.25, "mask_i_obs"] = 0
+        return df
+
+    body = _upload(client, _instant_csv(env, modifier=masquer))
+    q = body["qualite"]
+    assert body["statut_qualite"] == "quarantaine"            # 75 % interpolees ou signalees
+    assert q["qualite"]["stations_valides"]["part_mesurees"] > 0.9
+    assert q["qualite"]["fraicheur"]["stations_muettes"]["nombre"] == 0
+
+
+def test_upload_station_a_99_degres_masquee(client, env):
+    def chauffer(df):
+        df.iloc[3, df.columns.get_loc("temperature_c")] = 99.0
+        return df
+
+    body = _upload(client, _instant_csv(env, modifier=chauffer))
+    assert body["statut_qualite"] == "quarantaine"
+    masquees = body["qualite"]["qualite"]["stations_a_masquer"]
+    assert masquees["nombre"] == 1
+    assert any("masquer" in a for a in body["avertissements"])
+
+
+def test_upload_station_sans_vent_ni_temperature(client, env):
+    def vider(df):
+        for c in ("wind_u_m_s", "wind_v_m_s", "temperature_c"):
+            df[c] = df[c].astype(object)
+            df.iloc[2, df.columns.get_loc(c)] = None
+        return df
+
+    body = _upload(client, _instant_csv(env, modifier=vider))
+    assert body["statut_qualite"] in ("conforme", "quarantaine")
+    assert body["qualite"]["qualite"]["stations_a_masquer"]["nombre"] == 1
+
+
+def test_upload_gzip_reconnu_aux_octets(client, env):
+    import gzip
+
+    data = gzip.compress(_instant_csv(env))
+    body = _upload(client, data, name="instant.csv")          # nom sans .gz
+    assert body["statut_qualite"] == "conforme"
+    assert _upload(client, data, name="instant.csv.gz")["statut_qualite"] == "conforme"
