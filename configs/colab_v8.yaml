@@ -95,3 +95,14 @@ inference:
 
 terrain_smooth_m: 300.0
 f_coriolis: 8.57e-5
+
+# Ancrage geographique SUPPOSE (14/10/2026). Le domaine fourni par Tukhnanutha est
+# synthetique : il n'a pas de position reelle. On le place a 36,0 N (la latitude de son
+# parametre de Coriolis, f = 8,57e-5 s-1), sur le relief collinaire du centre-nord tunisien.
+# Rectangle : 36,000-36,224 N, 9,700-10,255 E. Le relief du modele reste celui du
+# generateur, PAS celui de ce lieu.
+real:
+  origin_lat: 36.00
+  origin_lon: 9.70
+  rotation_deg: 0.0
+  origin_assumed: true

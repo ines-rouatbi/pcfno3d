@@ -363,6 +363,8 @@ def reconstruct_stations(req: StationsRequest,
             cache.pop(next(iter(cache)))
     valid = wf.geom.valid
     return {"stem": stem, "timestamp_utc": str(ts), "stations": info, "controle": rapport,
+            "georeferencement": "suppose (domaine synthetique, position choisie)"
+            if wf.cfg.real.origin_assumed else "mesure",
             "inference_s": round(volume.inference_s, 4),
             "vitesse_max_m_s": round(float(volume.speed[valid].max()), 3)}
 

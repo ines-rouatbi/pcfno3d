@@ -79,6 +79,8 @@ def main() -> int:
     ap.add_argument("--hours", default="0-23", help="ex. 0-23, ou 0,3,6,9,12,15,18,21")
     ap.add_argument("--products", default="pl,sl", help="pl (niveaux de pression), sl, ou les deux")
     ap.add_argument("--out", default=str(REPO / "artifacts" / "reanalysis"))
+    ap.add_argument("--chunk-days", type=int, default=4,
+                    help="jours par requete (le CDS refuse les trop grosses)")
     args = ap.parse_args()
 
     try:
@@ -124,20 +126,35 @@ def main() -> int:
     for (year, month), grp in days.to_series().groupby([days.year, days.month]):
         dd = sorted(grp.dt.day.tolist())
         for prod in sorted(products):
-            target = out / f"era5_{prod}_{year}{month:02d}.nc"
-            if target.exists():
-                print(f"  deja la : {target.name}")
-                continue
-            if prod == "pl":
-                req = request("pl", PL_VARS, year, month, dd, hours, area, PRESSURE_LEVELS)
-                name = "reanalysis-era5-pressure-levels"
-            else:
-                req = request("sl", SL_VARS, year, month, dd, hours, area)
-                name = "reanalysis-era5-single-levels"
-            tmp = target.with_suffix(".part")
-            client.retrieve(name, req, str(tmp))
-            tmp.replace(target)
-            print(f"  {target.name} ({target.stat().st_size / 1e6:.1f} Mo)")
+            # le CDS refuse les requetes trop grosses (« cost limits exceeded ») : un mois
+            # entier de niveaux de pression horaires depasse la limite. On decoupe en blocs
+            # de jours, et on coupe un bloc en deux chaque fois que le CDS le refuse.
+            pending = [dd[i:i + args.chunk_days] for i in range(0, len(dd), args.chunk_days)]
+            while pending:
+                block = pending.pop(0)
+                target = out / f"era5_{prod}_{year}{month:02d}_{block[0]:02d}-{block[-1]:02d}.nc"
+                if target.exists():
+                    print(f"  deja la : {target.name}")
+                    continue
+                if prod == "pl":
+                    req = request("pl", PL_VARS, year, month, block, hours, area,
+                                  PRESSURE_LEVELS)
+                    name = "reanalysis-era5-pressure-levels"
+                else:
+                    req = request("sl", SL_VARS, year, month, block, hours, area)
+                    name = "reanalysis-era5-single-levels"
+                tmp = target.with_suffix(".part")
+                try:
+                    client.retrieve(name, req, str(tmp))
+                except Exception as exc:              # noqa: BLE001
+                    if "cost limits" in str(exc) and len(block) > 1:
+                        half = len(block) // 2
+                        print(f"  trop gros pour le CDS ({len(block)} jours) : en deux")
+                        pending[:0] = [block[:half], block[half:]]
+                        continue
+                    raise
+                tmp.replace(target)
+                print(f"  {target.name} ({target.stat().st_size / 1e6:.1f} Mo)", flush=True)
     return 0
 
 

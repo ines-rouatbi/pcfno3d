@@ -283,6 +283,9 @@ class RealCfg:
     origin_lat: float | None = None
     origin_lon: float | None = None
     rotation_deg: float = 0.0           # axe x du domaine depuis l'est, sens antihoraire
+    # True = ancrage CHOISI, pas mesure : le domaine du generateur Tukhnanutha est
+    # synthetique et n'a pas de position reelle. Affiche dans les reponses de l'API.
+    origin_assumed: bool = False
     time_bin: str = "1h"                # regroupement temporel des mesures de stations
     ref_height_m: float | None = None   # hauteur cible du vent ; None = celle des capteurs
     min_quality: float = 0.5            # mesures de qualite inferieure ecartees
