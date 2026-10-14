@@ -110,6 +110,12 @@ def forward_headers(incoming, extra_key: str | None) -> dict[str, str]:
     return out
 
 
+def forward_params(query) -> list[tuple[str, str]]:
+    """Parametres a transmettre : `api_key` (la cle LOCALE) ne part jamais vers l'amont."""
+    items = query.multi_items() if hasattr(query, "multi_items") else list(query.items())
+    return [(k, v) for k, v in items if k.lower() != "api_key"]
+
+
 async def check(upstream: Upstream, timeout: float = 20.0) -> dict:
     """Interroge /api/health de l'amont. Ne leve pas : renvoie l'erreur lisible."""
     import httpx
@@ -139,7 +145,7 @@ def install(app, upstream: Upstream) -> None:
             async with httpx.AsyncClient(timeout=TIMEOUT_S) as client:
                 amont = await client.request(
                     request.method, cible,
-                    params=dict(request.query_params),
+                    params=forward_params(request.query_params),
                     headers=forward_headers(request.headers, upstream.key),
                     content=body or None)
         except httpx.TimeoutException as exc:

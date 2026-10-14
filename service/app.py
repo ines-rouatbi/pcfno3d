@@ -18,9 +18,17 @@ Variables d'environnement :
     PCFNO3D_DEVICE      cuda / cpu
     PCFNO3D_API_KEYS    cles supplementaires, "nom:cle,nom:cle" (portee read)
     PCFNO3D_ALLOWED_HOSTS  hotes autorises pour MCP (defaut : localhost, 127.0.0.1)
+    PCFNO3D_QUOTA_MINUTE / PCFNO3D_QUOTA_JOUR   quotas par cle (service/quotas.py)
+    PCFNO3D_ACCESS_LOG  journal d'acces JSONL (defaut run_dir/logs/acces.jsonl)
+    PCFNO3D_INSECURE_OPEN  "1" : mode ouvert sans cle, developpement local seulement
 
-Si aucune cle n'existe, l'API repond sans authentification et le signale dans
-/api/health : pratique en local, a ne pas exposer au reseau.
+Ferme par defaut : sans aucune cle active, tout est refuse (401) sauf /api/health, qui
+dit « aucune cle configuree ». Le mode ouvert demande un opt-in explicite
+(`pcfno3d serve --insecure-open`) et n'est jamais accepte sur le chemin Colab / tunnel.
+
+Un seul garde-fou (`make_guard`) controle /api et /mcp : cle, quota, journal d'acces.
+Les dependances `require_read` / `require_admin` des routes ne verifient plus que la
+portee de la cle deja authentifiee.
 
 `create_app()` est une fabrique : le gestionnaire de sessions MCP ne peut tourner qu'une
 fois par instance, donc chaque demarrage (uvicorn, test) construit sa propre application.
@@ -28,9 +36,11 @@ fois par instance, donc chaque demarrage (uvicorn, test) construit sa propre app
 
 from __future__ import annotations
 
+import logging
 import os
 import tempfile
 import threading
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -48,15 +58,28 @@ from pcfno3d.export import export_web
 from pcfno3d.inference import Volume, WindFieldModel
 
 from . import mcp_server
-from .auth import (ApiKeyRecord, ApiKeyStore, default_store_path, extract_key, scope_allows,
+from .auth import (NO_KEY_MESSAGE, OPEN_WARNING, ApiKeyRecord, ApiKeyStore, default_store_path,
+                   extract_key, insecure_open_policy, insecure_open_requested, scope_allows,
                    summarize)
+from .journal import JournalAcces, params_sans_secret
 from .link import Upstream, install as install_link
+from .quotas import Quotas
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 WEBAPP_DIR = REPO_ROOT / "webapp"
 MAX_UPLOAD_MB = 200
 MAX_CACHED_VOLUMES = 4
 EXPORT_FILES = {"u.bin", "v.bin", "w.bin", "speed.bin", "direction.bin", "terrain.bin"}
+# routes sans cle : la sante (la webapp l'appelle avant de demander une cle) et la
+# documentation, qui ne contient aucune donnee. Tout le reste de /api, et /mcp, exige une cle.
+API_PUBLIQUES = frozenset({"/api/health", "/api/docs", "/api/docs/oauth2-redirect",
+                           "/api/openapi.json"})
+LOG = logging.getLogger("pcfno3d.service")
+# mode ouvert : seules ces adresses, sans aucun en-tete de proxy, sont servies sans cle
+LOOPBACK_IPS = frozenset({"127.0.0.1", "::1", "::ffff:127.0.0.1"})
+PROXY_HEADERS = ("x-forwarded-for", "forwarded", "cf-connecting-ip", "x-real-ip")
+OPEN_REMOTE_MESSAGE = ("mode ouvert reserve aux requetes directes de la boucle locale "
+                       "(127.0.0.1 / ::1, sans proxy) : cle d'API requise")
 
 # etat du processus : une seule application est active a la fois
 STATE: dict = {}
@@ -107,10 +130,19 @@ def keys() -> ApiKeyStore:
 
 # ---------------------------------------------------------------------------- acces
 def _check(request: Request, required: str) -> ApiKeyRecord | None:
-    store = keys()
-    if store.open_mode:
-        return None                       # aucune cle definie : mode ouvert
-    record = store.verify(extract_key(request.headers, request.query_params))
+    """Portee de la cle deja authentifiee par `make_guard`.
+
+    Si le garde-fou n'est pas passe (routeur monte ailleurs), on authentifie ici : le
+    defaut reste ferme.
+    """
+    if getattr(request.state, "acces_ouvert", False):
+        return None                       # mode ouvert explicite, aucune cle active
+    record = getattr(request.state, "cle", None)
+    if record is None:
+        store = keys()
+        if store.open_mode and requete_locale(request):
+            return None
+        record = store.verify(extract_key(request.headers, request.query_params))
     if record is None:
         raise HTTPException(401, "cle d'API absente ou invalide (en-tete X-API-Key)",
                             headers={"WWW-Authenticate": "Bearer"})
@@ -146,27 +178,181 @@ class MCPPathNormalizer:
         await self.app(scope, receive, send)
 
 
-async def protect_mcp(request: Request, call_next):
-    """Le MCP est monte en ASGI : il ne passe pas par Depends, on le filtre ici."""
-    if request.url.path.startswith("/mcp"):
-        store = STATE.get("keys")
-        if store is not None and not store.open_mode:
-            record = store.verify(extract_key(request.headers, request.query_params))
+def requete_locale(request: Request) -> bool:
+    """Requete DIRECTE de la boucle locale : adresse 127.0.0.1 / ::1 et aucun en-tete de
+    proxy. Un reverse proxy local (nginx, cloudflared) se connecte bien depuis 127.0.0.1,
+    mais pour le compte d'un client distant : il pose un de ces en-tetes, et la requete
+    n'est alors plus consideree comme locale."""
+    hote = request.client.host if request.client else None
+    if hote not in LOOPBACK_IPS:
+        return False
+    return not any(request.headers.get(h) for h in PROXY_HEADERS)
+
+
+def _protege(chemin: str, publiques: frozenset[str]) -> bool:
+    if chemin == "/mcp" or chemin.startswith("/mcp/"):
+        return True
+    return (chemin == "/api" or chemin.startswith("/api/")) and chemin not in publiques
+
+
+def _refus(chemin: str, statut: int, message: str, code_rpc: int,
+           headers: dict | None = None) -> JSONResponse:
+    """Refus au format de l'interface : JSON-RPC pour /mcp, {"detail"} pour /api."""
+    if chemin.startswith("/mcp"):
+        body = {"jsonrpc": "2.0", "id": None, "error": {"code": code_rpc, "message": message}}
+    else:
+        body = {"detail": message}
+    return JSONResponse(body, status_code=statut, headers=headers)
+
+
+def _minute() -> int:
+    return int(time.time() // 60)
+
+
+def _refus_a_journaliser(ip: str | None) -> int | None:
+    """Regroupement des 401 : une ligne par IP et par minute au plus.
+
+    Renvoie None si la ligne doit etre sautee, sinon le nombre de 401 de cette IP qui
+    n'ont pas ete ecrits depuis sa ligne precedente (`refus_regroupes`). Un flot de cles
+    fausses ne purge donc pas l'historique par la rotation.
+    """
+    etat: dict = STATE.setdefault("refus", {})
+    minute = _minute()
+    with _REFUS_LOCK:
+        courant = etat.get(ip)
+        if courant is not None and courant[0] == minute:
+            courant[1] += 1
+            return None
+        regroupes = courant[1] if courant is not None else 0
+        if len(etat) >= 10_000:                      # memoire bornee, cout O(1) amorti :
+            etat.clear()                             # on oublie tout plutot que de parcourir
+        etat[ip] = [minute, 0]
+    return regroupes
+
+
+_REFUS_LOCK = threading.Lock()
+
+
+def _journaliser(request: Request, record: ApiKeyRecord | None, portee: str | None,
+                 statut: int, debut: float, motif: str | None = None, reponse=None) -> None:
+    """Une ligne du journal d'acces : jamais le secret, ni le hash complet."""
+    journal = STATE.get("journal")
+    if journal is None:
+        return
+    regroupes = None
+    if int(statut) == 401:
+        regroupes = _refus_a_journaliser(request.client.host if request.client else None)
+        if regroupes is None:
+            return
+    champs: dict = {"cle": record.name if record else None,
+                    "empreinte": record.empreinte if record else None,
+                    "portee": portee, "methode": request.method,
+                    "chemin": request.url.path,             # sans query string
+                    "statut": int(statut),
+                    "duree_ms": round((time.perf_counter() - debut) * 1000.0, 1),
+                    "ip": request.client.host if request.client else None}
+    params = params_sans_secret(request.query_params)
+    if params:
+        champs["params"] = params
+    # derriere cloudflared ou un proxy, l'IP vue est 127.0.0.1 : on garde aussi l'IP
+    # DECLAREE par le proxy, a part (sans proxy, ce champ peut etre forge)
+    transmise = request.headers.get("cf-connecting-ip") or request.headers.get("x-forwarded-for")
+    if transmise:
+        champs["ip_transmise"] = transmise[:200]
+    if reponse is not None and reponse.headers.get("content-length", "").isdigit():
+        champs["octets"] = int(reponse.headers["content-length"])
+    if motif:
+        champs["motif"] = motif
+    if regroupes:
+        champs["refus_regroupes"] = regroupes
+    journal.ecrire(**champs)
+
+
+def make_guard(publiques: frozenset[str] = API_PUBLIQUES, locale: bool = False):
+    """Le garde-fou unique de /api et /mcp : cle valide, quota, puis journal d'acces.
+
+    Le MCP est monte en ASGI et ne passe pas par Depends : il est filtre ici, comme /api.
+    Une requete OPTIONS (pre-vol CORS, sans cle par construction) passe : le middleware
+    CORS y repond sans atteindre aucune route.
+    """
+    invalide = ("cle d'API locale absente ou invalide" if locale
+                else "cle d'API absente ou invalide (en-tete X-API-Key)")
+
+    async def guard(request: Request, call_next):
+        chemin = request.url.path
+        if request.method == "OPTIONS" or not _protege(chemin, publiques):
+            return await call_next(request)
+        debut = time.perf_counter()
+        store: ApiKeyStore | None = STATE.get("keys")
+        record: ApiKeyRecord | None = None
+        portee: str | None = None
+        motif: str | None = None
+        reponse = None
+        if store is None:
+            motif = "trousseau_absent"
+            reponse = _refus(chemin, 503, "trousseau non charge", -32003)
+        elif store.open_mode:
+            if requete_locale(request):
+                request.state.acces_ouvert = True
+                portee = "ouvert"
+            else:
+                motif = "ouvert_hors_boucle_locale"
+                reponse = _refus(chemin, 401, OPEN_REMOTE_MESSAGE, -32001,
+                                 {"WWW-Authenticate": "Bearer"})
+        else:
+            presentee = extract_key(request.headers, request.query_params)
+            record = store.verify(presentee)
             if record is None:
-                return JSONResponse(
-                    {"jsonrpc": "2.0", "id": None,
-                     "error": {"code": -32001, "message": "cle d'API absente ou invalide"}},
-                    status_code=401, headers={"WWW-Authenticate": "Bearer"})
-            if not scope_allows(record, "admin"):
-                # un outil qui ecrit sur le disque demande la portee admin
-                body = await request.body()
-                if any(name.encode() in body for name in mcp_server.ADMIN_TOOLS):
-                    return JSONResponse(
-                        {"jsonrpc": "2.0", "id": None,
-                         "error": {"code": -32002,
-                                   "message": "outil reserve a la portee admin"}},
-                        status_code=403)
-    return await call_next(request)
+                if store.empty:
+                    motif = "aucune_cle_configuree"
+                    message = (f"{store.erreur} ; " if store.erreur else "") + NO_KEY_MESSAGE
+                else:
+                    motif = "cle_invalide" if presentee else "cle_absente"
+                    message = invalide
+                reponse = _refus(chemin, 401, message, -32001, {"WWW-Authenticate": "Bearer"})
+            else:
+                portee = record.scope
+                quotas: Quotas | None = STATE.get("quotas")
+                depasse = quotas.consommer(record) if quotas is not None else None
+                if depasse is not None:
+                    motif = f"quota_{depasse.limite}"
+                    reponse = _refus(chemin, 429, depasse.message(record.name), -32004,
+                                     {"Retry-After": str(depasse.retry_after)})
+                elif chemin.startswith("/mcp") and not scope_allows(record, "admin"):
+                    # un outil qui ecrit sur le disque demande la portee admin
+                    body = await request.body()
+                    if any(name.encode() in body for name in mcp_server.ADMIN_TOOLS):
+                        motif = "portee"
+                        reponse = _refus(chemin, 403, "outil reserve a la portee admin",
+                                         -32002)
+                if reponse is None:
+                    request.state.cle = record
+        if reponse is None:
+            try:
+                reponse = await call_next(request)
+            except Exception:
+                _journaliser(request, record, portee, 500, debut, "exception")
+                raise
+        _journaliser(request, record, portee, reponse.status_code, debut, motif, reponse)
+        return reponse
+
+    return guard
+
+
+def _securite(cfg: Config) -> dict:
+    """Trousseau, quotas et journal d'un demarrage, avec les avertissements qui comptent."""
+    ouvert, raison = insecure_open_policy()
+    store = ApiKeyStore(default_store_path(cfg.paths.run_dir), allow_open=ouvert)
+    if ouvert:
+        LOG.warning(OPEN_WARNING + ("" if store.empty else
+                                    " Inactif tant que des cles existent : elles sont exigees."))
+    elif insecure_open_requested():
+        LOG.warning(raison)
+    if store.empty and not ouvert:
+        LOG.warning("aucune cle d'API active : toutes les requetes seront refusees (401) "
+                    "sauf /api/health. `pcfno3d apikey create <nom>` pour en creer une.")
+    return {"keys": store, "quotas": Quotas.from_env(),
+            "journal": JournalAcces.from_env(cfg.paths.run_dir)}
 
 
 # ---------------------------------------------------------------------------- helpers
@@ -235,7 +421,22 @@ def meta(_: ApiKeyRecord | None = Depends(require_read)) -> dict:
     out = wf.meta()
     g = wf.geom
     out["domaine_m"] = {"x_max": float((g.nx - 1) * g.dx), "y_max": float((g.ny - 1) * g.dy)}
+    out["georef"] = georef(wf.cfg)
     return out
+
+
+def georef(cfg: Config) -> dict | None:
+    """Ancrage geographique du domaine (config `real`), ou None s'il n'est pas configure.
+
+    (lat0, lon0) est le coin SUD-OUEST, origine de x et y ; `suppose` = True quand
+    l'ancrage est choisi et non mesure (cas du domaine synthetique).
+    """
+    real = cfg.real
+    if real.origin_lat is None or real.origin_lon is None:
+        return None
+    return {"lat0": float(real.origin_lat), "lon0": float(real.origin_lon),
+            "rotation_deg": float(real.rotation_deg), "suppose": bool(real.origin_assumed),
+            "coin": "sud-ouest"}
 
 
 @router.get("/instants", tags=["donnees"])
@@ -500,8 +701,7 @@ def create_app() -> FastAPI:
         cfg = _load_config()
         wf = WindFieldModel(cfg, checkpoint=os.environ.get("PCFNO3D_CHECKPOINT") or None,
                             device=os.environ.get("PCFNO3D_DEVICE") or None)
-        STATE.update({"model": wf, "cfg": cfg, "volumes": {},
-                      "keys": ApiKeyStore(default_store_path(cfg.paths.run_dir))})
+        STATE.update({"model": wf, "cfg": cfg, "volumes": {}, **_securite(cfg)})
         mcp_server.set_model(wf)          # le MCP reutilise le modele deja charge
         async with mcp_app.router.lifespan_context(mcp_app):
             yield
@@ -515,10 +715,12 @@ def create_app() -> FastAPI:
         docs_url="/api/docs", redoc_url=None, openapi_url="/api/openapi.json",
         lifespan=lifespan,
     )
+    # le dernier ajoute est le plus exterieur : normalisation de /mcp, puis CORS (pre-vol,
+    # et en-tetes CORS meme sur un 401 / 429), puis le garde-fou
+    app.middleware("http")(make_guard(API_PUBLIQUES))
     app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"],
                        allow_headers=["*"])
     app.add_middleware(MCPPathNormalizer)
-    app.middleware("http")(protect_mcp)
     app.include_router(router)
     app.mount("/mcp", mcp_app)
 
@@ -546,8 +748,7 @@ def _create_linked_app(upstream: Upstream) -> FastAPI:
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
         cfg = _load_config()
-        STATE.update({"cfg": cfg, "upstream": upstream, "volumes": {},
-                      "keys": ApiKeyStore(default_store_path(cfg.paths.run_dir))})
+        STATE.update({"cfg": cfg, "upstream": upstream, "volumes": {}, **_securite(cfg)})
         print(f"mode lien : les requetes partent vers {upstream.url} ({upstream.label})")
         yield
         STATE.clear()
@@ -561,6 +762,9 @@ def _create_linked_app(upstream: Upstream) -> FastAPI:
         docs_url=None, redoc_url=None, openapi_url=None,
         lifespan=lifespan,
     )
+    # meme garde-fou qu'en mode normal, avec la cle LOCALE, avant toute transmission ;
+    # seule /api/health est publique (rien de l'amont n'est relaye sans cle)
+    app.middleware("http")(make_guard(frozenset({"/api/health"}), locale=True))
     app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"],
                        allow_headers=["*"])
 
@@ -580,20 +784,6 @@ def _create_linked_app(upstream: Upstream) -> FastAPI:
         if store is not None:
             out.update(summarize(store))
         return out
-
-    # garde la cle locale obligatoire avant toute transmission
-    @app.middleware("http")
-    async def protect_link(request: Request, call_next):
-        chemin = request.url.path
-        protege = (chemin.startswith("/mcp")
-                   or (chemin.startswith("/api/") and chemin != "/api/health"))
-        store = STATE.get("keys")
-        if protege and store is not None and not store.open_mode:
-            if store.verify(extract_key(request.headers, request.query_params)) is None:
-                return JSONResponse({"detail": "cle d'API locale absente ou invalide"},
-                                    status_code=401,
-                                    headers={"WWW-Authenticate": "Bearer"})
-        return await call_next(request)
 
     install_link(app, upstream)
 

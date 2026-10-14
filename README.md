@@ -127,13 +127,21 @@ les exemples `curl` prêts à copier.
 **Clés d'API** — seul le hash SHA-256 est conservé, dans `run_dir/api_keys.json` ; le
 secret n'est affiché qu'à la création. Deux portées : `read` (lecture, reconstruction) et
 `admin` (+ écriture d'exports, gestion des clés). La clé passe par `X-API-Key`,
-`Authorization: Bearer`, ou `?api_key=`. Sans aucune clé, le service répond sans
-authentification et le signale dans `/api/health` — confortable en local, à ne pas
-exposer au réseau.
+`Authorization: Bearer`, ou `?api_key=`. **Fermé par défaut** : sans clé valide, tout est
+refusé (`401`), `/mcp` et les exports compris ; sans aucune clé configurée, seul
+`/api/health` répond, et il le dit (`"auth": "aucune_cle"`). Le mode ouvert n'existe que
+pour le développement local, sur opt-in explicite (`pcfno3d serve --insecure-open`,
+boucle locale seulement, jamais sur Colab ni derrière un tunnel).
+
+Une clé révoquée est refusée **dès la requête suivante**, sans redémarrer le service (il
+relit le trousseau quand le fichier change). Quotas par clé (défaut 300/min et 50 000/jour,
+`429` + `Retry-After` au-delà) et journal d'accès JSONL sans aucun secret dans
+`run_dir/logs/acces.jsonl` : détails dans [`docs/INTEGRATION.md`](docs/INTEGRATION.md).
 
 ```bash
-pcfno3d apikey list        # noms, portées, empreintes — jamais de secret
+pcfno3d apikey list        # noms, portées, empreintes, quotas — jamais de secret
 pcfno3d apikey revoke app-web
+pcfno3d apikey quota app-web --per-minute 600
 ```
 
 **Serveur MCP** — pour qu'une autre application ou un agent interroge le vent sans rien

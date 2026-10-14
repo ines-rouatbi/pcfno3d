@@ -10,7 +10,7 @@
     export-web    volume -> binaires + manifeste pour le visualiseur
     import-real   donnees REELLES (stations + radiosondes / champ maille) -> cache
     serve         application web + API JSON + serveur MCP (fastapi + uvicorn)
-    apikey        creer / lister / revoquer les cles d'API du service
+    apikey        creer / lister / revoquer les cles d'API du service, regler leurs quotas
     link          relier le service local a une instance distante (Colab)
     mcp           serveur MCP en transport stdio (client local)
     info          configuration effective et etat des artefacts
@@ -249,6 +249,16 @@ def cmd_serve(args) -> int:
         return 1
     import os
 
+    from service.auth import ENV_INSECURE_OPEN, insecure_open_policy, insecure_open_requested
+
+    # verifie AVANT de toucher a l'environnement : un refus ne laisse rien derriere lui.
+    # Meme regle que l'opt-in vienne de l'option ou de la variable d'environnement.
+    if (args.insecure_open or insecure_open_requested()) and args.host not in LOOPBACK_HOSTS:
+        origine = "--insecure-open" if args.insecure_open else ENV_INSECURE_OPEN
+        print(f"{origine} refuse avec --host {args.host} : le mode ouvert est reserve a "
+              "la boucle locale (127.0.0.1, localhost).", file=sys.stderr)
+        return 2
+
     cfg = _load_cfg(args)
     os.environ.setdefault("PCFNO3D_CONFIG", str(args.config or "default"))
     os.environ.setdefault("PCFNO3D_RUN_DIR", str(cfg.paths.run_dir))
@@ -263,15 +273,27 @@ def cmd_serve(args) -> int:
         extra = f"{args.host},{args.host}:{args.port}"
         os.environ["PCFNO3D_ALLOWED_HOSTS"] = f"{hosts},{extra}".strip(",")
 
+    if args.insecure_open:
+        os.environ[ENV_INSECURE_OPEN] = "1"
+    ouvert, raison = insecure_open_policy()
     store = _key_store(cfg)
-    if store.open_mode:
-        print("ATTENTION : aucune cle d'API definie, le service repond sans "
-              "authentification.\n            `pcfno3d apikey create <nom>` pour en creer une.")
+    if insecure_open_requested() and not ouvert:
+        print(f"ATTENTION : {raison}")
+    if store.empty and ouvert:
+        print("ATTENTION : MODE OUVERT (--insecure-open) : aucune cle, le service repond "
+              "sans authentification.\n            Developpement local uniquement.")
+    elif store.empty:
+        print("ATTENTION : aucune cle d'API active : toutes les requetes seront refusees "
+              "(401) sauf /api/health.\n            `pcfno3d apikey create <nom>` pour en "
+              "creer une (ou --insecure-open en local).")
     print(f"application web : http://{args.host}:{args.port}/app/")
     print(f"API             : http://{args.host}:{args.port}/api/docs")
     print(f"serveur MCP     : http://{args.host}:{args.port}/mcp")
     uvicorn.run("service.app:app", host=args.host, port=args.port, reload=args.reload)
     return 0
+
+
+LOOPBACK_HOSTS = ("127.0.0.1", "localhost")
 
 
 def _key_store(cfg: Config):
@@ -282,7 +304,7 @@ def _key_store(cfg: Config):
 
 
 def cmd_apikey(args) -> int:
-    if args.action in ("create", "revoke") and not args.name:
+    if args.action in ("create", "revoke", "quota") and not args.name:
         print(f"`apikey {args.action}` attend un nom de cle", file=sys.stderr)
         return 1
     cfg = _load_cfg(args)
@@ -295,7 +317,9 @@ def cmd_apikey(args) -> int:
 
     if args.action == "create":
         try:
-            secret, record = store.create(args.name, scope=args.scope)
+            secret, record = store.create(args.name, scope=args.scope,
+                                          quota_minute=args.per_minute,
+                                          quota_jour=args.per_day)
         except ValueError as exc:
             print(f"erreur : {exc}", file=sys.stderr)
             return 1
@@ -308,21 +332,48 @@ def cmd_apikey(args) -> int:
 
     if args.action == "revoke":
         if store.revoke(args.name):
-            print(f"cle revoquee : {args.name}")
+            # le service relit le trousseau quand il change : effet a la requete suivante
+            print(f"cle revoquee : {args.name} (refusee des la prochaine requete, "
+                  "sans redemarrer le service)")
             return 0
         print(f"aucune cle active nommee '{args.name}'", file=sys.stderr)
         return 1
 
+    if args.action == "quota":
+        if args.per_minute is None and args.per_day is None and not args.reset:
+            print("`apikey quota` attend --per-minute, --per-day ou --reset", file=sys.stderr)
+            return 1
+        try:
+            record = store.set_quota(args.name, quota_minute=args.per_minute,
+                                     quota_jour=args.per_day, reset=args.reset)
+        except ValueError as exc:
+            print(f"erreur : {exc}", file=sys.stderr)
+            return 1
+        if record is None:
+            print(f"aucune cle active nommee '{args.name}'", file=sys.stderr)
+            return 1
+        print(f"quotas de {record.name} : {_quota_txt(record.quota_minute)} / minute, "
+              f"{_quota_txt(record.quota_jour)} / jour (pris en compte a la requete suivante)")
+        return 0
+
     rows = store.list_public()
     if not rows:
-        print(f"aucune cle dans {store.path} (le service repond sans authentification)")
+        print(f"aucune cle dans {store.path} : le service refuse toutes les requetes")
         return 0
-    print(f"{'nom':20s} {'portee':8s} {'etat':9s} {'empreinte':14s} derniere utilisation")
+    print(f"{'nom':20s} {'portee':8s} {'etat':9s} {'empreinte':14s} {'quota min/jour':16s} "
+          "derniere utilisation")
     for r in rows:
         etat = "revoquee" if r["revoked"] else "active"
-        print(f"{r['name']:20s} {r['scope']:8s} {etat:9s} {r['empreinte']:14s} "
+        quota = f"{_quota_txt(r['quota_minute'])}/{_quota_txt(r['quota_jour'])}"
+        print(f"{r['name']:20s} {r['scope']:8s} {etat:9s} {r['empreinte']:14s} {quota:16s} "
               f"{r['last_used_at'] or '-'}")
     return 0
+
+
+def _quota_txt(value) -> str:
+    if value is None:
+        return "defaut"
+    return "illimite" if value == 0 else str(value)
 
 
 def cmd_link(args) -> int:
@@ -498,13 +549,22 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("serve", help="application web + API + serveur MCP")
     s.add_argument("--host", default="127.0.0.1"), s.add_argument("--port", type=int, default=8000)
     s.add_argument("--reload", action="store_true"), s.add_argument("--device")
+    s.add_argument("--insecure-open", action="store_true",
+                   help="DEVELOPPEMENT LOCAL : sans aucune cle, accepter les requetes au lieu "
+                        "de les refuser (boucle locale seulement, jamais sur Colab / tunnel)")
     s.set_defaults(func=cmd_serve)
 
     s = sub.add_parser("apikey", help="gerer les cles d'API du service")
-    s.add_argument("action", choices=["create", "list", "revoke"])
-    s.add_argument("name", nargs="?", help="nom de la cle (create / revoke)")
+    s.add_argument("action", choices=["create", "list", "revoke", "quota"])
+    s.add_argument("name", nargs="?", help="nom de la cle (create / revoke / quota)")
     s.add_argument("--scope", default="read", choices=["read", "admin"],
                    help="read : lecture ; admin : + export sur disque et gestion des cles")
+    s.add_argument("--per-minute", type=int,
+                   help="quota propre a la cle : requetes par minute (0 = illimite)")
+    s.add_argument("--per-day", type=int,
+                   help="quota propre a la cle : requetes par jour UTC (0 = illimite)")
+    s.add_argument("--reset", action="store_true",
+                   help="quota : revenir aux quotas par defaut du service")
     s.set_defaults(func=cmd_apikey)
 
     s = sub.add_parser("link", help="relier le service local a une instance distante")
