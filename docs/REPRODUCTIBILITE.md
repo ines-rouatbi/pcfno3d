@@ -31,6 +31,14 @@ autre bibliothèque BLAS / MKL, le découpage des réductions entre threads peut
 l'ordre des additions flottantes. Pour une comparaison stricte, fixer le nombre de threads
 (`torch.set_num_threads`, `OMP_NUM_THREADS`).
 
+Portée : l'égalité bit à bit est **vérifiée sur le mini-modèle** du jeu de test. Pour le modèle v7
+complet sur CPU, elle est attendue mais doit être rejouée avec la procédure « Rejouer » ci-dessous.
+
+Reprise d'un entraînement sélectionné sur les DSO (`select_by: dso`) : le meilleur score enregistré
+dans un checkpoint antérieur à la règle DSO3 (0,9 ; 1,1) a été calculé avec l'ancienne formule,
+donc un peu plus bas ; les nouvelles époques lui sont comparées, et la sélection est légèrement plus
+stricte. Sans effet sur v7, qui n'est pas réentraîné.
+
 ## Le test qui le vérifie
 
 `tests/test_reproductibilite.py` (CPU, mini-jeu de `tests/conftest.py`), constante

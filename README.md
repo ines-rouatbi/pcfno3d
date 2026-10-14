@@ -217,7 +217,7 @@ service/            app.py · mcp_server.py · auth.py · link.py · colab.py ·
 webapp/             l'application web servie sur /app/
 web/                visualiseur autonome d'un export, sans serveur
 scripts/            make_mini_dataset.py · smoke.ps1 · package_for_colab.py · install_v7_weights.py
-tests/              80 tests, tous sur CPU et mini-dataset
+tests/              tests pytest, tous sur CPU et mini-dataset
 notebooks/current/  fno3d_v7_1 (référence) · fno3d_v7 (LA v7, avec ses sorties Colab) · pcfno3d_v8_colab · pcfno3d_api_colab
 notebooks/archive/  architectures explorées puis écartées (FNO2D, U-Net, GNN, DeepONet, ViT…)
 notebooks/data_prep/01_EDA.ipynb · 02_cleaning.ipynb
