@@ -1,0 +1,143 @@
+{
+  "turbines": [
+    {
+      "id": "T-01",
+      "name": "Éolienne virtuelle 1",
+      "x_m": 12000,
+      "y_m": 8000,
+      "virtual": true,
+      "model": "Référence générique 2 MW",
+      "hub_agl_m": 120,
+      "rotor_d_m": 90,
+      "rated_kw": 2000,
+      "cut_in_ms": 3,
+      "cut_out_ms": 25,
+      "hub_speed": {
+        "p10": 10.05,
+        "p50": 10.5,
+        "p90": 10.95
+      },
+      "rews": {
+        "p10": 10.02,
+        "p50": 10.47,
+        "p90": 10.92
+      },
+      "shear_ms": 0.98,
+      "veer_deg": 2.25,
+      "power_kw": {
+        "p10": 1527,
+        "p50": 1662,
+        "p90": 1796
+      },
+      "state": "production",
+      "air_density": 1.2
+    },
+    {
+      "id": "T-02",
+      "name": "Éolienne virtuelle 2",
+      "x_m": 14500,
+      "y_m": 9500,
+      "virtual": true,
+      "model": "Référence générique 2 MW",
+      "hub_agl_m": 120,
+      "rotor_d_m": 90,
+      "rated_kw": 2000,
+      "cut_in_ms": 3,
+      "cut_out_ms": 25,
+      "hub_speed": {
+        "p10": 10.14,
+        "p50": 10.59,
+        "p90": 11.04
+      },
+      "rews": {
+        "p10": 10.12,
+        "p50": 10.56,
+        "p90": 11.01
+      },
+      "shear_ms": 0.96,
+      "veer_deg": 2.25,
+      "power_kw": {
+        "p10": 1555,
+        "p50": 1689,
+        "p90": 1822
+      },
+      "state": "production",
+      "air_density": 1.2
+    },
+    {
+      "id": "T-03",
+      "name": "Éolienne virtuelle 3",
+      "x_m": 30000,
+      "y_m": 15000,
+      "virtual": true,
+      "model": "Référence générique 2 MW",
+      "hub_agl_m": 120,
+      "rotor_d_m": 90,
+      "rated_kw": 2000,
+      "cut_in_ms": 3,
+      "cut_out_ms": 25,
+      "hub_speed": {
+        "p10": 11.49,
+        "p50": 11.94,
+        "p90": 12.39
+      },
+      "rews": {
+        "p10": 11.46,
+        "p50": 11.91,
+        "p90": 12.35
+      },
+      "shear_ms": 0.63,
+      "veer_deg": 2.25,
+      "power_kw": {
+        "p10": 1902,
+        "p50": 1983,
+        "p90": 2000
+      },
+      "state": "production",
+      "air_density": 1.2
+    }
+  ],
+  "farm": {
+    "power_kw": {
+      "p10": 4984,
+      "p50": 5334,
+      "p90": 5618
+    },
+    "rated_kw": 6000,
+    "n_production": 3,
+    "n_arret": 0
+  },
+  "power_curve": {
+    "name": "Référence générique 2 MW",
+    "speed_ms": [
+      0,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      25,
+      25.01
+    ],
+    "power_kw": [
+      0,
+      0,
+      70,
+      180,
+      340,
+      560,
+      840,
+      1180,
+      1520,
+      1820,
+      2000,
+      2000,
+      0
+    ]
+  }
+}

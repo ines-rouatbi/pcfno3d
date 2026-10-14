@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://atom.zelqane.com/contract/v1/publish-manifest.schema.json",
+  "title": "POST /v1/publish/{id}/commit — manifeste de publication (service GPU → Worker)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "snapshot_id",
+    "valid_time",
+    "generated_at",
+    "last_observation_at",
+    "versions",
+    "files"
+  ],
+  "properties": {
+    "snapshot_id": {
+      "$ref": "common.schema.json#/$defs/snapshot_id"
+    },
+    "valid_time": {
+      "$ref": "common.schema.json#/$defs/iso_utc"
+    },
+    "generated_at": {
+      "$ref": "common.schema.json#/$defs/iso_utc"
+    },
+    "last_observation_at": {
+      "anyOf": [
+        {
+          "$ref": "common.schema.json#/$defs/iso_utc"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "versions": {
+      "$ref": "common.schema.json#/$defs/versions"
+    },
+    "data_status": {
+      "enum": [
+        "complete",
+        "degrade"
+      ],
+      "description": "degrade si stations manquantes ou en dérive"
+    },
+    "files": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "path",
+          "sha256",
+          "bytes"
+        ],
+        "properties": {
+          "path": {
+            "type": "string",
+            "pattern": "^[a-z0-9_./-]+$"
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "bytes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 8388608
+          }
+        }
+      }
+    }
+  }
+}

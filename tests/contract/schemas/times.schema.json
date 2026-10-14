@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://atom.zelqane.com/contract/v1/times.schema.json",
+  "title": "GET /v1/times — instantanés publiés (paginé)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "total",
+    "items"
+  ],
+  "properties": {
+    "total": {
+      "type": "integer"
+    },
+    "next": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "snapshot_id",
+          "valid_time"
+        ],
+        "properties": {
+          "snapshot_id": {
+            "$ref": "common.schema.json#/$defs/snapshot_id"
+          },
+          "valid_time": {
+            "$ref": "common.schema.json#/$defs/iso_utc"
+          },
+          "open_alerts": {
+            "type": "integer"
+          }
+        }
+      }
+    }
+  }
+}

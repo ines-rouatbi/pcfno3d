@@ -66,3 +66,10 @@ Dockerfile text eol=lf
 *.ttf   binary
 *.woff  binary
 *.woff2 binary
+
+# --- contrat v1 (copie de atom-dashboard/contract) : octets IDENTIQUES a la source -----
+# Le manifeste de publication des fixtures porte le sha256 et la taille de chaque fichier :
+# aucune conversion de fin de ligne ne doit les toucher, ni ici ni a l'extraction.
+*.f32                    binary
+tests/contract/schemas/**  -text
+tests/contract/fixtures/** -text

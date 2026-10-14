@@ -1,0 +1,23 @@
+{
+  "items": [
+    {
+      "id": "A-0003",
+      "level": "information",
+      "kind": "zone_mal_couverte",
+      "title": "Zone mal couverte au nord-est",
+      "cause": "Indice de couverture < 0,2 et incertitude élevée",
+      "recommendation": "Emplacement prioritaire pour une nouvelle station",
+      "raised_at": "2025-01-12T12:00:00Z",
+      "status": "ouverte",
+      "station_id": null,
+      "turbine_id": null,
+      "location": {
+        "x_m": 44000,
+        "y_m": 21000
+      },
+      "value": 0.17,
+      "threshold": 0.2,
+      "unit": null
+    }
+  ]
+}

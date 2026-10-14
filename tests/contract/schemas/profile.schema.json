@@ -1,0 +1,129 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://atom.zelqane.com/contract/v1/profile.schema.json",
+  "title": "GET /v1/profiles/{id}?x_m&y_m — profil vertical",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "x_m",
+    "y_m",
+    "z_terrain_m",
+    "nearest_station",
+    "levels",
+    "uncertainty"
+  ],
+  "properties": {
+    "x_m": {
+      "type": "number"
+    },
+    "y_m": {
+      "type": "number"
+    },
+    "z_terrain_m": {
+      "type": "number"
+    },
+    "nearest_station": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "required": [
+            "id",
+            "distance_m"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "distance_m": {
+              "type": "number"
+            }
+          }
+        }
+      ]
+    },
+    "levels": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "z_asl_m",
+          "agl_m",
+          "below_terrain",
+          "u",
+          "v",
+          "w",
+          "speed",
+          "dir_from_deg",
+          "speed_interval",
+          "status",
+          "coverage",
+          "reliability",
+          "reliability_class"
+        ],
+        "properties": {
+          "z_asl_m": {
+            "type": "number"
+          },
+          "agl_m": {
+            "type": "number"
+          },
+          "below_terrain": {
+            "type": "boolean"
+          },
+          "u": {
+            "$ref": "common.schema.json#/$defs/component_ms"
+          },
+          "v": {
+            "$ref": "common.schema.json#/$defs/component_ms"
+          },
+          "w": {
+            "$ref": "common.schema.json#/$defs/component_ms"
+          },
+          "speed": {
+            "$ref": "common.schema.json#/$defs/speed_ms"
+          },
+          "dir_from_deg": {
+            "$ref": "common.schema.json#/$defs/dir_from_deg"
+          },
+          "speed_interval": {
+            "$ref": "common.schema.json#/$defs/interval"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "$ref": "common.schema.json#/$defs/status_node"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "coverage": {
+            "$ref": "common.schema.json#/$defs/unit_interval"
+          },
+          "reliability": {
+            "$ref": "common.schema.json#/$defs/unit_interval"
+          },
+          "reliability_class": {
+            "anyOf": [
+              {
+                "$ref": "common.schema.json#/$defs/reliability_class"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "uncertainty": {
+      "$ref": "common.schema.json#/$defs/uncertainty_method"
+    }
+  }
+}

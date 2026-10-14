@@ -1,0 +1,39 @@
+{
+  "items": [
+    {
+      "id": "A-0001",
+      "level": "avertissement",
+      "kind": "station_muette",
+      "title": "Station ANEO-031 muette",
+      "cause": "Aucune mesure depuis 2 h 20",
+      "recommendation": "Planifier une intervention sur la station",
+      "raised_at": "2025-01-12T12:00:00Z",
+      "status": "ouverte",
+      "station_id": "ANEO-031",
+      "turbine_id": null,
+      "location": null,
+      "value": 140,
+      "threshold": 30,
+      "unit": "min"
+    },
+    {
+      "id": "A-0003",
+      "level": "information",
+      "kind": "zone_mal_couverte",
+      "title": "Zone mal couverte au nord-est",
+      "cause": "Indice de couverture < 0,2 et incertitude élevée",
+      "recommendation": "Emplacement prioritaire pour une nouvelle station",
+      "raised_at": "2025-01-12T12:00:00Z",
+      "status": "ouverte",
+      "station_id": null,
+      "turbine_id": null,
+      "location": {
+        "x_m": 44000,
+        "y_m": 21000
+      },
+      "value": 0.17,
+      "threshold": 0.2,
+      "unit": null
+    }
+  ]
+}

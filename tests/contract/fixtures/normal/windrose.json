@@ -1,0 +1,171 @@
+{
+  "x_m": 12000,
+  "y_m": 8000,
+  "hub_agl_m": 120,
+  "period": {
+    "from": "2025-01-01T00:00:00Z",
+    "to": "2025-01-12T12:00:00Z"
+  },
+  "n_valid": 36,
+  "speed_bin_edges_ms": [
+    0,
+    3,
+    6,
+    9,
+    12,
+    15,
+    25
+  ],
+  "sectors": [
+    {
+      "dir_center_deg": 0,
+      "frequency": 0,
+      "speed_bins": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "dir_center_deg": 30,
+      "frequency": 0,
+      "speed_bins": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "dir_center_deg": 60,
+      "frequency": 0,
+      "speed_bins": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "dir_center_deg": 90,
+      "frequency": 0,
+      "speed_bins": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "dir_center_deg": 120,
+      "frequency": 0,
+      "speed_bins": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "dir_center_deg": 150,
+      "frequency": 0,
+      "speed_bins": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "dir_center_deg": 180,
+      "frequency": 0,
+      "speed_bins": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "dir_center_deg": 210,
+      "frequency": 0,
+      "speed_bins": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "dir_center_deg": 240,
+      "frequency": 0,
+      "speed_bins": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "dir_center_deg": 270,
+      "frequency": 0.5,
+      "speed_bins": [
+        0,
+        0.139,
+        0.167,
+        0.194,
+        0,
+        0
+      ]
+    },
+    {
+      "dir_center_deg": 300,
+      "frequency": 0.44,
+      "speed_bins": [
+        0,
+        0.028,
+        0.194,
+        0.222,
+        0,
+        0
+      ]
+    },
+    {
+      "dir_center_deg": 330,
+      "frequency": 0.06,
+      "speed_bins": [
+        0,
+        0.028,
+        0.028,
+        0,
+        0,
+        0
+      ]
+    }
+  ],
+  "weibull": {
+    "k": 2.1,
+    "c_ms": 9.4,
+    "aep_mwh": null,
+    "capacity_factor": null
+  }
+}

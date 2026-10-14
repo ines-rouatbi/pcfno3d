@@ -1,0 +1,209 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://atom.zelqane.com/contract/v1/meta.schema.json",
+  "title": "GET /v1/meta — géométrie du domaine",
+  "type": "object",
+  "required": [
+    "contract_version",
+    "grid",
+    "domain",
+    "georef",
+    "terrain",
+    "fields",
+    "units",
+    "conventions"
+  ],
+  "properties": {
+    "contract_version": {
+      "const": "1.0"
+    },
+    "grid": {
+      "type": "object",
+      "required": [
+        "nx",
+        "ny",
+        "nz",
+        "dx_m",
+        "dy_m",
+        "levels_asl_m",
+        "order",
+        "valid_nodes"
+      ],
+      "properties": {
+        "nx": {
+          "type": "integer",
+          "minimum": 2
+        },
+        "ny": {
+          "type": "integer",
+          "minimum": 2
+        },
+        "nz": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "dx_m": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "dy_m": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "levels_asl_m": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          },
+          "minItems": 1,
+          "description": "Altitudes AU-DESSUS DU NIVEAU DE LA MER, croissantes"
+        },
+        "order": {
+          "const": "z,y,x ; j=0 au sud, i=0 à l ouest",
+          "description": "Dans un binaire de niveau : index = j*nx + i"
+        },
+        "valid_nodes": {
+          "type": "integer"
+        },
+        "valid_fraction_by_level": {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "domain": {
+      "type": "object",
+      "required": [
+        "x_max_m",
+        "y_max_m",
+        "origin",
+        "crs"
+      ],
+      "properties": {
+        "x_max_m": {
+          "type": "number"
+        },
+        "y_max_m": {
+          "type": "number"
+        },
+        "origin": {
+          "const": "coin_sud_ouest"
+        },
+        "crs": {
+          "type": "string",
+          "description": "ex. local-metrique (puis EPSG:32632 quand l'ancrage sera réel)"
+        }
+      },
+      "additionalProperties": false
+    },
+    "terrain": {
+      "type": "object",
+      "required": [
+        "min_m",
+        "max_m",
+        "href",
+        "source"
+      ],
+      "properties": {
+        "min_m": {
+          "type": "number"
+        },
+        "max_m": {
+          "type": "number"
+        },
+        "href": {
+          "type": "string",
+          "description": "Binaire statique par version de modèle : Float32 LE ny*nx, altitude du sol en m au-dessus de la mer, sans nodata"
+        },
+        "source": {
+          "type": "string",
+          "description": "générateur synthétique | MNT public (nom)"
+        }
+      },
+      "additionalProperties": false
+    },
+    "fields": {
+      "type": "array",
+      "items": {
+        "enum": [
+          "u",
+          "v",
+          "w",
+          "speed",
+          "sigma_u",
+          "sigma_v",
+          "sigma_w",
+          "coverage",
+          "reliability",
+          "status"
+        ]
+      },
+      "description": "Variables disponibles pour /v1/fields. status : 1 = mesuré, 0 = estimé, NaN = sous le relief"
+    },
+    "units": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "georef": {
+      "type": "object",
+      "required": [
+        "lat0",
+        "lon0",
+        "rotation_deg",
+        "suppose"
+      ],
+      "properties": {
+        "lat0": {
+          "type": "number"
+        },
+        "lon0": {
+          "type": "number"
+        },
+        "rotation_deg": {
+          "type": "number"
+        },
+        "suppose": {
+          "type": "boolean",
+          "description": "true tant que la position réelle n est pas fournie (tâche 61) : l interface DOIT l afficher"
+        }
+      },
+      "additionalProperties": false
+    },
+    "conventions": {
+      "type": "object",
+      "required": [
+        "u",
+        "v",
+        "w",
+        "direction",
+        "nodata"
+      ],
+      "properties": {
+        "u": {
+          "const": "positif vers l Est"
+        },
+        "v": {
+          "const": "positif vers le Nord"
+        },
+        "w": {
+          "const": "positif vers le haut"
+        },
+        "direction": {
+          "const": "meteo : d ou vient le vent, (270 - atan2(v,u)) mod 360"
+        },
+        "nodata": {
+          "const": "null en JSON, NaN dans les binaires"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

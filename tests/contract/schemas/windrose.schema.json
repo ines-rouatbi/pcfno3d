@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://atom.zelqane.com/contract/v1/windrose.schema.json",
+  "title": "GET /v1/windrose?x_m&y_m&hub_agl_m&from&to — rose des vents et Weibull",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "x_m",
+    "y_m",
+    "hub_agl_m",
+    "period",
+    "n_valid",
+    "speed_bin_edges_ms",
+    "sectors",
+    "weibull"
+  ],
+  "properties": {
+    "x_m": {
+      "type": "number"
+    },
+    "y_m": {
+      "type": "number"
+    },
+    "hub_agl_m": {
+      "type": "number"
+    },
+    "period": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "from",
+        "to"
+      ],
+      "properties": {
+        "from": {
+          "$ref": "common.schema.json#/$defs/iso_utc"
+        },
+        "to": {
+          "$ref": "common.schema.json#/$defs/iso_utc"
+        }
+      }
+    },
+    "n_valid": {
+      "type": "integer",
+      "description": "Nombre d'instants valides. L'interface DOIT l'afficher et signaler < 100 comme statistiquement faible"
+    },
+    "speed_bin_edges_ms": {
+      "type": "array",
+      "items": {
+        "type": "number"
+      }
+    },
+    "sectors": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "dir_center_deg",
+          "frequency",
+          "speed_bins"
+        ],
+        "properties": {
+          "dir_center_deg": {
+            "type": "number"
+          },
+          "frequency": {
+            "$ref": "common.schema.json#/$defs/unit_interval"
+          },
+          "speed_bins": {
+            "type": "array",
+            "items": {
+              "type": "number"
+            }
+          }
+        }
+      }
+    },
+    "weibull": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "k",
+            "c_ms"
+          ],
+          "properties": {
+            "k": {
+              "type": "number"
+            },
+            "c_ms": {
+              "type": "number"
+            },
+            "aep_mwh": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "capacity_factor": {
+              "$ref": "common.schema.json#/$defs/unit_interval"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

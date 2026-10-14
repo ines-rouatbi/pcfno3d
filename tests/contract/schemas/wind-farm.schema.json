@@ -1,0 +1,157 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://atom.zelqane.com/contract/v1/wind-farm.schema.json",
+  "title": "GET /v1/wind-farm/{id} — parc éolien",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "turbines",
+    "farm"
+  ],
+  "properties": {
+    "turbines": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "name",
+          "x_m",
+          "y_m",
+          "virtual",
+          "hub_agl_m",
+          "rotor_d_m",
+          "rated_kw",
+          "cut_in_ms",
+          "cut_out_ms",
+          "hub_speed",
+          "rews",
+          "shear_ms",
+          "veer_deg",
+          "power_kw",
+          "state"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "x_m": {
+            "type": "number"
+          },
+          "y_m": {
+            "type": "number"
+          },
+          "virtual": {
+            "type": "boolean"
+          },
+          "model": {
+            "type": "string"
+          },
+          "hub_agl_m": {
+            "type": "number"
+          },
+          "rotor_d_m": {
+            "type": "number"
+          },
+          "rated_kw": {
+            "type": "number"
+          },
+          "cut_in_ms": {
+            "type": "number"
+          },
+          "cut_out_ms": {
+            "type": "number"
+          },
+          "hub_speed": {
+            "$ref": "common.schema.json#/$defs/interval"
+          },
+          "rews": {
+            "$ref": "common.schema.json#/$defs/interval"
+          },
+          "shear_ms": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "veer_deg": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "power_kw": {
+            "$ref": "common.schema.json#/$defs/interval"
+          },
+          "state": {
+            "enum": [
+              "production",
+              "arret_vent_faible",
+              "arret_vent_fort",
+              "indisponible"
+            ]
+          },
+          "air_density": {
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    "farm": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "power_kw",
+        "rated_kw",
+        "n_production",
+        "n_arret"
+      ],
+      "properties": {
+        "power_kw": {
+          "$ref": "common.schema.json#/$defs/interval"
+        },
+        "rated_kw": {
+          "type": "number"
+        },
+        "n_production": {
+          "type": "integer"
+        },
+        "n_arret": {
+          "type": "integer"
+        }
+      }
+    },
+    "power_curve": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "speed_ms",
+        "power_kw"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "speed_ms": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          }
+        },
+        "power_kw": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          }
+        }
+      }
+    }
+  }
+}

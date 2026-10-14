@@ -1,0 +1,90 @@
+{
+  "contract_version": "1.0",
+  "grid": {
+    "nx": 100,
+    "ny": 50,
+    "nz": 12,
+    "dx_m": 500,
+    "dy_m": 500,
+    "levels_asl_m": [
+      25,
+      50,
+      75,
+      100,
+      150,
+      200,
+      300,
+      400,
+      500,
+      650,
+      800,
+      1000
+    ],
+    "order": "z,y,x ; j=0 au sud, i=0 à l ouest",
+    "valid_nodes": 46628,
+    "valid_fraction_by_level": [
+      0.43,
+      0.56,
+      0.62,
+      0.66,
+      0.71,
+      0.76,
+      0.81,
+      0.86,
+      0.91,
+      1,
+      1,
+      1
+    ]
+  },
+  "domain": {
+    "x_max_m": 49750,
+    "y_max_m": 24750,
+    "origin": "coin_sud_ouest",
+    "crs": "local-metrique"
+  },
+  "georef": {
+    "lat0": 36,
+    "lon0": 9.7,
+    "rotation_deg": 0,
+    "suppose": true
+  },
+  "terrain": {
+    "min_m": 19,
+    "max_m": 579.01,
+    "href": "/v1/terrain",
+    "source": "instantané de test synthétique (contract/tools/make-fixtures.mjs)"
+  },
+  "fields": [
+    "u",
+    "v",
+    "w",
+    "speed",
+    "sigma_u",
+    "sigma_v",
+    "sigma_w",
+    "coverage",
+    "reliability",
+    "status"
+  ],
+  "units": {
+    "u": "m/s",
+    "v": "m/s",
+    "w": "m/s",
+    "speed": "m/s",
+    "sigma_u": "m/s",
+    "sigma_v": "m/s",
+    "sigma_w": "m/s",
+    "coverage": "0-1",
+    "reliability": "0-1",
+    "status": "1 mesuré / 0 estimé",
+    "altitude": "m au-dessus de la mer"
+  },
+  "conventions": {
+    "u": "positif vers l Est",
+    "v": "positif vers le Nord",
+    "w": "positif vers le haut",
+    "direction": "meteo : d ou vient le vent, (270 - atan2(v,u)) mod 360",
+    "nodata": "null en JSON, NaN dans les binaires"
+  }
+}

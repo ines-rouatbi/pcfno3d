@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://atom.zelqane.com/contract/v1/common.schema.json",
+  "title": "Types communs du contrat ATOM v1",
+  "$defs": {
+    "iso_utc": { "type": "string", "format": "date-time", "pattern": "Z$" },
+    "snapshot_id": { "type": "string", "pattern": "^[0-9A-Za-z_]+_[0-9a-f]{8}$", "description": "<stem>_<sha8 du modèle>, ex. 017_120000_b2529442" },
+    "speed_ms": { "type": ["number", "null"], "minimum": 0, "maximum": 80 },
+    "component_ms": { "type": ["number", "null"], "minimum": -80, "maximum": 80 },
+    "dir_from_deg": { "type": ["number", "null"], "minimum": 0, "exclusiveMaximum": 360, "description": "Direction météo : D'OÙ vient le vent. null si vitesse < 0,2 m/s ou sous le relief." },
+    "unit_interval": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+    "status_node": { "enum": ["mesure", "estime"] },
+    "reliability_class": { "enum": ["elevee", "moyenne", "faible"] },
+    "alert_level": { "enum": ["information", "avertissement", "important", "critique"] },
+    "station_state": { "enum": ["active", "suspecte", "muette", "derive", "exclue"] },
+    "versions": {
+      "type": "object",
+      "required": ["model", "norm", "data", "contract"],
+      "properties": {
+        "model": { "type": "string" }, "norm": { "type": "string" },
+        "data": { "type": "string" }, "contract": { "const": "1.0" },
+        "model_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      },
+      "additionalProperties": false
+    },
+    "interval": {
+      "type": "object",
+      "required": ["p10", "p50", "p90"],
+      "properties": { "p10": { "type": ["number", "null"] }, "p50": { "type": ["number", "null"] }, "p90": { "type": ["number", "null"] } },
+      "additionalProperties": false
+    },
+    "uncertainty_method": {
+      "type": "object",
+      "required": ["method", "members", "calibrated"],
+      "properties": {
+        "method": { "type": "string", "description": "ex. ensemble-masquage-v1" },
+        "members": { "type": "integer", "minimum": 1 },
+        "calibrated": { "type": "boolean" },
+        "scale_factor": { "type": ["number", "null"], "exclusiveMinimum": 0 },
+        "coverage_80_validation": { "type": ["number", "null"], "minimum": 0, "maximum": 1 }
+      },
+      "additionalProperties": false
+    }
+  }
+}

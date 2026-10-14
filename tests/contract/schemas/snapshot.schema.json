@@ -1,0 +1,224 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://atom.zelqane.com/contract/v1/snapshot.schema.json",
+  "title": "GET /v1/snapshots/{id} — résumé d'un instantané",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "snapshot_id",
+    "valid_time",
+    "versions",
+    "kpi",
+    "physics",
+    "stations_summary",
+    "scenario",
+    "assets"
+  ],
+  "properties": {
+    "snapshot_id": {
+      "$ref": "common.schema.json#/$defs/snapshot_id"
+    },
+    "valid_time": {
+      "$ref": "common.schema.json#/$defs/iso_utc"
+    },
+    "versions": {
+      "$ref": "common.schema.json#/$defs/versions"
+    },
+    "kpi": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "stations_active",
+        "stations_total",
+        "share_high_reliability",
+        "reconstruction_ms",
+        "mass_residual_rms",
+        "open_alerts",
+        "hub_wind_mean_ms",
+        "hub_wind_max_ms",
+        "hub_height_agl_m"
+      ],
+      "properties": {
+        "stations_active": {
+          "type": "integer"
+        },
+        "stations_total": {
+          "type": "integer"
+        },
+        "share_high_reliability": {
+          "$ref": "common.schema.json#/$defs/unit_interval"
+        },
+        "reconstruction_ms": {
+          "type": "number"
+        },
+        "mass_residual_rms": {
+          "type": "number",
+          "description": "kg·m⁻³·s⁻¹ (DSO2 : ≤ 1e-4)"
+        },
+        "open_alerts": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "information",
+            "avertissement",
+            "important",
+            "critique"
+          ],
+          "properties": {
+            "information": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "avertissement": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "important": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "critique": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        "hub_wind_mean_ms": {
+          "$ref": "common.schema.json#/$defs/speed_ms"
+        },
+        "hub_wind_max_ms": {
+          "$ref": "common.schema.json#/$defs/speed_ms"
+        },
+        "hub_height_agl_m": {
+          "type": "number"
+        }
+      }
+    },
+    "physics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mass_residual_rms",
+        "mass_residual_p95",
+        "ground_condition_rms",
+        "roughness_ratio",
+        "dso2_pass"
+      ],
+      "properties": {
+        "mass_residual_rms": {
+          "type": "number"
+        },
+        "mass_residual_p95": {
+          "type": "number"
+        },
+        "ground_condition_rms": {
+          "type": "number"
+        },
+        "roughness_ratio": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "dso2_pass": {
+          "type": "boolean"
+        }
+      }
+    },
+    "stations_summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "active",
+        "suspecte",
+        "muette",
+        "derive",
+        "exclue"
+      ],
+      "properties": {
+        "active": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "suspecte": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "muette": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "derive": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "exclue": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "scenario": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "enum": [
+                "part_stations",
+                "panne_zone",
+                "station_retiree"
+              ]
+            },
+            "keep_fraction": {
+              "type": "number"
+            },
+            "zone": {
+              "type": "object",
+              "properties": {
+                "x_min_m": {
+                  "type": "number"
+                },
+                "x_max_m": {
+                  "type": "number"
+                },
+                "y_min_m": {
+                  "type": "number"
+                },
+                "y_max_m": {
+                  "type": "number"
+                }
+              }
+            },
+            "stations": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "baseline_snapshot_id": {
+              "$ref": "common.schema.json#/$defs/snapshot_id"
+            }
+          }
+        }
+      ],
+      "description": "null = reconstruction nominale ; sinon simulation (BF45, BF46)"
+    },
+    "assets": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      },
+      "required": [
+        "fields_template"
+      ],
+      "description": "Liens relatifs : fields_template ({level} = indice 0..nz-1, {var}), quality, alerts, stations, wind_farm, export_netcdf, export_csv"
+    }
+  }
+}

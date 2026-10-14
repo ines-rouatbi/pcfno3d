@@ -1,0 +1,17 @@
+{
+  "snapshot_id": "017_120000_b2529442",
+  "valid_time": "2025-01-12T12:00:00Z",
+  "generated_at": "2025-01-12T12:00:02Z",
+  "published_at": "2025-01-12T12:00:04Z",
+  "last_observation_at": "2025-01-12T11:59:40Z",
+  "compute_status": "online",
+  "heartbeat_at": "2025-01-12T12:04:30Z",
+  "data_status": "complete",
+  "versions": {
+    "model": "v7",
+    "norm": "n7",
+    "data": "aneo_dataset_3d_v2",
+    "contract": "1.0"
+  },
+  "href": "/v1/snapshots/017_120000_b2529442"
+}

@@ -1,0 +1,121 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://atom.zelqane.com/contract/v1/alerts.schema.json",
+  "title": "GET /v1/alerts/{id} — alertes et recommandations",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "items"
+  ],
+  "properties": {
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "level",
+          "kind",
+          "title",
+          "cause",
+          "recommendation",
+          "raised_at",
+          "status"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "level": {
+            "$ref": "common.schema.json#/$defs/alert_level"
+          },
+          "kind": {
+            "enum": [
+              "hors_plage",
+              "station_muette",
+              "capteur_derive",
+              "stations_insuffisantes",
+              "incoherence_physique",
+              "derive_entrees",
+              "vent_fort_moyeu",
+              "cisaillement",
+              "zone_mal_couverte"
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "cause": {
+            "type": "string"
+          },
+          "recommendation": {
+            "type": "string"
+          },
+          "raised_at": {
+            "$ref": "common.schema.json#/$defs/iso_utc"
+          },
+          "status": {
+            "enum": [
+              "ouverte",
+              "acquittee",
+              "close"
+            ]
+          },
+          "station_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "turbine_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "location": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "object",
+                "required": [
+                  "x_m",
+                  "y_m"
+                ],
+                "properties": {
+                  "x_m": {
+                    "type": "number"
+                  },
+                  "y_m": {
+                    "type": "number"
+                  }
+                }
+              }
+            ]
+          },
+          "value": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "threshold": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "unit": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    }
+  }
+}

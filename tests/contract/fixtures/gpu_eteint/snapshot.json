@@ -1,0 +1,49 @@
+{
+  "snapshot_id": "017_120000_b2529442",
+  "valid_time": "2025-01-12T12:00:00Z",
+  "versions": {
+    "model": "v7",
+    "norm": "n7",
+    "data": "aneo_dataset_3d_v2",
+    "contract": "1.0"
+  },
+  "kpi": {
+    "stations_active": 39,
+    "stations_total": 40,
+    "share_high_reliability": 0.01,
+    "reconstruction_ms": 91,
+    "mass_residual_rms": 0.000026,
+    "open_alerts": {
+      "information": 1,
+      "avertissement": 1,
+      "important": 0,
+      "critique": 0
+    },
+    "hub_wind_mean_ms": 11.01,
+    "hub_wind_max_ms": 11.94,
+    "hub_height_agl_m": 120
+  },
+  "physics": {
+    "mass_residual_rms": 0.000026,
+    "mass_residual_p95": 0.0000597,
+    "ground_condition_rms": 0.004,
+    "roughness_ratio": 0.951,
+    "dso2_pass": true
+  },
+  "stations_summary": {
+    "active": 39,
+    "suspecte": 0,
+    "muette": 1,
+    "derive": 0,
+    "exclue": 0
+  },
+  "scenario": null,
+  "assets": {
+    "fields_template": "/v1/fields/017_120000_b2529442/{level}/{var}",
+    "quality": "/v1/quality/017_120000_b2529442",
+    "alerts": "/v1/alerts/017_120000_b2529442",
+    "stations": "/v1/stations/017_120000_b2529442",
+    "wind_farm": "/v1/wind-farm/017_120000_b2529442",
+    "profile": "/v1/profiles/017_120000_b2529442"
+  }
+}
