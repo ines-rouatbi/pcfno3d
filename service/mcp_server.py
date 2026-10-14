@@ -27,7 +27,6 @@ from __future__ import annotations
 import json
 import os
 import threading
-from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -57,13 +56,7 @@ MAX_CACHED_VOLUMES = 4
 
 
 def load_config() -> Config:
-    cfg = Config.load(os.environ.get("PCFNO3D_CONFIG") or "default")
-    for var, key in (("PCFNO3D_RUN_DIR", "paths.run_dir"),
-                     ("PCFNO3D_DATA_DIR", "paths.data_dir"),
-                     ("PCFNO3D_CACHE_DIR", "paths.cache_dir")):
-        if os.environ.get(var):
-            cfg.apply_overrides({key: Path(os.environ[var])})
-    return cfg
+    return Config.load(os.environ.get("PCFNO3D_CONFIG") or "default").apply_service_env()
 
 
 def get_model() -> WindFieldModel:

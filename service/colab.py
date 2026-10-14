@@ -168,7 +168,9 @@ def serve_public(config: str = "colab", port: int = 8000, key_name: str = "colab
     """
     from pcfno3d.config import Config
 
-    cfg = Config.load(config)
+    # memes chemins que le service lancera (PCFNO3D_RUN_DIR / _DATA_DIR / _CACHE_DIR) :
+    # sans cela, on verifiait le checkpoint du YAML et on imposait ces chemins au service
+    cfg = Config.load(config).apply_service_env()
     checkpoint = check_model_files(cfg)
 
     if build_days:

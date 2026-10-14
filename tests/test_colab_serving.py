@@ -99,17 +99,40 @@ def test_cle_dupliquee_est_renommee_jamais_relue(cfg, tmp_path):
     assert {r.name for r in store.records} == {"colab", "colab-2"}
 
 
-def test_attente_de_health_signale_le_journal(tmp_path):
+def test_attente_de_health_signale_le_journal(tmp_path, free_ports):
     from service.colab import wait_for_health
 
     log = tmp_path / "service.log"
     log.write_text("ImportError: torch introuvable", encoding="utf-8")
     with pytest.raises(TimeoutError, match="torch introuvable"):
-        wait_for_health("http://127.0.0.1:59999", timeout=1.0, log_path=log)
+        wait_for_health(f"http://127.0.0.1:{free_ports(1)[0]}", timeout=1.0, log_path=log)
 
 
 # ---------------------------------------------------------------------------- bout en bout
-def test_service_demarre_en_sous_processus_et_repond(cfg, index, norm, monkeypatch):
+def test_serve_public_lit_les_chemins_du_service_pas_ceux_du_yaml(tmp_path, monkeypatch):
+    """serve_public doit verifier le modele LA OU le service le lira (PCFNO3D_*_DIR).
+
+    Avant correction, il relisait configs/test.yaml (artifacts/mini_run) : les tests ne
+    passaient que sur un poste ou ce dossier gitignore contenait deja un checkpoint.
+    """
+    from pcfno3d.config import Config
+    from service.colab import serve_public
+
+    vide = tmp_path / "run_sans_modele"
+    vide.mkdir()
+    monkeypatch.setenv("PCFNO3D_RUN_DIR", str(vide))
+    monkeypatch.setenv("PCFNO3D_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("PCFNO3D_CACHE_DIR", str(tmp_path / "cache"))
+    cfg = Config.load("test").apply_service_env()
+    assert cfg.paths.run_dir == vide.resolve()
+    assert cfg.paths.data_dir == (tmp_path / "data").resolve()
+    with pytest.raises(FileNotFoundError) as exc:
+        serve_public(config="test", tunnel=False)
+    assert str(vide) in str(exc.value) or "run_sans_modele" in str(exc.value)
+
+
+def test_service_demarre_en_sous_processus_et_repond(cfg, index, norm, monkeypatch,
+                                                     free_ports):
     """serve_public sans tunnel : un vrai uvicorn, interroge par le reseau."""
     import urllib.request
 
@@ -123,8 +146,8 @@ def test_service_demarre_en_sous_processus_et_repond(cfg, index, norm, monkeypat
     monkeypatch.setenv("PCFNO3D_CACHE_DIR", str(cfg.paths.cache_dir))
     monkeypatch.setenv("PCFNO3D_RUN_DIR", str(cfg.paths.run_dir))
 
-    info = serve_public(config="test", port=8911, key_name="pytest-colab", device="cpu",
-                        tunnel=False, wait=240.0,
+    info = serve_public(config="test", port=free_ports(1)[0], key_name="pytest-colab",
+                        device="cpu", tunnel=False, wait=240.0,
                         log_path=cfg.paths.run_dir / "colab_service.log")
     try:
         assert info["health"]["status"] == "ok"
@@ -164,7 +187,8 @@ def test_service_demarre_en_sous_processus_et_repond(cfg, index, norm, monkeypat
     assert info["process"].poll() is not None
 
 
-def test_service_derriere_tunnel_nomme_cle_par_empreinte(cfg, index, norm, monkeypatch, tmp_path):
+def test_service_derriere_tunnel_nomme_cle_par_empreinte(cfg, index, norm, monkeypatch, tmp_path,
+                                                         free_ports):
     """Montage atom : URL fixe (Host atom-origin.zelqane.com), cle connue par son empreinte.
 
     Le tunnel est simule (pas de reseau public dans une suite de tests) mais tout le reste
@@ -187,7 +211,7 @@ def test_service_derriere_tunnel_nomme_cle_par_empreinte(cfg, index, norm, monke
                       ("PCFNO3D_RUN_DIR", cfg.paths.run_dir)):
         monkeypatch.setenv(var, str(path))
 
-    port, host = 8912, "atom-origin.zelqane.com"
+    port, host = free_ports(1)[0], "atom-origin.zelqane.com"
     vus = {}
 
     def faux_tunnel(tunnel_id, hostname, credentials, port=8000, **_):
