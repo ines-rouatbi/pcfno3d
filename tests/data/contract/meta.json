@@ -1,0 +1,27 @@
+{
+  "producteur": "Tukhnanutha (jeux de test du contrat ANEO)",
+  "version_generateur": 2,
+  "grille_surface": {
+    "nx": 6,
+    "ny": 4,
+    "dx_m": 50.0,
+    "dy_m": 50.0
+  },
+  "noeuds_3d": {
+    "stride": 2,
+    "nx": 3,
+    "ny": 2,
+    "dx_m": 100.0,
+    "z_levels_asl_m": [
+      150.0
+    ],
+    "min_z_rel_m": 5.0,
+    "point_id_debut": 25,
+    "nombre": 6
+  },
+  "source_type": {
+    "capteur": "ANEO_PHYSICAL_SYNTHETIC_MULTITIME",
+    "interpole": "ANEO_PHYSICAL_INTERPOLATED_MULTITIME",
+    "noeud_3d": "ANEO_VIRTUAL_NODE_3D"
+  }
+}

@@ -21,6 +21,7 @@ dependencies = [
   "torch>=2.2",
   "pyyaml>=6.0",
   "matplotlib>=3.8",
+  "pandera>=0.24",        # contrat de donnees ANEO (pcfno3d.contract) ; API pandera.pandas
 ]
 
 [project.optional-dependencies]

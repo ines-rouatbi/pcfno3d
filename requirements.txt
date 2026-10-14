@@ -7,4 +7,5 @@ scipy==1.15.3
 pyarrow==25.0.1
 PyYAML==6.0.1
 matplotlib==3.10.6
+pandera==0.34.1
 torch==2.2.2
