@@ -246,8 +246,11 @@ def grid_to_target(lat, lon, z_asl, fields: dict[str, np.ndarray], geom: Geometr
             continue
         src = horiz(np.asarray(fields[name], float))
         for k, zt in enumerate(targets):
-            below = (zs <= zt).sum(axis=0) - 1                 # indice du niveau source sous zt
-            ok = (below >= 0) & (below < zs.shape[0] - 1)
+            # tolerance d'1 mm : un niveau du modele confondu avec le premier ou le dernier
+            # niveau source ne doit pas tomber « hors source » pour une erreur d'arrondi
+            eps = 1e-3
+            below = (zs <= zt + eps).sum(axis=0) - 1           # indice du niveau source sous zt
+            ok = (zt >= zs[0] - eps) & (zt <= zs[-1] + eps)
             b = np.clip(below, 0, zs.shape[0] - 2)
             cols = np.arange(zs.shape[1])
             z0_, z1_ = zs[b, cols], zs[b + 1, cols]
@@ -343,6 +346,55 @@ def open_gridded(path: str | Path, var_map: dict[str, str]) -> Callable:
         z = snap[var_map["z"]].values
         fields = {k: snap[var_map[k]].values for k in ("u", "v", "w", "rho") if var_map.get(k)}
         return lat, lon, z, fields
+    return at
+
+
+G0 = 9.80665                   # m/s2, pour passer du geopotentiel a l'altitude
+
+
+def open_era5_pressure_levels(paths) -> Callable:
+    """Fichiers ERA5 « niveaux de pression » (scripts/download_reanalysis.py) -> fonction
+    timestamp -> (lat, lon, z_asl, fields), a passer a `grid_to_target`.
+
+    Altitude = geopotentiel / g ; densite = p / (Rd T) ; w = -omega / (rho g). Les niveaux
+    sont tries du bas vers le haut. ERA5 (~31 km) donne un FOND d'altitude reel, pas une
+    verite a 100 m. Noms acceptes : ceux du CDS actuel (valid_time, pressure_level) et
+    les anciens (time, level).
+    """
+    import glob
+
+    try:
+        import xarray as xr
+    except ImportError as exc:                 # pragma: no cover - selon l'environnement
+        raise ImportError("pip install xarray netCDF4") from exc
+    files = sorted(glob.glob(str(paths))) if isinstance(paths, (str, Path)) else list(paths)
+    if not files:
+        raise FileNotFoundError(f"aucun fichier ERA5 pour {paths}")
+    datasets = [xr.open_dataset(f) for f in files]
+
+    def dim(ds, *names):
+        return next(n for n in names if n in ds.dims or n in ds.coords)
+
+    def at(ts: pd.Timestamp):
+        for ds in datasets:
+            t = dim(ds, "valid_time", "time")
+            times = pd.to_datetime(ds[t].values)
+            k = int(np.abs(times - ts).argmin())
+            if abs(times[k] - ts) > pd.Timedelta("31min"):
+                continue
+            snap = ds.isel({t: k})
+            lev = dim(snap, "pressure_level", "level")
+            p = snap[lev].values.astype(float) * 100.0                 # hPa -> Pa
+            z = snap["z"].values / G0                                  # (nlev, nlat, nlon)
+            T = snap["t"].values
+            rho = p[:, None, None] / (RD * T)
+            fields = {"u": snap["u"].values, "v": snap["v"].values, "rho": rho}
+            if "w" in snap:
+                fields["w"] = -snap["w"].values / (rho * G0)           # Pa/s -> m/s
+            order = np.argsort(np.nanmean(z, axis=(1, 2)))             # bas -> haut
+            fields = {kk: np.asarray(vv)[order] for kk, vv in fields.items()}
+            return (snap["latitude"].values, snap["longitude"].values, z[order], fields)
+        return None
     return at
 
 

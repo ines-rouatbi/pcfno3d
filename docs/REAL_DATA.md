@@ -30,6 +30,8 @@ utilisent sans modification.
 | Import en une commande | `pcfno3d import-real --stations … [--points … \| --grid …]` | écrit le cache, découpe par jours entiers (1 jour sur 7 en validation, 1 sur 7 en test) |
 | Reconstruction en direct | `POST /api/reconstruct/stations` | JSON de stations (lat/lon) → volume 3D, réutilisable ensuite via `/field`, `/point`, `/profile` (`stem` = `live_…`) |
 | Test de densité réaliste | `scripts/eval_reseau.py` | évalue le modèle avec 1 capteur tous les 300 / 500 / 1000 m |
+| Téléchargement ERA5 | `scripts/download_reanalysis.py` (`pip install -e .[real]`) | niveaux de pression 1000–850 hPa et niveaux simples, un fichier par mois, sur le domaine + marge ; `--test` vérifie le compte |
+| Lecture ERA5 → cible | `open_era5_pressure_levels`, `import-real --grid … --grid-format era5-pl` | altitude = géopotentiel / g, densité, w depuis omega ; fond d'altitude réel (~31 km), pas une vérité à 100 m |
 
 Tout cela est couvert par des tests (`tests/test_realdata.py` + l'API) sur des données
 fabriquées à valeurs connues. **Aucune vraie donnée n'a encore été importée.**
@@ -68,7 +70,7 @@ avec `--grid-vars`.
 5. **Une cible pour l'altitude** : radiosondes de Tunis-Carthage (en général 00 et 12 UTC ;
    station et archive à vérifier auprès de l'INM ou d'une archive publique), et/ou
    simulations WRF.
-6. **Des comptes** : Copernicus CDS (gratuit, pour ERA5 / CERRA). La couverture de la
+6. **Des comptes** : Copernicus CDS (gratuit, pour ERA5 / CERRA) — **créé le 14/10**. La clé se met dans `~/.cdsapirc` par l'utilisateur, jamais dans le dépôt ni le salon. La couverture de la
    Tunisie par CERRA est à vérifier sur sa grille.
 7. **Du calcul hors Colab** pour WRF et pour un service permanent. À chiffrer par l'agent
    de Rayen, avant tout lancement.

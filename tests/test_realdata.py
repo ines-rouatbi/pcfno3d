@@ -210,3 +210,39 @@ def test_loss_ne_supervise_que_les_noeuds_connus(cfg, geom, norm):
     assert abs(part["data"] - attendu) < 1e-5
     assert part["grad"] == 0.0 and full["grad"] > 0.0          # pas de rugosite sans verite dense
     assert np.isfinite(part["mass"])                           # rho reste connu partout
+
+
+def test_lecture_era5_niveaux_de_pression(geom, geo, tmp_path):
+    """Un faux fichier ERA5 au format du CDS -> altitudes, densite, w, puis cible aux noeuds."""
+    xr = pytest.importorskip("xarray")
+    pytest.importorskip("netCDF4")
+    from pcfno3d.realdata import G0, grid_to_target, open_era5_pressure_levels
+
+    lat = np.array([37.0, 36.75, 36.5, 36.25])                 # nord -> sud, comme ERA5
+    lon = np.array([9.75, 10.0, 10.25, 10.5, 10.75])
+    plev = np.array([850, 925, 1000])                         # haut -> bas, comme ERA5
+    height = np.array([1500.0, 800.0, 100.0])                 # m, par niveau
+    times = pd.to_datetime(["2025-01-01T12:00", "2025-01-01T13:00"])
+    shape = (len(times), len(plev), len(lat), len(lon))
+    h4 = np.broadcast_to(height[None, :, None, None], shape)
+    ds = xr.Dataset(
+        {"z": (("valid_time", "pressure_level", "latitude", "longitude"), h4 * G0),
+         "u": (("valid_time", "pressure_level", "latitude", "longitude"), 3.0 + 0.002 * h4),
+         "v": (("valid_time", "pressure_level", "latitude", "longitude"), np.full(shape, -1.5)),
+         "t": (("valid_time", "pressure_level", "latitude", "longitude"), np.full(shape, 280.0)),
+         "w": (("valid_time", "pressure_level", "latitude", "longitude"), np.full(shape, -0.1))},
+        coords={"valid_time": times, "pressure_level": plev, "latitude": lat, "longitude": lon})
+    f = tmp_path / "era5_pl_202501.nc"
+    ds.to_netcdf(f)
+
+    at = open_era5_pressure_levels(str(tmp_path / "era5_pl_*.nc"))
+    assert at(pd.Timestamp("2025-01-01T15:00")) is None              # hors des fichiers
+    la, lo, z, fields = at(pd.Timestamp("2025-01-01T12:10"))
+    assert np.all(np.diff(z.mean(axis=(1, 2))) > 0)                  # trie bas -> haut
+    assert np.all(fields["w"] > 0)                                   # omega < 0 : ca monte
+    Y = grid_to_target(la, lo, z, fields, geom, geo)
+    for k, zk in enumerate(geom.z_levels):
+        m = geom.valid[k]
+        if m.any() and 100 <= zk <= 1500:
+            np.testing.assert_allclose(Y[0, k][m], 3.0 + 0.002 * zk, rtol=1e-4)
+            np.testing.assert_allclose(Y[1, k][m], -1.5, atol=1e-5)

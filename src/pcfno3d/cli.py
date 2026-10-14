@@ -211,7 +211,11 @@ def cmd_import_real(args) -> int:
             g = by_bin.get(ts)
             return None if g is None else points_to_target(g, geom, geo)
     elif args.grid:
-        at = open_gridded(args.grid, json.loads(args.grid_vars))
+        if args.grid_format == "era5-pl":
+            from .realdata import open_era5_pressure_levels
+            at = open_era5_pressure_levels(args.grid)           # motif accepte : era5_pl_*.nc
+        else:
+            at = open_gridded(args.grid, json.loads(args.grid_vars))
 
         def target(ts):
             got = at(ts)
@@ -479,6 +483,8 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--grid", help="cible maillee (reanalyse, WRF) : NetCDF")
     s.add_argument("--grid-vars", default='{"u": "u", "v": "v", "z": "z"}',
                    help="noms des variables du fichier maille (JSON)")
+    s.add_argument("--grid-format", choices=["generic", "era5-pl"], default="generic",
+                   help="era5-pl : fichiers ERA5 niveaux de pression (download_reanalysis.py)")
     s.set_defaults(func=cmd_import_real)
 
     s = sub.add_parser("export-web", help="volume -> binaires + manifeste")
