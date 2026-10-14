@@ -50,9 +50,13 @@ def test_requetes_paralleles_ne_calculent_qu_une_fois(cfg, index, norm, monkeypa
                      ("PCFNO3D_CACHE_DIR", str(cfg.paths.cache_dir)),
                      ("PCFNO3D_RUN_DIR", str(cfg.paths.run_dir))):
         monkeypatch.setenv(var, val)
+    monkeypatch.delenv("PCFNO3D_INSECURE_OPEN", raising=False)
     keys = cfg.paths.run_dir / "api_keys.json"
     sauvegarde = keys.read_text(encoding="utf-8") if keys.exists() else None
-    keys.unlink(missing_ok=True)                       # mode ouvert pour ce test
+    keys.unlink(missing_ok=True)
+    # service ferme par defaut : une cle de lecture, envoyee par le client
+    from service.auth import ApiKeyStore
+    cle, _ = ApiKeyStore(keys).create("test-verrou", scope="read")
 
     from pcfno3d.inference import WindFieldModel
     from service.app import create_app
@@ -67,7 +71,7 @@ def test_requetes_paralleles_ne_calculent_qu_une_fois(cfg, index, norm, monkeypa
 
     monkeypatch.setattr(WindFieldModel, "predict_stem", lent)
     try:
-        with TestClient(create_app()) as client:
+        with TestClient(create_app(), headers={"X-API-Key": cle}) as client:
             z = client.get("/api/meta").json()["z_levels_asl_m"][-1]
             stem = client.get("/api/instants?split=test").json()["instants"][1]["stem"]
             codes = []
@@ -83,6 +87,7 @@ def test_requetes_paralleles_ne_calculent_qu_une_fois(cfg, index, norm, monkeypa
             for f in fils:
                 f.join()
     finally:
+        keys.unlink(missing_ok=True)
         if sauvegarde is not None:
             keys.write_text(sauvegarde, encoding="utf-8")
 

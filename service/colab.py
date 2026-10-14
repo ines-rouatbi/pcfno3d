@@ -17,7 +17,9 @@ journaux restent lisibles dans un fichier.
 Rappels qui comptent sur Colab :
   - la session est ephemere (inactivite ~90 min, 12 h au maximum) : l'URL publique meurt
     avec elle, il faut la repartager a chaque relance ;
-  - un quick tunnel est PUBLIC : seule la cle d'API protege les donnees ;
+  - un quick tunnel est PUBLIC : seule la cle d'API protege les donnees. Le mode ouvert
+    sans cle (`PCFNO3D_INSECURE_OPEN`) n'est donc JAMAIS transmis au service lance ici :
+    `service_env` le retire et pose `PCFNO3D_FORBID_OPEN`, que le service respecte ;
   - sans `best_dso_v7.pt` (ou `best.pt`) et `norm_stats.json` dans run_dir, il n'y a rien
     a servir : la fonction s'arrete avec un message clair plutot que de demarrer a vide.
 """
@@ -64,7 +66,34 @@ def wait_for_health(base_url: str, timeout: float = 300.0,
     raise TimeoutError(f"{base_url} ne repond pas apres {timeout:.0f} s.{extra}")
 
 
-def ensure_api_key(cfg, name: str = "colab", scope: str = "read") -> tuple[str, bool]:
+def service_env(cfg, config: str, port: int, device: str | None = None) -> dict:
+    """Environnement du sous-processus uvicorn.
+
+    Le mode ouvert est retire et interdit : sur ce chemin le service finit derriere un
+    tunnel public, une variable heritee du noyau ne doit pas pouvoir l'ouvrir.
+    """
+    from .auth import ENV_FORBID_OPEN, ENV_INSECURE_OPEN
+
+    env = {**os.environ,
+           "PCFNO3D_CONFIG": config,
+           "PCFNO3D_PORT": str(port),
+           "PCFNO3D_RUN_DIR": str(cfg.paths.run_dir),
+           "PCFNO3D_DATA_DIR": str(cfg.paths.data_dir),
+           "PCFNO3D_CACHE_DIR": str(cfg.paths.cache_dir),
+           "PYTHONPATH": os.pathsep.join(
+               [str(REPO_ROOT), str(REPO_ROOT / "src"), os.environ.get("PYTHONPATH", "")])}
+    if env.pop(ENV_INSECURE_OPEN, None):
+        print(f"{ENV_INSECURE_OPEN} ignore : jamais de mode ouvert sur le chemin Colab / "
+              "tunnel")
+    env[ENV_FORBID_OPEN] = "1"
+    if device:
+        env["PCFNO3D_DEVICE"] = device
+    return env
+
+
+def ensure_api_key(cfg, name: str = "colab", scope: str = "read",
+                   quota_minute: int | None = None,
+                   quota_jour: int | None = None) -> tuple[str, bool]:
     """Renvoie (secret, cree_maintenant).
 
     Un secret ne peut pas etre relu : si une cle de ce nom existe deja, on en cree une
@@ -78,7 +107,8 @@ def ensure_api_key(cfg, name: str = "colab", scope: str = "read") -> tuple[str, 
     while any(r.name == candidate and not r.revoked for r in store.records):
         candidate = f"{name}-{suffix}"
         suffix += 1
-    secret, _ = store.create(candidate, scope=scope)
+    secret, _ = store.create(candidate, scope=scope, quota_minute=quota_minute,
+                             quota_jour=quota_jour)
     return secret, candidate != name
 
 
@@ -107,7 +137,9 @@ def serve_public(config: str = "colab", port: int = 8000, key_name: str = "colab
                  build_days: list[int] | None = None, wait: float = 300.0,
                  log_path: str | Path = "/tmp/pcfno3d_service.log",
                  named_tunnel: dict | None = None,
-                 key_hash: str | None = None) -> dict:
+                 key_hash: str | None = None,
+                 quota_minute: int | None = None,
+                 quota_jour: int | None = None) -> dict:
     """Demarre le service (API + MCP + interface) et l'expose par un tunnel public.
 
     Args:
@@ -127,6 +159,9 @@ def serve_public(config: str = "colab", port: int = 8000, key_name: str = "colab
         key_hash: empreinte SHA-256 d'une cle remise de main a main. Elle est enregistree
             (portee `scope`, nom `key_name`) au lieu de creer une nouvelle cle : le
             secret ne passe jamais par Colab.
+        quota_minute, quota_jour: quotas propres a cette cle (None = defaut du service,
+            0 = illimite). Utile pour une cle partagee par beaucoup d'utilisateurs, comme
+            celle du Worker atom.
 
     Returns:
         Un dictionnaire : public_url, api_key, mcp_url, health, checkpoint, process...
@@ -149,25 +184,17 @@ def serve_public(config: str = "colab", port: int = 8000, key_name: str = "colab
     if key_hash:
         from .auth import ApiKeyStore, default_store_path
         record = ApiKeyStore(default_store_path(cfg.paths.run_dir)).register_hash(
-            key_name, key_hash, scope=scope)
+            key_name, key_hash, scope=scope, quota_minute=quota_minute, quota_jour=quota_jour)
         api_key, renamed = None, False
         print(f"cle '{record.name}' ({record.scope}) enregistree par son empreinte "
               f"{record.key_hash[:12]}... : le secret n'est pas sur cette machine")
     else:
-        api_key, renamed = ensure_api_key(cfg, name=key_name, scope=scope)
+        api_key, renamed = ensure_api_key(cfg, name=key_name, scope=scope,
+                                          quota_minute=quota_minute, quota_jour=quota_jour)
 
     tun = None
     base_url = f"http://127.0.0.1:{port}"
-    env = {**os.environ,
-           "PCFNO3D_CONFIG": config,
-           "PCFNO3D_PORT": str(port),
-           "PCFNO3D_RUN_DIR": str(cfg.paths.run_dir),
-           "PCFNO3D_DATA_DIR": str(cfg.paths.data_dir),
-           "PCFNO3D_CACHE_DIR": str(cfg.paths.cache_dir),
-           "PYTHONPATH": os.pathsep.join(
-               [str(REPO_ROOT), str(REPO_ROOT / "src"), os.environ.get("PYTHONPATH", "")])}
-    if device:
-        env["PCFNO3D_DEVICE"] = device
+    env = service_env(cfg, config, port, device)
 
     if tunnel and named_tunnel:
         from .tunnel import start_named_tunnel

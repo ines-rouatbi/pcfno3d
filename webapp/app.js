@@ -2,7 +2,10 @@
  *
  * Tout passe par l'API JSON du même serveur. La clé d'API est conservée dans
  * localStorage (ou en mémoire si l'utilisateur refuse) et envoyée en en-tête X-API-Key.
- * Le serveur peut tourner sans clé ; dans ce cas l'écran de connexion est sauté.
+ * Le serveur exige une clé par défaut. Seul le mode ouvert explicite du développement
+ * local (`pcfno3d serve --insecure-open`, health.auth === "ouvert") saute l'écran de
+ * connexion. Sans aucune clé configurée (health.auth === "aucune_cle"), le serveur refuse
+ * tout : l'écran le dit au lieu d'attendre une clé qui ne peut pas exister.
  */
 "use strict";
 
@@ -36,6 +39,11 @@ async function api(path, options = {}) {
   if (state.key) headers["X-API-Key"] = state.key;
   if (options.body) headers["Content-Type"] = "application/json";
   const res = await fetch(`/api${path}`, { ...options, headers });
+  if (res.status === 429) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.detail ||
+      `quota dépassé, réessayer dans ${res.headers.get("Retry-After") || "?"} s`);
+  }
   if (res.status === 401 || res.status === 403) {
     const err = new Error((await res.json().catch(() => ({}))).detail || "accès refusé");
     err.auth = true;
@@ -73,9 +81,14 @@ async function boot() {
     setStatus("serveur injoignable", "err");
     return;
   }
-  const needsKey = health.auth === "cle_api";
+  /* fermé par défaut : seule une réponse explicite "ouvert" dispense de clé */
+  const needsKey = health.auth !== "ouvert";
   state.key = readStoredKey();
 
+  if (health.auth === "aucune_cle") {
+    return showGate(health.message ||
+      "aucune clé configurée sur ce serveur : toutes les requêtes sont refusées");
+  }
   if (needsKey && !state.key) return showGate();
   try {
     await start(health);
@@ -126,7 +139,8 @@ async function start(health) {
     : "";
   setStatus(`${state.meta.modele} · ${state.meta.device} · ` +
             `${state.meta.grille.nz}×${state.meta.grille.ny}×${state.meta.grille.nx} · ` +
-            `${health.auth === "cle_api" ? "clé d'API" : "accès ouvert"}${lien}`, "ok");
+            `${health.auth === "ouvert" ? "accès OUVERT (développement local)" : "clé d'API"}` +
+            `${lien}`, health.auth === "ouvert" ? "" : "ok");
 
   await loadInstants();
   await refresh();
