@@ -221,7 +221,7 @@ tests/              80 tests, tous sur CPU et mini-dataset
 notebooks/current/  fno3d_v7_1 (référence) · fno3d_v7 (LA v7, avec ses sorties Colab) · pcfno3d_v8_colab · pcfno3d_api_colab
 notebooks/archive/  architectures explorées puis écartées (FNO2D, U-Net, GNN, DeepONet, ViT…)
 notebooks/data_prep/01_EDA.ipynb · 02_cleaning.ipynb
-docs/               INTEGRATION.md · présentations, notes techniques, Gantt, figures
+docs/               INTEGRATION.md · REPRODUCTIBILITE.md (DE2) · présentations, notes techniques, Gantt, figures
 artifacts/          cache, checkpoints, évaluations, exports — non versionné
 ```
 
