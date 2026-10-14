@@ -509,3 +509,9 @@ de cette décision, quelle qu'en soit l'issue. Le protocole est écrit avant la 
   même s'il contredit 10i.
 - **Réserve** : un jeu vierge du même générateur reste du synthétique. Il teste la généralisation à
   de nouvelles situations, pas le transfert au réel (voir la section sur les baromètres réels).
+
+*Note technique de l'avenant n° 2, ajoutée avant la génération* : le jeu est produit par
+`scripts/generate_jeu_vierge.py`, qui exécute le générateur **sans le modifier** et retire seulement les
+instants d'épisodes du calendrier. On obtient 120 instants synoptiques, environ 4,4 Go. Avec les épisodes,
+il y aurait 320 instants et environ 13 Go, plus que les 12 Go libres sur ines-pc. Le jeu ne contient
+donc pas d'épisodes.
