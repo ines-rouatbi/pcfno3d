@@ -259,7 +259,10 @@ class DSOCfg:
     r2: float = 0.95                  # DSO1 : R2 min de u, v par niveau
     r2_all: float = 0.95              # objectif etendu : R2 min de u, v ET w
     mass_rms: float = 1e-4            # DSO2 : RMS du residu de continuite (kg.m-3.s-1)
-    roughness_range: tuple[float, float] = (0.0, 1.1)   # DSO3
+    # DSO3 : rugosite prediction / verite dans [0,9 ; 1,1] (cahier des charges). Trop lisse
+    # (< 0,9) est une faute autant que trop bruite (> 1,1). La v7 etait jugee sur (0,0 ; 1,1),
+    # ce qui ne bornait que le haut ; sa valeur (0,951) est conforme dans les deux lectures.
+    roughness_range: tuple[float, float] = (0.9, 1.1)
     time_s: float = 1.0               # DSO4 : temps d'inference par instant (s)
     rmse_25pct: float = 0.7           # DSO5 : RMSE max avec 25 % des capteurs
     min_level_cover: float = 0.05     # niveau ignore s'il couvre moins de 5 % du domaine
@@ -272,6 +275,11 @@ class DSOCfg:
 
     def __post_init__(self) -> None:
         self.roughness_range = tuple(float(r) for r in self.roughness_range)  # type: ignore[assignment]
+        lo, hi = self.roughness_range
+        if not 0.0 <= lo < 1.0 < hi:
+            # le score DSO normalise par (1 - lo) et (hi - 1) : 1 doit etre strictement dedans
+            raise ValueError(f"dso.roughness_range doit verifier 0 <= bas < 1 < haut, "
+                             f"recu {self.roughness_range}")
 
 
 @dataclass

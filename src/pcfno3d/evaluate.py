@@ -22,6 +22,7 @@ import torch
 
 from .config import Config
 from .dataset import assemble_input, eval_loader, is_synoptic, make_splits
+from .dso import dso3_conforme
 from .inference import WindFieldModel, ensemble_forward
 from .losses import PhysicsLoss
 
@@ -232,7 +233,7 @@ class Evaluator:
             "dso2_conforme": bool(res["mass_rms"].mean() <= dso.mass_rms),
             "dso3_rugosite": rough_mean,
             "dso3_rugosite_tous_instants": float(res_all["roughness_ratio"].mean()),
-            "dso3_conforme": bool(dso.roughness_range[0] <= rough_mean <= dso.roughness_range[1]),
+            "dso3_conforme": dso3_conforme(rough_mean, dso.roughness_range),
             "dso4_inference_s": timing["mean_s"],
             "dso4_conforme": bool(timing["conforme"]),
             "dso5_rmse_25pct": rmse25,
@@ -273,7 +274,8 @@ def format_report(s: dict, levels: pd.DataFrame, levels_ep: pd.DataFrame,
           f"{ok(s['dso2_conforme'])} | p95 = {s['dso2_rms_p95']:.2e} | "
           f"max = {s['dso2_rms_max']:.2e}",
           f"DSO3  rugosite prediction / verite = {s['dso3_rugosite']:.3f} "
-          f"{dso.roughness_range} -> {ok(s['dso3_conforme'])}",
+          f"(dans [{dso.roughness_range[0]} ; {dso.roughness_range[1]}]) "
+          f"-> {ok(s['dso3_conforme'])}",
           f"DSO4  inference = {s['dso4_inference_s'] * 1000:.0f} ms (seuil {dso.time_s} s)"
           f"      -> {ok(s['dso4_conforme'])}",
           f"DSO5  RMSE max a 25 % de capteurs = {s['dso5_rmse_25pct']:.3f} m/s "

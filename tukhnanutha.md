@@ -111,7 +111,7 @@ What changed since July:
   reconstructs a full instant in one forward pass.
 - **DSO targets are encoded in code, not just slides**: DSO1 (RMSE ≤ 0.5 m/s and R² ≥ 0.95 per
   level, u/v — plus an extended R² ≥ 0.95 on w), DSO2 (mass residual RMS ≤ 1e-4), DSO3 (roughness
-  ratio ≤ 1.1), DSO4 (< 1 s per instant), DSO5 (RMSE ≤ 0.7 m/s with 25 % of sensors). Evaluation
+  ratio in [0.9, 1.1]), DSO4 (< 1 s per instant), DSO5 (RMSE ≤ 0.7 m/s with 25 % of sensors). Evaluation
   runs on **synoptic instants**; fast episodes are reported separately as a stress test.
 - **Deliverables drafted** (2026-10-01/02): `docs/presentations/PC-FNO3D evaluation.pptx`,
   `PC-FNO3D recontruction part2.pptx`, `PC-FNO3D deployment part3.pptx`, a French version, plus
@@ -134,7 +134,7 @@ fine-tune never beat it). 120 synoptic test instants, 50 % of sensors visible.
 | DSO1 global RMSE | ≤ 0.5 m/s | u **0.542**, v 0.437 | **fails** (u) |
 | DSO1 R² u, v (and w) | ≥ 0.95 | min 0.991 (w min 0.966) | passes |
 | DSO2 mass residual | ≤ 1e-4 | 2.58e-5 | passes |
-| DSO3 roughness ratio | ≤ 1.1 | 0.951 | passes |
+| DSO3 roughness ratio | 0.9–1.1 | 0.951 | passes |
 | DSO4 inference | < 1 s | 91 ms | passes |
 | DSO5 RMSE at 25 % sensors | ≤ 0.7 m/s | 0.646 | passes |
 
@@ -165,7 +165,8 @@ Diagnosis, from the training log and the evaluation tables:
 
 Two reporting issues found and fixed in the package (verdicts unchanged): BLOC 12 printed R² =
 −11 899 at 25 m — a 0 %-coverage level admitted by a "≥ 10 nodes" test; the notebook labels DSO3
-as "0.9–1.1" while only checking ≤ 1.1 (0.951 passes either reading).
+as "0.9–1.1" while only checking ≤ 1.1 (0.951 passes either reading). Since 2026-10-14 the
+package checks both bounds (verdict and DSO selection score).
 
 ### Corrections applied (2026-10-11) — the v8 recipe
 
