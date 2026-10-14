@@ -67,7 +67,7 @@ dso:
   r2: 0.95
   r2_all: 0.95
   mass_rms: 1.0e-4
-  roughness_range: [0.0, 1.1]
+  roughness_range: [0.9, 1.1]
   time_s: 1.0
   rmse_25pct: 0.7
   min_level_cover: 0.05

@@ -86,10 +86,33 @@ def measure(net: torch.nn.Module, loader, geom: Geometry, norm: Normalizer,
     return m
 
 
+def dso3_ecart(rough: float, roughness_range: tuple[float, float]) -> float:
+    """DSO3 en rapport normalise : 0 pour une rugosite de 1, 1 sur chaque borne, > 1 dehors.
+
+    Symetrique : l'ecart a 1 est divise par la demi-largeur du cote ou il se trouve,
+    (1 - bas) en dessous de 1, (haut - 1) au-dessus. Avec [0,9 ; 1,1] : 0,85 -> 1,5 ;
+    0,95 -> 0,5 ; 1,15 -> 1,5. NaN (verite partielle, pas de rugosite) reste NaN.
+    """
+    lo, hi = roughness_range
+    rough = float(rough)
+    if not np.isfinite(rough):
+        return float("nan")
+    return max((rough - 1.0) / (hi - 1.0), (1.0 - rough) / (1.0 - lo), 0.0)
+
+
+def dso3_conforme(rough: float, roughness_range: tuple[float, float]) -> bool:
+    """Verdict DSO3 : bas <= rugosite <= haut, bornes comprises (NaN -> non conforme)."""
+    lo, hi = roughness_range
+    return bool(lo <= float(rough) <= hi)
+
+
 def score(m: LevelMetrics, cfg: Config, geom: Geometry) -> dict:
     """Score DSO : le PIRE rapport mesure / seuil. <= 1 signifie que tout est respecte.
 
-    Meme definition que le BLOC 9b du notebook, pour que les chiffres se comparent.
+    Meme definition que le BLOC 9b du notebook pour DSO1, DSO2 et R2, pour que les chiffres
+    se comparent. DSO3 en differe volontairement : le notebook ne penalisait qu'une
+    rugosite > 1,1 ; ici une rugosite < 0,9 (champ trop lisse) l'est aussi, de facon
+    symetrique (`dso3_ecart`). Pour une rugosite dans [0,9 ; 1,1] le terme reste <= 1.
     """
     levels = geom.eval_levels()
     rmse = m.rmse()[:2, levels]                     # u, v aux niveaux evalues
@@ -100,7 +123,7 @@ def score(m: LevelMetrics, cfg: Config, geom: Geometry) -> dict:
     ratios = {
         "dso1_rmse": float(np.nanmax(rmse)) / d.rmse,
         "dso2_masse": mass / d.mass_rms,
-        "dso3_rugosite": max(rough - 1.0, 0.0) / (d.roughness_range[1] - 1.0),
+        "dso3_rugosite": dso3_ecart(rough, d.roughness_range),
         "r2_uvw": (1.0 - float(np.nanmin(r2))) / (1.0 - d.r2_all),
     }
     worst = max(ratios, key=ratios.get)

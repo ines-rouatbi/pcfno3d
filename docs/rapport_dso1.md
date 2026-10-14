@@ -37,7 +37,7 @@
 | DSO1 | R² u, v ≥ 0,95 à chaque niveau | min 0,9911 | conforme |
 | DSO1 | RMSE global ≤ 0,5 m/s | u 0,542 · v 0,437 | non conforme |
 | DSO2 | RMS du résidu de continuité ≤ 1·10⁻⁴ | 2,58·10⁻⁵ | conforme |
-| DSO3 | rugosité prédiction / vérité dans [0 ; 1,1] | 0,951 | conforme |
+| DSO3 | rugosité prédiction / vérité dans [0,9 ; 1,1] | 0,951 | conforme |
 | DSO4 | inférence ≤ 1 s par instant | 104 ms (GPU A100) | conforme |
 | DSO5 | RMSE max ≤ 0,7 m/s avec 25 % des capteurs | 0,646 m/s | conforme |
 

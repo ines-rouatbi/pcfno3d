@@ -33,6 +33,9 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(REPO_ROOT / "src"), str(REPO_ROOT)]
 
+from pcfno3d.config import DSOCfg  # noqa: E402
+from pcfno3d.dso import dso3_conforme  # noqa: E402
+
 NUM = r"-?\d+(?:\.\d+)?(?:e[-+]?\d+)?"
 
 
@@ -144,7 +147,9 @@ def parse(text: str) -> dict:
         "dso2_conforme": _verdict(r"DSO2\s+RMS residu moyen", text, "DSO2"),
         "dso3_rugosite": float(dso3.group(1)),
         "dso3_rugosite_tous_instants": float(dso3_all.group(1)) if dso3_all else None,
-        "dso3_conforme": _verdict(r"DSO3\s+rugosite", text, "DSO3"),
+        # verdict recalcule avec la regle du paquet (0,9 <= r <= 1,1) : le notebook
+        # imprimait l'ancienne regle (r <= 1,1 seulement)
+        "dso3_conforme": dso3_conforme(float(dso3.group(1)), DSOCfg().roughness_range),
         "dso4_inference_s": float(dso4.group(1)) / 1000.0,
         "dso4_conforme": _verdict(r"DSO4\s+inference", text, "DSO4"),
         "dso5_rmse_25pct": float(dso5.group(1)),
