@@ -487,3 +487,25 @@ seuils, niveaux, C1, C3 et la règle de décision restent ceux de la section pr�
   le peut, et C2 a donc une **puissance limitée**.
 - **Mise en œuvre** : cellule BLOC 10i, avec `BOOTSTRAP = "blocs"` et `BLOC_LEN = 6`, imprimés
   avec la règle avant tout calcul.
+
+## Avenant n° 2 (2026-10-14, accepté par Rayen, salon #341) — confirmation sur un jeu vierge, HORS RÈGLE
+
+Cette mesure **n'entre pas** dans la décision C1/C2/C3. Elle est rapportée pour information, à côté
+de cette décision, quelle qu'en soit l'issue. Le protocole est écrit avant la génération du jeu.
+
+- **Jeu** : `scripts/generate_aneo_3d.py` (générateur Tukhnanutha v2, inchangé), `--seed 2027` (le jeu
+  d'origine utilise 2026), même grille statique (`--input-grid` = `aneo_grid_points.csv` du jeu
+  v2 : même relief, mêmes capteurs), **15 jours** (`--n-days 15`, soit 120 instants synoptiques, comme le
+  test). Génération sur le CPU d'ines-pc, sortie hors dépôt. Les sha256 de `meta.json` et du fichier de
+  grille sont consignés. Les 15 jours sont **tous** traités comme du test : rien n'y est ajusté, ni le
+  modèle, ni les statistiques de normalisation (celles de v7, figées), ni la correction (le JSON figé).
+- **Mesure**, dans la prochaine session GPU prévue (M2 ou M6), environ 5 min, en une seule exécution :
+  protocole DSO1 identique (50 % des capteurs, graine 2000, mêmes niveaux évalués, `min_level_cover` 0,05),
+  sur les instants synoptiques. RMSE et R² par niveau pour u et v, avec **v7 seul** et **v7 + correction**,
+  plus DSO2, DSO3 et DSO5. IC 95 % par bootstrap sur les **jours entiers** (15 grappes).
+- **Rapporté** : le tableau par niveau, avant et après correction, avec les IC ; le pire niveau ; la
+  différence appariée après − avant à 650–1000 m. Les épisodes du jeu vierge sont rapportés à part s'il y
+  en a. Aucun seuil n'est appliqué, et aucune décision n'en dépend. Le résultat est publié tel quel,
+  même s'il contredit 10i.
+- **Réserve** : un jeu vierge du même générateur reste du synthétique. Il teste la généralisation à
+  de nouvelles situations, pas le transfert au réel (voir la section sur les baromètres réels).
