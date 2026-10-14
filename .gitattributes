@@ -45,6 +45,8 @@ Dockerfile text eol=lf
 *.ckpt  binary
 *.npy   binary
 *.npz   binary
+*.nc    binary
+*.zarr  binary
 *.bin   binary
 *.gz    binary
 *.zip   binary
