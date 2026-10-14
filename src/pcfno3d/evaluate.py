@@ -6,6 +6,9 @@ Produit, dans `run_dir/eval_<modele>/` :
     test_par_instant.csv             une ligne par instant (RMSE, residu, rugosite, direction)
     robustesse_capteurs.csv          RMSE max selon la fraction de capteurs visibles
     test_summary.json                les verdicts DSO1 a DSO5
+    dso6_<calibration>.json          (option) verdict DSO6 de la fiabilite, voir `dso6`
+
+et, sur la VALIDATION, la calibration de la fiabilite (`calibrate_reliability`).
 
 Les metriques sont CUMULEES sur tous les instants (somme des carres), pas moyennees par
 instant : c'est ce que demande un R2 global.
@@ -21,14 +24,17 @@ import pandas as pd
 import torch
 
 from .config import Config
-from .dataset import assemble_input, eval_loader, is_synoptic, make_splits
+from .dataset import ANEO3D, assemble_input, eval_loader, is_synoptic, make_splits
 from .dso import dso3_conforme
 from .inference import WindFieldModel, ensemble_forward
 from .losses import PhysicsLoss
+from .reliability import (COMPOSANTES, Calibration, DSO6Accumulator, RatioHistogram,
+                          ensemble_sigma, fit_calibration, member_masks)
 
 ROBUSTNESS_KEEPS = (0.1, 0.25, 0.5, 1.0)
 ROBUSTNESS_INSTANTS = 40
 EVAL_NAMESPACE = "eval_pcfno3d"     # run_dir/eval_pcfno3d/<modele>[_ttaN]/
+RELIABILITY_NAMESPACE = "fiabilite_pcfno3d"   # run_dir/fiabilite_pcfno3d/<modele>[_ttaN]/
 
 
 class Evaluator:
@@ -166,6 +172,9 @@ class Evaluator:
         # DSO4 : temps d'inference sur un instant reel
         S, hour, doy, _ = self.wf.surface_from_cache(te_s[0])
         timing = self.wf.benchmark(S, hour, doy, n=20)
+        if self.wf.reliability is not None:
+            # DSO4 mesure AVEC la fiabilite (le temps reel de livraison) et SANS
+            timing["sans_fiabilite"] = self.wf.benchmark(S, hour, doy, n=20, reliability=False)
 
         # DSO5 : robustesse a un reseau de capteurs degrade
         sub = syn_idx[np.unique(np.linspace(0, len(syn_idx) - 1,
@@ -188,6 +197,133 @@ class Evaluator:
             print(format_report(summary, levels, levels_ep, robust, cfg))
             print(f"resultats -> {self.out_dir}")
         return summary
+
+    # ------------------------------------------------------------------ fiabilite (M2)
+    def _reliability_instants(self, jeu: str, n_instants: int | None,
+                              keep: float | None) -> ANEO3D:
+        """Instants synoptiques du jeu, memes graines que DSO1 (test) et la validation de
+        l'entrainement, et memes capteurs visibles (`mask.keep_eval` par defaut)."""
+        if jeu == "validation":
+            s, h, d = self.splits.val
+            idx, seed = self.splits.val_selection, 1000
+        elif jeu == "test":
+            s, h, d = self.splits.test
+            syn = np.array([is_synoptic(self.splits.stamp_of[x]) for x in s], dtype=bool)
+            idx, seed = (np.nonzero(syn)[0] if syn.any() else np.arange(len(s))), 2000
+        else:
+            raise ValueError(f"jeu inconnu : {jeu!r} (validation ou test)")
+        if n_instants is not None and len(idx) > n_instants:
+            idx = idx[np.unique(np.linspace(0, len(idx) - 1, n_instants).astype(int))]
+        if len(idx) == 0:
+            raise ValueError(f"aucun instant de {jeu} en cache")
+        return ANEO3D(s[idx], h[idx], d[idx], self.geom, train=False, seed=seed,
+                      keep_eval=keep)
+
+    @torch.no_grad()
+    def _reliability_loop(self, jeu: str, n_instants: int | None, keep: float | None,
+                          on_instant) -> int:
+        """Pour chaque instant : passe servie, ensemble masque, sigma BRUT, erreurs.
+        `on_instant(k, comp, err_abs, sigma_brut)` recoit les noeuds valides et connus."""
+        geom, wf, rc = self.geom, self.wf, self.cfg.reliability
+        levels = geom.eval_levels()
+        ds = self._reliability_instants(jeu, n_instants, keep)
+        for n, (s_raw, sensor, _tfeat, y, j) in enumerate(ds):
+            s_np, m_np = s_raw.numpy(), sensor.numpy() > 0.5
+            hour, doy = float(ds.hours[j]), int(ds.doys[j])
+            if self.tta > 1:
+                pred = ensemble_forward(
+                    wf.model, geom, self.norm, s_raw[None].to(wf.device),
+                    sensor[None].to(wf.device), hour, doy, k=self.tta, keep=self.tta_keep,
+                    seed=int(j), amp_dtype=wf.amp_dtype, use_amp=wf.use_amp)
+                served = tuple(a[0].float().cpu().numpy() for a in self.norm.denorm(pred))
+            else:
+                served = wf._member(s_np, m_np, hour, doy)
+            members = [wf._member(s_np, m, hour, doy)
+                       for m in member_masks(m_np, rc.members, rc.keep, rc.seed)]
+            sig = ensemble_sigma(served, members)
+            y_np = y.numpy()
+            truth = {"u": y_np[0], "v": y_np[1], "w": y_np[2],
+                     "speed": np.hypot(y_np[0], y_np[1])}
+            pred = {"u": served[0], "v": served[1], "w": served[2],
+                    "speed": np.hypot(served[0], served[1])}
+            for c in COMPOSANTES:
+                known = geom.valid & np.isfinite(truth[c])
+                for k in levels:
+                    m = known[k]
+                    if m.any():
+                        on_instant(k, c, np.abs(pred[c][k][m] - truth[c][k][m]), sig[c][k][m])
+            if self.verbose and (n + 1) % 10 == 0:
+                print(f"  fiabilite ({jeu}) : {n + 1}/{len(ds)} instants", flush=True)
+        return len(ds)
+
+    def reliability_dir(self) -> Path:
+        suffix = f"_tta{self.tta}" if self.tta > 1 else ""
+        return (self.cfg.paths.run_dir / RELIABILITY_NAMESPACE
+                / f"{self.wf.checkpoint_path.stem}{suffix}")
+
+    def calibrate_reliability(self, out: str | Path | None = None,
+                              n_instants: int | None = None,
+                              keep: float | None = None) -> dict:
+        """Calibre les facteurs k sur la VALIDATION et ecrit le JSON gele.
+
+        N'ecrase jamais un fichier existant : la calibration retenue est une reference.
+        """
+        out = Path(out) if out else self.reliability_dir() / "calibration_validation.json"
+        if out.exists():
+            raise FileExistsError(f"{out} existe deja : choisis un autre --out (une "
+                                  "calibration retenue n'est jamais ecrasee)")
+        rc = self.cfg.reliability
+        hist = RatioHistogram(self.geom.nz)
+        n = self._reliability_loop(
+            "validation", n_instants, keep,
+            lambda k, c, e, sg: hist.add(c, k, e, sg, rc.sigma_floor_m_s))
+        keep_eff = self.cfg.mask.keep_eval if keep is None else keep
+        data = fit_calibration(hist, self.geom, "validation", rc, n, extra={
+            "modele": self.wf.checkpoint_path.name, "capteurs_visibles": keep_eff,
+            "tta": self.tta})
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+        if self.verbose:
+            cov = data["couverture80_validation"]
+            kg = "  ".join(f"{c} {data['k_global'][c]:.3f}" for c in COMPOSANTES)
+            cv = "  ".join(f"{c} {cov[c]:.3f}" for c in COMPOSANTES)
+            print(f"calibration ({n} instants de validation) -> {out}\n"
+                  f"  k global : {kg}\n  couverture 80 % obtenue : {cv}")
+        return {**data, "fichier": str(out)}
+
+    def dso6(self, calibration: str | Path | None = None, n_instants: int | None = None,
+             keep: float | None = None, out: str | Path | None = None) -> dict:
+        """Verdict DSO6 sur le TEST : couverture de l'intervalle a 80 % et correlation
+        (Spearman) entre |erreur| et sigma calibre. La calibration vient de la validation."""
+        src = calibration if calibration is not None else self.cfg.inference.reliability
+        if src is None:
+            raise ValueError("DSO6 : aucune calibration (--calibration ou "
+                             "inference.reliability)")
+        cal = Calibration.load(src)
+        acc = DSO6Accumulator(self.geom.nz)
+        n = self._reliability_loop(
+            "test", n_instants, keep,
+            lambda k, c, e, sg: acc.add(c, k, e, sg * np.float32(cal.factor(c, k))))
+        rc = self.cfg.reliability
+        summary = {"produit_par": "pcfno3d", "modele": self.wf.checkpoint_path.name,
+                   "jeu": "test", "instants_synoptiques": n,
+                   "capteurs_visibles": self.cfg.mask.keep_eval if keep is None else keep,
+                   "tta": self.tta, "uncertainty": cal.uncertainty_method(rc.members),
+                   "calibration_sha256": cal.sha256, "keep_membres": rc.keep,
+                   "graine": rc.seed, **acc.summary(self.geom, rc.coverage_target)}
+        tag = cal.sha256[:8] if cal.sha256 else "non_calibre"
+        path = Path(out) if out else self.out_dir / f"dso6_{tag}.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8")
+        if self.verbose:
+            g = summary["global"]
+            print(f"DSO6 ({n} instants de test, calibration {tag})\n  couverture 80 % : "
+                  + "  ".join(f"{c} {g[f'couverture80_{c}']:.3f}" for c in COMPOSANTES)
+                  + "\n  Spearman |erreur|, sigma : "
+                  + "  ".join(f"{c} {g[f'spearman_{c}']:.3f}" for c in COMPOSANTES)
+                  + f"\n  -> {'CONFORME' if summary['dso6_conforme'] else 'NON CONFORME'}"
+                  f"\nresultats -> {path}")
+        return {**summary, "fichier": str(path)}
 
     def _verdicts(self, levels, levels_ep, res, res_ep, res_all, robust, timing) -> dict:
         cfg = self.cfg
@@ -236,6 +372,9 @@ class Evaluator:
             "dso3_conforme": dso3_conforme(rough_mean, dso.roughness_range),
             "dso4_inference_s": timing["mean_s"],
             "dso4_conforme": bool(timing["conforme"]),
+            "dso4_fiabilite_incluse": self.wf.reliability is not None,
+            "dso4_inference_s_sans_fiabilite": timing["sans_fiabilite"]["mean_s"]
+            if "sans_fiabilite" in timing else None,
             "dso5_rmse_25pct": rmse25,
             "dso5_conforme": bool(rmse25 <= dso.rmse_25pct),
             "mae_direction_deg": float(res_all["mae_dir_deg"].mean()),

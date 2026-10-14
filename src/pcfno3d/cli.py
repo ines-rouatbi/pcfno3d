@@ -120,6 +120,30 @@ def cmd_evaluate(args) -> int:
     return 0
 
 
+def cmd_calibrate_reliability(args) -> int:
+    """Fiabilite (M2) : facteurs k sur la VALIDATION -> JSON gele (jamais ecrase)."""
+    from .evaluate import Evaluator
+
+    cfg = _load_cfg(args)
+    ev = Evaluator(cfg, checkpoint=args.checkpoint, device=args.device, tta=args.tta)
+    try:
+        ev.calibrate_reliability(out=args.out, n_instants=args.instants, keep=args.keep)
+    except FileExistsError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    return 0
+
+
+def cmd_dso6(args) -> int:
+    """Verdict DSO6 sur le TEST avec une calibration faite sur la validation."""
+    from .evaluate import Evaluator
+
+    cfg = _load_cfg(args)
+    ev = Evaluator(cfg, checkpoint=args.checkpoint, device=args.device, tta=args.tta)
+    summary = ev.dso6(calibration=args.calibration, n_instants=args.instants, keep=args.keep)
+    return 0 if summary["dso6_conforme"] else 3
+
+
 def cmd_dso_weights(args) -> int:
     """Poids de u, v par niveau, mesures sur la VALIDATION d'un modele existant."""
     from . import dso
@@ -552,6 +576,24 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--tta", type=int, help="moyenne de N passes (defaut : inference.tta)")
     s.add_argument("--tta-keep", type=float, help="capteurs gardes par passe (defaut 0.7)")
     s.set_defaults(func=cmd_evaluate)
+
+    s = sub.add_parser("calibrate-reliability",
+                       help="fiabilite : facteurs k sur la VALIDATION (M2, DSO6)")
+    s.add_argument("--checkpoint"), s.add_argument("--device")
+    s.add_argument("--tta", type=int, help="passe servie : moyenne de N passes")
+    s.add_argument("--instants", type=int, help="nombre d'instants (defaut : tous)")
+    s.add_argument("--keep", type=float, help="capteurs visibles (defaut : mask.keep_eval)")
+    s.add_argument("--out", help="JSON (defaut : run_dir/fiabilite_pcfno3d/<modele>/"
+                                 "calibration_validation.json) ; jamais ecrase")
+    s.set_defaults(func=cmd_calibrate_reliability)
+
+    s = sub.add_parser("dso6", help="verdict DSO6 de la fiabilite sur le TEST")
+    s.add_argument("--checkpoint"), s.add_argument("--device")
+    s.add_argument("--tta", type=int, help="passe servie : moyenne de N passes")
+    s.add_argument("--calibration", help="JSON de calibration (defaut : inference.reliability)")
+    s.add_argument("--instants", type=int, help="nombre d'instants (defaut : tous)")
+    s.add_argument("--keep", type=float, help="capteurs visibles (defaut : mask.keep_eval)")
+    s.set_defaults(func=cmd_dso6)
 
     s = sub.add_parser("dso-weights",
                        help="poids u, v par niveau mesures sur la validation (v8)")
