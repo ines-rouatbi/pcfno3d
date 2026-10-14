@@ -67,6 +67,11 @@ OPEN_WARNING = (f"MODE OUVERT ({ENV_INSECURE_OPEN}) : sans cle active, l'API acc
                 "Developpement local uniquement, ne pas exposer au reseau.")
 
 
+def insecure_open_requested() -> bool:
+    """La variable d'opt-in est-elle posee (qu'elle soit acceptee ou non) ?"""
+    return _vrai(os.environ.get(ENV_INSECURE_OPEN))
+
+
 def insecure_open_policy() -> tuple[bool, str]:
     """(mode ouvert autorise, explication). Ouvert SEULEMENT sur opt-in explicite.
 
@@ -74,8 +79,12 @@ def insecure_open_policy() -> tuple[bool, str]:
     (`PCFNO3D_FORBID_OPEN`) ou si des hotes externes sont declares
     (`PCFNO3D_ALLOWED_HOSTS` : proxy, domaine, tunnel) : dans ces cas le service est
     joignable de l'exterieur, et l'ouvrir serait une fuite.
+
+    Meme accepte, le mode ouvert ne sert que les requetes de la boucle locale SANS
+    en-tete de proxy (voir `service.app.requete_locale`) : un `uvicorn --host 0.0.0.0`
+    ou un reverse proxy local non declare ne l'ouvrent pas au reseau.
     """
-    if not _vrai(os.environ.get(ENV_INSECURE_OPEN)):
+    if not insecure_open_requested():
         return False, "ferme par defaut"
     if os.environ.get(ENV_FORBID_OPEN):
         return False, f"{ENV_INSECURE_OPEN} ignore : interdit sur le chemin Colab / tunnel"
@@ -185,6 +194,10 @@ class ApiKeyStore:
                     # trousseau illisible : on ferme (aucune cle valide, pas de mode ouvert)
                     self.records = []
                     self.erreur = f"trousseau illisible ({type(exc).__name__})"
+                    # signature oubliee : une erreur passagere (verrou d'antivirus sous
+                    # Windows, PermissionError) est relue a la requete suivante au lieu
+                    # de bloquer le trousseau jusqu'a sa prochaine modification
+                    self._sig = None
             self._env = {}
             for item in (os.environ.get(ENV_KEYS) or "").split(","):
                 item = item.strip()

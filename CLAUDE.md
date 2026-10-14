@@ -136,8 +136,10 @@ Thin by design: physics and numerics belong in `pcfno3d`, never here.
   `run_dir/api_keys.json` (gitignored). Scopes: `read`, and `admin` which covers `read`.
   **Closed by default** (lot M7): no keys at all = everything `401` except `/api/health`
   (`"auth": "aucune_cle"`). Open mode only by explicit opt-in (`serve --insecure-open` /
-  `PCFNO3D_INSECURE_OPEN`), refused off loopback and never passed on by `colab.py`
-  (`PCFNO3D_FORBID_OPEN`). The store re-reads the file when its stat signature changes, so
+  `PCFNO3D_INSECURE_OPEN`); even then only direct loopback requests (127.0.0.1/::1, no
+  `X-Forwarded-For`/`Forwarded`/`CF-Connecting-IP`/`X-Real-IP`) are served without a key
+  (`app.requete_locale`), `serve` refuses a non-loopback `--host` whether the opt-in comes
+  from the flag or the env var, and `colab.py` never passes it on (`PCFNO3D_FORBID_OPEN`). The store re-reads the file when its stat signature changes, so
   a CLI revoke takes effect on the next request; the server never writes `api_keys.json`
   while verifying (last use goes to `api_keys_usage.json`) so it can't clobber a revoke.
   One middleware (`app.make_guard`) does key check, per-key quota (`quotas.py`, in-memory,

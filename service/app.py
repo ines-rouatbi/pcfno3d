@@ -58,8 +58,8 @@ from pcfno3d.export import export_web
 from pcfno3d.inference import Volume, WindFieldModel
 
 from . import mcp_server
-from .auth import (ENV_INSECURE_OPEN, NO_KEY_MESSAGE, OPEN_WARNING, ApiKeyRecord, ApiKeyStore,
-                   default_store_path, extract_key, insecure_open_policy, scope_allows,
+from .auth import (NO_KEY_MESSAGE, OPEN_WARNING, ApiKeyRecord, ApiKeyStore, default_store_path,
+                   extract_key, insecure_open_policy, insecure_open_requested, scope_allows,
                    summarize)
 from .journal import JournalAcces, params_sans_secret
 from .link import Upstream, install as install_link
@@ -75,6 +75,11 @@ EXPORT_FILES = {"u.bin", "v.bin", "w.bin", "speed.bin", "direction.bin", "terrai
 API_PUBLIQUES = frozenset({"/api/health", "/api/docs", "/api/docs/oauth2-redirect",
                            "/api/openapi.json"})
 LOG = logging.getLogger("pcfno3d.service")
+# mode ouvert : seules ces adresses, sans aucun en-tete de proxy, sont servies sans cle
+LOOPBACK_IPS = frozenset({"127.0.0.1", "::1", "::ffff:127.0.0.1"})
+PROXY_HEADERS = ("x-forwarded-for", "forwarded", "cf-connecting-ip", "x-real-ip")
+OPEN_REMOTE_MESSAGE = ("mode ouvert reserve aux requetes directes de la boucle locale "
+                       "(127.0.0.1 / ::1, sans proxy) : cle d'API requise")
 
 # etat du processus : une seule application est active a la fois
 STATE: dict = {}
@@ -135,7 +140,7 @@ def _check(request: Request, required: str) -> ApiKeyRecord | None:
     record = getattr(request.state, "cle", None)
     if record is None:
         store = keys()
-        if store.open_mode:
+        if store.open_mode and requete_locale(request):
             return None
         record = store.verify(extract_key(request.headers, request.query_params))
     if record is None:
@@ -173,6 +178,17 @@ class MCPPathNormalizer:
         await self.app(scope, receive, send)
 
 
+def requete_locale(request: Request) -> bool:
+    """Requete DIRECTE de la boucle locale : adresse 127.0.0.1 / ::1 et aucun en-tete de
+    proxy. Un reverse proxy local (nginx, cloudflared) se connecte bien depuis 127.0.0.1,
+    mais pour le compte d'un client distant : il pose un de ces en-tetes, et la requete
+    n'est alors plus consideree comme locale."""
+    hote = request.client.host if request.client else None
+    if hote not in LOOPBACK_IPS:
+        return False
+    return not any(request.headers.get(h) for h in PROXY_HEADERS)
+
+
 def _protege(chemin: str, publiques: frozenset[str]) -> bool:
     if chemin == "/mcp" or chemin.startswith("/mcp/"):
         return True
@@ -189,12 +205,46 @@ def _refus(chemin: str, statut: int, message: str, code_rpc: int,
     return JSONResponse(body, status_code=statut, headers=headers)
 
 
+def _minute() -> int:
+    return int(time.time() // 60)
+
+
+def _refus_a_journaliser(ip: str | None) -> int | None:
+    """Regroupement des 401 : une ligne par IP et par minute au plus.
+
+    Renvoie None si la ligne doit etre sautee, sinon le nombre de 401 de cette IP qui
+    n'ont pas ete ecrits depuis sa ligne precedente (`refus_regroupes`). Un flot de cles
+    fausses ne purge donc pas l'historique par la rotation.
+    """
+    etat: dict = STATE.setdefault("refus", {})
+    minute = _minute()
+    with _REFUS_LOCK:
+        courant = etat.get(ip)
+        if courant is not None and courant[0] == minute:
+            courant[1] += 1
+            return None
+        regroupes = courant[1] if courant is not None else 0
+        if len(etat) > 10_000:                       # memoire bornee
+            for cle in [k for k, v in etat.items() if v[0] != minute]:
+                del etat[cle]
+        etat[ip] = [minute, 0]
+    return regroupes
+
+
+_REFUS_LOCK = threading.Lock()
+
+
 def _journaliser(request: Request, record: ApiKeyRecord | None, portee: str | None,
                  statut: int, debut: float, motif: str | None = None, reponse=None) -> None:
     """Une ligne du journal d'acces : jamais le secret, ni le hash complet."""
     journal = STATE.get("journal")
     if journal is None:
         return
+    regroupes = None
+    if int(statut) == 401:
+        regroupes = _refus_a_journaliser(request.client.host if request.client else None)
+        if regroupes is None:
+            return
     champs: dict = {"cle": record.name if record else None,
                     "empreinte": record.empreinte if record else None,
                     "portee": portee, "methode": request.method,
@@ -214,6 +264,8 @@ def _journaliser(request: Request, record: ApiKeyRecord | None, portee: str | No
         champs["octets"] = int(reponse.headers["content-length"])
     if motif:
         champs["motif"] = motif
+    if regroupes:
+        champs["refus_regroupes"] = regroupes
     journal.ecrire(**champs)
 
 
@@ -241,8 +293,13 @@ def make_guard(publiques: frozenset[str] = API_PUBLIQUES, locale: bool = False):
             motif = "trousseau_absent"
             reponse = _refus(chemin, 503, "trousseau non charge", -32003)
         elif store.open_mode:
-            request.state.acces_ouvert = True
-            portee = "ouvert"
+            if requete_locale(request):
+                request.state.acces_ouvert = True
+                portee = "ouvert"
+            else:
+                motif = "ouvert_hors_boucle_locale"
+                reponse = _refus(chemin, 401, OPEN_REMOTE_MESSAGE, -32001,
+                                 {"WWW-Authenticate": "Bearer"})
         else:
             presentee = extract_key(request.headers, request.query_params)
             record = store.verify(presentee)
@@ -290,7 +347,7 @@ def _securite(cfg: Config) -> dict:
     if ouvert:
         LOG.warning(OPEN_WARNING + ("" if store.empty else
                                     " Inactif tant que des cles existent : elles sont exigees."))
-    elif os.environ.get(ENV_INSECURE_OPEN):
+    elif insecure_open_requested():
         LOG.warning(raison)
     if store.empty and not ouvert:
         LOG.warning("aucune cle d'API active : toutes les requetes seront refusees (401) "

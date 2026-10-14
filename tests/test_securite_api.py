@@ -24,6 +24,7 @@ pytest.importorskip("mcp")
 from fastapi.testclient import TestClient      # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+LOCAL = ("127.0.0.1", 50000)             # TestClient se presente sinon comme "testclient"
 MCP_HEADERS = {"Content-Type": "application/json",
                "Accept": "application/json, text/event-stream",
                "MCP-Protocol-Version": "2025-06-18"}
@@ -115,7 +116,7 @@ def test_mode_ouvert_seulement_sur_opt_in_explicite(env, monkeypatch):
     from service.app import create_app
 
     monkeypatch.setenv("PCFNO3D_INSECURE_OPEN", "1")
-    with TestClient(create_app()) as client:
+    with TestClient(create_app(), client=LOCAL) as client:
         health = client.get("/api/health").json()
         assert health["auth"] == "ouvert"
         assert "developpement local" in health["avertissement"].lower()
@@ -127,6 +128,34 @@ def test_mode_ouvert_seulement_sur_opt_in_explicite(env, monkeypatch):
         assert client.get("/api/meta").status_code == 401
         assert client.get("/api/meta", headers={"X-API-Key": secret}).status_code == 200
         assert client.get("/api/health").json()["auth"] == "cle_api"
+
+
+@pytest.mark.parametrize("ip, entetes, attendu", [
+    (("127.0.0.1", 50000), {}, 200),
+    (("::1", 50000), {}, 200),
+    (("8.8.8.8", 1), {}, 401),
+    (("8.8.8.8", 1), {"X-Forwarded-For": "8.8.8.8", "Host": "evil.example"}, 401),
+    (("127.0.0.1", 50000), {"X-Forwarded-For": "8.8.8.8"}, 401),
+    (("127.0.0.1", 50000), {"Forwarded": "for=8.8.8.8"}, 401),
+    (("127.0.0.1", 50000), {"CF-Connecting-IP": "8.8.8.8"}, 401),
+    (("127.0.0.1", 50000), {"X-Real-IP": "8.8.8.8"}, 401),
+    (("testclient", 50000), {}, 401),
+])
+def test_mode_ouvert_ne_sert_que_la_boucle_locale_directe(env, monkeypatch, ip, entetes,
+                                                          attendu):
+    """Ouvert ne veut pas dire expose : uvicorn --host 0.0.0.0 ou un proxy local
+    (qui pose X-Forwarded-For...) ne doivent rien obtenir sans cle."""
+    from service.app import create_app
+
+    monkeypatch.setenv("PCFNO3D_INSECURE_OPEN", "1")
+    with TestClient(create_app(), client=ip) as client:
+        r = client.get("/api/meta", headers=entetes)
+        assert r.status_code == attendu, r.text
+        rpc = client.post("/mcp", headers={**MCP_HEADERS, **entetes}, json={
+            "jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}})
+        assert rpc.status_code == attendu
+        if attendu == 401:
+            assert "boucle locale" in r.json()["detail"]
 
 
 @pytest.mark.parametrize("var, valeur", [("PCFNO3D_FORBID_OPEN", "1"),
@@ -159,6 +188,10 @@ def test_cli_serve_refuse_le_mode_ouvert_hors_boucle_locale(monkeypatch):
     monkeypatch.delenv("PCFNO3D_INSECURE_OPEN", raising=False)
     assert main(["-c", "test", "serve", "--host", "0.0.0.0", "--insecure-open"]) == 2
     assert "PCFNO3D_INSECURE_OPEN" not in os.environ
+    # meme refus quand c'est la variable d'environnement qui demande le mode ouvert
+    monkeypatch.setenv("PCFNO3D_INSECURE_OPEN", "1")
+    for hote in ("0.0.0.0", "192.168.1.10", "::"):
+        assert main(["-c", "test", "serve", "--host", hote]) == 2
 
 
 # ---------------------------------------------------------------------------- revocation
@@ -218,6 +251,30 @@ def test_verifier_une_cle_n_ecrit_jamais_le_trousseau(tmp_path):
     assert store.usage_path.exists()
     assert secret not in store.usage_path.read_text(encoding="utf-8")
     assert ApiKeyStore(tmp_path / "api_keys.json").list_public()[0]["last_used_at"]
+
+
+def test_erreur_de_lecture_passagere_ne_bloque_pas_le_trousseau(tmp_path, monkeypatch):
+    """Un verrou d'antivirus (PermissionError) ne doit pas fermer le trousseau jusqu'a sa
+    prochaine modification : la lecture est retentee a la requete suivante."""
+    from service.auth import ApiKeyStore
+
+    store = ApiKeyStore(tmp_path / "api_keys.json")
+    secret, _ = store.create("k", scope="read")
+    original = Path.read_text
+    echecs = {"n": 2}                                # load() puis la relecture suivante
+
+    def verrouille(self, *a, **kw):
+        if self.name == "api_keys.json" and echecs["n"] > 0:
+            echecs["n"] -= 1
+            raise PermissionError("fichier verrouille")
+        return original(self, *a, **kw)
+
+    monkeypatch.setattr(Path, "read_text", verrouille)
+    store.load()                                     # lecture ratee : ferme, pas ouvert
+    assert store.erreur and not store.open_mode
+    assert store.verify(secret) is None             # toujours verrouille : refuse
+    assert store.verify(secret).name == "k"         # relu, sans modification du fichier
+    assert store.erreur is None
 
 
 def test_trousseau_illisible_ferme_meme_avec_opt_in(tmp_path):
@@ -340,7 +397,7 @@ def test_journal_d_acces_sans_jamais_le_secret(env, tmp_path):
         assert client.get("/api/meta", headers={"Authorization": f"Bearer {secret}"}) \
             .status_code == 200
         assert client.get(f"/api/meta?api_key={faux}").status_code == 401
-        assert client.get("/api/meta").status_code == 401
+        assert client.get("/api/meta").status_code == 401      # meme IP, meme minute
         assert _rpc(client, "tools/list", key=secret).status_code == 200
         client.get("/api/health")                         # publique : pas journalisee
 
@@ -348,7 +405,7 @@ def test_journal_d_acces_sans_jamais_le_secret(env, tmp_path):
     for interdit in (secret, faux, hash_key(secret), hash_key(faux), hash_key(secret)[:12]):
         assert interdit not in brut
     lignes = _journal(tmp_path)
-    assert len(lignes) == 6
+    assert len(lignes) == 5                    # le 2e refus de la minute est regroupe
     assert all(set(ligne) >= {"ts", "cle", "empreinte", "portee", "methode", "chemin",
                               "statut", "duree_ms", "ip"} for ligne in lignes)
     assert all(ligne["ts"].endswith("Z") for ligne in lignes)
@@ -362,9 +419,66 @@ def test_journal_d_acces_sans_jamais_le_secret(env, tmp_path):
     assert par_query["chemin"] == "/api/instants" and par_query["params"] == "split=test"
     assert par_query["cle"] == "journalisee"
     refus = [ligne for ligne in lignes if ligne["statut"] == 401]
-    assert [r["motif"] for r in refus] == ["cle_invalide", "cle_absente"]
+    assert [r["motif"] for r in refus] == ["cle_invalide"]
     assert all(r["cle"] is None and r["empreinte"] is None for r in refus)
     assert lignes[-1]["chemin"].startswith("/mcp") and lignes[-1]["cle"] == "journalisee"
+
+
+def test_refus_regroupes_une_ligne_par_ip_et_par_minute(env, tmp_path, monkeypatch):
+    """Un flot de 401 ne doit pas purger l'historique par la rotation."""
+    import service.app as app_mod
+    from service.auth import generate_key
+
+    _store(env).create("existe", scope="read")
+    minute = {"m": 1000}
+    monkeypatch.setattr(app_mod, "_minute", lambda: minute["m"])
+    app = app_mod.create_app()
+    with TestClient(app) as client:
+        for _ in range(50):
+            assert client.get("/api/meta", headers={"X-API-Key": generate_key()}) \
+                .status_code == 401
+        # une autre IP a sa propre ligne (meme application, sans relancer le cycle de vie)
+        assert TestClient(app, client=("10.0.0.2", 1)).get("/api/meta").status_code == 401
+        minute["m"] += 1
+        assert client.get("/api/meta").status_code == 401
+    refus = [ligne for ligne in _journal(tmp_path) if ligne["statut"] == 401]
+    assert [(r["ip"], r.get("refus_regroupes")) for r in refus] == [
+        ("testclient", None), ("10.0.0.2", None), ("testclient", 49)]
+
+
+def test_lien_ne_relaie_jamais_la_cle_locale_en_query(tmp_path, monkeypatch):
+    """Mode lien : `?api_key=` (cle LOCALE) est retire avant le relais vers l'amont."""
+    import httpx
+
+    from service.auth import ApiKeyStore, default_store_path
+    from service.link import Upstream, forward_params
+
+    capture: dict = {}
+
+    async def faux_amont(self, method, url, params=None, headers=None, content=None, **_):
+        capture.update(method=method, url=url, params=params, headers=headers)
+        return httpx.Response(200, json={"relaye": True})
+
+    monkeypatch.setattr(httpx.AsyncClient, "request", faux_amont)
+    for var, val in (("PCFNO3D_CONFIG", "test"), ("PCFNO3D_RUN_DIR", str(tmp_path)),
+                     ("PCFNO3D_ACCESS_LOG", "off")):
+        monkeypatch.setenv(var, val)
+    for var in ("PCFNO3D_UPSTREAM", "PCFNO3D_API_KEYS", "PCFNO3D_INSECURE_OPEN"):
+        monkeypatch.delenv(var, raising=False)
+    locale, _ = ApiKeyStore(default_store_path(tmp_path)).create("nav", scope="read")
+    Upstream(url="http://amont.invalid", key="cle-amont-de-test").save(tmp_path)
+
+    from service.app import create_app
+    with TestClient(create_app()) as client:
+        r = client.get(f"/api/point?x=1&api_key={locale}&y=2&API_KEY={locale}")
+    assert r.status_code == 200 and r.json() == {"relaye": True}
+    assert capture["url"] == "http://amont.invalid/api/point"
+    assert list(capture["params"]) == [("x", "1"), ("y", "2")]
+    assert locale not in repr(capture)                 # ni en query, ni en en-tete
+    assert capture["headers"]["X-API-Key"] == "cle-amont-de-test"
+
+    from starlette.datastructures import QueryParams
+    assert forward_params(QueryParams("a=1&api_key=s&a=2")) == [("a", "1"), ("a", "2")]
 
 
 def test_journal_rotation_par_taille(tmp_path):

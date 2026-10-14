@@ -430,7 +430,8 @@ el("keySubmit").addEventListener("click", async () => {
   try {
     await start(await (await fetch("/api/health")).json());
   } catch (err) {
-    forgetKey();
+    /* seule une clé refusée est oubliée : un 429 ou une panne ne la rendent pas fausse */
+    if (err.auth) forgetKey();
     el("keyError").textContent = err.message;
     el("keyError").hidden = false;
   }

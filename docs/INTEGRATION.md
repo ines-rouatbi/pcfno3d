@@ -131,10 +131,15 @@ demande la clé).
 
 Pour le développement local seulement, un mode ouvert existe sur **opt-in explicite** :
 `pcfno3d serve --insecure-open` (ou `PCFNO3D_INSECURE_OPEN=1`). Il est annoncé par un
-avertissement au démarrage et dans `/api/health` (`"auth": "ouvert"`), n'a d'effet que
-tant qu'aucune clé n'existe, est refusé avec `--host` autre que `127.0.0.1`/`localhost`,
-ignoré dès que `PCFNO3D_ALLOWED_HOSTS` est renseigné (proxy, domaine), et **jamais
-transmis** au service lancé par `service.colab.serve_public` (Colab, tunnels).
+avertissement au démarrage et dans `/api/health` (`"auth": "ouvert"`), et n'a d'effet que
+tant qu'aucune clé n'existe. Même actif, **il ne sert sans clé que les requêtes directes
+de la boucle locale** : adresse `127.0.0.1` / `::1` et aucun en-tête de proxy
+(`X-Forwarded-For`, `Forwarded`, `CF-Connecting-IP`, `X-Real-IP`) ; toute autre requête
+reçoit `401`. Un `uvicorn --host 0.0.0.0` ou un reverse proxy local ne l'ouvrent donc pas
+au réseau. `pcfno3d serve` refuse de démarrer avec `--host` autre que
+`127.0.0.1`/`localhost` dès que l'opt-in est demandé (option ou variable) ; il est ignoré
+si `PCFNO3D_ALLOWED_HOSTS` est renseigné (proxy, domaine), et **jamais transmis** au
+service lancé par `service.colab.serve_public` (Colab, tunnels).
 
 **Révocation immédiate.** Le service relit `api_keys.json` dès que le fichier change (un
 `stat` par requête) : une clé révoquée par `pcfno3d apikey revoke` — même lancé depuis un
@@ -157,6 +162,12 @@ caractères du hash, jamais le hash complet ni le secret), portée, méthode, ch
 (sans query string ; les paramètres sont gardés à part, **`api_key` retiré**), statut,
 durée en ms, octets, IP (et l'IP déclarée par le proxy, `ip_transmise`, à part), motif
 d'un refus. Rotation par taille : 10 Mo (`PCFNO3D_ACCESS_LOG_MAX_MB`), 5 fichiers gardés.
+Les `401` sont regroupés : une ligne par IP et par minute au plus, la suivante portant
+`refus_regroupes` (nombre de refus non écrits entre-temps) ; un flot de clés fausses ne
+peut donc pas purger l'historique par la rotation.
+
+En mode lien, le paramètre `?api_key=` (clé **locale**) est retiré avant le relais : seule
+la clé amont, en en-tête, part vers l'instance distante.
 
 ## Serveur MCP
 

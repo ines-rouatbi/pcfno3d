@@ -249,12 +249,14 @@ def cmd_serve(args) -> int:
         return 1
     import os
 
-    from service.auth import ENV_INSECURE_OPEN, insecure_open_policy
+    from service.auth import ENV_INSECURE_OPEN, insecure_open_policy, insecure_open_requested
 
-    # verifie AVANT de toucher a l'environnement : un refus ne laisse rien derriere lui
-    if args.insecure_open and args.host not in LOOPBACK_HOSTS:
-        print(f"--insecure-open refuse avec --host {args.host} : le mode ouvert est "
-              "reserve a la boucle locale (127.0.0.1, localhost).", file=sys.stderr)
+    # verifie AVANT de toucher a l'environnement : un refus ne laisse rien derriere lui.
+    # Meme regle que l'opt-in vienne de l'option ou de la variable d'environnement.
+    if (args.insecure_open or insecure_open_requested()) and args.host not in LOOPBACK_HOSTS:
+        origine = "--insecure-open" if args.insecure_open else ENV_INSECURE_OPEN
+        print(f"{origine} refuse avec --host {args.host} : le mode ouvert est reserve a "
+              "la boucle locale (127.0.0.1, localhost).", file=sys.stderr)
         return 2
 
     cfg = _load_cfg(args)
@@ -275,7 +277,7 @@ def cmd_serve(args) -> int:
         os.environ[ENV_INSECURE_OPEN] = "1"
     ouvert, raison = insecure_open_policy()
     store = _key_store(cfg)
-    if os.environ.get(ENV_INSECURE_OPEN) and not ouvert:
+    if insecure_open_requested() and not ouvert:
         print(f"ATTENTION : {raison}")
     if store.empty and ouvert:
         print("ATTENTION : MODE OUVERT (--insecure-open) : aucune cle, le service repond "
