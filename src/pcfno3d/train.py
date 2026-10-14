@@ -221,7 +221,7 @@ class Trainer:
         net.eval()
         acc = {"data": 0.0, "mass": 0.0, "bc": 0.0, "grad": 0.0}
         stats = np.zeros((3, 3))        # par composante : sse, somme t, somme t^2
-        count = 0
+        counts = np.zeros(3)            # noeuds connus par composante
         loader = self.loaders["val"]
         for s_raw, sensor, tfeat, y, _ in loader:
             s_raw, sensor, tfeat, y = (t.to(self.device, non_blocking=True)
@@ -234,13 +234,14 @@ class Trainer:
                 acc[k] += parts[k]
             valid = self.geom.valid_t
             for c, p in enumerate(self.norm.denorm(pred.float())):
-                pv, tv = p[:, valid].double(), y[:, c][:, valid].double()
+                known = valid[None] & torch.isfinite(y[:, c])      # NaN = pas d'observation
+                pv, tv = p[known].double(), y[:, c][known].double()
                 stats[c] += [((pv - tv) ** 2).sum().item(), tv.sum().item(),
                              (tv ** 2).sum().item()]
-            count += int(valid.sum().item()) * y.shape[0]
+                counts[c] += int(known.sum().item())
         n = max(len(loader), 1)
-        r2 = [1 - stats[c, 0] / (stats[c, 2] - stats[c, 1] ** 2 / count) for c in range(3)] \
-            if count else [float("nan")] * 3
+        r2 = [1 - stats[c, 0] / (stats[c, 2] - stats[c, 1] ** 2 / counts[c])
+              if counts[c] else float("nan") for c in range(3)]
         return {k: v / n for k, v in acc.items()}, r2
 
     # ------------------------------------------------------------------ boucle

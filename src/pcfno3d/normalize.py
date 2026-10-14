@@ -90,7 +90,7 @@ def compute_stats(cfg: Config, geom: Geometry, index: pd.DataFrame, stats: dict 
 
     if any(k not in stats for k in ("surf_mu", "surf_sd", "y_mu", "y_sd")):
         s_sum = np.zeros(N_SURF); s_sq = np.zeros(N_SURF); s_n = 0
-        y_sum = np.zeros(3); y_sq = np.zeros(3); y_n = 0
+        y_sum = np.zeros(3); y_sq = np.zeros(3); y_n = np.zeros(3)
         for stem in sample:
             S = np.load(cache / f"{stem}_S.npy").astype(np.float64)
             m = S[7] > 0.5                       # seulement la ou un capteur existe
@@ -98,10 +98,12 @@ def compute_stats(cfg: Config, geom: Geometry, index: pd.DataFrame, stats: dict 
             s_sq += (S[:N_SURF, m] ** 2).sum(axis=1)
             s_n += int(m.sum())
             Y = np.load(cache / f"{stem}_Y.npy").astype(np.float64)
-            y_sum += Y[:3, geom.valid].sum(axis=1)
-            y_sq += (Y[:3, geom.valid] ** 2).sum(axis=1)
-            y_n += int(geom.valid.sum())
+            Yv = Y[:3, geom.valid]                  # NaN = pas d'observation (cible partielle)
+            y_sum += np.nansum(Yv, axis=1)
+            y_sq += np.nansum(Yv ** 2, axis=1)
+            y_n += np.isfinite(Yv).sum(axis=1)
         s_mu = s_sum / s_n
+        y_n = np.maximum(y_n, 1)
         y_mu = y_sum / y_n
         stats.update({
             "surf_mu": s_mu.tolist(),
@@ -118,6 +120,7 @@ def compute_stats(cfg: Config, geom: Geometry, index: pd.DataFrame, stats: dict 
             Yw = np.load(cache / f"{stem}_Y.npy")[2].astype(np.float64)
             for k in range(nz):
                 vals = Yw[k][geom.valid[k]]
+                vals = vals[np.isfinite(vals)]
                 wl_sum[k] += vals.sum(); wl_sq[k] += (vals ** 2).sum(); wl_n[k] += vals.size
         wl_n = np.maximum(wl_n, 1)
         stats["w_level_sd"] = np.sqrt(

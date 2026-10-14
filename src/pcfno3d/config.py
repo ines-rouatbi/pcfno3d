@@ -274,9 +274,26 @@ class DSOCfg:
         self.roughness_range = tuple(float(r) for r in self.roughness_range)  # type: ignore[assignment]
 
 
+@dataclass
+class RealCfg:
+    """Donnees reelles (pcfno3d.realdata) : ancrage geographique et controle qualite."""
+
+    # coin SUD-OUEST du domaine, en degres. None = domaine non georeference (cas du jeu
+    # synthetique) : l'import de donnees reelles et /api/reconstruct/stations refusent.
+    origin_lat: float | None = None
+    origin_lon: float | None = None
+    rotation_deg: float = 0.0           # axe x du domaine depuis l'est, sens antihoraire
+    time_bin: str = "1h"                # regroupement temporel des mesures de stations
+    ref_height_m: float | None = None   # hauteur cible du vent ; None = celle des capteurs
+    min_quality: float = 0.5            # mesures de qualite inferieure ecartees
+    max_speed_m_s: float = 75.0         # vent plus fort = mesure aberrante, ecartee
+    split_period_days: int = 7          # 1 jour sur 7 en validation, 1 sur 7 en test
+
+
 SECTIONS: dict[str, type] = {
     "paths": Paths, "model": ModelCfg, "train": TrainCfg,
     "loss": LossCfg, "mask": MaskCfg, "dso": DSOCfg, "inference": InferenceCfg,
+    "real": RealCfg,
 }
 
 
@@ -293,6 +310,7 @@ class Config:
     mask: MaskCfg = field(default_factory=MaskCfg)
     dso: DSOCfg = field(default_factory=DSOCfg)
     inference: InferenceCfg = field(default_factory=InferenceCfg)
+    real: RealCfg = field(default_factory=RealCfg)
     terrain_smooth_m: float = 300.0   # meme lissage du relief que le generateur
     f_coriolis: float = 8.57e-5       # s-1, latitude ~36 N (vent geostrophique)
 

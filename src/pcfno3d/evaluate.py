@@ -88,28 +88,33 @@ class Evaluator:
 
             for c, p in zip("uvw", (u, v, w)):
                 t = y[:, "uvw".index(c)]
+                # noeuds valides ET connus : une cible reelle peut etre partielle (NaN)
+                known = geom.valid_t & torch.isfinite(t[0])
                 for k in range(nz):
-                    m = geom.valid_t[k]
+                    m = known[k]
                     if m.sum() == 0:
                         continue
                     pk, tk = p[0, k][m].double(), t[0, k][m].double()
                     acc[c][k] += np.array([tk.numel(), ((pk - tk) ** 2).sum().item(),
                                            tk.sum().item(), (tk ** 2).sum().item()])
-                pv, tv = p[0][geom.valid_t], t[0][geom.valid_t]
-                row[f"rmse_{c}"] = torch.sqrt(((pv - tv) ** 2).mean()).item()
+                pv, tv = p[0][known], t[0][known]
+                row[f"rmse_{c}"] = (torch.sqrt(((pv - tv) ** 2).mean()).item()
+                                    if pv.numel() else float("nan"))
 
+            known_uv = geom.valid_t & torch.isfinite(y[0, 0]) & torch.isfinite(y[0, 1])
             for k in range(nz):
-                m = geom.valid_t[k]
+                m = known_uv[k]
                 if m.sum() > 0:
                     spd_sum[k] += torch.hypot(y[0, 0, k][m], y[0, 1, k][m]).double().sum().item()
 
             # erreur de direction, hors vents calmes (direction non definie sous 1 m/s)
-            dp = torch.rad2deg(torch.atan2(v[0], u[0]))[geom.valid_t]
-            dt = torch.rad2deg(torch.atan2(y[0, 1], y[0, 0]))[geom.valid_t]
+            dp = torch.rad2deg(torch.atan2(v[0], u[0]))[known_uv]
+            dt = torch.rad2deg(torch.atan2(y[0, 1], y[0, 0]))[known_uv]
             dd = torch.abs(dp - dt) % 360
             dd = torch.minimum(dd, 360 - dd)
-            calm = torch.hypot(y[0, 0], y[0, 1])[geom.valid_t] < 1.0
-            row["mae_dir_deg"] = (dd[~calm].mean() if (~calm).any() else dd.mean()).item()
+            calm = torch.hypot(y[0, 0], y[0, 1])[known_uv] < 1.0
+            row["mae_dir_deg"] = ((dd[~calm].mean() if (~calm).any() else dd.mean()).item()
+                                  if dd.numel() else float("nan"))
 
             r = geom.mass_residual(y[:, 3], u, v, w)
             row["mass_rms"] = torch.sqrt((r[:, geom.mass_mask_t] ** 2).mean()).item()

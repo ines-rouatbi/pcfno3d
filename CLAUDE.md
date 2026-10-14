@@ -182,6 +182,13 @@ checked (`check_credentials`) without ever being echoed. The Worker's read key i
 `notebooks/current/pcfno3d_atom_colab.ipynb` while the secret never touches Colab. Never
 put either secret in the repo or the agents' salon.
 
+**Real data (`realdata.py`, `docs/REAL_DATA.md`):** adapters write real sources into the SAME
+cache format (S, Y, index). A target may be *partial*: **NaN = not observed**; losses,
+`dso.measure`, `evaluate`, `normalize` and `train.validate` only count known nodes, so the
+synthetic data (no NaN) gives identical numbers. `Y[3]` (rho) must stay finite everywhere
+(mass residual) — adapters fill it from ISA. Nothing real is imported yet: the domain has no
+geographic anchor (`real.origin_lat/lon` is None and the code refuses to guess).
+
 `docs/INTEGRATION.md` is the hand-off document for whoever consumes the output: the three
 interfaces, the binary format, the conventions, and the current limits. Keep it truthful — it
 is what another team will build against.

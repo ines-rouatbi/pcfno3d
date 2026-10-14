@@ -301,3 +301,37 @@ def test_mcp_exige_la_cle_quand_elle_est_active(secured):
     out = _tool(client, "export_instant", {"stride": 2}, key=admin_key)
     assert out["manifeste"]["format"] == "pcfno3d-web/1"
     assert os.path.isdir(out["dossier"])
+
+
+# ---------------------------------------------------------------------------- donnees reelles
+def test_reconstruction_depuis_des_stations_reelles(open_client):
+    """POST /api/reconstruct/stations : lat/lon -> volume, reutilisable par /point."""
+    from service.app import STATE
+
+    r = open_client.post("/api/reconstruct/stations", json={
+        "timestamp_utc": "2026-10-14T12:00:00Z",
+        "stations": [{"station_id": "A", "lat": 36.40, "lon": 10.10, "wind_u_m_s": 3.0,
+                      "wind_v_m_s": 1.0}]})
+    assert r.status_code == 409 and "origin_lat" in r.json()["detail"]   # pas d'ancrage
+
+    cfg = STATE["model"].cfg
+    cfg.real.origin_lat, cfg.real.origin_lon = 36.40, 10.10
+    try:
+        geom = STATE["model"].geom
+        from pcfno3d.realdata import GeoRef
+        lat, lon = GeoRef(36.40, 10.10).to_latlon(geom.nx // 2 * geom.dx, geom.ny // 2 * geom.dy)
+        r = open_client.post("/api/reconstruct/stations", json={
+            "timestamp_utc": "2026-10-14T12:00:00Z",
+            "stations": [{"station_id": "A", "lat": float(lat), "lon": float(lon),
+                          "height_agl_m": 25, "wind_speed_m_s": 6.0, "wind_dir_deg": 250,
+                          "temperature_c": 21.0, "pressure_pa": 100800.0},
+                         {"station_id": "Loin", "lat": 40.0, "lon": 15.0, "wind_u_m_s": 1.0,
+                          "wind_v_m_s": 1.0}]})
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["stem"] == "live_20261014_120000"
+        assert body["stations"]["stations"] == 1 and body["stations"]["hors_domaine"] == 1
+        p = open_client.get("/api/profile", params={"x": 0, "y": 0, "stem": body["stem"]})
+        assert p.status_code == 200 and len(p.json()["niveaux"]) == geom.nz
+    finally:
+        cfg.real.origin_lat = cfg.real.origin_lon = None

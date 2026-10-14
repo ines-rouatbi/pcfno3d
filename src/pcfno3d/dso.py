@@ -30,7 +30,7 @@ class LevelMetrics:
     """Cumuls par niveau : RMSE et R2 GLOBAUX (sommes de carres), pas des moyennes."""
 
     nz: int
-    n: np.ndarray = None                        # noeuds par niveau
+    n: np.ndarray = None                        # (3, nz) noeuds connus par niveau
     sse: np.ndarray = None                      # (3, nz) somme des carres des erreurs
     s1: np.ndarray = None                       # (3, nz) somme des verites
     s2: np.ndarray = None                       # (3, nz) somme des carres des verites
@@ -38,7 +38,7 @@ class LevelMetrics:
     rough: list[float] = field(default_factory=list)
 
     def __post_init__(self) -> None:
-        self.n = np.zeros(self.nz)
+        self.n = np.zeros((3, self.nz))
         self.sse = np.zeros((3, self.nz))
         self.s1 = np.zeros((3, self.nz))
         self.s2 = np.zeros((3, self.nz))
@@ -46,11 +46,11 @@ class LevelMetrics:
     def rmse(self) -> np.ndarray:
         """(3, nz) ; NaN pour un niveau sans noeud."""
         with np.errstate(invalid="ignore", divide="ignore"):
-            return np.sqrt(self.sse / self.n[None, :])
+            return np.sqrt(self.sse / self.n)
 
     def r2(self) -> np.ndarray:
         with np.errstate(invalid="ignore", divide="ignore"):
-            sst = self.s2 - self.s1 ** 2 / self.n[None, :]
+            sst = self.s2 - self.s1 ** 2 / self.n
             return 1.0 - self.sse / np.where(sst > 0, sst, np.nan)
 
 
@@ -69,12 +69,13 @@ def measure(net: torch.nn.Module, loader, geom: Geometry, norm: Normalizer,
             pred = net(assemble_input(s_raw, sensor, tfeat, geom, norm))
         u, v, w = norm.denorm(pred.float())
         for k in range(geom.nz):
-            mk = geom.valid_t[k]
-            nk = int(mk.sum().item())
-            if nk == 0:
-                continue
-            m.n[k] += nk
             for c, p in enumerate((u, v, w)):
+                # noeuds valides ET connus (cible partielle : NaN = pas d'observation)
+                mk = geom.valid_t[k] & torch.isfinite(y[0, c, k])
+                nk = int(mk.sum().item())
+                if nk == 0:
+                    continue
+                m.n[c, k] += nk
                 t = y[0, c, k][mk].double()
                 m.sse[c, k] += ((p[0, k][mk].double() - t) ** 2).sum().item()
                 m.s1[c, k] += t.sum().item()
@@ -136,7 +137,7 @@ def level_weights(m: LevelMetrics, cfg: Config, geom: Geometry,
         if np.isfinite(worst):
             w[k] = (worst / cfg.dso.rmse) ** 2
     w = np.clip(w, floor, cap)
-    n = m.n
+    n = m.n[0]
     if n.sum() > 0:
         w = w / (float((w * n).sum()) / float(n.sum()))
     return [round(float(x), 4) for x in w]
@@ -147,7 +148,7 @@ def describe_levels(m: LevelMetrics, cfg: Config, geom: Geometry) -> str:
     rmse, r2 = m.rmse(), m.r2()
     lines = [" niveau | couverture | RMSE u  RMSE v | marge DSO1 |  R2 u    R2 v"]
     for k in range(geom.nz):
-        if m.n[k] == 0:
+        if m.n[0, k] == 0:
             continue
         cover = geom.cover[k]
         worst = np.nanmax(rmse[:2, k])

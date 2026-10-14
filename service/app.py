@@ -303,6 +303,70 @@ async def reconstruct_upload(file: UploadFile = File(...), keep: float = 1.0,
             "vitesse_max_m_s": round(float(volume.speed[valid].max()), 3)}
 
 
+class StationObs(BaseModel):
+    station_id: str
+    lat: float = Field(..., ge=-90, le=90)
+    lon: float = Field(..., ge=-180, le=180)
+    height_agl_m: float = Field(10.0, description="hauteur du capteur au-dessus du sol")
+    wind_u_m_s: float | None = None
+    wind_v_m_s: float | None = None
+    wind_speed_m_s: float | None = None
+    wind_dir_deg: float | None = Field(None, description="direction meteo, d'ou vient le vent")
+    wind_w_m_s: float | None = None
+    temperature_c: float | None = None
+    pressure_pa: float | None = None
+    relative_humidity_pct: float | None = None
+    quality: float | None = Field(None, ge=0, le=1)
+
+
+class StationsRequest(BaseModel):
+    timestamp_utc: str = Field(..., description="ex. 2026-10-14T12:00:00Z")
+    stations: list[StationObs] = Field(..., min_length=1, max_length=5000)
+
+
+@router.post("/reconstruct/stations", tags=["donnees"])
+def reconstruct_stations(req: StationsRequest,
+                         _: ApiKeyRecord | None = Depends(require_read)) -> dict:
+    """Reconstruction depuis des mesures REELLES de stations (lat/lon), un instant.
+
+    Le volume obtenu est memorise sous `stem` ("live_..."), reutilisable ensuite par
+    /field, /point, /profile. Exige un domaine georeference (config `real.origin_*`).
+    """
+    import pandas as pd
+
+    from pcfno3d.realdata import GeoRef, normalize_stations, stations_to_surface
+
+    wf = model()
+    try:
+        geo = GeoRef.from_cfg(wf.cfg)
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    df = pd.DataFrame([s.model_dump() for s in req.stations])
+    df["timestamp_utc"] = req.timestamp_utc
+    try:
+        clean, rapport = normalize_stations(df, wf.cfg)
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(400, f"mesures invalides : {exc}") from exc
+    S, info = stations_to_surface(clean, wf.geom, geo, wf.cfg)
+    if info["mailles"] == 0:
+        raise HTTPException(400, f"aucune station exploitable dans le domaine ({info}, "
+                                 f"controle : {rapport})")
+    ts = pd.Timestamp(req.timestamp_utc).tz_localize(None) \
+        if pd.Timestamp(req.timestamp_utc).tzinfo else pd.Timestamp(req.timestamp_utc)
+    hour = ts.hour + ts.minute / 60 + ts.second / 3600
+    volume = wf.predict(S, hour, int(ts.dayofyear), timestamp=str(ts))
+    stem = f"live_{ts.strftime('%Y%m%d_%H%M%S')}"
+    with _VOLUME_LOCK:
+        cache = STATE.setdefault("volumes", {})
+        cache[f"{stem}:1.000"] = volume
+        if len(cache) > MAX_CACHED_VOLUMES:
+            cache.pop(next(iter(cache)))
+    valid = wf.geom.valid
+    return {"stem": stem, "timestamp_utc": str(ts), "stations": info, "controle": rapport,
+            "inference_s": round(volume.inference_s, 4),
+            "vitesse_max_m_s": round(float(volume.speed[valid].max()), 3)}
+
+
 @router.get("/field", tags=["donnees"])
 def field(z: float = Query(..., description="altitude ASL en m"),
           stem: str | None = None,

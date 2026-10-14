@@ -179,6 +179,7 @@ Les résultats arrivent dans `result.content[0].text`, en JSON à parser.
 | `GET /api/dso` | dernier verdict DSO archivé |
 | `GET /api/export/{stem}/manifest.json` | manifeste d'un export |
 | `GET /api/export/{stem}/{u,v,w,speed,terrain}.bin` | binaires Float32 |
+| `POST /api/reconstruct/stations` | mesures **réelles** de stations (JSON, lat/lon) → volume 3D, mémorisé sous `stem` = `live_…` ; exige un domaine géoréférencé (`409` sinon), voir `docs/REAL_DATA.md` |
 | `GET /api/keys` | liste des clés — **portée `admin`** |
 
 ```bash

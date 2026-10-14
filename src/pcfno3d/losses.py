@@ -44,6 +44,11 @@ class PhysicsLoss:
         cfg, geom, norm = self.cfg.loss, self.geom, self.norm
         pred = pred.float()
         y_n = norm.normalize_target(y)
+        # cible partielle (observations reelles eparses) : NaN = pas de mesure a ce noeud.
+        # On ne supervise que les noeuds connus ; le synthetique n'a aucun NaN.
+        known = torch.isfinite(y_n)                                   # (B, 3, nz, ny, nx)
+        partial = not bool(known.all())
+        y_n = torch.where(known, y_n, torch.zeros_like(y_n))
 
         err = (pred - y_n) ** 2
         uv = err[:, :2]
@@ -54,7 +59,11 @@ class PhysicsLoss:
         err = torch.cat([uv,
                          err[:, 2:3] * cfg.w_weight * norm.w_level_w[None, None, :, None, None]],
                         dim=1)
-        l_data = err[:, :, geom.valid_t].mean()
+        if partial:
+            m = known & geom.valid_t[None, None]
+            l_data = (err * m).sum() / m.sum().clamp(min=1)
+        else:
+            l_data = err[:, :, geom.valid_t].mean()
 
         u, v, w = norm.denorm(pred)
         rho = y[:, 3]
@@ -66,7 +75,8 @@ class PhysicsLoss:
         l_bc = (((w - w_bc) / norm.y_sd[2])[:, geom.first_valid_t] ** 2).mean()
 
         l_grad = torch.zeros((), device=pred.device)
-        if cfg.lambda_grad > 0:
+        # la rugosite se compare a un champ DENSE : sans verite dense, pas de terme de gradient
+        if cfg.lambda_grad > 0 and not partial:
             gxp, gxt = pred[..., 1:] - pred[..., :-1], y_n[..., 1:] - y_n[..., :-1]
             gyp, gyt = pred[..., 1:, :] - pred[..., :-1, :], y_n[..., 1:, :] - y_n[..., :-1, :]
             num = ((gxp - gxt) ** 2)[:, :, geom.grad_mask_x_t].sum() \
@@ -116,6 +126,9 @@ class PhysicsLoss:
     def roughness_ratio(self, u: torch.Tensor, v: torch.Tensor,
                         y: torch.Tensor) -> torch.Tensor:
         """Rugosite de la prediction / rugosite de la verite (1 = ni lisse ni bruite)."""
+        if not bool(torch.isfinite(y[:, :2]).all()):
+            # verite partielle : la rugosite d'un champ troue n'a pas de sens
+            return torch.tensor(float("nan"), device=u.device)
         return (self.roughness(u) + self.roughness(v)) \
             / (self.roughness(y[:, 0]) + self.roughness(y[:, 1]))
 

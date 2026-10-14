@@ -8,6 +8,7 @@
     dso-weights   poids u, v par niveau, mesures sur la VALIDATION    (v8)
     reconstruct   reconstruction 3D d'un instant (npz, csv, figures)  (BLOC 12)
     export-web    volume -> binaires + manifeste pour le visualiseur
+    import-real   donnees REELLES (stations + radiosondes / champ maille) -> cache
     serve         application web + API JSON + serveur MCP (fastapi + uvicorn)
     apikey        creer / lister / revoquer les cles d'API du service
     link          relier le service local a une instance distante (Colab)
@@ -177,6 +178,46 @@ def cmd_reconstruct(args) -> int:
     reconstruct(cfg, stem=args.stem, csv=args.csv, checkpoint=args.checkpoint,
                 keep=args.keep, altitude=args.altitude, section_row=args.section_row,
                 figures=not args.no_figures, web=args.web, device=args.device)
+    return 0
+
+
+def _read_table(path: str):
+    import pandas as pd
+    return pd.read_parquet(path) if str(path).endswith(".parquet") else pd.read_csv(path)
+
+
+def cmd_import_real(args) -> int:
+    """Stations (+ radiosondes ou champ maille) -> cache S/Y + index, format du pipeline."""
+    import pandas as pd
+
+    from .geometry import Geometry
+    from .realdata import GeoRef, open_gridded, points_to_target, grid_to_target, import_real
+
+    cfg = _load_cfg(args)
+    stations = _read_table(args.stations)
+    target = None
+    if args.points and args.grid:
+        print("--points et --grid sont exclusifs : choisis une seule cible", file=sys.stderr)
+        return 2
+    if args.points or args.grid:
+        geom, geo = Geometry(cfg, device="cpu"), GeoRef.from_cfg(cfg)
+    if args.points:
+        pts = _read_table(args.points)
+        pts["timestamp_utc"] = pd.to_datetime(pts["timestamp_utc"], utc=True).dt.tz_localize(None)
+        pts["bin"] = pts["timestamp_utc"].dt.floor(cfg.real.time_bin)
+        by_bin = dict(tuple(pts.groupby("bin")))
+
+        def target(ts):
+            g = by_bin.get(ts)
+            return None if g is None else points_to_target(g, geom, geo)
+    elif args.grid:
+        at = open_gridded(args.grid, json.loads(args.grid_vars))
+
+        def target(ts):
+            got = at(ts)
+            return None if got is None else grid_to_target(*got, geom, geo)
+    rapport = import_real(cfg, stations, target)
+    print(json.dumps(rapport, indent=2, ensure_ascii=False))
     return 0
 
 
@@ -430,6 +471,15 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--no-figures", action="store_true")
     s.add_argument("--web", action="store_true", help="exporte aussi pour le visualiseur")
     s.set_defaults(func=cmd_reconstruct)
+
+    s = sub.add_parser("import-real", help="donnees reelles -> cache du pipeline")
+    s.add_argument("--stations", required=True,
+                   help="CSV/Parquet : station_id, timestamp_utc, lat, lon, height_agl_m, vent...")
+    s.add_argument("--points", help="cible ponctuelle (radiosondes, mats) : CSV/Parquet")
+    s.add_argument("--grid", help="cible maillee (reanalyse, WRF) : NetCDF")
+    s.add_argument("--grid-vars", default='{"u": "u", "v": "v", "z": "z"}',
+                   help="noms des variables du fichier maille (JSON)")
+    s.set_defaults(func=cmd_import_real)
 
     s = sub.add_parser("export-web", help="volume -> binaires + manifeste")
     s.add_argument("--stem"), s.add_argument("--csv"), s.add_argument("--out")
