@@ -9,6 +9,7 @@
     reconstruct   reconstruction 3D d'un instant (npz, csv, figures)  (BLOC 12)
     export-web    volume -> binaires + manifeste pour le visualiseur
     import-real   donnees REELLES (stations + radiosondes / champ maille) -> cache
+    validate      contrat de donnees ANEO : verdict, rapport qualite, quarantaine
     serve         application web + API JSON + serveur MCP (fastapi + uvicorn)
     apikey        creer / lister / revoquer les cles d'API du service, regler leurs quotas
     link          relier le service local a une instance distante (Colab)
@@ -223,6 +224,51 @@ def cmd_import_real(args) -> int:
     rapport = import_real(cfg, stations, target)
     print(json.dumps(rapport, indent=2, ensure_ascii=False))
     return 0
+
+
+def cmd_validate(args) -> int:
+    """Contrat de donnees ANEO (section 8) : un verdict et un rapport par fichier.
+
+    Code de retour : 0 conforme (avertissements compris), 1 quarantaine, 2 rejet.
+    """
+    from .contract import Grille, Seuils, code_retour, controler, ecrire_rapport
+
+    if args.meta:
+        meta = Path(args.meta)
+    else:
+        meta = _load_cfg(args).paths.data_dir / "meta.json"
+    if not meta.exists():
+        print(f"grille declaree introuvable : {meta} (option --meta)", file=sys.stderr)
+        return 2
+    grille = Grille.depuis_meta(meta)
+    seuils = Seuils()
+    if args.pas is not None:
+        seuils.pas_attendu_s = args.pas
+    if args.tuile is not None:
+        seuils.tuile_m = args.tuile
+    rapports = []
+    for f in args.fichiers:
+        path = Path(f)
+        if not path.exists():
+            print(f"[REJET]       {path} : fichier introuvable", file=sys.stderr)
+            rapports.append({"fichier": str(path), "verdict": "rejet",
+                             "motifs": ["fichier introuvable"]})
+            continue
+        r = controler(path, grille, quarantaine=args.quarantine, copier=args.copier,
+                      seuils=seuils, surface_seule=args.surface_seule)
+        rapports.append(r)
+        print(f"[{r['verdict'].upper()}]".ljust(14) + f"{path}")
+        for m in r["motifs"]:
+            print(f"    - {m}")
+        for a in r["avertissements"]:
+            print(f"    ! {a}")
+        if "quarantaine" in r:
+            print(f"    -> {r['quarantaine']['mode']} vers {r['quarantaine']['fichier']}")
+    if args.report:
+        out = rapports[0] if len(rapports) == 1 else rapports
+        ecrire_rapport(out, args.report)
+        print(f"rapport : {args.report}")
+    return code_retour([r["verdict"] for r in rapports])
 
 
 def cmd_export_web(args) -> int:
@@ -537,6 +583,22 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--grid-format", choices=["generic", "era5-pl"], default="generic",
                    help="era5-pl : fichiers ERA5 niveaux de pression (download_reanalysis.py)")
     s.set_defaults(func=cmd_import_real)
+
+    s = sub.add_parser("validate", help="contrat de donnees ANEO (verdict + rapport)")
+    s.add_argument("fichiers", nargs="+", help="CSV de mesures (.csv ou .csv.gz)")
+    s.add_argument("--meta", help="meta.json de la grille declaree (defaut : "
+                                  "paths.data_dir/meta.json)")
+    s.add_argument("--quarantine", metavar="DIR",
+                   help="dossier ou deplacer les fichiers non conformes (+ rapport)")
+    s.add_argument("--copier", action="store_true",
+                   help="copier au lieu de deplacer vers la quarantaine")
+    s.add_argument("--report", metavar="OUT.json", help="ecrit le(s) rapport(s) JSON")
+    s.add_argument("--pas", type=int, help="pas de temps attendu en s (defaut 10)")
+    s.add_argument("--tuile", type=float, help="cote des tuiles de couverture en m "
+                                               "(defaut 1000)")
+    s.add_argument("--surface-seule", action="store_true",
+                   help="ignorer les noeuds 3D (fichiers journaliers complets)")
+    s.set_defaults(func=cmd_validate)
 
     s = sub.add_parser("export-web", help="volume -> binaires + manifeste")
     s.add_argument("--stem"), s.add_argument("--csv"), s.add_argument("--out")

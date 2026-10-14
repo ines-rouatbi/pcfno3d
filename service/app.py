@@ -477,17 +477,42 @@ def reconstruct(req: ReconstructRequest,
 
 @router.post("/reconstruct/upload", tags=["donnees"])
 async def reconstruct_upload(file: UploadFile = File(...), keep: float = 1.0,
-                             _: ApiKeyRecord | None = Depends(require_read)) -> dict:
-    """Reconstruction depuis un CSV de mesures de surface d'un seul instant."""
+                             _: ApiKeyRecord | None = Depends(require_read)):
+    """Reconstruction depuis un CSV de mesures de surface d'un seul instant.
+
+    Le fichier passe d'abord par le contrat de donnees ANEO (pcfno3d.contract), profil
+    upload (`Seuils.upload()`) : une station absente, en mask_i_obs = 0, interpolee ou sans
+    u/v/T est une panne CONNUE, que le modele traite (capteur indisponible, DSO5). Seul un
+    REJET (erreur bloquante ; anomalies > 1 % des lignes stations ET > 5 lignes ; moins de
+    30 % de lignes declarees mesurees valides) renvoie 422 avec le rapport sous `qualite`.
+    Conforme ou en quarantaine -> la reconstruction, avec `statut_qualite`,
+    `avertissements` (motifs de quarantaine compris) et `qualite`. Les stations que le
+    contrat juge fausses (hors plage, densite, figees, sans u/v/T) sont MASQUEES avant
+    l'inference : le modele ne recoit jamais une valeur que le rapport signale.
+    """
+    from pcfno3d.contract import Grille, Seuils, valider_fichier
+
     wf = model()
     data = await file.read()
     if len(data) > MAX_UPLOAD_MB * 1024 * 1024:
         raise HTTPException(413, f"fichier trop gros (> {MAX_UPLOAD_MB} Mo)")
-    with tempfile.NamedTemporaryFile("wb", suffix=".csv", delete=False) as tmp:
+    # gzip reconnu a ses octets magiques : lecteurs (pyarrow, pandas) decompressent
+    # d'apres l'extension, quel que soit le nom envoye par le client
+    suffix = ".csv.gz" if data[:2] == b"\x1f\x8b" else ".csv"
+    with tempfile.NamedTemporaryFile("wb", suffix=suffix, delete=False) as tmp:
         tmp.write(data)
         tmp_path = Path(tmp.name)
     try:
-        volume = wf.predict_csv(tmp_path, keep=keep)
+        masque: dict = {}
+        rapport = valider_fichier(tmp_path, Grille.depuis_meta(wf.geom.meta.raw),
+                                  Seuils.upload(), nom=file.filename or tmp_path.name,
+                                  masque=masque)
+        if rapport["verdict"] == "rejet":
+            return JSONResponse(status_code=422, content={
+                "detail": f"CSV non conforme au contrat ANEO ({rapport['verdict']}) : "
+                          + " ; ".join(rapport["motifs"]),
+                "qualite": rapport})
+        volume = wf.predict_csv(tmp_path, keep=keep, exclure=masque)
     except (ValueError, KeyError) as exc:
         raise HTTPException(400, f"CSV invalide : {exc}") from exc
     finally:
@@ -495,7 +520,10 @@ async def reconstruct_upload(file: UploadFile = File(...), keep: float = 1.0,
     valid = wf.geom.valid
     return {"timestamp_utc": volume.timestamp, "capteurs_utilises": volume.n_sensors,
             "inference_s": round(volume.inference_s, 4),
-            "vitesse_max_m_s": round(float(volume.speed[valid].max()), 3)}
+            "vitesse_max_m_s": round(float(volume.speed[valid].max()), 3),
+            "statut_qualite": rapport["verdict"],
+            "avertissements": rapport["motifs"] + rapport["avertissements"],
+            "qualite": rapport}
 
 
 class StationObs(BaseModel):

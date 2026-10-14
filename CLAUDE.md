@@ -58,6 +58,7 @@ python -m pytest -q                       # 30 tests, CPU only, mini-dataset fix
 python -m pcfno3d info                    # effective config + which artifacts exist
 python -m pcfno3d build-cache             # day CSVs -> per-instant .npy tensors (once, slow)
 python -m pcfno3d check                   # geometry + ground-truth sanity
+python -m pcfno3d validate f.csv --quarantine quarantine/   # data contract, exit 0/1/2
 python -m pcfno3d train                   # resumes automatically from artifacts/.../last.pt
 python -m pcfno3d evaluate                # test metrics + DSO1-DSO5 verdict
 python -m pcfno3d reconstruct --stem 004_120000 --altitude 120 --web
@@ -85,6 +86,17 @@ notebook's globals.
   the generator, documented in `meta.json`). Reading the 127 MB grid CSV is cached to
   `geometry_v1.npz`, keyed by a signature — bump `GEOMETRY_CACHE_VERSION` if you change what the
   arrays mean.
+- **`contract.py`** — the ANEO data contract (spec §8.1–8.3, criterion DE1): two Pandera
+  schemas validated `lazy=True` (raw: columns/types; typed: ranges + §8.2 rules), §8.3
+  quality indicators, verdict `conforme` / `quarantaine` / `rejet` with the thresholds as
+  constants at the top of the module, and the quarantine move/copy (never deletes).
+  `pcfno3d validate` and `POST /api/reconstruct/upload` use it (`build-cache` does
+  NOT). Upload uses `Seuils.upload()`: absent / `mask_i_obs=0` / no-u-v-T stations are a
+  known outage (DSO5), only a `rejet` gives 422; quarantine still reconstructs, with
+  `statut_qualite`. Stations the contract flags (out of range, frozen, NaN) are masked
+  before inference (`predict_csv(exclure=...)`; NaN is always masked there). Spec,
+  thresholds and spec-vs-files gaps: `docs/CONTRAT_ANEO.md`; fixtures in
+  `tests/data/contract/` (regenerate with `scripts/make_contract_files.py`).
 - **`cache.py`** — day CSV → `{stem}_S.npy` (8, ny, nx) + `{stem}_Y.npy` (4, nz, ny, nx) +
   `index.csv`. Resumable: days already in the index are skipped.
 - **`normalize.py`** — `Normalizer`; stats computed on **training days only** and written to
