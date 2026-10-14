@@ -134,8 +134,16 @@ Thin by design: physics and numerics belong in `pcfno3d`, never here.
   `APIRouter` with prefix `/api`; `/app/` serves `webapp/`; `/mcp` mounts the MCP sub-app.
 - **`auth.py`** — API keys as `pcf_<32>`, stored **only as SHA-256** in
   `run_dir/api_keys.json` (gitignored). Scopes: `read`, and `admin` which covers `read`.
-  **No keys at all = open mode**, announced in `/api/health`. `/api/health` is the one public
-  route — the web app calls it before asking for a key.
+  **Closed by default** (lot M7): no keys at all = everything `401` except `/api/health`
+  (`"auth": "aucune_cle"`). Open mode only by explicit opt-in (`serve --insecure-open` /
+  `PCFNO3D_INSECURE_OPEN`), refused off loopback and never passed on by `colab.py`
+  (`PCFNO3D_FORBID_OPEN`). The store re-reads the file when its stat signature changes, so
+  a CLI revoke takes effect on the next request; the server never writes `api_keys.json`
+  while verifying (last use goes to `api_keys_usage.json`) so it can't clobber a revoke.
+  One middleware (`app.make_guard`) does key check, per-key quota (`quotas.py`, in-memory,
+  429 + `Retry-After`) and the JSONL access log (`journal.py`, never a secret) for `/api`
+  and `/mcp`; route `Depends` only check scope. `/api/health` is public — the web app calls
+  it before asking for a key.
 - **`mcp_server.py`** — one `MCPServer` with 8 tools over the same `WindFieldModel`.
   `set_model()` lets the HTTP app share its already-loaded model instead of loading a second
   copy. Tools in `ADMIN_TOOLS` write to disk and need the `admin` scope.

@@ -91,6 +91,11 @@ L'URL survit aux redémarrages de Colab, mais le service ne vit que pendant la s
 hors session, la page de Rayen affiche « service endormi ». Le contrôle d'hôte du MCP est
 réglé sur `atom-origin.zelqane.com` (sans quoi `/mcp` répond `421`).
 
+La clé du Worker sert **tous** les visiteurs de la page : elle est soumise aux quotas
+comme les autres (voir plus bas). Si la page 3D enchaîne beaucoup de requêtes, lui donner
+un quota propre au démarrage : `serve_public(..., key_hash=..., quota_minute=1200)`
+(rejouable, l'empreinte est mise à jour sans changer de clé).
+
 Dans tous les cas, les interfaces décrites ci-dessous sont identiques : seule la base
 d'URL change.
 
@@ -109,15 +114,49 @@ La clé se transmet au choix par `X-API-Key: pcf_…`, `Authorization: Bearer pc
 `?api_key=pcf_…` (dernier recours pour un lien de navigateur).
 
 ```bash
-pcfno3d apikey list                       # noms, portées, empreintes — jamais de secret
-pcfno3d apikey revoke app-externe
+pcfno3d apikey list                       # noms, portées, empreintes, quotas — jamais de secret
+pcfno3d apikey revoke app-externe         # effet à la requête suivante, sans redémarrage
+pcfno3d apikey quota app-externe --per-minute 600 --per-day 100000
 ```
 
 Des clés peuvent aussi venir de l'environnement, pratique en conteneur :
 `PCFNO3D_API_KEYS="app-externe:pcf_...,autre:pcf_..."` (portée `read`).
 
-**Si aucune clé n'existe, le service répond sans authentification** et l'annonce dans
-`/api/health` (`"auth": "ouvert"`). Confortable en local, à ne pas exposer au réseau.
+**Fermé par défaut.** Toute requête sans clé valide est refusée (`401`), sur `/api/...`
+comme sur `/mcp` et les exports. **Si aucune clé n'existe, tout est refusé** sauf
+`GET /api/health`, qui l'annonce : `"auth": "aucune_cle"` et un `message` « aucune cle
+configuree ». Restent publiques, car elles ne contiennent aucune donnée : `/api/health`,
+la documentation (`/api/docs`, `/api/openapi.json`) et l'application web `/app/` (qui
+demande la clé).
+
+Pour le développement local seulement, un mode ouvert existe sur **opt-in explicite** :
+`pcfno3d serve --insecure-open` (ou `PCFNO3D_INSECURE_OPEN=1`). Il est annoncé par un
+avertissement au démarrage et dans `/api/health` (`"auth": "ouvert"`), n'a d'effet que
+tant qu'aucune clé n'existe, est refusé avec `--host` autre que `127.0.0.1`/`localhost`,
+ignoré dès que `PCFNO3D_ALLOWED_HOSTS` est renseigné (proxy, domaine), et **jamais
+transmis** au service lancé par `service.colab.serve_public` (Colab, tunnels).
+
+**Révocation immédiate.** Le service relit `api_keys.json` dès que le fichier change (un
+`stat` par requête) : une clé révoquée par `pcfno3d apikey revoke` — même lancé depuis un
+autre terminal, service en marche — est refusée **à la requête suivante**. Le service
+n'écrit jamais ce fichier en vérifiant une clé (la date de dernière utilisation va dans
+`api_keys_usage.json`), il ne peut donc pas écraser une révocation.
+
+**Quotas par clé.** Par défaut 300 requêtes par minute glissante et 50 000 par jour UTC
+(`PCFNO3D_QUOTA_MINUTE`, `PCFNO3D_QUOTA_JOUR`, `0` = illimité) ; une clé peut avoir les
+siens (`apikey create --per-minute/--per-day`, `apikey quota`). Au-delà : `429 Too Many
+Requests` avec l'en-tête **`Retry-After`** (secondes). Une requête refusée n'est pas
+comptée. Limite assumée : les compteurs sont **en mémoire du processus** — avec plusieurs
+processus uvicorn, chacun compte de son côté (limite effective × N), et un redémarrage
+les remet à zéro. Le service tourne aujourd'hui en un seul processus.
+
+**Journal d'accès.** Une ligne JSON par requête authentifiée ou refusée, dans
+`run_dir/logs/acces.jsonl` (`PCFNO3D_ACCESS_LOG` pour un autre chemin, relatif à
+`run_dir` ; `off` pour couper) : horodatage UTC, nom de la clé, empreinte courte (8
+caractères du hash, jamais le hash complet ni le secret), portée, méthode, chemin
+(sans query string ; les paramètres sont gardés à part, **`api_key` retiré**), statut,
+durée en ms, octets, IP (et l'IP déclarée par le proxy, `ip_transmise`, à part), motif
+d'un refus. Rotation par taille : 10 Mo (`PCFNO3D_ACCESS_LOG_MAX_MB`), 5 fichiers gardés.
 
 ## Serveur MCP
 
@@ -168,8 +207,8 @@ Les résultats arrivent dans `result.content[0].text`, en JSON à parser.
 
 | Route | Description |
 |---|---|
-| `GET /api/health` | état du service — **publique**, dit si une clé est exigée |
-| `GET /api/meta` | grille, niveaux ASL, conventions, domaine en mètres |
+| `GET /api/health` | état du service — **publique** ; `auth` : `cle_api`, `aucune_cle` (tout est refusé) ou `ouvert` (opt-in local) |
+| `GET /api/meta` | grille, niveaux ASL, conventions, domaine en mètres, `georef` |
 | `GET /api/instants?split=test&limit=100` | instants disponibles |
 | `POST /api/reconstruct` | `{stem, keep, export, stride}` → résumé de l'instant |
 | `POST /api/reconstruct/upload` | CSV de mesures de surface → reconstruction |
@@ -185,6 +224,16 @@ Les résultats arrivent dans `result.content[0].text`, en JSON à parser.
 ```bash
 curl -H "X-API-Key: pcf_..." "http://127.0.0.1:8000/api/point?x=5000&y=5000&z=120"
 ```
+
+`/api/meta` porte l'ancrage géographique du domaine, lu dans la configuration `real` :
+
+```json
+"georef": {"lat0": 36.0, "lon0": 9.7, "rotation_deg": 0.0, "suppose": true, "coin": "sud-ouest"}
+```
+
+`(lat0, lon0)` est le coin **sud-ouest**, origine de `x` et `y`. `suppose: true` veut dire
+que l'ancrage a été **choisi**, pas mesuré (domaine synthétique). `georef` vaut `null` si
+la configuration n'en a pas.
 
 ```json
 {"ix": 100, "iy": 100, "x_m": 5000.0, "y_m": 5000.0, "z_asl_m": 120.0,
@@ -251,5 +300,6 @@ const at = (k, j, i) => {
   nombreux instants recalcule, à environ une inférence par instant.
 - `GET /api/dso` et `dso_report` renvoient ce qui a été **archivé** par
   `pcfno3d evaluate`. Si rien n'a été archivé, ils le disent — aucun chiffre n'est estimé.
-- Pas de HTTPS, pas de limitation de débit, pas de journal d'audit : à placer derrière un
-  reverse proxy pour une exposition publique.
+- Pas de HTTPS dans le service : à placer derrière un reverse proxy ou un tunnel pour
+  une exposition publique. Quotas et journal d'accès existent, mais les quotas sont
+  comptés en mémoire d'un seul processus (voir Authentification).
