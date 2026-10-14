@@ -477,8 +477,15 @@ def reconstruct(req: ReconstructRequest,
 
 @router.post("/reconstruct/upload", tags=["donnees"])
 async def reconstruct_upload(file: UploadFile = File(...), keep: float = 1.0,
-                             _: ApiKeyRecord | None = Depends(require_read)) -> dict:
-    """Reconstruction depuis un CSV de mesures de surface d'un seul instant."""
+                             _: ApiKeyRecord | None = Depends(require_read)):
+    """Reconstruction depuis un CSV de mesures de surface d'un seul instant.
+
+    Le fichier passe d'abord par le contrat de donnees ANEO (pcfno3d.contract) : non
+    conforme (rejet ou quarantaine) -> 422 et le rapport dans `qualite` ; conforme, avec
+    ou sans avertissements -> la reconstruction, rapport joint sous `qualite`.
+    """
+    from pcfno3d.contract import Grille, valider_fichier
+
     wf = model()
     data = await file.read()
     if len(data) > MAX_UPLOAD_MB * 1024 * 1024:
@@ -487,6 +494,13 @@ async def reconstruct_upload(file: UploadFile = File(...), keep: float = 1.0,
         tmp.write(data)
         tmp_path = Path(tmp.name)
     try:
+        rapport = valider_fichier(tmp_path, Grille.depuis_meta(wf.geom.meta.raw),
+                                  nom=file.filename or tmp_path.name)
+        if rapport["verdict"] != "conforme":
+            return JSONResponse(status_code=422, content={
+                "detail": f"CSV non conforme au contrat ANEO ({rapport['verdict']}) : "
+                          + " ; ".join(rapport["motifs"]),
+                "qualite": rapport})
         volume = wf.predict_csv(tmp_path, keep=keep)
     except (ValueError, KeyError) as exc:
         raise HTTPException(400, f"CSV invalide : {exc}") from exc
@@ -495,7 +509,8 @@ async def reconstruct_upload(file: UploadFile = File(...), keep: float = 1.0,
     valid = wf.geom.valid
     return {"timestamp_utc": volume.timestamp, "capteurs_utilises": volume.n_sensors,
             "inference_s": round(volume.inference_s, 4),
-            "vitesse_max_m_s": round(float(volume.speed[valid].max()), 3)}
+            "vitesse_max_m_s": round(float(volume.speed[valid].max()), 3),
+            "qualite": rapport}
 
 
 class StationObs(BaseModel):

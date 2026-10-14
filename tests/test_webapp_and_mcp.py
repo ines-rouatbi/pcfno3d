@@ -359,3 +359,45 @@ def test_reconstruction_depuis_des_stations_reelles(client):
         assert p.status_code == 200 and len(p.json()["niveaux"]) == geom.nz
     finally:
         cfg.real.origin_lat = cfg.real.origin_lon = None
+
+
+# ---------------------------------------------------------------------------- contrat ANEO
+def _instant_csv(cfg, corrompre: bool = False) -> bytes:
+    """Les stations du premier instant d'un jour du mini-dataset, en CSV."""
+    import pandas as pd
+
+    meta = json.loads((cfg.paths.data_dir / "meta.json").read_text(encoding="utf-8"))
+    day = sorted(cfg.paths.data_dir.glob("aneo_observations_day_*"))[0]
+    df = pd.read_csv(day)
+    df = df[(df["timestamp_utc"] == df["timestamp_utc"].iloc[0])
+            & (df["point_id"] < meta["noeuds_3d"]["point_id_debut"])]
+    if corrompre:
+        df = df.astype({"temperature_c": object})
+        df.iloc[0, df.columns.get_loc("temperature_c")] = "abc"
+        df = pd.concat([df, df.iloc[[5]]])
+    return df.to_csv(index=False).encode("utf-8")
+
+
+def test_upload_conforme_joint_le_rapport_qualite(open_client, env):
+    r = open_client.post("/api/reconstruct/upload",
+                         files={"file": ("instant.csv", _instant_csv(env), "text/csv")})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["capteurs_utilises"] > 0
+    q = body["qualite"]
+    assert q["verdict"] == "conforme" and q["erreurs"] == []
+    # ~10 % de capteurs manquants dans le mini-dataset : un avertissement, pas un refus
+    assert any("interpolees" in a for a in q["avertissements"])
+
+
+def test_upload_non_conforme_renvoie_422_et_le_rapport(open_client, env):
+    r = open_client.post("/api/reconstruct/upload",
+                         files={"file": ("instant.csv", _instant_csv(env, corrompre=True),
+                                         "text/csv")})
+    assert r.status_code == 422, r.text
+    body = r.json()
+    assert "contrat ANEO" in body["detail"]
+    q = body["qualite"]
+    assert q["verdict"] == "rejet"
+    regles = {e["regle"] for e in q["erreurs"]}
+    assert {"type_reel", "doublon"} <= regles

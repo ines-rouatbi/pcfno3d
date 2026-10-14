@@ -224,7 +224,7 @@ Les résultats arrivent dans `result.content[0].text`, en JSON à parser.
 | `GET /api/meta` | grille, niveaux ASL, conventions, domaine en mètres, `georef` |
 | `GET /api/instants?split=test&limit=100` | instants disponibles |
 | `POST /api/reconstruct` | `{stem, keep, export, stride}` → résumé de l'instant |
-| `POST /api/reconstruct/upload` | CSV de mesures de surface → reconstruction |
+| `POST /api/reconstruct/upload` | CSV de mesures de surface → reconstruction ; le CSV passe d'abord le contrat de données ANEO (`docs/CONTRAT_ANEO.md`) : non conforme → `422` avec le rapport sous `qualite`, conforme → rapport joint sous `qualite` |
 | `GET /api/field?z=120&variable=speed&stride=4` | carte à une altitude |
 | `GET /api/point?x=5000&y=5000&z=120` | vent en un point |
 | `GET /api/profile?x=5000&y=5000` | profil vertical |
