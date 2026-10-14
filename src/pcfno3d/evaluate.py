@@ -54,6 +54,9 @@ class Evaluator:
         self._time_of = dict(zip(self.index["stem"],
                                  zip(self.index["hour"], self.index["doy"])))
         suffix = f"_tta{self.tta}" if self.tta > 1 else ""
+        if self.wf.correction is not None:
+            # verdict de v7 + correction M1 dans son propre dossier, nomme par le sha256 du JSON
+            suffix += f"_corr{(self.wf.correction.sha256 or 'inconnu')[:8]}"
         # sous-dossier propre au paquet : le notebook v7 ecrit deja run_dir/eval_<modele>,
         # et ces resultats sont la REFERENCE a laquelle on compare le paquet. Les ecraser
         # detruirait precisement ce qu'on cherche a verifier.
@@ -85,6 +88,13 @@ class Evaluator:
                                     enabled=self.wf.use_amp):
                     pred = self.wf.model(assemble_input(s_raw, sensor, tfeat, geom, norm))
             u, v, w = norm.denorm(pred.float())
+            if self.wf.correction is not None:
+                # correction M1 (BLOC 10h / 12-2b) : decalage uniforme des noeuds valides
+                sh = self.wf.correction.shifts(
+                    s_raw[0].cpu().numpy(), sensor[0].cpu().numpy() > 0.5,
+                    tfeat[0].cpu().numpy(), u[0].cpu().numpy(), v[0].cpu().numpy(), geom)
+                for (k, ci), delta in sh.items():
+                    (u, v)[ci][0, k] += delta * geom.valid_t[k]
             row = {"stem": stem, "timestamp": self.splits.stamp_of[stem]}
 
             for c, p in zip("uvw", (u, v, w)):

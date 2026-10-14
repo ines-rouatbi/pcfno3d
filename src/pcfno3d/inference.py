@@ -7,6 +7,7 @@ C'est l'objet que le service HTTP garde en memoire.
 
 from __future__ import annotations
 
+import json
 import threading
 import time
 from pathlib import Path
@@ -28,12 +29,14 @@ class Volume:
 
     def __init__(self, u: np.ndarray, v: np.ndarray, w: np.ndarray, geom: Geometry,
                  timestamp: str | None = None, n_sensors: int = 0,
-                 inference_s: float = 0.0) -> None:
+                 inference_s: float = 0.0, correction: dict | None = None) -> None:
         self.u, self.v, self.w = u, v, w
         self.geom = geom
         self.timestamp = timestamp
         self.n_sensors = n_sensors
         self.inference_s = inference_s
+        # correction post-modele appliquee (fichier, sha256...), None si modele seul
+        self.correction = correction
 
     @property
     def speed(self) -> np.ndarray:
@@ -115,7 +118,8 @@ class Volume:
             w=self.w.astype(np.float32), speed=self.speed.astype(np.float32),
             direction=self.direction.astype(np.float32), z_levels=g.z_levels,
             x_m=np.arange(g.nx) * g.dx, y_m=np.arange(g.ny) * g.dy,
-            z_terrain=g.zt.astype(np.float32), timestamp=str(self.timestamp))
+            z_terrain=g.zt.astype(np.float32), timestamp=str(self.timestamp),
+            correction=json.dumps(self.correction or None))
         return path
 
 
@@ -206,6 +210,9 @@ class WindFieldModel:
         # l'application web lance 3-4 requetes en parallele a chaque instant. Sans verrou,
         # chacune lancerait sa propre passe et la machine saturerait sa memoire.
         self._lock = threading.Lock()
+        # correction post-modele du vent moyen par niveau (lot M1) : strictement opt-in
+        from .correction import load_correction
+        self.correction = load_correction(cfg.inference.correction)
         self.epoch = ck.get("epoch")
         self.val_score = ck.get("val_score")
         if verbose:
@@ -277,12 +284,20 @@ class WindFieldModel:
             elapsed = time.perf_counter() - t0
             del pred
 
+        corr_info = None
+        if self.correction is not None:
+            # meme ordre que le BLOC 12 (etape 2b) : prediction du modele, puis recalage de la
+            # moyenne des niveaux ; le temps de la correction compte dans l'inference (DSO4)
+            t1 = time.perf_counter()
+            u, v, n_corr = self.correction.apply(u, v, S, sensor, tfeat, geom)
+            elapsed += time.perf_counter() - t1
+            corr_info = {**self.correction.info(), "appliquee_a": n_corr}
         if mask_nan:
             u = np.where(geom.valid, u, np.nan)
             v = np.where(geom.valid, v, np.nan)
             w = np.where(geom.valid, w, np.nan)
         return Volume(u, v, w, geom, timestamp=timestamp, n_sensors=int(sensor.sum()),
-                      inference_s=elapsed)
+                      inference_s=elapsed, correction=corr_info)
 
     def predict_stem(self, stem: str, keep: float = 1.0, seed: int = 0) -> Volume:
         S, hour, doy, stamp = self.surface_from_cache(stem)
@@ -313,6 +328,7 @@ class WindFieldModel:
             "z_levels_asl_m": g.z_levels.tolist(),
             "noeuds_valides": int(g.valid.sum()),
             "passes_moyennees": self.cfg.inference.tta,
+            "correction": self.correction.info() if self.correction is not None else None,
             "variables": ["wind_u_m_s", "wind_v_m_s", "wind_w_m_s", "wind_speed_m_s",
                           "wind_direction_deg"],
             "conventions": g.meta.raw.get("conventions", {}),

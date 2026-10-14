@@ -237,10 +237,14 @@ class InferenceCfg:
           thermiques RECALCULEES sur les capteurs gardes — sans quoi la passe sort de la
           distribution d'entrainement. 1 = une seule passe, comme la v7.
     tta_keep : fraction des capteurs gardee a chaque passe supplementaire.
+    correction : chemin du JSON de correction post-modele du vent moyen par niveau (lot M1,
+          pcfno3d.correction ; format de couche_limite_v7.json ecrit par le BLOC 10h). None =
+          aucune correction : la sortie de v7 est alors identique bit a bit.
     """
 
     tta: int = 1
     tta_keep: float = 0.7
+    correction: Path | None = None
 
     def __post_init__(self) -> None:
         self.tta = int(self.tta)
@@ -249,6 +253,8 @@ class InferenceCfg:
         if not 0.0 < float(self.tta_keep) <= 1.0:
             raise ValueError("inference.tta_keep doit etre dans ]0, 1]")
         self.tta_keep = float(self.tta_keep)
+        if self.correction is not None:
+            self.correction = _resolve(self.correction)
 
 
 @dataclass
