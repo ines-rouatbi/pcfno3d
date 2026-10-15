@@ -38,6 +38,7 @@ import numpy as np
 import pandas as pd
 import yaml
 
+from .alerts import alert_id, iso_utc
 from .geometry import Geometry
 from .reliability import UNCERTAINTY_AUCUNE, Z80
 
@@ -74,25 +75,10 @@ def round_veer(deg, nd: int = 1):
     return np.round((np.round(np.asarray(deg, float), nd) + 180.0) % 360.0 - 180.0, nd)
 
 
-# --- conventions d'alerte de M4 (pcfno3d.alerts, autre branche) --------------------------
-# Copie locale en attendant l'integration, qui remplacera ces deux definitions par
-# `from .alerts import alert_id, iso_utc` ; les alertes passent toutes par `_alert_meta`.
-# Comme chez M4, iso_utc(None) leve une erreur : ce module ne lui passe jamais None
-# (pas d'alerte ni de rose pour un instant sans horodatage).
-def alert_id(kind: str, target: str) -> str:
-    """Identifiant stable d'une alerte : sha8 de « kind|cible » (contrat rev. 2, D8)."""
-    return hashlib.sha256(f"{kind}|{target}".encode("utf-8")).hexdigest()[:8]
-
-
-def iso_utc(stamp) -> str:
-    """Horodatage ISO 8601 en UTC termine par Z (common.schema.json, iso_utc)."""
-    if stamp is None:
-        raise ValueError("horodatage absent : iso_utc n'invente pas d'instant")
-    t = pd.Timestamp(stamp)
-    t = t.tz_localize("UTC") if t.tzinfo is None else t.tz_convert("UTC")
-    return t.strftime("%Y-%m-%dT%H:%M:%SZ")
-
-
+# --- conventions d'alerte : UNE definition, celle de M4 (pcfno3d.alerts) -----------------
+# alert_id (sha8 de « kind|cible », D8) et iso_utc (iso_utc(None) leve une erreur : ce module
+# ne lui passe jamais None, pas d'alerte ni de rose pour un instant sans horodatage).
+# Re-exportes ici pour les appelants de windfarm ; toutes les alertes passent par _alert_meta.
 def _alert_meta(kind: str, target: str, stamp) -> tuple[str, str]:
     """(id, raised_at) d'une alerte : unique point de contact avec les conventions de M4."""
     return alert_id(kind, target), iso_utc(stamp)
@@ -714,6 +700,15 @@ def hub_wind_kpi(volume, hub_agl_m: float) -> dict:
     return {"hub_wind_mean_ms": _r(f.mean()) if f.size else None,
             "hub_wind_max_ms": _r(f.max()) if f.size else None,
             "hub_height_agl_m": float(hub_agl_m)}
+
+
+def farm_alerts(volume, wf) -> list[dict]:
+    """Alertes M5 brutes d'un volume (vent_fort_moyeu, cisaillement), entree externe du
+    moteur d'alertes M4 ; [] sans parc declare ou sans horodatage."""
+    if getattr(wf, "farm", None) is None or volume.timestamp is None:
+        return []
+    wcfg = wf.cfg.wind_farm
+    return compute_farm(volume, wf.farm, wcfg, calibration=wf.reliability).alerts(wcfg)
 
 
 def farm_report(volume, wf) -> dict:

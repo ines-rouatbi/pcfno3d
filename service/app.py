@@ -755,7 +755,14 @@ def wind_farm(stem: str | None = None,
     if wf.farm is None:
         raise HTTPException(404, "aucun parc eolien declare (configuration "
                                  "wind_farm.turbines, voir docs/EOLIEN.md)")
-    return farm_report(_volume_for(stem), wf)
+    stem = stem or _stem_par_defaut(wf)
+    out = farm_report(_volume_for(stem), wf)
+    if STATE.get("alertes") is not None:
+        # alertes actives : les items du journal M4 (premiere levee, ouverte / close) ;
+        # sinon, alertes brutes de M5 (raised_at = l'instant)
+        from pcfno3d.alerts import items_externes
+        out["alerts"]["items"] = items_externes(_alertes_stem(stem).items)
+    return out
 
 
 @router.get("/dso", tags=["qualite"])

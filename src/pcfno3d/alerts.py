@@ -64,7 +64,10 @@ def alert_id(kind: str, target: str) -> str:
 
 
 def iso_utc(stamp) -> str:
-    """Horodatage -> « AAAA-MM-JJTHH:MM:SSZ » (iso_utc du contrat). Sans fuseau = UTC."""
+    """Horodatage -> « AAAA-MM-JJTHH:MM:SSZ » (iso_utc du contrat). Sans fuseau = UTC.
+    None leve une erreur : on n'invente pas d'instant."""
+    if stamp is None:
+        raise ValueError("horodatage absent : iso_utc n'invente pas d'instant")
     t = pd.Timestamp(stamp)
     if t.tzinfo is not None:
         t = t.tz_convert("UTC").tz_localize(None)
@@ -628,6 +631,14 @@ def trier(items: list[dict]) -> list[dict]:
                                         a["kind"], a["target"]))
 
 
+def items_externes(items: Iterable[dict], kinds: Iterable[str] = KINDS_EXTERNES
+                   ) -> list[dict]:
+    """Items publies (journal M4) des types externes : les alertes du parc avec leur
+    raised_at de premiere levee et leur statut ouverte / close (/api/wind-farm)."""
+    kinds = set(kinds)
+    return [a for a in items if a["kind"] in kinds]
+
+
 def compter_ouvertes(items: Iterable[dict]) -> dict:
     """`kpi.open_alerts` du snapshot (m9 : alertes OUVERTES par niveau)."""
     out = {n: 0 for n in NIVEAUX}
@@ -903,7 +914,15 @@ class MoteurAlertes:
 
     def evaluer_modele(self, wf, S: np.ndarray, hour: float, doy: int, volume, **kw
                        ) -> ResultatAlertes:
-        """Raccourci pour un `WindFieldModel` et le `Volume` servi de l'instant."""
+        """Raccourci pour un `WindFieldModel` et le `Volume` servi de l'instant.
+
+        Avec un parc declare (`wf.farm`, lot M5) et sans `externes` explicites, les alertes
+        vent_fort_moyeu / cisaillement du volume y sont ajoutees (`windfarm.farm_alerts`) :
+        elles passent par le journal (raised_at, ouverte / close) et par kpi.open_alerts.
+        API, upload, MCP et CLI passent tous par ici."""
+        if "externes" not in kw and getattr(wf, "farm", None) is not None:
+            from .windfarm import farm_alerts
+            kw["externes"] = farm_alerts(volume, wf)
         st = wf.norm.stats
         return self.evaluer(wf.geom, S, (volume.u, volume.v, volume.w), volume.timestamp,
                             lambda kept: wf._member(S, kept, hour, doy),

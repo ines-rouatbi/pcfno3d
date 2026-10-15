@@ -320,6 +320,14 @@ def production_eolienne(stem: str | None = None) -> dict:
     stem, volume = _volume(stem)
     out = farm_report(volume, wf)
     out["stem"] = stem
+    moteur = get_alertes()
+    if moteur is not None:
+        # alertes actives : items du journal M4 (premiere levee, ouverte / close)
+        from pcfno3d.alerts import items_externes
+        S, hour, doy, _ = wf.surface_from_cache(stem)
+        res = moteur.evaluer_modele(wf, S, hour, doy, volume, Y=moteur.verite(wf, stem),
+                                    cle=f"stem:{stem}")
+        out["alerts"]["items"] = items_externes(res.items)
     return out
 
 

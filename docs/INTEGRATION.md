@@ -232,7 +232,7 @@ Les résultats arrivent dans `result.content[0].text`, en JSON à parser.
 | `GET /api/profile?x=5000&y=5000` | profil vertical |
 | `GET /api/dso` | dernier verdict DSO archivé |
 | `GET /api/alerts?stem=…` | alertes de l'instant (lot M4), au format `alerts.schema.json` du contrat ATOM rév. 2 : `{"items": [...]}` ; sans `stem`, les dernières calculées ; `409` si `alerts.enabled` est faux (`docs/ALERTES.md`) |
-| `GET /api/wind-farm?stem=…` | parc éolien déclaré (lot M5, opt-in `wind_farm.turbines`) : `wind_farm` (wind-farm.schema.json), `alerts`, `kpi` hub_wind_* ; `404` sans parc — voir `docs/EOLIEN.md` |
+| `GET /api/wind-farm?stem=…` | parc éolien déclaré (lot M5, opt-in `wind_farm.turbines`) : `wind_farm` (wind-farm.schema.json), `alerts` (items du journal M4 si les alertes sont activées, alertes brutes avec `raised_at` = l'instant sinon), `kpi` hub_wind_* ; `404` sans parc — voir `docs/EOLIEN.md` |
 | `GET /api/export/{stem}/manifest.json` | manifeste d'un export |
 | `GET /api/export/{stem}/{u,v,w,speed,terrain}.bin` | binaires Float32 |
 | `POST /api/reconstruct/stations` | mesures **réelles** de stations (JSON, lat/lon) → volume 3D, mémorisé sous `stem` = `live_…` ; exige un domaine géoréférencé (`409` sinon), voir `docs/REAL_DATA.md` |

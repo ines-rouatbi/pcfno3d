@@ -28,7 +28,7 @@ soit le lot qui les détecte :
 | `incoherence_physique` | M4 | résidu de continuité de l'instant > seuil DSO2 ; condition au sol (seuil à régler) | `domaine:masse`, `domaine:sol` | important ; critique si ≥ 10 × seuil ; sol : avertissement |
 | `derive_entrees` | M4 | statistiques des entrées vs entraînement (`norm_stats.json`) | `domaine:<variable>` | avertissement ; important si ≥ 2 × seuil |
 | `zone_mal_couverte` | M2 | indice de couverture moyen < 0,2 sur une maille de 2 km | maille `m<ix>_<iy>` | information |
-| `vent_fort_moyeu`, `cisaillement` | M5 | **entrée externe** (`alertes_externes`) : le calcul est fait par M5 | éolienne | donné par M5 |
+| `vent_fort_moyeu`, `cisaillement` | M5 | **entrée externe** (`alertes_externes`), alimentée par `windfarm.farm_alerts` quand un parc est déclaré | éolienne | donné par M5 |
 
 **Identifiant (D8).** `id = sha8("kind|cible")` (`alert_id`). Il est stable d'un instant
 à l'autre, et c'est lui qui relie les instants dans le journal. Si deux sources donnent la
@@ -157,6 +157,26 @@ rapport).
 kind, target, level, title, cause, recommendation, plus les champs facultatifs. L'id est
 recalculé, et un id fourni différent est refusé. Les alertes passent ensuite par le même
 journal.
+
+**Alertes du parc et journal.** Les deux cas se distinguent ainsi :
+
+- **Alertes activées** (`alerts.enabled`). Avec un parc déclaré (`wf.farm`),
+  `MoteurAlertes.evaluer_modele` ajoute d'office les alertes `vent_fort_moyeu` /
+  `cisaillement` du volume (`windfarm.farm_alerts`), qui passent par le journal M4 :
+  - `raised_at` est la première levée ;
+  - le statut passe d'`ouverte` à `close` ;
+  - elles sont comptées dans `kpi.open_alerts`.
+
+  Ce chemin sert `/api/alerts`, l'upload, l'outil MCP `alertes_actives` et
+  `pcfno3d alertes`. `/api/wind-farm` et l'outil `production_eolienne` publient alors
+  dans `alerts.items` **les items du journal** filtrés sur ces deux types
+  (`alerts.items_externes`).
+- **Alertes désactivées.** `/api/wind-farm` et `production_eolienne` gardent les alertes
+  **brutes** de M5 : `status: "ouverte"` et `raised_at` = l'instant du volume, sans
+  journal ni clôture.
+
+La commande `pcfno3d wind-farm` (un instant isolé, sans historique) publie toujours les
+alertes brutes.
 
 ## Journal et cycle de vie (D8)
 

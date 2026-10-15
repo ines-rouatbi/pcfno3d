@@ -197,11 +197,30 @@ identifiant de l'éolienne ; la fixture `cisaillement|T-03` → `bdec1bd1` est t
 `raised_at` = horodatage du volume. **L'agrégation, la première levée et la clôture sont
 le travail de M4**, qui remplace `raised_at` par la date de son journal.
 
-`alert_id` et `iso_utc` sont des copies locales de `pcfno3d.alerts` (M4, autre branche),
-regroupées dans un seul bloc. Toutes les alertes passent par `_alert_meta`, et
-l'intégration remplacera ce bloc par l'import. Comme chez M4, `iso_utc(None)` lève une
+`alert_id` et `iso_utc` sont **importés** de `pcfno3d.alerts` (M4) : il n'en existe
+qu'une définition. Toutes les alertes passent par `_alert_meta`. `iso_utc(None)` lève une
 erreur, et ce module ne lui passe jamais `None` : un volume sans horodatage ne produit
 aucune alerte (`alerts.items` vide et `alertes_non_produites` dans la réponse).
+
+**Alertes du parc et journal.** Les deux cas se distinguent ainsi :
+
+- **Alertes activées** (`alerts.enabled`). Avec un parc déclaré (`wf.farm`),
+  `MoteurAlertes.evaluer_modele` ajoute d'office les alertes `vent_fort_moyeu` /
+  `cisaillement` du volume (`windfarm.farm_alerts`), qui passent par le journal M4 :
+  - `raised_at` est la première levée ;
+  - le statut passe d'`ouverte` à `close` ;
+  - elles sont comptées dans `kpi.open_alerts`.
+
+  Ce chemin sert `/api/alerts`, l'upload, l'outil MCP `alertes_actives` et
+  `pcfno3d alertes`. `/api/wind-farm` et l'outil `production_eolienne` publient alors
+  dans `alerts.items` **les items du journal** filtrés sur ces deux types
+  (`alerts.items_externes`).
+- **Alertes désactivées.** `/api/wind-farm` et `production_eolienne` gardent les alertes
+  **brutes** de M5 : `status: "ouverte"` et `raised_at` = l'instant du volume, sans
+  journal ni clôture.
+
+La commande `pcfno3d wind-farm` (un instant isolé, sans historique) publie toujours les
+alertes brutes.
 
 | `kind` | Niveau | Condition (défauts, section `wind_farm`) |
 |---|---|---|

@@ -138,7 +138,8 @@ notebook's globals.
   ATOM rev. 2 format (`alerts.schema.json`: id = sha8 of `kind|target`, 4 levels, cause and
   recommendation), aggregating M3 (contract report), M2 (coverage), M4 (sensor drift by
   grouped leave-out: `derive_cote`² extra passes, input drift, mass residual / D11 `physics`)
-  and M5 (external entry, `alertes_externes`). Lifecycle in a JSONL journal
+  and M5 (`alertes_externes`, fed by `windfarm.farm_alerts` in `evaluer_modele` when a
+  farm is declared; `/api/wind-farm` then shows the journal items). Lifecycle in a JSONL journal
   (`run_dir/logs/alertes.jsonl`, chronological instants only). **Opt-in**
   (`alerts.enabled: false`): never changes the served value; `/api/alerts` answers `409`
   when disabled. `an1.py` simulates drifts/outages; thresholds are tuned on **validation**
