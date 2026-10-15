@@ -18,6 +18,7 @@ Outils :
     instant_summary           statistiques d'un instant (vitesse, direction, temps d'inference)
     dso_report                dernier verdict DSO1-DSO5 archive
     alertes_actives           alertes ouvertes d'un instant (lot M4), si alerts.enabled
+    production_eolienne       parc eolien declare : moyeu, REWS, puissance, alertes (M5)
 
 Les outils de lecture n'ecrivent rien. `export_instant` ecrit sur le disque du serveur et
 exige donc la portee `admin` lorsque l'authentification est active.
@@ -35,6 +36,7 @@ from mcp.server.mcpserver import MCPServer
 
 from pcfno3d.config import Config
 from pcfno3d.inference import WindFieldModel
+from pcfno3d.windfarm import round_direction
 
 INSTRUCTIONS = """\
 Champ de vent 3D reconstruit sur la Tunisie (reseau de capteurs ANEO, modele PC-FNO3D).
@@ -220,7 +222,9 @@ def wind_profile(x_m: float, y_m: float, stem: str | None = None) -> dict:
             "sous_le_relief": not bool(np.isfinite(u)),
             "wind_u_m_s": _clean(u), "wind_v_m_s": _clean(v), "wind_w_m_s": _clean(w),
             "wind_speed_m_s": _clean(float(np.hypot(u, v))),
-            "wind_direction_deg": _clean(float((270.0 - np.degrees(np.arctan2(v, u))) % 360.0)),
+            # arrondi AVANT le modulo (regle m4) : jamais 360,0
+            "wind_direction_deg": _clean(float(round_direction(
+                270.0 - np.degrees(np.arctan2(v, u)), 3))),
         })
     return {"stem": stem, "timestamp_utc": volume.timestamp,
             "x_m": i * g.dx, "y_m": j * g.dy, "z_terrain_m": float(g.zt[j, i]),
@@ -293,6 +297,30 @@ def instant_summary(stem: str | None = None) -> dict:
         "secteur_dominant_deg": labels[int(secteurs.argmax())],
         "par_niveau": niveaux,
     }
+
+
+@mcp.tool()
+def production_eolienne(stem: str | None = None) -> dict:
+    """Production du parc eolien declare a un instant (lot M5).
+
+    Par eolienne : vent au moyeu et vent equivalent rotor (REWS) avec intervalle p10/p50/p90,
+    cisaillement (exposant shear_alpha), rotation de direction (veer_deg), densite de l'air,
+    puissance et etat (production / arret_vent_faible / arret_vent_fort / indisponible) ;
+    puissance du parc ; alertes vent_fort_moyeu et cisaillement ; KPI hub_wind_* du domaine.
+    Hauteurs de moyeu AU-DESSUS DU SOL. Erreur si aucun parc n'est declare.
+
+    Args:
+        stem: instant (JJJ_HHMMSS) ; None = premier instant de test.
+    """
+    from pcfno3d.windfarm import farm_report
+
+    wf = get_model()
+    if wf.farm is None:
+        raise ValueError("aucun parc eolien declare (configuration wind_farm.turbines)")
+    stem, volume = _volume(stem)
+    out = farm_report(volume, wf)
+    out["stem"] = stem
+    return out
 
 
 @mcp.tool()

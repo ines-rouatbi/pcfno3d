@@ -24,6 +24,7 @@ from .model import build_model, model_cfg_from_checkpoint
 from .normalize import Normalizer
 from .reliability import (CLASSES, NODATA_U8, STATUT_MESURE, Calibration, Reliability,
                           assess, speed_interval)
+from .windfarm import FarmContext, load_farm, round_direction
 
 
 class Volume:
@@ -32,7 +33,7 @@ class Volume:
     def __init__(self, u: np.ndarray, v: np.ndarray, w: np.ndarray, geom: Geometry,
                  timestamp: str | None = None, n_sensors: int = 0,
                  inference_s: float = 0.0, reliability: Reliability | None = None,
-                 reliability_s: float = 0.0) -> None:
+                 reliability_s: float = 0.0, farm_context: FarmContext | None = None) -> None:
         self.u, self.v, self.w = u, v, w
         self.geom = geom
         self.timestamp = timestamp
@@ -42,6 +43,8 @@ class Volume:
         # fiabilite par noeud (lot M2), None si desactivee ; reliability_s : sa part du temps
         self.reliability = reliability
         self.reliability_s = reliability_s
+        # entrees du calcul eolien (lot M5) : None sans parc declare (wind_farm.turbines)
+        self.farm_context = farm_context
 
     @property
     def speed(self) -> np.ndarray:
@@ -139,7 +142,8 @@ class Volume:
             "wind_v_m_s": np.round(self.v[k, j, i], 3),
             "wind_w_m_s": np.round(self.w[k, j, i], 4),
             "wind_speed_m_s": np.round(speed[k, j, i], 3),
-            "wind_direction_deg": np.round(direction[k, j, i], 1),
+            # arrondi AVANT le modulo (contrat, regle m4) : jamais 360,0
+            "wind_direction_deg": round_direction(direction[k, j, i], 1),
         })
 
     def save_npz(self, path: str | Path) -> Path:
@@ -260,6 +264,9 @@ class WindFieldModel:
         # fiabilite par noeud (lot M2) : strictement opt-in, None = rien ne change
         src = cfg.inference.reliability
         self.reliability = Calibration.load(src) if src is not None else None
+        # parc eolien (lot M5) : strictement opt-in, None = rien ne change
+        parc = cfg.wind_farm.turbines
+        self.farm = load_farm(parc, self.geom, cfg) if parc is not None else None
         self.epoch = ck.get("epoch")
         self.val_score = ck.get("val_score")
         if verbose:
@@ -352,21 +359,36 @@ class WindFieldModel:
             del pred
 
         rel, rel_s = None, 0.0
+        captured: list = []                      # passes de l'ensemble aux colonnes du parc
         if (self.reliability is not None) if reliability is None else reliability:
             if self.reliability is None:
                 raise ValueError("fiabilite demandee mais inference.reliability n'est pas "
                                  "configure (JSON de calibration ou 'non_calibre')")
             # l'ensemble compte dans le temps de livraison du volume (DSO4)
             t1 = time.perf_counter()
-            rel = assess((u, v, w), lambda kept: self._member(S, kept, hour, doy), sensor,
+            rel = assess((u, v, w), lambda kept: self._capture(self._member(S, kept, hour, doy),
+                                                               captured), sensor,
                          geom, self.cfg.reliability, self.reliability, real_sensors)
             rel_s = time.perf_counter() - t1
         if mask_nan:
             u = np.where(geom.valid, u, np.nan)
             v = np.where(geom.valid, v, np.nan)
             w = np.where(geom.valid, w, np.nan)
+        ctx = None
+        if self.farm is not None:
+            ctx = FarmContext(self.farm.columns, np.stack(captured) if captured else None,
+                              np.asarray(S[4], np.float32), sensor)
         return Volume(u, v, w, geom, timestamp=timestamp, n_sensors=int(sensor.sum()),
-                      inference_s=elapsed + rel_s, reliability=rel, reliability_s=rel_s)
+                      inference_s=elapsed + rel_s, reliability=rel, reliability_s=rel_s,
+                      farm_context=ctx)
+
+    def _capture(self, uvw: tuple, captured: list) -> tuple:
+        """Garde u et v d'une passe de l'ensemble aux seules colonnes du parc (lot M5) :
+        (2, nz, ncol), quelques Ko au lieu du volume entier."""
+        if self.farm is not None:
+            jj, ii = self.farm.columns
+            captured.append(np.stack([uvw[0][:, jj, ii], uvw[1][:, jj, ii]]))
+        return uvw
 
     @torch.no_grad()
     def _member(self, S: np.ndarray, kept: np.ndarray, hour: float,

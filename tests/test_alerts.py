@@ -4,7 +4,8 @@ Unitaires sur des tableaux construits a la main (id, schema, journal, persistanc
 physique), integration sur le mini-dataset (moteur, simulation AN1, script GPU, API, MCP).
 
 Les schemas du contrat ATOM rev. 2 sont recopies tels quels dans tests/data/atom_rev2/
-depuis atom-dashboard, branche agent/rayen-audit-atom/contrat-v1 (commit b7b13b8).
+depuis atom-dashboard, branche agent/rayen-audit-atom/contrat-v1 (commit b7b13b8) ; la
+fixture d'alertes est dans fixtures/, hors du glob *.json des schemas (test_windfarm).
 """
 
 from __future__ import annotations
@@ -73,7 +74,7 @@ def test_id_sha8_de_kind_cible_et_cles_exactes(schema_alertes):
         verifier_alerte(a)                            # pose par le journal, pas avant
     _valide(schema_alertes, {"items": [_publiee(a)]})
     # la fixture du contrat passe le meme controle (memes regles que le schema)
-    fixture = json.loads((ATOM / "alerts.fixture_capteur_en_derive.json")
+    fixture = json.loads((ATOM / "fixtures" / "capteur_en_derive_alerts.json")
                          .read_text(encoding="utf-8"))
     _valide(schema_alertes, fixture)
     with pytest.raises(ValueError):

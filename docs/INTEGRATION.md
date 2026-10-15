@@ -198,6 +198,7 @@ Pour un client local en *stdio* (sans HTTP ni clé) : `pcfno3d mcp`.
 | `wind_field_at_altitude` | carte décimée d'une variable à une altitude |
 | `instant_summary` | vitesses par niveau, secteur dominant, temps d'inférence |
 | `dso_report` | dernier verdict DSO1–DSO5 archivé |
+| `production_eolienne` | parc éolien déclaré (lot M5) : vent au moyeu, REWS, puissance, alertes ; erreur sans parc déclaré — voir `docs/EOLIEN.md` |
 | `export_instant` | écrit un volume sur le disque du serveur — **portée `admin`** |
 | `alertes_actives` | alertes **ouvertes** d'un instant (lot M4), par niveau, avec cause et recommandation, et le bloc `physique` ; `disponible: false` si `alerts.enabled` est faux (`docs/ALERTES.md`) |
 
@@ -231,6 +232,7 @@ Les résultats arrivent dans `result.content[0].text`, en JSON à parser.
 | `GET /api/profile?x=5000&y=5000` | profil vertical |
 | `GET /api/dso` | dernier verdict DSO archivé |
 | `GET /api/alerts?stem=…` | alertes de l'instant (lot M4), au format `alerts.schema.json` du contrat ATOM rév. 2 : `{"items": [...]}` ; sans `stem`, les dernières calculées ; `409` si `alerts.enabled` est faux (`docs/ALERTES.md`) |
+| `GET /api/wind-farm?stem=…` | parc éolien déclaré (lot M5, opt-in `wind_farm.turbines`) : `wind_farm` (wind-farm.schema.json), `alerts`, `kpi` hub_wind_* ; `404` sans parc — voir `docs/EOLIEN.md` |
 | `GET /api/export/{stem}/manifest.json` | manifeste d'un export |
 | `GET /api/export/{stem}/{u,v,w,speed,terrain}.bin` | binaires Float32 |
 | `POST /api/reconstruct/stations` | mesures **réelles** de stations (JSON, lat/lon) → volume 3D, mémorisé sous `stem` = `live_…` ; exige un domaine géoréférencé (`409` sinon), voir `docs/REAL_DATA.md` |

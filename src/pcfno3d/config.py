@@ -358,6 +358,46 @@ class AlertsCfg:
 
 
 @dataclass
+class WindFarmCfg:
+    """Eolien (lot M5, pcfno3d.windfarm, critere EOL1). Formules et sources : docs/EOLIEN.md.
+
+    turbines : fichier YAML/JSON de declaration du parc (eoliennes + courbes de puissance).
+          None = desactive : rien ne change (ni la sortie, ni le temps d'inference).
+    Les seuils d'alerte sont des choix d'ingenierie documentes, a regler avec l'exploitant.
+    """
+
+    turbines: Path | str | None = None
+    hub_height_agl_m: float = 100.0      # D10 : hauteur des KPI hub_wind_* (au-dessus du SOL)
+    rews_segments: int = 20              # tranches horizontales du disque rotor (REWS)
+    rho_radius_m: float = 2000.0         # capteur visible le plus proche pour la densite
+    calm_ms: float = 0.2                 # direction indefinie en dessous (contrat dir_from_deg)
+    shear_info: float = 0.3              # alerte cisaillement : alpha > seuil -> information
+    shear_warn: float = 0.45             # -> avertissement
+    shear_important: float = 0.6         # -> important
+    high_wind_warn_frac: float = 0.9     # vent_fort_moyeu : p90 >= frac x cut-out -> avert.
+    high_wind_critical_ms: float = 35.0  # vent_fort_moyeu : p50 >= -> critique
+    sectors: int = 12                    # rose des vents : secteurs de largeur egale
+    speed_bin_edges_ms: tuple[float, ...] = (0.0, 3.0, 6.0, 9.0, 12.0, 15.0, 25.0)
+    eol1_max_rel: float = 0.05           # EOL1 : ecart relatif d'energie du parc < 5 %
+
+    def __post_init__(self) -> None:
+        if self.turbines is not None:
+            self.turbines = _resolve(self.turbines)
+        self.rews_segments = int(self.rews_segments)
+        if self.rews_segments < 3:
+            raise ValueError("wind_farm.rews_segments doit etre >= 3 (IEC 61400-12-1)")
+        self.sectors = int(self.sectors)
+        if not 1 <= self.sectors <= 72:
+            raise ValueError("wind_farm.sectors doit etre dans [1, 72]")
+        edges = tuple(float(e) for e in self.speed_bin_edges_ms)
+        if len(edges) < 2 or edges[0] != 0.0 or any(b <= a for a, b in zip(edges, edges[1:])):
+            raise ValueError("wind_farm.speed_bin_edges_ms : croissantes, la premiere a 0")
+        self.speed_bin_edges_ms = edges
+        if self.hub_height_agl_m <= 0:
+            raise ValueError("wind_farm.hub_height_agl_m doit etre > 0 (au-dessus du sol)")
+
+
+@dataclass
 class DSOCfg:
     """Seuils des objectifs de l'entreprise (DSO1 a DSO5)."""
 
@@ -411,6 +451,7 @@ SECTIONS: dict[str, type] = {
     "paths": Paths, "model": ModelCfg, "train": TrainCfg,
     "loss": LossCfg, "mask": MaskCfg, "dso": DSOCfg, "inference": InferenceCfg,
     "real": RealCfg, "reliability": ReliabilityCfg, "alerts": AlertsCfg,
+    "wind_farm": WindFarmCfg,
 }
 
 
@@ -430,6 +471,7 @@ class Config:
     real: RealCfg = field(default_factory=RealCfg)
     reliability: ReliabilityCfg = field(default_factory=ReliabilityCfg)
     alerts: AlertsCfg = field(default_factory=AlertsCfg)
+    wind_farm: WindFarmCfg = field(default_factory=WindFarmCfg)
     terrain_smooth_m: float = 300.0   # meme lissage du relief que le generateur
     f_coriolis: float = 8.57e-5       # s-1, latitude ~36 N (vent geostrophique)
 

@@ -145,6 +145,13 @@ notebook's globals.
   only (`charger_seuils` refuses test) by `scripts/m4_an1_colab.py`. See `docs/ALERTES.md`.
 - **`reconstruct.py` / `export.py`** — npz + ANEO-shaped CSV + figures; `export_web` writes raw
   Float32 binaries plus `manifest.json` for `web/index.html`.
+- **`windfarm.py`** (lot M5, `docs/EOLIEN.md`) — opt-in via `wind_farm.turbines` (declaration
+  YAML, example in `configs/eolien/parc_demo.yaml`). Pure post-processing of a `Volume`: hub
+  wind interpolated in height **above ground** (levels are ASL: h = z − terrain), REWS,
+  shear α, veer, IEC density-normalised power, farm p10/p90 over the M2 ensemble members
+  (captured at the turbine columns only, `Volume.farm_context`), alerts, Weibull/AEP/wind
+  rose, and EOL1 (`scripts/m5_eol1_colab.py`). Exposed as `GET /api/wind-farm`, MCP
+  `production_eolienne`, CLI `wind-farm` / `windrose`.
 
 ## The service layer (`service/`, `webapp/`)
 
@@ -168,7 +175,7 @@ Thin by design: physics and numerics belong in `pcfno3d`, never here.
   429 + `Retry-After`) and the JSONL access log (`journal.py`, never a secret) for `/api`
   and `/mcp`; route `Depends` only check scope. `/api/health` is public — the web app calls
   it before asking for a key.
-- **`mcp_server.py`** — one `MCPServer` with 9 tools over the same `WindFieldModel`.
+- **`mcp_server.py`** — one `MCPServer` with 10 tools over the same `WindFieldModel`.
   `set_model()` lets the HTTP app share its already-loaded model instead of loading a second
   copy. Tools in `ADMIN_TOOLS` write to disk and need the `admin` scope.
 - **`webapp/`** — plain HTML/CSS/JS, no build step and no CDN. The key lives in
