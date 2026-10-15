@@ -42,6 +42,10 @@ Si la correction M1 est active, chaque passe la reçoit aussi.
 
     σ = sqrt( (1/N) · Σ_i (x_i − x_0)² )     x_0 = passe servie, pour u, v, w et la vitesse
 
+σ brut est ensuite borné en bas par `reliability.sigma_floor_m_s` (0,01 m/s), le même
+plancher en calibration, en production et en DSO6 : un nœud où tous les membres coïncident
+n'a pas un intervalle de largeur nulle.
+
 **Calibration (validation uniquement).** Le facteur k est calculé par composante et par
 niveau :
 
@@ -101,8 +105,9 @@ verdict n'existe : jamais un 0 pour une valeur inconnue (B5).
 ## Utilisation
 
 La fiabilité est strictement **opt-in** : `inference.reliability: null` par défaut. Dans ce
-cas, la sortie, le `.npz`, le manifeste web et le temps d'inférence sont identiques
-(testé).
+cas, la sortie (comparée bit à bit au modèle appelé directement), le `.npz`, le manifeste
+web, `/api/meta`, `/api/reconstruct`, `test_summary.json` et le temps d'inférence sont
+identiques à ceux d'avant M2 : aucune clé n'est ajoutée.
 
 ```yaml
 inference:
@@ -113,7 +118,7 @@ inference:
 | Commande | Effet |
 |---|---|
 | `pcfno3d calibrate-reliability` | calibration sur la validation ; n'écrase jamais un JSON existant |
-| `pcfno3d dso6 --calibration <json>` | verdict sur le test → `eval_pcfno3d/<modele>/dso6_<sha8>.json` |
+| `pcfno3d dso6 --calibration <json>` | verdict sur le test → `eval_pcfno3d/<modele>/dso6_<sha8>_keep<k>_n<instants>.json`, jamais écrasé |
 | `scripts/m2_calibration_colab.py` | les deux, plus DSO4 avec et sans, dans un dossier de session neuf |
 
 Une fois la fiabilité activée, elle apparaît partout :
@@ -139,7 +144,10 @@ Deux conditions, mesurées sur le test synoptique avec la calibration de validat
 2. la corrélation de Spearman entre |erreur| et σ est > 0.
 
 La couverture est un comptage exact. Spearman est calculé sur un échantillon à graine fixe
-(20 000 couples par niveau et composante).
+de 20 000 couples par niveau et composante, tiré en « bottom-k » : chaque couple reçoit une
+clé uniforme et on garde les plus petites. Tous les instants y sont donc représentés à parts
+égales. Un re-tirage parmi anciens + nouveaux couples ne gardait en pratique que les
+derniers instants (défaut trouvé à la vérification, corrigé et testé).
 
 ## Choix tranchés (relecture stage-b5, contrat rév. 2)
 

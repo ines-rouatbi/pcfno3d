@@ -406,7 +406,7 @@ class WindFieldModel:
     def meta(self) -> dict:
         """Description de la sortie, pour l'API et le visualiseur."""
         g = self.geom
-        return {
+        out = {
             "modele": self.checkpoint_path.name,
             "epoque": (self.epoch + 1) if self.epoch is not None else None,
             "device": str(self.device),
@@ -414,11 +414,15 @@ class WindFieldModel:
             "z_levels_asl_m": g.z_levels.tolist(),
             "noeuds_valides": int(g.valid.sum()),
             "passes_moyennees": self.cfg.inference.tta,
-            "fiabilite": self.reliability_info(),
             "variables": ["wind_u_m_s", "wind_v_m_s", "wind_w_m_s", "wind_speed_m_s",
                           "wind_direction_deg"],
             "conventions": g.meta.raw.get("conventions", {}),
         }
+        # cle presente SEULEMENT si la fiabilite est active : desactivee, /api/meta reste
+        # exactement celui de main
+        if self.reliability is not None:
+            out["fiabilite"] = self.reliability_info()
+        return out
 
     def reliability_info(self) -> dict | None:
         """Configuration de la fiabilite (lot M2), None si desactivee."""

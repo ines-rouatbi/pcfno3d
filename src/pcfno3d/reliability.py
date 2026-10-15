@@ -299,7 +299,11 @@ def assess(served: tuple[np.ndarray, np.ndarray, np.ndarray],
     masque de capteurs (caracteristiques recalculees, correction M1 comprise si active).
     `real_sensors` est une INFORMATION (donnees reelles ou non) : le statut n'en depend pas."""
     members = [predict(m) for m in member_masks(sensor, rcfg.members, rcfg.keep, rcfg.seed)]
-    sig = calibration.apply(ensemble_sigma(served, members))
+    # meme plancher que la calibration (RatioHistogram.add) : un noeud ou tous les membres
+    # coincident n'a pas un intervalle de largeur nulle
+    raw = ensemble_sigma(served, members)
+    sig = calibration.apply({c: np.maximum(s, np.float32(rcfg.sigma_floor_m_s))
+                             for c, s in raw.items()})
     cov = coverage_index(geom, sensor, rcfg.coverage_length_m, rcfg.coverage_height_m,
                          rcfg.coverage_density_ref)
     for c in sig:
@@ -364,8 +368,11 @@ class DSO6Accumulator:
     """Couverture de l'intervalle a 80 % et Spearman(|erreur|, sigma), par niveau et global.
 
     La correlation se calcule sur un echantillon tire a graine fixe (au plus `cap` couples
-    par niveau et composante, reservoir) : sur 849 184 noeuds x 120 instants, garder tous les
-    couples couterait des Go. La couverture, elle, est exacte (comptage complet).
+    par niveau et composante) : sur 849 184 noeuds x 120 instants, garder tous les couples
+    couterait des Go. Echantillonnage « bottom-k » : chaque couple recoit une cle uniforme et
+    on garde les `cap` plus petites. Tous les couples vus ont la meme probabilite d'etre gardes,
+    quel que soit leur instant (un re-tirage parmi anciens + nouveaux, lui, surponderait les
+    derniers instants). La couverture, elle, est exacte (comptage complet).
     """
 
     def __init__(self, nz: int, cap: int = 20000, seed: int = 6) -> None:
@@ -374,6 +381,7 @@ class DSO6Accumulator:
         self.n = {c: np.zeros(nz, np.int64) for c in COMPOSANTES}
         self.inside = {c: np.zeros(nz, np.int64) for c in COMPOSANTES}
         self.pairs = {c: [None] * nz for c in COMPOSANTES}
+        self.keys = {c: [None] * nz for c in COMPOSANTES}
         self.seen = {c: np.zeros(nz, np.int64) for c in COMPOSANTES}
 
     def add(self, comp: str, k: int, err_abs: np.ndarray, sigma: np.ndarray) -> None:
@@ -382,14 +390,17 @@ class DSO6Accumulator:
         err_abs, sigma = err_abs[ok], sigma[ok]
         self.n[comp][k] += err_abs.size
         self.inside[comp][k] += int((err_abs <= Z80 * sigma).sum())
-        # reservoir : chaque couple vu a la meme probabilite d'etre garde
-        cur = self.pairs[comp][k]
+        # bottom-k : cle uniforme par couple, on garde les `cap` plus petites cles
         new = np.stack([err_abs, sigma], 1)
+        new_keys = self.rng.random(new.shape[0])
+        cur, cur_keys = self.pairs[comp][k], self.keys[comp][k]
         allp = new if cur is None else np.concatenate([cur, new])
+        allk = new_keys if cur_keys is None else np.concatenate([cur_keys, new_keys])
         self.seen[comp][k] += new.shape[0]
         if allp.shape[0] > self.cap:
-            allp = allp[self.rng.choice(allp.shape[0], self.cap, replace=False)]
-        self.pairs[comp][k] = allp
+            keep = np.argpartition(allk, self.cap - 1)[:self.cap]
+            allp, allk = allp[keep], allk[keep]
+        self.pairs[comp][k], self.keys[comp][k] = allp, allk
 
     @staticmethod
     def _spearman(p) -> float:

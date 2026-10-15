@@ -294,25 +294,36 @@ class Evaluator:
     def dso6(self, calibration: str | Path | None = None, n_instants: int | None = None,
              keep: float | None = None, out: str | Path | None = None) -> dict:
         """Verdict DSO6 sur le TEST : couverture de l'intervalle a 80 % et correlation
-        (Spearman) entre |erreur| et sigma calibre. La calibration vient de la validation."""
+        (Spearman) entre |erreur| et sigma calibre. La calibration vient de la validation.
+
+        N'ecrase jamais un verdict existant : le fichier par defaut porte la calibration, la
+        fraction de capteurs et le nombre d'instants, et l'existence est verifiee AVANT le
+        calcul."""
         src = calibration if calibration is not None else self.cfg.inference.reliability
         if src is None:
             raise ValueError("DSO6 : aucune calibration (--calibration ou "
                              "inference.reliability)")
         cal = Calibration.load(src)
+        rc = self.cfg.reliability
+        tag = cal.sha256[:8] if cal.sha256 else "non_calibre"
+        keep_eff = self.cfg.mask.keep_eval if keep is None else keep
+        path = Path(out) if out else self.out_dir / (
+            f"dso6_{tag}_keep{keep_eff:g}_n{n_instants if n_instants else 'tous'}.json")
+        if path.exists():
+            raise FileExistsError(f"{path} existe deja : un verdict DSO6 n'est jamais ecrase "
+                                  "(choisis un autre --out)")
         acc = DSO6Accumulator(self.geom.nz)
+        floor = np.float32(rc.sigma_floor_m_s)       # meme plancher que la calibration
         n = self._reliability_loop(
             "test", n_instants, keep,
-            lambda k, c, e, sg: acc.add(c, k, e, sg * np.float32(cal.factor(c, k))))
-        rc = self.cfg.reliability
+            lambda k, c, e, sg: acc.add(c, k, e, np.maximum(sg, floor)
+                                        * np.float32(cal.factor(c, k))))
         summary = {"produit_par": "pcfno3d", "modele": self.wf.checkpoint_path.name,
                    "jeu": "test", "instants_synoptiques": n,
-                   "capteurs_visibles": self.cfg.mask.keep_eval if keep is None else keep,
+                   "capteurs_visibles": keep_eff,
                    "tta": self.tta, "uncertainty": cal.uncertainty_method(rc.members),
                    "calibration_sha256": cal.sha256, "keep_membres": rc.keep,
                    "graine": rc.seed, **acc.summary(self.geom, rc.coverage_target)}
-        tag = cal.sha256[:8] if cal.sha256 else "non_calibre"
-        path = Path(out) if out else self.out_dir / f"dso6_{tag}.json"
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8")
         if self.verbose:
@@ -372,9 +383,11 @@ class Evaluator:
             "dso3_conforme": dso3_conforme(rough_mean, dso.roughness_range),
             "dso4_inference_s": timing["mean_s"],
             "dso4_conforme": bool(timing["conforme"]),
-            "dso4_fiabilite_incluse": self.wf.reliability is not None,
-            "dso4_inference_s_sans_fiabilite": timing["sans_fiabilite"]["mean_s"]
-            if "sans_fiabilite" in timing else None,
+            # fiabilite active : DSO4 la compte, et le temps sans elle est publie a cote ;
+            # desactivee, aucune cle en plus (test_summary.json identique a main)
+            **({"dso4_fiabilite_incluse": True,
+                "dso4_inference_s_sans_fiabilite": timing["sans_fiabilite"]["mean_s"]}
+               if "sans_fiabilite" in timing else {}),
             "dso5_rmse_25pct": rmse25,
             "dso5_conforme": bool(rmse25 <= dso.rmse_25pct),
             "mae_direction_deg": float(res_all["mae_dir_deg"].mean()),

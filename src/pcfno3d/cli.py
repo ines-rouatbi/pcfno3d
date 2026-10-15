@@ -140,7 +140,12 @@ def cmd_dso6(args) -> int:
 
     cfg = _load_cfg(args)
     ev = Evaluator(cfg, checkpoint=args.checkpoint, device=args.device, tta=args.tta)
-    summary = ev.dso6(calibration=args.calibration, n_instants=args.instants, keep=args.keep)
+    try:
+        summary = ev.dso6(calibration=args.calibration, n_instants=args.instants,
+                          keep=args.keep, out=args.out)
+    except FileExistsError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
     return 0 if summary["dso6_conforme"] else 3
 
 
@@ -591,6 +596,8 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--checkpoint"), s.add_argument("--device")
     s.add_argument("--tta", type=int, help="passe servie : moyenne de N passes")
     s.add_argument("--calibration", help="JSON de calibration (defaut : inference.reliability)")
+    s.add_argument("--out", help="JSON du verdict (defaut : eval_pcfno3d/<modele>/dso6_<sha8>_"
+                                 "keep<k>_n<instants>.json) ; jamais ecrase")
     s.add_argument("--instants", type=int, help="nombre d'instants (defaut : tous)")
     s.add_argument("--keep", type=float, help="capteurs visibles (defaut : mask.keep_eval)")
     s.set_defaults(func=cmd_dso6)

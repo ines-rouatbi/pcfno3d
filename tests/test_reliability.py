@@ -175,6 +175,26 @@ def test_calibration_atteint_80_pourcent_sur_bruit_connu(geom):
     assert acc85.summary(geom)["dso6_conforme"]
 
 
+def test_echantillon_spearman_uniforme_sur_les_instants():
+    """L'echantillon du Spearman (au plus `cap` couples) represente TOUS les instants a
+    parts egales : un re-tirage parmi anciens + nouveaux ne gardait que les derniers."""
+    geom1 = SimpleNamespace(nz=1)
+    acc = DSO6Accumulator(geom1.nz, cap=2000, seed=0)
+    for t in range(50):                          # 50 instants de 7000 couples
+        err = np.full(7000, float(t))            # le numero d'instant, relu dans l'echantillon
+        acc.add("u", 0, err, np.ones(7000))
+    t = acc.pairs["u"][0][:, 0]
+    assert t.size == 2000 and acc.seen["u"][0] == 350000
+    parts = np.bincount(t.astype(int), minlength=50) / t.size
+    assert parts[:25].sum() == pytest.approx(0.5, abs=0.05)   # premiers instants presents
+    assert parts.max() < 0.05                                  # aucun instant ne domine
+    # deterministe a graine fixe
+    acc2 = DSO6Accumulator(1, cap=2000, seed=0)
+    for tt in range(50):
+        acc2.add("u", 0, np.full(7000, float(tt)), np.ones(7000))
+    np.testing.assert_array_equal(acc.pairs["u"][0], acc2.pairs["u"][0])
+
+
 def test_sigma_non_calibre_et_sous_dispersion_detectee(geom):
     """k = 1 (non calibre) sur un bruit 2x plus fort que sigma : couverture bien < 80 %,
     DSO6 non conforme — le verdict ne se contente pas de la forme de l'intervalle."""
@@ -317,12 +337,24 @@ def test_desactivee_rien_ne_change(trained, instant, tmp_path):
     from pcfno3d.inference import WindFieldModel
     assert trained.inference.reliability is None
     wf = WindFieldModel(trained, device="cpu", verbose=False)
-    assert wf.reliability is None and wf.meta()["fiabilite"] is None
+    assert wf.reliability is None and "fiabilite" not in wf.meta()
     vol = wf.predict_stem(instant)
     assert vol.reliability is None and vol.reliability_s == 0.0
-    # meme sortie que la passe explicitement sans fiabilite, bit a bit
-    ref = wf.predict_stem(instant)
-    for a, b in ((vol.u, ref.u), (vol.v, ref.v), (vol.w, ref.w)):
+    # meme sortie que le modele seul (passe directe, sans le code de M2), bit a bit
+    import torch
+
+    from pcfno3d.dataset import assemble_input
+    from pcfno3d.features import time_geo_features
+    S, hour, doy, _ = wf.surface_from_cache(instant)
+    sensor = S[7] > 0.5
+    tfeat = time_geo_features(S, sensor, hour, doy, wf.geom)
+    with torch.no_grad():
+        pred = wf.model(assemble_input(torch.from_numpy(S[None, :7]),
+                                       torch.from_numpy(sensor[None].astype(np.float32)),
+                                       torch.from_numpy(tfeat[None]), wf.geom, wf.norm))
+    ref = [np.where(wf.geom.valid, a[0].numpy(), np.nan)
+           for a in wf.norm.denorm(pred.float())]
+    for a, b in zip((vol.u, vol.v, vol.w), ref):
         np.testing.assert_array_equal(a, b)
     files = set(np.load(vol.save_npz(tmp_path / "v.npz")).files)
     assert files == {"u", "v", "w", "speed", "direction", "z_levels", "x_m", "y_m",
@@ -355,6 +387,10 @@ def test_activee_deterministe_et_valeur_servie_inchangee(wf_fiable, instant, tmp
         x = getattr(rel, name)
         assert np.isnan(x[~g.valid]).all() and (x[g.valid] >= 0).all()
     assert (rel.sigma_u[g.valid] > 0).any()
+    # plancher de sigma, le meme qu'a la calibration (k = 1 en non_calibre)
+    floor = np.float32(ReliabilityCfg().sigma_floor_m_s)
+    for name in ("sigma_u", "sigma_v", "sigma_w", "sigma_speed"):
+        assert (getattr(rel, name)[g.valid] >= floor).all()
     # D7 : les capteurs simules comptent ; meme regle que node_status
     sensor = S[7] > 0.5
     np.testing.assert_array_equal(rel.status, node_status(g, sensor, 15.0))
@@ -439,6 +475,9 @@ def test_calibration_puis_dso6_sur_le_mini_jeu(trained, tmp_path):
         with pytest.raises(FileExistsError):
             ev.calibrate_reliability(out=tmp_path / "cal.json", n_instants=1)
         s = ev.dso6(calibration=tmp_path / "cal.json", n_instants=2)
+        # un verdict DSO6 n'est jamais ecrase (verifie AVANT le calcul)
+        with pytest.raises(FileExistsError):
+            ev.dso6(calibration=tmp_path / "cal.json", n_instants=2)
         assert s["jeu"] == "test" and s["uncertainty"]["calibrated"] is True
         assert 0 <= s["coverage_80"] <= 1
         assert {"dso6_conforme", "dso6_couverture_ok", "dso6_correlation_ok",

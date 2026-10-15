@@ -463,13 +463,14 @@ def reconstruct(req: ReconstructRequest,
         "capteurs_utilises": volume.n_sensors,
         "inference_s": round(volume.inference_s, 4),
         "dso4_conforme": volume.inference_s < wf.cfg.dso.time_s,
-        # part de l'ensemble de fiabilite (lot M2) dans inference_s ; None si desactivee
-        "fiabilite_s": round(volume.reliability_s, 4) if volume.reliability else None,
         "grille": {"nz": volume.u.shape[0], "ny": volume.u.shape[1], "nx": volume.u.shape[2]},
         "noeuds_3d": int(valid.sum()),
         "vitesse_max_m_s": round(float(volume.speed[valid].max()), 3),
         "vitesse_moyenne_m_s": round(float(volume.speed[valid].mean()), 3),
     }
+    if volume.reliability is not None:
+        # part de l'ensemble de fiabilite (lot M2) dans inference_s ; cle absente sinon
+        out["fiabilite_s"] = round(volume.reliability_s, 4)
     if req.export:
         name = f"recon_{req.stem or 'latest'}"
         out["export"] = str(export_web(volume, wf.cfg.paths.web_root / name,
