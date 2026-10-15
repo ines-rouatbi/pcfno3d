@@ -257,9 +257,9 @@ class Evaluator:
         return len(ds)
 
     def reliability_dir(self) -> Path:
-        suffix = f"_tta{self.tta}" if self.tta > 1 else ""
-        return (self.cfg.paths.run_dir / RELIABILITY_NAMESPACE
-                / f"{self.wf.checkpoint_path.stem}{suffix}")
+        """Meme nom que le dossier d'evaluation (modele, tta, correction...) : une
+        calibration ne vaut que pour la sortie exacte sur laquelle elle a ete mesuree."""
+        return self.cfg.paths.run_dir / RELIABILITY_NAMESPACE / self.out_dir.name
 
     def calibrate_reliability(self, out: str | Path | None = None,
                               n_instants: int | None = None,

@@ -399,3 +399,38 @@ def test_script_colab_ecrit_dans_un_dossier_neuf(trained, monkeypatch):
     assert dso4["avec_fiabilite"]["mean_s"] > 0 and dso4["sans_fiabilite"]["mean_s"] > 0
     for name in ("calibration_validation.json", "dso6.json"):
         assert (sessions[-1] / name).exists()
+
+
+def test_avec_correction_m1_chaque_passe_est_corrigee(trained, instant, tmp_path):
+    """inference.correction ET inference.reliability : la passe servie et chaque passe de
+    l'ensemble recoivent le meme post-traitement (sinon sigma mesurerait la correction)."""
+    pytest.importorskip("pcfno3d.correction")
+    from pcfno3d.correction import FEATURES_10H
+    from pcfno3d.inference import WindFieldModel
+    geom_ = WindFieldModel(trained, device="cpu", verbose=False).geom
+    rng = np.random.default_rng(5)
+    niveaux = {f"{int(geom_.z_levels[k])}_{c}": {
+        "utilise": True, "mu": rng.normal(0, 1, 30).tolist(),
+        "sd": (np.abs(rng.normal(1, 0.3, 30)) + 0.1).tolist(),
+        "coef": rng.normal(0, 0.2, 31).tolist()} for k in geom_.eval_levels() for c in "uv"}
+    path = tmp_path / "couche_limite.json"
+    path.write_text(json.dumps({"variante_rho_sl": "1.2", "ridge_alpha": 0.01,
+                                "features": list(FEATURES_10H), "niveaux": niveaux}),
+                    encoding="utf-8")
+    trained.inference.correction, trained.inference.reliability = path, "non_calibre"
+    trained.reliability.members = 3
+    try:
+        wf = WindFieldModel(trained, device="cpu", verbose=False)
+        S, hour, doy, stamp = wf.surface_from_cache(instant)
+        vol = wf.predict(S, hour, doy, timestamp=stamp)
+        sans = wf.predict(S, hour, doy, timestamp=stamp, reliability=False)
+        assert vol.correction is not None and vol.reliability is not None
+        np.testing.assert_array_equal(vol.u, sans.u)            # servie : inchangee
+        # une passe de l'ensemble avec TOUS les capteurs = la passe servie, corrigee
+        u, v, _ = wf._member(S, S[7] > 0.5, hour, doy)
+        ok = wf.geom.valid
+        np.testing.assert_allclose(u[ok], vol.u[ok], atol=1e-5)
+        np.testing.assert_allclose(v[ok], vol.v[ok], atol=1e-5)
+    finally:
+        trained.inference.correction = trained.inference.reliability = None
+        trained.reliability.members = ReliabilityCfg().members

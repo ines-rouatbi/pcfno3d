@@ -131,6 +131,10 @@ La couverture est un comptage exact. Spearman est calculé sur un échantillon �
    densité, ce qui est à vérifier sur GPU (`--keep 1.0`).
 4. **Correction M1.** Quand `inference.correction` est active, chaque passe de l'ensemble
    doit recevoir la même correction que la passe servie (même post-traitement dans
-   `WindFieldModel._member`).
+   `WindFieldModel._member`). La fusion avec M1 a été essayée localement (branche
+   `essai/m2-plus-m1`, non poussée) : 266 tests passent, dont
+   `test_avec_correction_m1_chaque_passe_est_corrigee`, ignoré tant que M1 n'est pas sur
+   `main` et qui échoue si `_member` oublie la correction. La calibration est rangée dans
+   le même dossier que l'évaluation (`..._corr<sha8>`) : elle ne vaut que pour cette sortie.
 5. **Coût.** N passes supplémentaires par instant. DSO4 (< 1 s) sur v7 avec 8 membres est
    à mesurer sur GPU ; on peut réduire `reliability.members` si besoin.
