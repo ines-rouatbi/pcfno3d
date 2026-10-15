@@ -1,0 +1,462 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://atom.zelqane.com/contract/v1/snapshot.schema.json",
+  "title": "GET /v1/snapshots/{id} — résumé d'un instantané",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "snapshot_id",
+    "valid_time",
+    "versions",
+    "network",
+    "kpi",
+    "physics",
+    "stations_summary",
+    "scenario",
+    "points",
+    "assets"
+  ],
+  "properties": {
+    "snapshot_id": {
+      "$ref": "common.schema.json#/$defs/snapshot_id"
+    },
+    "valid_time": {
+      "$ref": "common.schema.json#/$defs/iso_utc"
+    },
+    "versions": {
+      "$ref": "common.schema.json#/$defs/versions"
+    },
+    "network": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "sensors_total",
+        "sensors_visible",
+        "unit"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "treillis_synthetique",
+            "stations_aneo"
+          ]
+        },
+        "sensors_total": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sensors_visible": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Capteurs dont une mesure entre dans cet instantané (ni muets ni exclus)"
+        },
+        "unit": {
+          "const": "capteur"
+        }
+      }
+    },
+    "kpi": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "share_high_reliability",
+        "reconstruction_ms",
+        "open_alerts",
+        "hub_wind_mean_ms",
+        "hub_wind_max_ms",
+        "hub_height_agl_m"
+      ],
+      "properties": {
+        "share_high_reliability": {
+          "$ref": "common.schema.json#/$defs/unit_interval"
+        },
+        "reconstruction_ms": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "open_alerts": {
+          "anyOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "information",
+                "avertissement",
+                "important",
+                "critique"
+              ],
+              "properties": {
+                "information": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "avertissement": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "important": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "critique": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "hub_wind_mean_ms": {
+          "$ref": "common.schema.json#/$defs/speed_ms"
+        },
+        "hub_wind_max_ms": {
+          "$ref": "common.schema.json#/$defs/speed_ms"
+        },
+        "hub_height_agl_m": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      },
+      "description": "null = non disponible (lot pas encore livré) ; jamais 0 pour une valeur inconnue. hub_wind_* : statistique sur le DOMAINE à hub_height_agl_m au-dessus du sol (interpolation linéaire de speed par colonne), pas sur les éoliennes (D10)"
+    },
+    "physics": {
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mass_residual_rms",
+            "mass_residual_p95",
+            "mass_residual_ok",
+            "ground_condition_rms_ms",
+            "rho_source"
+          ],
+          "properties": {
+            "mass_residual_rms": {
+              "type": "number",
+              "minimum": 0,
+              "description": "kg·m⁻³·s⁻¹"
+            },
+            "mass_residual_p95": {
+              "type": "number",
+              "minimum": 0,
+              "description": "kg·m⁻³·s⁻¹"
+            },
+            "mass_residual_ok": {
+              "type": "boolean",
+              "description": "Cet instant sous le seuil DSO2 (1e-4) ; le DSO2 lui-même est un agrégat sur 120 instants"
+            },
+            "ground_condition_rms_ms": {
+              "type": "number",
+              "minimum": 0,
+              "description": "m/s : RMS de w − u·∇z_s au premier nœud valide, relief lissé à 300 m"
+            },
+            "rho_source": {
+              "enum": [
+                "atmosphere_standard",
+                "extrapolation_surface",
+                "verite_synthetique"
+              ]
+            }
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "stations_summary": {
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "active",
+            "suspecte",
+            "muette",
+            "derive",
+            "exclue"
+          ],
+          "properties": {
+            "active": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "suspecte": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "muette": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "derive": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "exclue": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "scenario": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "enum": [
+                "part_stations",
+                "panne_zone",
+                "station_retiree"
+              ]
+            },
+            "keep_fraction": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "zone": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "x_min_m",
+                "x_max_m",
+                "y_min_m",
+                "y_max_m"
+              ],
+              "properties": {
+                "x_min_m": {
+                  "type": "number"
+                },
+                "x_max_m": {
+                  "type": "number"
+                },
+                "y_min_m": {
+                  "type": "number"
+                },
+                "y_max_m": {
+                  "type": "number"
+                }
+              }
+            },
+            "stations": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "type": "string"
+              }
+            },
+            "baseline_snapshot_id": {
+              "$ref": "common.schema.json#/$defs/snapshot_id"
+            }
+          }
+        }
+      ],
+      "description": "null = reconstruction nominale ; sinon simulation (BF45, BF46)"
+    },
+    "points": {
+      "type": "array",
+      "description": "Points déclarés (éoliennes, sites) : profils et roses des vents précalculés, facultatifs",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "kind",
+          "name",
+          "x_m",
+          "y_m",
+          "profile",
+          "windrose"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]+$"
+          },
+          "kind": {
+            "enum": [
+              "eolienne",
+              "site"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "x_m": {
+            "type": "number"
+          },
+          "y_m": {
+            "type": "number"
+          },
+          "profile": {
+            "type": "boolean",
+            "description": "true si /v1/profiles/{id}/{point_id} existe"
+          },
+          "windrose": {
+            "type": "boolean",
+            "description": "true si /v1/windrose/{point_id} existe pour cet instantané"
+          }
+        }
+      }
+    },
+    "assets": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "meta",
+        "terrain",
+        "fields_template",
+        "column_template",
+        "profile_template",
+        "windrose_template",
+        "quality",
+        "alerts",
+        "stations",
+        "wind_farm",
+        "data_quality",
+        "export_netcdf",
+        "export_csv"
+      ],
+      "properties": {
+        "meta": {
+          "type": "string",
+          "pattern": "^/v1/meta/[0-9a-f]{8}$"
+        },
+        "terrain": {
+          "type": "string",
+          "pattern": "^/v1/terrain/[0-9a-f]{8}$"
+        },
+        "fields_template": {
+          "type": "string",
+          "description": "/v1/fields/{id}/{level}/{var} ; {level} = indice 0..nz-1"
+        },
+        "column_template": {
+          "type": "string",
+          "description": "/v1/column/{id}?i={i}&j={j}"
+        },
+        "profile_template": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "\\{point_id\\}"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "windrose_template": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "\\{site_id\\}"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "quality": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^/v1/"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "alerts": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^/v1/"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "stations": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^/v1/"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "wind_farm": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^/v1/"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "data_quality": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^/v1/"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "export_netcdf": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^/"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "export_csv": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^/"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "description": "Liens relatifs ; null = ressource absente de cet instantané"
+    }
+  }
+}

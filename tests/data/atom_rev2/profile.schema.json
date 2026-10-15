@@ -1,0 +1,155 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://atom.zelqane.com/contract/v1/profile.schema.json",
+  "title": "GET /v1/profiles/{id}/{point_id} — profil vertical précalculé en un point déclaré",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "point_id",
+    "i",
+    "j",
+    "x_m",
+    "y_m",
+    "z_terrain_m",
+    "nearest_sensor",
+    "levels",
+    "uncertainty"
+  ],
+  "properties": {
+    "point_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]+$"
+    },
+    "i": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "j": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "x_m": {
+      "type": "number"
+    },
+    "y_m": {
+      "type": "number"
+    },
+    "z_terrain_m": {
+      "type": "number",
+      "description": "terrain[j·nx + i] du nœud utilisé (x_m, y_m = position de ce nœud, D5)"
+    },
+    "nearest_sensor": {
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "distance_m"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "description": "stations_aneo : identifiant ANEO ; treillis_synthetique : c<i>_<j> (indices du treillis de capteurs à 50 m)"
+            },
+            "distance_m": {
+              "type": "number",
+              "minimum": 0
+            }
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "levels": {
+      "type": "array",
+      "minItems": 1,
+      "description": "nz niveaux exactement (contrôlé par validate.mjs, m3)",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "z_asl_m",
+          "z_agl_m",
+          "below_terrain",
+          "u",
+          "v",
+          "w",
+          "speed",
+          "sigma_speed",
+          "dir_from_deg",
+          "speed_interval",
+          "status",
+          "coverage",
+          "reliability",
+          "reliability_class"
+        ],
+        "properties": {
+          "z_asl_m": {
+            "type": "number"
+          },
+          "z_agl_m": {
+            "type": "number",
+            "description": "z_asl − z_terrain_m"
+          },
+          "below_terrain": {
+            "type": "boolean",
+            "description": "z_agl_m < grid.min_agl_m : toutes les valeurs sont null"
+          },
+          "u": {
+            "$ref": "common.schema.json#/$defs/component_ms"
+          },
+          "v": {
+            "$ref": "common.schema.json#/$defs/component_ms"
+          },
+          "w": {
+            "$ref": "common.schema.json#/$defs/component_ms"
+          },
+          "speed": {
+            "$ref": "common.schema.json#/$defs/speed_ms"
+          },
+          "sigma_speed": {
+            "$ref": "common.schema.json#/$defs/sigma_ms"
+          },
+          "dir_from_deg": {
+            "$ref": "common.schema.json#/$defs/dir_from_deg"
+          },
+          "speed_interval": {
+            "$ref": "common.schema.json#/$defs/interval"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "$ref": "common.schema.json#/$defs/status_node"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "coverage": {
+            "$ref": "common.schema.json#/$defs/unit_interval"
+          },
+          "reliability": {
+            "$ref": "common.schema.json#/$defs/unit_interval"
+          },
+          "reliability_class": {
+            "anyOf": [
+              {
+                "$ref": "common.schema.json#/$defs/reliability_class"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "uncertainty": {
+      "$ref": "common.schema.json#/$defs/uncertainty_method"
+    }
+  }
+}

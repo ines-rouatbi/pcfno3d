@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://atom.zelqane.com/contract/v1/stations.schema.json",
+  "title": "GET /v1/stations/{id} — capteurs (liste complète en stations_aneo, capteurs signalés seulement en treillis_synthetique)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "items"
+  ],
+  "properties": {
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "x_m",
+          "y_m",
+          "height_agl_m",
+          "state",
+          "last_seen",
+          "speed",
+          "dir_from_deg",
+          "bias_ms",
+          "quality_score"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "stations_aneo : identifiant ANEO ; treillis_synthetique : c<i>_<j> (indices du treillis de capteurs à 50 m)"
+          },
+          "x_m": {
+            "type": "number"
+          },
+          "y_m": {
+            "type": "number"
+          },
+          "height_agl_m": {
+            "type": "number"
+          },
+          "state": {
+            "$ref": "common.schema.json#/$defs/station_state"
+          },
+          "last_seen": {
+            "anyOf": [
+              {
+                "$ref": "common.schema.json#/$defs/iso_utc"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "speed": {
+            "$ref": "common.schema.json#/$defs/speed_ms"
+          },
+          "dir_from_deg": {
+            "$ref": "common.schema.json#/$defs/dir_from_deg"
+          },
+          "bias_ms": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "écart persistant mesure − reconstruction sans le capteur"
+          },
+          "quality_score": {
+            "$ref": "common.schema.json#/$defs/unit_interval"
+          }
+        }
+      }
+    }
+  }
+}

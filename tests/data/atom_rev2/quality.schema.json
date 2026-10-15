@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://atom.zelqane.com/contract/v1/quality.schema.json",
+  "title": "GET /v1/quality/{id} — fiabilité de la reconstruction et calibration (M2)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "uncertainty",
+    "by_level",
+    "calibration"
+  ],
+  "properties": {
+    "uncertainty": {
+      "$ref": "common.schema.json#/$defs/uncertainty_method"
+    },
+    "by_level": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "z_asl_m",
+          "valid_nodes",
+          "share_elevee",
+          "share_moyenne",
+          "share_faible",
+          "sigma_speed_median",
+          "coverage_median"
+        ],
+        "properties": {
+          "z_asl_m": {
+            "type": "number"
+          },
+          "valid_nodes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "share_elevee": {
+            "$ref": "common.schema.json#/$defs/unit_interval"
+          },
+          "share_moyenne": {
+            "$ref": "common.schema.json#/$defs/unit_interval"
+          },
+          "share_faible": {
+            "$ref": "common.schema.json#/$defs/unit_interval"
+          },
+          "sigma_speed_median": {
+            "$ref": "common.schema.json#/$defs/sigma_ms"
+          },
+          "coverage_median": {
+            "$ref": "common.schema.json#/$defs/unit_interval"
+          }
+        }
+      }
+    },
+    "calibration": {
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "evaluated_on",
+            "coverage_80",
+            "corr_error_sigma",
+            "dso6_pass"
+          ],
+          "properties": {
+            "evaluated_on": {
+              "type": "string",
+              "description": "ex. 120 instants de test, 50 % des capteurs"
+            },
+            "coverage_80": {
+              "$ref": "common.schema.json#/$defs/unit_interval"
+            },
+            "corr_error_sigma": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "dso6_pass": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  }
+}

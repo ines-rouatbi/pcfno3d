@@ -1,0 +1,17 @@
+{
+  "name": "atom-contract-v1",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Contrat v1 ATOM-AI : schémas, instantanés de test et validateur (confidentiel Tukhnanutha)",
+  "type": "module",
+  "scripts": {
+    "schemas": "node tools/gen-schemas.cjs",
+    "fixtures": "node tools/make-fixtures.mjs",
+    "validate": "node tools/validate.mjs",
+    "test": "node tools/validate.mjs && node tools/test-negative.mjs"
+  },
+  "devDependencies": {
+    "ajv": "8.17.1",
+    "ajv-formats": "3.0.1"
+  }
+}

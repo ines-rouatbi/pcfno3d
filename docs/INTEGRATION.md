@@ -288,6 +288,15 @@ const at = (k, j, i) => {
 };
 ```
 
+## Instantanés du contrat ATOM (tableau de bord)
+
+Le tableau de bord ne lit pas cette API : il lit des **instantanés publiés** au format du
+contrat ATOM v1 rév. 2 (un fichier Float32 / uint8 par variable, tous niveaux, **NaN /
+255** sous `min_agl_m` — pas −9999 —, JSON `null` pour l'inconnu), déposés par
+`pcfno3d publish` ou `scripts/m6_rejeu_colab.py` puis servis par le Worker
+(`/v1/latest`, `/v1/times`, `/v1/fields/{id}/{level}/{var}`...). Format, protocole,
+atomicité et exports NetCDF / CSV des nœuds virtuels : `docs/PUBLICATION.md`.
+
 ## Conventions à ne pas se tromper
 
 - `u` positif vers l'**est**, `v` vers le **nord**, `w` vers le **haut**, en m/s.
