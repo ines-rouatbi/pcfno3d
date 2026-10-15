@@ -62,6 +62,7 @@ python -m pcfno3d validate f.csv --quarantine quarantine/   # data contract, exi
 python -m pcfno3d train                   # resumes automatically from artifacts/.../last.pt
 python -m pcfno3d evaluate                # test metrics + DSO1-DSO5 verdict
 python -m pcfno3d reconstruct --stem 004_120000 --altitude 120 --web
+python -m pcfno3d alertes --split test --limit 8   # M4 alerts, chronological, JSONL journal
 
 pcfno3d apikey create app-web --scope read   # secret shown once; only its hash is stored
 pcfno3d serve --port 8000                    # web app /app/ · API /api/docs · MCP /mcp
@@ -133,8 +134,25 @@ notebook's globals.
   geometry, stats and weights once; `Volume` exposes `at_altitude`, `at_point`, `to_nodes_frame`,
   `save_npz`. The checkpoint's stored architecture overrides the YAML, so an edited config can't
   silently break loading.
+- **`alerts.py` / `an1.py`** (lot M4, criterion AN1) — one alerts document per instant in the
+  ATOM rev. 2 format (`alerts.schema.json`: id = sha8 of `kind|target`, 4 levels, cause and
+  recommendation), aggregating M3 (contract report), M2 (coverage), M4 (sensor drift by
+  grouped leave-out: `derive_cote`² extra passes, input drift, mass residual / D11 `physics`)
+  and M5 (`alertes_externes`, fed by `windfarm.farm_alerts` in `evaluer_modele` when a
+  farm is declared; `/api/wind-farm` then shows the journal items). Lifecycle in a JSONL journal
+  (`run_dir/logs/alertes.jsonl`, chronological instants only). **Opt-in**
+  (`alerts.enabled: false`): never changes the served value; `/api/alerts` answers `409`
+  when disabled. `an1.py` simulates drifts/outages; thresholds are tuned on **validation**
+  only (`charger_seuils` refuses test) by `scripts/m4_an1_colab.py`. See `docs/ALERTES.md`.
 - **`reconstruct.py` / `export.py`** — npz + ANEO-shaped CSV + figures; `export_web` writes raw
   Float32 binaries plus `manifest.json` for `web/index.html`.
+- **`windfarm.py`** (lot M5, `docs/EOLIEN.md`) — opt-in via `wind_farm.turbines` (declaration
+  YAML, example in `configs/eolien/parc_demo.yaml`). Pure post-processing of a `Volume`: hub
+  wind interpolated in height **above ground** (levels are ASL: h = z − terrain), REWS,
+  shear α, veer, IEC density-normalised power, farm p10/p90 over the M2 ensemble members
+  (captured at the turbine columns only, `Volume.farm_context`), alerts, Weibull/AEP/wind
+  rose, and EOL1 (`scripts/m5_eol1_colab.py`). Exposed as `GET /api/wind-farm`, MCP
+  `production_eolienne`, CLI `wind-farm` / `windrose`.
 
 ## The service layer (`service/`, `webapp/`)
 
@@ -158,7 +176,7 @@ Thin by design: physics and numerics belong in `pcfno3d`, never here.
   429 + `Retry-After`) and the JSONL access log (`journal.py`, never a secret) for `/api`
   and `/mcp`; route `Depends` only check scope. `/api/health` is public — the web app calls
   it before asking for a key.
-- **`mcp_server.py`** — one `MCPServer` with 8 tools over the same `WindFieldModel`.
+- **`mcp_server.py`** — one `MCPServer` with 10 tools over the same `WindFieldModel`.
   `set_model()` lets the HTTP app share its already-loaded model instead of loading a second
   copy. Tools in `ADMIN_TOOLS` write to disk and need the `admin` scope.
 - **`webapp/`** — plain HTML/CSS/JS, no build step and no CDN. The key lives in

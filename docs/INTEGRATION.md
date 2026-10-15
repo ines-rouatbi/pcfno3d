@@ -198,7 +198,9 @@ Pour un client local en *stdio* (sans HTTP ni clé) : `pcfno3d mcp`.
 | `wind_field_at_altitude` | carte décimée d'une variable à une altitude |
 | `instant_summary` | vitesses par niveau, secteur dominant, temps d'inférence |
 | `dso_report` | dernier verdict DSO1–DSO5 archivé |
+| `production_eolienne` | parc éolien déclaré (lot M5) : vent au moyeu, REWS, puissance, alertes ; erreur sans parc déclaré — voir `docs/EOLIEN.md` |
 | `export_instant` | écrit un volume sur le disque du serveur — **portée `admin`** |
+| `alertes_actives` | alertes **ouvertes** d'un instant (lot M4), par niveau, avec cause et recommandation, et le bloc `physique` ; `disponible: false` si `alerts.enabled` est faux (`docs/ALERTES.md`) |
 
 Appel direct, sans SDK :
 
@@ -224,11 +226,13 @@ Les résultats arrivent dans `result.content[0].text`, en JSON à parser.
 | `GET /api/meta` | grille, niveaux ASL, conventions, domaine en mètres, `georef` |
 | `GET /api/instants?split=test&limit=100` | instants disponibles |
 | `POST /api/reconstruct` | `{stem, keep, export, stride}` → résumé de l'instant |
-| `POST /api/reconstruct/upload` | CSV de mesures de surface → reconstruction ; le CSV passe d'abord le contrat de données ANEO (`docs/CONTRAT_ANEO.md`, profil upload : stations absentes, en `mask_i_obs = 0` ou sans u/v/T = panne connue ; stations fausses masquées avant l'inférence) : rejet → `422` avec le rapport sous `qualite` ; conforme ou quarantaine → reconstruction + `statut_qualite`, `avertissements`, `qualite` |
+| `POST /api/reconstruct/upload` | CSV de mesures de surface → reconstruction ; le CSV passe d'abord le contrat de données ANEO (`docs/CONTRAT_ANEO.md`, profil upload : stations absentes, en `mask_i_obs = 0` ou sans u/v/T = panne connue ; stations fausses masquées avant l'inférence) : rejet → `422` avec le rapport sous `qualite` ; conforme ou quarantaine → reconstruction + `statut_qualite`, `avertissements`, `qualite` ; avec les alertes activées, aussi `alertes` et `physique` |
 | `GET /api/field?z=120&variable=speed&stride=4` | carte à une altitude |
 | `GET /api/point?x=5000&y=5000&z=120` | vent en un point |
 | `GET /api/profile?x=5000&y=5000` | profil vertical |
 | `GET /api/dso` | dernier verdict DSO archivé |
+| `GET /api/alerts?stem=…` | alertes de l'instant (lot M4), au format `alerts.schema.json` du contrat ATOM rév. 2 : `{"items": [...]}` ; sans `stem`, les dernières calculées ; `409` si `alerts.enabled` est faux (`docs/ALERTES.md`) |
+| `GET /api/wind-farm?stem=…` | parc éolien déclaré (lot M5, opt-in `wind_farm.turbines`) : `wind_farm` (wind-farm.schema.json), `alerts` (items du journal M4 si les alertes sont activées, alertes brutes avec `raised_at` = l'instant sinon), `kpi` hub_wind_* ; `404` sans parc — voir `docs/EOLIEN.md` |
 | `GET /api/export/{stem}/manifest.json` | manifeste d'un export |
 | `GET /api/export/{stem}/{u,v,w,speed,terrain}.bin` | binaires Float32 |
 | `POST /api/reconstruct/stations` | mesures **réelles** de stations (JSON, lat/lon) → volume 3D, mémorisé sous `stem` = `live_…` ; exige un domaine géoréférencé (`409` sinon), voir `docs/REAL_DATA.md` |

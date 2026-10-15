@@ -27,6 +27,7 @@ import numpy as np
 
 from .inference import Volume
 from .reliability import CLASSES, NODATA_U8
+from .windfarm import round_direction
 
 NODATA = -9999.0
 
@@ -162,8 +163,9 @@ def export_levels_csv(volume: Volume, out_dir: str | Path,
             "x_m": x[ii], "y_m": y[jj], "z_asl_m": z,
             "wind_u_m_s": np.round(u[jj, ii], 3), "wind_v_m_s": np.round(v[jj, ii], 3),
             "wind_speed_m_s": np.round(speed[jj, ii], 3),
-            "wind_direction_deg": np.round((270.0 - np.degrees(
-                np.arctan2(v[jj, ii], u[jj, ii]))) % 360.0, 1),
+            # arrondi AVANT le modulo (regle m4) : jamais 360,0
+            "wind_direction_deg": round_direction(270.0 - np.degrees(
+                np.arctan2(v[jj, ii], u[jj, ii])), 1),
         })
         path = out_dir / f"carte_{int(z):04d}m.csv"
         df.to_csv(path, index=False)

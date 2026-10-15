@@ -1,0 +1,140 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://atom.zelqane.com/contract/v1/windrose.schema.json",
+  "title": "GET /v1/windrose/{site_id} — rose des vents et Weibull précalculées (M5, M6) pour un site ou une éolienne déclaré",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "site_id",
+    "x_m",
+    "y_m",
+    "hub_agl_m",
+    "period",
+    "n_valid",
+    "sector_width_deg",
+    "speed_bin_edges_ms",
+    "sectors",
+    "weibull"
+  ],
+  "properties": {
+    "site_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]+$"
+    },
+    "x_m": {
+      "type": "number"
+    },
+    "y_m": {
+      "type": "number"
+    },
+    "hub_agl_m": {
+      "type": "number"
+    },
+    "period": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "from",
+        "to"
+      ],
+      "properties": {
+        "from": {
+          "$ref": "common.schema.json#/$defs/iso_utc"
+        },
+        "to": {
+          "$ref": "common.schema.json#/$defs/iso_utc"
+        }
+      }
+    },
+    "n_valid": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Nombre d'instants valides. L'interface DOIT l'afficher et signaler < 100 comme statistiquement faible"
+    },
+    "sector_width_deg": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "maximum": 360,
+      "description": "360 / nombre de secteurs : secteurs de largeur égale, le premier centré sur 0"
+    },
+    "speed_bin_edges_ms": {
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "type": "number",
+        "minimum": 0
+      }
+    },
+    "sectors": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Somme des fréquences = 1 à 0,01 près (contrôle de validate.mjs)",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "dir_center_deg",
+          "frequency",
+          "speed_bins"
+        ],
+        "properties": {
+          "dir_center_deg": {
+            "type": "number",
+            "minimum": 0,
+            "exclusiveMaximum": 360,
+            "description": "Provenance (direction météo), = k · sector_width_deg"
+          },
+          "frequency": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "speed_bins": {
+            "type": "array",
+            "items": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            }
+          }
+        }
+      }
+    },
+    "weibull": {
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "k",
+            "c_ms",
+            "aep_mwh",
+            "capacity_factor"
+          ],
+          "properties": {
+            "k": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "c_ms": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "aep_mwh": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "capacity_factor": {
+              "$ref": "common.schema.json#/$defs/unit_interval"
+            }
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  }
+}

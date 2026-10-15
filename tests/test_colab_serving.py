@@ -181,7 +181,7 @@ def test_service_demarre_en_sous_processus_et_repond(cfg, index, norm, monkeypat
                      "Accept": "application/json, text/event-stream"})
         with urllib.request.urlopen(req, timeout=60) as r:
             tools = json.loads(r.read().decode("utf-8"))["result"]["tools"]
-        assert len(tools) == 8
+        assert len(tools) == 10           # + alertes_actives (M4), production_eolienne (M5)
     finally:
         stop(info)
     assert info["process"].poll() is not None
@@ -251,7 +251,7 @@ def test_service_derriere_tunnel_nomme_cle_par_empreinte(cfg, index, norm, monke
             return urllib.request.urlopen(req, timeout=60)
 
         with mcp(host) as r:                            # l'hote du tunnel est accepte
-            assert len(json.loads(r.read().decode("utf-8"))["result"]["tools"]) == 8
+            assert len(json.loads(r.read().decode("utf-8"))["result"]["tools"]) == 10
         with pytest.raises(urllib.error.HTTPError) as exc:
             mcp("autre.exemple.com")                    # un hote non declare est refuse
         assert exc.value.code == 421
