@@ -110,6 +110,9 @@ def export_web(volume: Volume, out_dir: str | Path, stride: int = 1,
         "inference_s": volume.inference_s,
         "capteurs_utilises": volume.n_sensors,
     }
+    if getattr(volume, "correction", None):
+        # seulement si active : desactivee, le manifeste reste celui de main
+        manifest["correction"] = volume.correction
     if volume.reliability is not None:
         manifest["fiabilite"] = _export_reliability(volume, out_dir, s)
     (out_dir / "manifest.json").write_text(json.dumps(manifest, indent=2, ensure_ascii=False),

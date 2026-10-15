@@ -241,11 +241,16 @@ class InferenceCfg:
           None = desactivee : sortie et temps d'inference inchanges. Sinon, le chemin du JSON
           de calibration ecrit par `pcfno3d calibrate-reliability` (sur la VALIDATION), ou
           "non_calibre" pour des sigma bruts (calibrated: false dans la sortie).
+    correction : chemin du JSON de correction post-modele du vent moyen par niveau (lot M1,
+          pcfno3d.correction ; format de couche_limite_v7.json ecrit par le BLOC 10h). None =
+          aucune correction : la sortie de v7 est alors identique bit a bit. Incompatible
+          avec tta > 1 (ValueError) : la correction n'a ete ajustee que sur une seule passe.
     """
 
     tta: int = 1
     tta_keep: float = 0.7
     reliability: Path | str | None = None
+    correction: Path | None = None
 
     def __post_init__(self) -> None:
         self.tta = int(self.tta)
@@ -254,6 +259,12 @@ class InferenceCfg:
         if not 0.0 < float(self.tta_keep) <= 1.0:
             raise ValueError("inference.tta_keep doit etre dans ]0, 1]")
         self.tta_keep = float(self.tta_keep)
+        if self.correction is not None:
+            self.correction = _resolve(self.correction)
+            if self.tta > 1:
+                # ajustee sur UNE passe : refusee sur un champ moyenne (lot M1)
+                from .correction import TTA_INCOMPATIBLE
+                raise ValueError(TTA_INCOMPATIBLE)
         if self.reliability is not None and str(self.reliability) != "non_calibre":
             self.reliability = _resolve(self.reliability)
 

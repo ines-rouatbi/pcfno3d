@@ -31,14 +31,16 @@ class Volume:
 
     def __init__(self, u: np.ndarray, v: np.ndarray, w: np.ndarray, geom: Geometry,
                  timestamp: str | None = None, n_sensors: int = 0,
-                 inference_s: float = 0.0, reliability: Reliability | None = None,
-                 reliability_s: float = 0.0) -> None:
+                 inference_s: float = 0.0, correction: dict | None = None,
+                 reliability: Reliability | None = None, reliability_s: float = 0.0) -> None:
         self.u, self.v, self.w = u, v, w
         self.geom = geom
         self.timestamp = timestamp
         self.n_sensors = n_sensors
         # temps total pour livrer ce volume (DSO4) : passe servie + ensemble de fiabilite
         self.inference_s = inference_s
+        # correction post-modele appliquee (fichier, sha256...), None si modele seul
+        self.correction = correction
         # fiabilite par noeud (lot M2), None si desactivee ; reliability_s : sa part du temps
         self.reliability = reliability
         self.reliability_s = reliability_s
@@ -152,6 +154,9 @@ class Volume:
             direction=self.direction.astype(np.float32), z_levels=g.z_levels,
             x_m=np.arange(g.nx) * g.dx, y_m=np.arange(g.ny) * g.dy,
             z_terrain=g.zt.astype(np.float32), timestamp=str(self.timestamp),
+            # cle presente SEULEMENT si une correction a ete appliquee : desactivee, le .npz
+            # garde exactement les cles de main
+            **({"correction": json.dumps(self.correction)} if self.correction else {}),
             **self._reliability_arrays())
         return path
 
@@ -257,6 +262,12 @@ class WindFieldModel:
         # l'application web lance 3-4 requetes en parallele a chaque instant. Sans verrou,
         # chacune lancerait sa propre passe et la machine saturerait sa memoire.
         self._lock = threading.Lock()
+        # correction post-modele du vent moyen par niveau (lot M1) : strictement opt-in
+        from .correction import check_top_level, load_correction, refuse_tta
+        self.correction = load_correction(cfg.inference.correction)
+        if self.correction is not None:
+            refuse_tta(cfg.inference.tta, self.correction)   # ajustee sur une seule passe
+            check_top_level(self.geom)                        # refus au chargement, pas en service
         # fiabilite par noeud (lot M2) : strictement opt-in, None = rien ne change
         src = cfg.inference.reliability
         self.reliability = Calibration.load(src) if src is not None else None
@@ -332,6 +343,9 @@ class WindFieldModel:
         geom = self.geom
         k = self.cfg.inference.tta if tta is None else int(tta)
         k_keep = self.cfg.inference.tta_keep if tta_keep is None else float(tta_keep)
+        if self.correction is not None:
+            from .correction import refuse_tta
+            refuse_tta(k, self.correction)
         rng = np.random.default_rng(seed)
         sensor = (S[7] > 0.5) & (rng.random(S[7].shape) < keep)
         tfeat = time_geo_features(S, sensor, hour, doy, geom)
@@ -351,6 +365,14 @@ class WindFieldModel:
             elapsed = time.perf_counter() - t0
             del pred
 
+        corr_info = None
+        if self.correction is not None:
+            # meme ordre que le BLOC 12 (etape 2b) : prediction du modele, puis recalage de la
+            # moyenne des niveaux ; le temps de la correction compte dans l'inference (DSO4)
+            t1 = time.perf_counter()
+            u, v, n_corr = self.correction.apply(u, v, S, sensor, tfeat, geom)
+            elapsed += time.perf_counter() - t1
+            corr_info = {**self.correction.info(), "appliquee_a": n_corr}
         rel, rel_s = None, 0.0
         if (self.reliability is not None) if reliability is None else reliability:
             if self.reliability is None:
@@ -366,7 +388,8 @@ class WindFieldModel:
             v = np.where(geom.valid, v, np.nan)
             w = np.where(geom.valid, w, np.nan)
         return Volume(u, v, w, geom, timestamp=timestamp, n_sensors=int(sensor.sum()),
-                      inference_s=elapsed + rel_s, reliability=rel, reliability_s=rel_s)
+                      inference_s=elapsed + rel_s, correction=corr_info,
+                      reliability=rel, reliability_s=rel_s)
 
     @torch.no_grad()
     def _member(self, S: np.ndarray, kept: np.ndarray, hour: float,
@@ -381,6 +404,10 @@ class WindFieldModel:
             pred = ensemble_forward(self.model, self.geom, self.norm, s_t, m_t, hour, doy,
                                     k=1, amp_dtype=self.amp_dtype, use_amp=self.use_amp)
             u, v, w = (a[0].float().cpu().numpy() for a in self.norm.denorm(pred.float()))
+        if self.correction is not None:
+            # meme post-traitement que la passe servie (lot M1), sur les capteurs gardes
+            tfeat = time_geo_features(S, kept, hour, doy, self.geom)
+            u, v, _ = self.correction.apply(u, v, S, kept, tfeat, self.geom)
         return u, v, w
 
     def predict_stem(self, stem: str, keep: float = 1.0, seed: int = 0) -> Volume:
@@ -414,6 +441,7 @@ class WindFieldModel:
             "z_levels_asl_m": g.z_levels.tolist(),
             "noeuds_valides": int(g.valid.sum()),
             "passes_moyennees": self.cfg.inference.tta,
+            "correction": self.correction.info() if self.correction is not None else None,
             "fiabilite": self.reliability_info(),
             "variables": ["wind_u_m_s", "wind_v_m_s", "wind_w_m_s", "wind_speed_m_s",
                           "wind_direction_deg"],
