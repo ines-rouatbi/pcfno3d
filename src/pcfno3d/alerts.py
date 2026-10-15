@@ -30,6 +30,7 @@ import copy
 import hashlib
 import json
 import threading
+import warnings
 from collections import OrderedDict, deque
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -146,10 +147,32 @@ def _plafonner(alertes: list[dict], n: int, cle=None) -> list[dict]:
 
 
 # ---------------------------------------------------------------------- M3 : contrat
+def stations_hors_plage(path: str | Path, n_stations: int, node_id_start: int,
+                        tol_densite_rel: float) -> list[int]:
+    """point_id des stations dont au moins une ligne est hors plage (contrat 8.1) ou de
+    densite incoherente (8.2), en relisant le fichier avec les REGLES du contrat
+    (`PLAGES`, `_ecart_densite`) : le rapport M3 reste exactement celui du contrat."""
+    from .contract import PLAGES, _ecart_densite, convertir, lire_csv
+
+    brut, _ = lire_csv(path, True, node_id_start)
+    if brut is None or brut.empty:
+        return []
+    dfc = convertir(brut)
+    pid = dfc["point_id"]
+    bad = pd.Series(False, index=dfc.index)
+    for var, (lo, hi) in PLAGES.items():
+        v = dfc[var]
+        bad |= v.notna() & ~v.between(lo, hi)
+    bad |= _ecart_densite(dfc) > tol_densite_rel
+    ok = bad & pid.notna() & (pid >= 1) & (pid <= n_stations) & (pid % 1 == 0)
+    return sorted(int(x) for x in pid[ok].unique())
+
+
 def alertes_contrat(rapport: dict, nx_s: int, dx_s: float, dy_s: float,
-                    max_par_type: int = 100) -> list[dict]:
-    """Alertes M3 depuis un rapport de `pcfno3d.contract` : hors_plage, station_muette,
-    stations_insuffisantes. Les seuils sont ceux du rapport (`rapport["seuils"]`)."""
+                    max_par_type: int = 100, hors_plage: Iterable[int] = ()) -> list[dict]:
+    """Alertes M3 depuis un rapport de `pcfno3d.contract` : station_muette,
+    stations_insuffisantes, et hors_plage pour les `point_id` donnes
+    (`stations_hors_plage`). Les seuils sont ceux du rapport (`rapport["seuils"]`)."""
     q = rapport.get("qualite")
     if not q:
         return []
@@ -160,8 +183,7 @@ def alertes_contrat(rapport: dict, nx_s: int, dx_s: float, dy_s: float,
         return id_capteur(ix, iy), (ix * dx_s, iy * dy_s)
 
     out: list[dict] = []
-    hp = q.get("stations_hors_plage") or {"ids": []}
-    for pid in hp["ids"][:max_par_type]:
+    for pid in list(hors_plage)[:max_par_type]:
         sid, loc = capteur(pid)
         out.append(alerte(
             "hors_plage", sid, "avertissement", f"Capteur {sid} hors plage",
@@ -202,9 +224,24 @@ def _insuffisantes(part: float, seuil: float, level: str) -> dict:
 
 
 def alertes_disponibilite(sensor: np.ndarray, part_min: float = 0.70,
-                          part_critique: float = 0.30) -> list[dict]:
-    """Instants du cache (sans rapport du contrat) : part des mailles-capteurs disponibles."""
-    part = float(np.asarray(sensor, bool).mean())
+                          part_critique: float = 0.30, reseau: str = "treillis_synthetique",
+                          disponibles: int | None = None,
+                          attendues: int | None = None) -> list[dict]:
+    """Instants sans rapport du contrat : part de capteurs disponibles.
+
+    treillis_synthetique : un capteur par maille du modele, part = mailles disponibles /
+    mailles. Autre reseau (stations_aneo) : part = stations disponibles / stations
+    ATTENDUES (declarees ou recues) ; `disponibles` absent = mailles portant une station.
+    Sans nombre de stations attendues, pas d'alerte (jamais une alerte fausse : quelques
+    dizaines de stations sur ~125 000 mailles ne sont pas une panne).
+    """
+    if reseau == "treillis_synthetique":
+        part = float(np.asarray(sensor, bool).mean())
+    else:
+        if not attendues:
+            return []
+        n = int(np.asarray(sensor, bool).sum()) if disponibles is None else int(disponibles)
+        part = min(n / float(attendues), 1.0)
     if part < part_critique:
         return [_insuffisantes(part, part_critique, "critique")]
     if part < part_min:
@@ -637,6 +674,7 @@ class JournalAlertes:
         self.ouvertes: dict[str, dict] = {}
         self.closes: dict[str, tuple[str, dict]] = {}
         self.dernier: str | None = None
+        self.lignes_illisibles = 0
         self._lock = threading.Lock()
         if self.path is not None and self.path.exists():
             self._relire()
@@ -645,8 +683,16 @@ class JournalAlertes:
         for ligne in self.path.read_bytes().decode("utf-8").splitlines():
             if not ligne.strip():
                 continue
-            ev = json.loads(ligne)
-            a, t = ev["alerte"], ev["instant"]
+            try:
+                ev = json.loads(ligne)
+                a, t = ev["alerte"], ev["instant"]
+                a["id"], str(t)
+            except (ValueError, KeyError, TypeError):
+                # ligne tronquee (arret brutal, synchro Drive) : on la saute, on la compte
+                self.lignes_illisibles += 1
+                warnings.warn(f"journal d'alertes {self.path} : ligne illisible ignoree "
+                              f"({self.lignes_illisibles})", RuntimeWarning, stacklevel=2)
+                continue
             if ev["evenement"] == "close":
                 self.ouvertes.pop(a["id"], None)
                 self.closes[a["id"]] = (t, a)
@@ -769,8 +815,9 @@ class MoteurAlertes:
     # -------------------------------------------------------------- evaluation
     def evaluer(self, geom: Geometry, S: np.ndarray, served: tuple, instant,
                 membre: Callable | None, surf_mu, surf_sd, *, rapport: dict | None = None,
-                reliability=None, Y: np.ndarray | None = None,
-                externes: Iterable[dict] = (), cle: str | None = None) -> ResultatAlertes:
+                hors_plage: Iterable[int] = (), reliability=None, Y: np.ndarray | None = None,
+                externes: Iterable[dict] = (), cle: str | None = None,
+                stations_disponibles: int | None = None) -> ResultatAlertes:
         """Toutes les alertes d'un instant. `served` = (u, v, w) de la passe servie (NaN
         sous le relief) ; `membre(masque)` refait une passe sans les capteurs retires
         (None : pas de detection de derive). Ne modifie ni S ni la valeur servie."""
@@ -786,10 +833,11 @@ class MoteurAlertes:
             # M3 : rapport du contrat, sinon part de capteurs disponibles
             if rapport is not None:
                 listes.append(alertes_contrat(rapport, geom.nx_s, geom.dx_s, geom.dy_s,
-                                              a.max_par_type))
+                                              a.max_par_type, hors_plage))
             else:
-                listes.append(alertes_disponibilite(sensor, a.capteurs_part_min,
-                                                    a.capteurs_part_critique))
+                listes.append(alertes_disponibilite(
+                    sensor, a.capteurs_part_min, a.capteurs_part_critique, a.reseau,
+                    stations_disponibles, a.stations_attendues))
             # M2 : couverture (calculee si la fiabilite est desactivee)
             if reliability is not None:
                 cov, sig = reliability.coverage, reliability.sigma_speed
@@ -844,6 +892,14 @@ class MoteurAlertes:
                 while len(self._resultats) > self.MAX_RESULTATS:
                     self._resultats.popitem(last=False)
             return res
+
+    def verite(self, wf, stem: str) -> np.ndarray | None:
+        """Y du cache quand rho_source = verite_synthetique (meme regle pour l'API et le
+        MCP), sinon None."""
+        if self.acfg.rho_source != "verite_synthetique":
+            return None
+        path = wf.cfg.paths.cache_dir / f"{stem}_Y.npy"
+        return np.load(path) if path.exists() else None
 
     def evaluer_modele(self, wf, S: np.ndarray, hour: float, doy: int, volume, **kw
                        ) -> ResultatAlertes:

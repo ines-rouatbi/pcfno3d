@@ -18,15 +18,21 @@ import pytest
 
 from pcfno3d.alerts import (CHAMPS, KINDS, NIVEAUX, JournalAlertes, MoteurAlertes,
                             SuiviDerive, agreger, alert_id, alerte, alertes_contrat,
-                            alertes_couverture, alertes_entrees, alertes_externes,
+                            alertes_couverture, alertes_disponibilite, alertes_entrees,
+                            alertes_externes,
                             alertes_physique, charger_seuils, compter_ouvertes, derive_entrees,
                             ecarts_capteurs, groupes, interp_colonne, iso_utc, normaliser,
-                            physique, resume_stations, rho_instant, verifier_alerte)
+                            physique, resume_stations, rho_instant, stations_hors_plage,
+                            verifier_alerte)
 from pcfno3d.config import AlertsCfg
 
 REPO = Path(__file__).resolve().parents[1]
 ATOM = REPO / "tests" / "data" / "atom_rev2"
 CONTRAT = REPO / "tests" / "data" / "contract"
+# cles du bloc `qualite` du rapport M3 (main) : le lot M4 n'y ajoute rien
+CLES_QUALITE_M3 = {"instants", "stations_declarees", "stations_valides",
+                   "interpolees_ou_signalees", "hors_plage", "densite", "anomalies",
+                   "fraicheur", "couverture", "stations_a_masquer"}
 CLES_PHYSICS = {"mass_residual_rms", "mass_residual_p95", "mass_residual_ok",
                 "ground_condition_rms_ms", "rho_source"}
 
@@ -105,9 +111,14 @@ def test_alertes_contrat_depuis_le_rapport_m3(tmp_path, schema_alertes):
     f = tmp_path / "hors_plage.csv"
     f.write_bytes(df.to_csv(index=False).encode("utf-8"))
     r2 = valider_fichier(f, grille)
-    assert r2["qualite"]["stations_hors_plage"]["ids"] == [5]
-    hp = [a for a in alertes_contrat(r2, grille.nx_s, grille.dx_s, grille.dy_s)
-          if a["kind"] == "hors_plage"]
+    assert set(r2["qualite"]) == CLES_QUALITE_M3            # rapport M3 inchange
+    ids = stations_hors_plage(f, grille.n_stations, grille.node_id_start,
+                              r2["seuils"]["tol_densite_rel"])
+    assert ids == [5]
+    assert stations_hors_plage(CONTRAT / "conforme.csv", grille.n_stations,
+                               grille.node_id_start, 0.02) == []
+    hp = [a for a in alertes_contrat(r2, grille.nx_s, grille.dx_s, grille.dy_s,
+                                     hors_plage=ids) if a["kind"] == "hors_plage"]
     assert [a["target"] for a in hp] == ["c4_0"]
     _valide(schema_alertes, {"items": [_publiee(a) for a in al + hp]})
     assert alertes_contrat({"qualite": None}, 6, 50.0, 50.0) == []
@@ -285,6 +296,37 @@ def test_seuils_regles_sur_la_validation_seulement(tmp_path):
     assert AlertsCfg().enabled is False                      # strictement opt-in
 
 
+def test_stations_insuffisantes_selon_le_reseau():
+    """Treillis : part des mailles ; stations reelles : part des stations ATTENDUES, et
+    pas d'alerte si ce nombre est inconnu (jamais critique en permanence)."""
+    sensor = np.zeros((100, 100), bool)
+    sensor[:2, :20] = True                           # 40 mailles sur 10 000
+    assert alertes_disponibilite(sensor)[0]["level"] == "critique"          # treillis
+    assert alertes_disponibilite(sensor, reseau="stations_aneo") == []      # inconnu
+    assert alertes_disponibilite(sensor, reseau="stations_aneo", attendues=45) == []
+    a = alertes_disponibilite(sensor, reseau="stations_aneo", attendues=100)
+    assert a[0]["level"] == "important" and a[0]["value"] == pytest.approx(0.4)
+    a = alertes_disponibilite(sensor, reseau="stations_aneo", disponibles=10, attendues=50)
+    assert a[0]["level"] == "critique" and a[0]["value"] == pytest.approx(0.2)
+    with pytest.raises(ValueError):
+        AlertsCfg(reseau="autre")
+
+
+def test_journal_ligne_tronquee_ignoree(tmp_path):
+    """Arret brutal ou synchro Drive : une ligne tronquee n'empeche pas le demarrage."""
+    path = tmp_path / "alertes.jsonl"
+    A = alerte("capteur_derive", "c1_1", "important", "t", "c", "r", station_id="c1_1")
+    JournalAlertes(path).mettre_a_jour([A], "2025-01-06T00:00:00Z")
+    with open(path, "ab") as f:
+        f.write(b'{"evenement": "levee", "instant": "2025-01-06T03:00')    # tronquee
+    with pytest.warns(RuntimeWarning, match="illisible"):
+        j = JournalAlertes(path)
+    assert j.lignes_illisibles == 1 and set(j.ouvertes) == {A["id"]}
+    assert j.dernier == "2025-01-06T00:00:00Z"
+    items = j.mettre_a_jour([A], "2025-01-06T06:00:00Z")
+    assert items[0]["raised_at"] == "2025-01-06T00:00:00Z"
+
+
 # ------------------------------------------------------------------ integration
 @pytest.fixture(scope="module")
 def trained(cfg, index, norm):
@@ -396,10 +438,15 @@ def test_simulation_an1_sur_le_mini_jeu(wf):
     choix = an1.choisir_kappa(jours[:1], "innovation", fdr_cible=0.025)
     assert choix["jeu"] == "validation" and choix["derive_statistique"] == "innovation"
     res = an1.evaluer_an1(jours[1:], "innovation", choix["derive_kappa"], e_ref=1.0)
-    assert res["derives_ref"] == 6 and res["pannes"] == 2
-    assert res["detection_pannes"] == 1.0
-    assert res["detection_derives"] >= 5 / 6                 # derives de 4 m/s et plus
+    assert res["derives_ref"] == 6
+    assert res["detection"] >= 5 / 6                 # derives seules, de 4 m/s et plus
+    pan = res["pannes_hors_verdict"]                 # hors verdict (egalite exacte)
+    assert pan["pannes"] == 2 and pan["detection_regle_m3"] == 1.0
     assert 0.0 <= res["fausses_alertes"] <= 1.0 and res["capteurs_sains"] > 150
+    assert res["fausses_alertes_par_instant"] is not None
+    assert res["taux_faux_positifs"] == res["fausses_alertes_n"] / res["capteurs_sains"]
+    assert an1.PROTOCOLE == {"derives_par_jour": 40, "pannes_par_jour": 10,
+                             "e_ref_m_s": 1.0}
     assert set(res["detection_par_type"]) == {"biais:4", "biais:8", "gain:1"}
     ent = an1.evaluer_entrees(jours)
     assert ent["detection"] == 1.0 and ent["instants"] == 8
@@ -408,7 +455,7 @@ def test_simulation_an1_sur_le_mini_jeu(wf):
 
 def test_script_an1_colab_dossier_neuf(trained, monkeypatch):
     """scripts/m4_an1_colab.py sur le mini-jeu : session neuve, rien d'ecrase, seuils de
-    validation relisibles par le service, verdict sur le test."""
+    validation relisibles par le service ; hors protocole, AUCUN verdict officiel."""
     import importlib.util
     for var, p in (("ANEO_DATA", trained.paths.data_dir), ("ANEO_CACHE", trained.paths.cache_dir),
                    ("ANEO_RUN", trained.paths.run_dir)):
@@ -419,7 +466,7 @@ def test_script_an1_colab_dossier_neuf(trained, monkeypatch):
     spec.loader.exec_module(mod)
     avant = {p: p.stat().st_mtime_ns for p in trained.paths.run_dir.rglob("*") if p.is_file()}
     assert mod.main(["-c", "test", "--device", "cpu", "--derives-par-jour", "6",
-                     "--figees-par-jour", "2"]) == 0
+                     "--pannes-par-jour", "2"]) == 0
     for p, t in avant.items():
         assert p.stat().st_mtime_ns == t, p
     sessions = sorted((trained.paths.run_dir / "alertes_pcfno3d").glob("*/session_*"))
@@ -428,10 +475,14 @@ def test_script_an1_colab_dossier_neuf(trained, monkeypatch):
     seuils = charger_seuils(s / "seuils_validation.json")
     assert seuils["derive_statistique"] in ("influence", "innovation")
     t = json.loads((s / "an1_test.json").read_text(encoding="utf-8"))
-    assert t["jeu"] == "test" and isinstance(t["an1_conforme"], bool)
-    assert {"detection", "fausses_alertes", "taux_faux_positifs"} <= set(t["capteurs"])
+    assert t["jeu"] == "test" and t["statut"] == "exploratoire"
+    assert t["an1_conforme"] is None                 # hors protocole : pas de verdict
+    assert t["reglages"] == {"derives_par_jour": 6, "pannes_par_jour": 2, "e_ref_m_s": 1.0}
+    assert {"detection", "fausses_alertes", "taux_faux_positifs",
+            "fausses_alertes_par_instant", "pannes_hors_verdict"} <= set(t["capteurs"])
     resume = json.loads((s / "resume.json").read_text(encoding="utf-8"))
     assert resume["physique_validation"]["mass_residual_rms"]["n"] > 0
+    assert resume["statut"] == "exploratoire" and resume["an1_conforme"] is None
 
 
 # ------------------------------------------------------------------ service
@@ -474,13 +525,17 @@ def service_env(trained, monkeypatch, tmp_path):
         mcp_server.set_alertes(None)
 
 
-def _csv_instant(cfg) -> bytes:
+def _csv_instant(cfg, corrompre: bool = False) -> bytes:
     import pandas as pd
     meta = json.loads((cfg.paths.data_dir / "meta.json").read_text(encoding="utf-8"))
     day = sorted(cfg.paths.data_dir.glob("aneo_observations_day_*"))[-1]
     df = pd.read_csv(day)
     df = df[(df["timestamp_utc"] == df["timestamp_utc"].iloc[0])
             & (df["point_id"] < meta["noeuds_3d"]["point_id_debut"])]
+    if corrompre:                                   # rejet : type illisible + doublon
+        df = df.astype({"temperature_c": object})
+        df.iloc[0, df.columns.get_loc("temperature_c")] = "abc"
+        df = pd.concat([df, df.iloc[[5]]])
     return df.to_csv(index=False).encode("utf-8")
 
 
@@ -496,21 +551,92 @@ def _mcp(client, name, args=None):
     return res.get("structuredContent") or json.loads(res["content"][0]["text"])
 
 
-def test_api_desactivee_rien_ne_change(service_env, trained):
+VOLATILS = {"inference_s", "controle_utc"}          # temps mesure, horloge murale
+
+
+def _sans_volatils(x):
+    if isinstance(x, dict):
+        return {k: _sans_volatils(v) for k, v in x.items() if k not in VOLATILS}
+    if isinstance(x, list):
+        return [_sans_volatils(v) for v in x]
+    return x
+
+
+def _corps_main(wf, data: bytes, tmp_path) -> tuple[int, dict]:
+    """Corps de l'upload tel que main le construit (avant le lot M4), recalcule a part."""
+    from pcfno3d.contract import Grille, Seuils, valider_fichier
+    f = tmp_path / "ref.csv"
+    f.write_bytes(data)
+    masque: dict = {}
+    rapport = valider_fichier(f, Grille.depuis_meta(wf.geom.meta.raw), Seuils.upload(),
+                              nom="i.csv", masque=masque)
+    if rapport["verdict"] == "rejet":
+        body = {"detail": f"CSV non conforme au contrat ANEO ({rapport['verdict']}) : "
+                          + " ; ".join(rapport["motifs"]), "qualite": rapport}
+        return 422, json.loads(json.dumps(body))
+    vol = wf.predict_csv(f, keep=1.0, exclure=masque)
+    valid = wf.geom.valid
+    body = {"timestamp_utc": vol.timestamp, "capteurs_utilises": vol.n_sensors,
+            "inference_s": 0.0, "vitesse_max_m_s": round(float(vol.speed[valid].max()), 3),
+            "statut_qualite": rapport["verdict"],
+            "avertissements": rapport["motifs"] + rapport["avertissements"],
+            "qualite": rapport}
+    return 200, json.loads(json.dumps(body))
+
+
+def test_api_desactivee_rien_ne_change(service_env, trained, wf, tmp_path):
+    """Alertes desactivees : corps COMPLET de l'upload (200 et 422) identique a celui de
+    main, recursivement (hors temps mesure et horloge) ; rapport M3 sans cle ajoutee."""
     from fastapi.testclient import TestClient
     lancer, cle = service_env
     with TestClient(lancer(False), headers={"X-API-Key": cle}) as c:
         r = c.get("/api/alerts")
         assert r.status_code == 409 and "alerts.enabled" in r.json()["detail"]
-        up = c.post("/api/reconstruct/upload",
-                    files={"file": ("i.csv", _csv_instant(trained), "text/csv")})
-        assert up.status_code == 200, up.text
-        assert set(up.json()) == {"timestamp_utc", "capteurs_utilises", "inference_s",
-                                  "vitesse_max_m_s", "statut_qualite", "avertissements",
-                                  "qualite"}
+        for corrompre, statut in ((False, 200), (True, 422)):
+            data = _csv_instant(trained, corrompre)
+            up = c.post("/api/reconstruct/upload", files={"file": ("i.csv", data, "text/csv")})
+            code, attendu = _corps_main(wf, data, tmp_path)
+            assert up.status_code == code == statut, up.text
+            assert _sans_volatils(up.json()) == _sans_volatils(attendu)
+            q = up.json()["qualite"]["qualite"]
+            assert q is None or set(q) == CLES_QUALITE_M3
         out = _mcp(c, "alertes_actives")
         assert out["disponible"] is False
     assert not (Path(trained.paths.run_dir) / "logs" / "alertes.jsonl").exists()
+
+
+def test_upload_hors_de_la_boucle_d_evenements(service_env, trained, monkeypatch):
+    """Le calcul de l'upload (contrat, passes, alertes) tourne dans un thread du pool :
+    pendant qu'il travaille, /api/health repond tout de suite."""
+    import threading
+    import time
+
+    from fastapi.testclient import TestClient
+
+    from service import app as svc
+    lancer, cle = service_env
+    libere, entre = threading.Event(), threading.Event()
+
+    def lent(*args):
+        entre.set()
+        libere.wait(20)
+        return {"ok": True}
+
+    monkeypatch.setattr(svc, "_upload_calcul", lent)
+    with TestClient(lancer(False), headers={"X-API-Key": cle}) as c:
+        res = {}
+        t = threading.Thread(target=lambda: res.update(r=c.post(
+            "/api/reconstruct/upload", files={"file": ("i.csv", b"x", "text/csv")})))
+        t.start()
+        try:
+            assert entre.wait(20)
+            t0 = time.perf_counter()
+            assert c.get("/api/health").status_code == 200
+            assert time.perf_counter() - t0 < 5.0          # la boucle n'est pas bloquee
+        finally:
+            libere.set()
+            t.join(30)
+        assert res["r"].status_code == 200 and res["r"].json() == {"ok": True}
 
 
 def test_api_alertes_activees(service_env, trained, schema_alertes, tmp_path):

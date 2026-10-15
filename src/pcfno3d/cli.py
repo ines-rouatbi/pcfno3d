@@ -178,7 +178,8 @@ def cmd_alertes(args) -> int:
     for stem in rows["stem"]:
         S, hour, doy, stamp = wf.surface_from_cache(stem)
         volume = wf.predict(S, hour, doy, timestamp=stamp)
-        res = moteur.evaluer_modele(wf, S, hour, doy, volume, cle=f"stem:{stem}")
+        res = moteur.evaluer_modele(wf, S, hour, doy, volume, Y=moteur.verite(wf, stem),
+                                    cle=f"stem:{stem}")
         n = res.ouvertes()
         print(f"{stem} {res.instant} | ouvertes : " + ", ".join(f"{k} {v}" for k, v in n.items())
               + f" | masse {res.physics['mass_residual_rms']:.2e} "

@@ -13,13 +13,15 @@ Protocole (detail et justification : docs/ALERTES.md) :
     chaine     la meme que le service : passe servie + cote^2 passes sans groupe de
                capteurs (`alerts.ecarts_capteurs`), persistance (`SuiviDerive`), regle M3
                des valeurs figees (`contract.valeurs_figees`)
-    comptage   unite = (scenario, maille-capteur) ; signale = au moins une alerte capteur
-               (capteur_derive, ou station_muette par la regle M3) a un instant du jour
-                 detection        signales parmi les defaillants (derives d'amplitude
-                                  effective >= e_ref, et pannes)
-                 fausses alertes  part des signales qui sont sains (l'operateur recoit
-                                  une alerte : est-elle fausse ?)
-                 taux faux pos.   signales parmi les sains (publie, hors verdict)
+    comptage   unite = (scenario, maille-capteur) ; signale = au moins une alerte
+               capteur_derive a un instant du jour
+                 detection        signales parmi les DERIVES d'amplitude effective
+                                  >= e_ref (verdict)
+                 fausses alertes  part des signales qui sont sains (verdict ; depend de la
+                                  prevalence, d'ou le protocole fixe `PROTOCOLE`)
+                 publies a cote   sains signales / sains ; fausses alertes par instant ;
+                                  pannes (valeurs figees, regle M3), HORS verdict : leur
+                                  detection par egalite exacte gonflerait le taux
     entrees    derive_entrees sur chaque instant propre (fausses alertes) et sur le meme instant
                avec une erreur d'entree connue (detection) : temperature en K, pression
                en hPa, humidite en fraction, densite en g/m3.
@@ -38,6 +40,10 @@ from .alerts import (METHOD, STATISTIQUES, SuiviDerive, derive_entrees, ecarts_c
 
 DETECTION_MIN = 0.90
 FAUSSES_MAX = 0.05
+# Protocole du verdict officiel : la part de fausses alertes depend de la prevalence des
+# defauts, donc leur nombre par jour est fixe. Tout autre reglage est « exploratoire ».
+PROTOCOLE = {"derives_par_jour": 40, "pannes_par_jour": 10, "e_ref_m_s": 1.0}
+Z_MIN = 2.0          # bas de la grille de kappa : statistiques gardees par instant
 # (type, parametre) : biais en m/s, gain sans unite, girouette en degres
 PLAN_DERIVES = (("biais", 0.5), ("biais", 1.0), ("biais", 2.0), ("biais", 3.0),
                 ("gain", 0.15), ("gain", 0.30), ("girouette", 15.0), ("girouette", 30.0))
@@ -120,6 +126,7 @@ def simuler_jour(wf, stems: list[str], acfg, rng: np.random.Generator, n_derives
                "detection": {f"{v}:{op}:{x:g}": 0 for v, op, x in ERREURS_ENTREES}}
     phys = []
     temps = []
+    par_instant = {st: [] for st in statistiques}     # (cellules, z) eligibles, z >= Z_MIN
     for t, (S, hour, doy, stamp) in enumerate(data):
         S2 = S.copy()
         for d in derives:
@@ -143,7 +150,10 @@ def simuler_jour(wf, stems: list[str], acfg, rng: np.random.Generator, n_derives
             s = suivis[st].statistiques()
             with np.errstate(invalid="ignore"):
                 elig = (s["n"] >= acfg.derive_min_instants) & (s["a"] >= acfg.derive_min_m_s)
-            zmax[st] = np.fmax(zmax[st], np.where(elig, s["z"], -np.inf).ravel())
+            zt = np.where(elig, s["z"], -np.inf).ravel()
+            zmax[st] = np.fmax(zmax[st], zt)
+            garde = np.flatnonzero(zt >= Z_MIN)
+            par_instant[st].append((garde, zt[garde].astype(np.float32)))
             vus |= np.isfinite(ec[st].z).ravel()
         for v, c in (("wind_u_m_s", 0), ("wind_v_m_s", 1), ("temperature_c", 3)):
             series[v][:, t] = np.where(sensor, S2[c], np.nan).ravel()
@@ -176,7 +186,8 @@ def simuler_jour(wf, stems: list[str], acfg, rng: np.random.Generator, n_derives
         fig |= valeurs_figees(s, N_INSTANTS_FIGEE, temps_s, DUREE_FIGEE_S,
                               actif=actif if v.startswith("wind_") else None).any(axis=1)
     nx = geom.nx
-    return {"stems": stems, "zmax": zmax, "vus": vus, "figee_signalee": fig,
+    return {"stems": stems, "zmax": zmax, "par_instant": par_instant, "vus": vus,
+            "figee_signalee": fig,
             "derives": [{**d, "cellule": d["j"] * nx + d["i"],
                          "ecart_moyen": d["ecart"] / max(d["n"], 1)} for d in derives],
             "figees": [{**f, "cellule": f["j"] * nx + f["i"]} for f in figees],
@@ -189,12 +200,17 @@ def _taux(a: int, b: int) -> float | None:
 
 def evaluer_an1(jours: list[dict], statistique: str, kappa: float, e_ref: float = 1.0
                 ) -> dict:
-    """Detection, fausses alertes et verdict AN1 pour un kappa donne."""
-    det_ref = n_ref = det_fig = n_fig = fp = n_sains = signales_def = 0
+    """Detection des derives, fausses alertes et verdict AN1 (capteurs) pour un kappa.
+
+    Signale = alerte capteur_derive (zmax >= kappa). Les pannes (valeurs figees, regle M3)
+    sont rapportees a part, hors verdict ; elles ne comptent ni comme saines ni comme
+    fausses alertes."""
+    det_ref = n_ref = fp = n_sains = signales_def = 0
+    det_fig = det_fig_m3 = n_fig = fp_m3 = n_instants = fa_instants = 0
     par_type: dict[str, list[int]] = {}
     par_classe: dict[str, list[int]] = {}
     for jour in jours:
-        flag = (jour["zmax"][statistique] >= kappa) | jour["figee_signalee"]
+        flag = jour["zmax"][statistique] >= kappa
         defaut = np.zeros_like(flag)
         for d in jour["derives"]:
             c = d["cellule"]
@@ -215,24 +231,32 @@ def evaluer_an1(jours: list[dict], statistique: str, kappa: float, e_ref: float 
                 n_ref += 1
         for f in jour["figees"]:
             defaut[f["cellule"]] = True
-            det_fig += bool(flag[f["cellule"]])
+            det_fig += bool(flag[f["cellule"]] or jour["figee_signalee"][f["cellule"]])
+            det_fig_m3 += bool(jour["figee_signalee"][f["cellule"]])
             n_fig += 1
         sains = jour["vus"] & ~defaut
         fp += int((flag & sains).sum())
+        fp_m3 += int((jour["figee_signalee"] & sains).sum())
         n_sains += int(sains.sum())
         signales_def += int((flag & defaut).sum())
-    detection = _taux(det_ref + det_fig, n_ref + n_fig)
+        for cel, z in jour.get("par_instant", {}).get(statistique, []):
+            n_instants += 1
+            fa_instants += int((sains[cel] & (z >= kappa)).sum())
+    detection = _taux(det_ref, n_ref)
     fausses = _taux(fp, fp + signales_def)
     if fausses is None:
         fausses = 0.0
     ok = detection is not None and detection >= DETECTION_MIN and fausses < FAUSSES_MAX
     return {"statistique": statistique, "kappa": float(kappa), "e_ref_m_s": float(e_ref),
-            "detection": detection, "detection_derives": _taux(det_ref, n_ref),
-            "detection_pannes": _taux(det_fig, n_fig), "derives_ref": n_ref,
-            "pannes": n_fig, "fausses_alertes": fausses, "fausses_alertes_n": fp,
+            "detection": detection, "derives_ref": n_ref,
+            "fausses_alertes": fausses, "fausses_alertes_n": fp,
             "taux_faux_positifs": _taux(fp, n_sains), "capteurs_sains": n_sains,
+            "fausses_alertes_par_instant": _taux(fa_instants, n_instants),
             "detection_par_type": {k: _taux(*v) for k, v in par_type.items()},
             "detection_par_amplitude_m_s": {k: _taux(*v) for k, v in par_classe.items()},
+            "pannes_hors_verdict": {"pannes": n_fig, "detection": _taux(det_fig, n_fig),
+                                    "detection_regle_m3": _taux(det_fig_m3, n_fig),
+                                    "fausses_regle_m3": fp_m3},
             "an1_capteurs_conforme": bool(ok)}
 
 

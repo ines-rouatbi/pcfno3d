@@ -356,7 +356,8 @@ def alertes_actives(stem: str | None = None) -> dict:
         stem, volume = _volume(stem)
         wf = get_model()
         S, hour, doy, _ = wf.surface_from_cache(stem)
-        res = moteur.evaluer_modele(wf, S, hour, doy, volume, cle=f"stem:{stem}")
+        res = moteur.evaluer_modele(wf, S, hour, doy, volume, Y=moteur.verite(wf, stem),
+                                    cle=f"stem:{stem}")
     ouvertes = [a for a in res.items if a["status"] == "ouverte"]
     return {"disponible": True, "stem": stem, "instant": res.instant,
             "ouvertes_par_niveau": res.ouvertes(), "items": ouvertes,
