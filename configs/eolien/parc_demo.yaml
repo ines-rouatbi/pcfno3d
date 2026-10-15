@@ -1,0 +1,69 @@
+# EXEMPLE — parc eolien de DEMONSTRATION (lot M5). Aucune de ces eoliennes n'existe : les
+# positions reprennent celles des fixtures du contrat ATOM rev. 2 (wind-farm.json), dans le
+# domaine du jeu aneo_dataset_3d_v2 (50 km x 25 km, x vers l'est et y vers le nord depuis
+# le coin sud-ouest). A remplacer par la declaration reelle du parc.
+#
+# Activation (opt-in) :  --set wind_farm.turbines=configs/eolien/parc_demo.yaml
+# Formules, conventions et sources : docs/EOLIEN.md.
+#
+# Eolienne : id ([A-Za-z0-9_-]+), name, position x_m/y_m (m) OU lat/lon (domaine
+# georeference, section `real`), hub_agl_m = hauteur de moyeu AU-DESSUS DU SOL (jamais
+# au-dessus de la mer), rotor_d_m, model (cle de power_curves), virtual, air_density
+# (facultatif : densite mesuree au moyeu, kg/m3).
+#
+# Courbe : table vitesse (m/s) -> puissance (kW) a la densite rho_ref, rated_kw, cut_in_ms,
+# cut_out_ms, source. Interpolation lineaire, 0 sous cut-in et au-dessus de cut-out.
+exemple: true
+description: "Parc de demonstration (exemple) : 3 eoliennes virtuelles, positions fictives"
+
+power_curves:
+  nrel-5mw-cp:
+    # Parametres publies de l'eolienne de reference NREL 5 MW : Jonkman J., Butterfield S.,
+    # Musial W., Scott G. (2009), « Definition of a 5-MW Reference Wind Turbine for Offshore
+    # System Development », NREL/TP-500-38060 : 5 MW, rotor 126 m, moyeu 90 m, cut-in 3 m/s,
+    # vent nominal 11,4 m/s, cut-out 25 m/s. FORME APPROCHEE (pas la table officielle) :
+    # P = 1/2 rho_ref A Cp v^3 avec Cp = 0,4419 constant, choisi pour atteindre 5 MW a
+    # 11,4 m/s ; P = 0 a cut-in.
+    source: "NREL/TP-500-38060 (Jonkman et al., 2009) ; forme Cp constant = 0,4419"
+    rated_kw: 5000
+    cut_in_ms: 3.0
+    cut_out_ms: 25.0
+    rho_ref: 1.225
+    speed_ms: [0, 3, 4, 5, 6, 7, 8, 9, 10, 11, 11.4, 25]
+    power_kw: [0, 0, 216.0, 421.9, 729.0, 1157.6, 1727.9, 2460.3, 3374.9, 4491.9, 5000, 5000]
+  generique-2MW:
+    # Table de demonstration du contrat ATOM rev. 2 (fixtures wind-farm.json), rotor 90 m :
+    # Cp electrique de 0,28 a 4 m/s a 0,42 vers 8 m/s, sous la limite de Betz (16/27).
+    source: "contrat ATOM rev. 2, fixtures wind-farm.json (table de demonstration)"
+    rated_kw: 2000
+    cut_in_ms: 3.0
+    cut_out_ms: 25.0
+    rho_ref: 1.225
+    speed_ms: [0, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 25, 25.01]
+    power_kw: [0, 0, 70, 180, 340, 560, 840, 1180, 1520, 1820, 2000, 2000, 0]
+
+turbines:
+  - id: T-01
+    name: "Eolienne virtuelle 1 (exemple)"
+    x_m: 12000
+    y_m: 8000
+    hub_agl_m: 90
+    rotor_d_m: 126
+    model: nrel-5mw-cp
+    virtual: true
+  - id: T-02
+    name: "Eolienne virtuelle 2 (exemple)"
+    x_m: 14500
+    y_m: 9500
+    hub_agl_m: 90
+    rotor_d_m: 126
+    model: nrel-5mw-cp
+    virtual: true
+  - id: T-03
+    name: "Eolienne virtuelle 3 (exemple)"
+    x_m: 30000
+    y_m: 15000
+    hub_agl_m: 120
+    rotor_d_m: 90
+    model: generique-2MW
+    virtual: true

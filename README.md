@@ -146,7 +146,8 @@ pcfno3d apikey quota app-web --per-minute 600
 
 **Serveur MCP** — pour qu'une autre application ou un agent interroge le vent sans rien
 savoir du modèle. Outils : `grid_meta`, `list_instants`, `wind_at_point`, `wind_profile`,
-`wind_field_at_altitude`, `instant_summary`, `dso_report`, `export_instant` (admin).
+`wind_field_at_altitude`, `instant_summary`, `dso_report`, `production_eolienne` (parc
+éolien déclaré, `docs/EOLIEN.md`), `export_instant` (admin).
 Transport streamable HTTP sur `/mcp`, ou stdio avec `pcfno3d mcp`.
 
 **Pour brancher une autre application, lire [`docs/INTEGRATION.md`](docs/INTEGRATION.md)** :

@@ -1,0 +1,128 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://atom.zelqane.com/contract/v1/alerts.schema.json",
+  "title": "GET /v1/alerts/{id} — alertes et recommandations",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "items"
+  ],
+  "properties": {
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "level",
+          "kind",
+          "target",
+          "title",
+          "cause",
+          "recommendation",
+          "raised_at",
+          "status",
+          "station_id",
+          "turbine_id",
+          "location",
+          "value",
+          "threshold",
+          "unit"
+        ],
+        "properties": {
+          "id": {
+            "$ref": "common.schema.json#/$defs/sha8",
+            "description": "sha8 de « kind|cible » : stable d'un instantané à l'autre"
+          },
+          "level": {
+            "$ref": "common.schema.json#/$defs/alert_level"
+          },
+          "kind": {
+            "enum": [
+              "hors_plage",
+              "station_muette",
+              "stations_insuffisantes",
+              "capteur_derive",
+              "incoherence_physique",
+              "derive_entrees",
+              "zone_mal_couverte",
+              "vent_fort_moyeu",
+              "cisaillement"
+            ],
+            "description": "Lot responsable : hors_plage, station_muette, stations_insuffisantes M3 ; capteur_derive, incoherence_physique, derive_entrees M4 ; zone_mal_couverte M2 ; vent_fort_moyeu, cisaillement M5"
+          },
+          "target": {
+            "type": "string",
+            "description": "Cible : capteur, éolienne, ou maille de 2 km « m<ix>_<iy> »"
+          },
+          "title": {
+            "type": "string"
+          },
+          "cause": {
+            "type": "string"
+          },
+          "recommendation": {
+            "type": "string"
+          },
+          "raised_at": {
+            "$ref": "common.schema.json#/$defs/iso_utc",
+            "description": "Première levée (journal JSONL de M4)"
+          },
+          "status": {
+            "enum": [
+              "ouverte",
+              "close"
+            ],
+            "description": "L'acquittement est géré par le Worker, hors contrat v1"
+          },
+          "station_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "description": "stations_aneo : identifiant ANEO ; treillis_synthetique : c<i>_<j> (indices du treillis de capteurs à 50 m)"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "turbine_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "location": {
+            "anyOf": [
+              {
+                "$ref": "common.schema.json#/$defs/xy"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "value": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "threshold": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "unit": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    }
+  }
+}

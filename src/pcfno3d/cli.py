@@ -8,6 +8,8 @@
     dso-weights   poids u, v par niveau, mesures sur la VALIDATION    (v8)
     reconstruct   reconstruction 3D d'un instant (npz, csv, figures)  (BLOC 12)
     export-web    volume -> binaires + manifeste pour le visualiseur
+    wind-farm     parc eolien declare a un instant : moyeu, REWS, puissance, alertes (M5)
+    windrose      roses des vents + Weibull + AEP des eoliennes sur une serie d'instants (M5)
     import-real   donnees REELLES (stations + radiosondes / champ maille) -> cache
     validate      contrat de donnees ANEO : verdict, rapport qualite, quarantaine
     serve         application web + API JSON + serveur MCP (fastapi + uvicorn)
@@ -203,6 +205,70 @@ def cmd_reconstruct(args) -> int:
     reconstruct(cfg, stem=args.stem, csv=args.csv, checkpoint=args.checkpoint,
                 keep=args.keep, altitude=args.altitude, section_row=args.section_row,
                 figures=not args.no_figures, web=args.web, device=args.device)
+    return 0
+
+
+def _farm_cfg(args) -> Config:
+    cfg = _load_cfg(args)
+    if args.parc:
+        cfg.apply_overrides({"wind_farm.turbines": args.parc})
+    if cfg.wind_farm.turbines is None:
+        raise SystemExit("aucun parc declare : --parc FICHIER ou wind_farm.turbines "
+                         "(exemple : configs/eolien/parc_demo.yaml)")
+    return cfg
+
+
+def cmd_wind_farm(args) -> int:
+    from .inference import WindFieldModel
+    from .windfarm import farm_report
+
+    cfg = _farm_cfg(args)
+    wf = WindFieldModel(cfg, checkpoint=args.checkpoint, device=args.device, verbose=False)
+    stem = args.stem
+    if stem is None:
+        from .windfarm import eol1_instants
+        stem = eol1_instants(cfg)[0]
+    out = farm_report(wf.predict_stem(stem), wf)
+    out["stem"] = stem
+    text = json.dumps(out, indent=2, ensure_ascii=False)
+    if args.out:
+        path = Path(args.out)
+        if path.exists():
+            raise SystemExit(f"{path} existe deja : rien n'est ecrase")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(text.encode("utf-8"))
+        print(f"-> {path}")
+    else:
+        print(text)
+    return 0
+
+
+def cmd_windrose(args) -> int:
+    from datetime import datetime, timezone
+
+    from .cache import load_index
+    from .inference import WindFieldModel
+    from .windfarm import farm_windroses
+
+    cfg = _farm_cfg(args)
+    wf = WindFieldModel(cfg, checkpoint=args.checkpoint, device=args.device, verbose=False)
+    idx = load_index(cfg)
+    stems = [str(x) for x in idx[idx["split"] == args.split]["stem"]]
+    if args.instants and len(stems) > args.instants:
+        stems = [stems[i] for i in np.unique(np.linspace(0, len(stems) - 1,
+                                                         args.instants).astype(int))]
+    if not stems:
+        raise SystemExit(f"aucun instant {args.split} en cache")
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    out = cfg.paths.run_dir / "eolien_pcfno3d" / wf.checkpoint_path.stem / f"rose_{stamp}"
+    out.mkdir(parents=True, exist_ok=False)          # dossier neuf : rien n'est ecrase
+    for site, doc in farm_windroses(wf, wf.farm, stems, keep=args.keep).items():
+        (out / f"{site}.json").write_bytes(
+            json.dumps(doc, indent=2, ensure_ascii=False).encode("utf-8"))
+        w = doc["weibull"]
+        print(f"{site} : {doc['n_valid']} instants | Weibull "
+              + (f"k={w['k']} c={w['c_ms']} m/s AEP={w['aep_mwh']} MWh" if w else "indisponible"))
+    print(f"-> {out}")
     return 0
 
 
@@ -614,6 +680,21 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--no-figures", action="store_true")
     s.add_argument("--web", action="store_true", help="exporte aussi pour le visualiseur")
     s.set_defaults(func=cmd_reconstruct)
+
+    s = sub.add_parser("wind-farm", help="parc eolien a un instant (lot M5)")
+    s.add_argument("--stem", help="instant en cache (defaut : premier instant de test)")
+    s.add_argument("--parc", help="declaration du parc (defaut : wind_farm.turbines)")
+    s.add_argument("--out", help="fichier JSON a ecrire (jamais ecrase)")
+    s.add_argument("--checkpoint"), s.add_argument("--device")
+    s.set_defaults(func=cmd_wind_farm)
+
+    s = sub.add_parser("windrose", help="roses des vents, Weibull et AEP du parc (lot M5)")
+    s.add_argument("--parc", help="declaration du parc (defaut : wind_farm.turbines)")
+    s.add_argument("--split", default="test", choices=("train", "val", "test"))
+    s.add_argument("--instants", type=int, help="nombre d'instants (defaut : tous)")
+    s.add_argument("--keep", type=float, default=1.0, help="fraction de capteurs utilises")
+    s.add_argument("--checkpoint"), s.add_argument("--device")
+    s.set_defaults(func=cmd_windrose)
 
     s = sub.add_parser("import-real", help="donnees reelles -> cache du pipeline")
     s.add_argument("--stations", required=True,

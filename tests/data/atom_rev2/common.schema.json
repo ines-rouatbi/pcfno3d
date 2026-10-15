@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://atom.zelqane.com/contract/v1/common.schema.json",
+  "title": "Types communs du contrat ATOM v1 (révision 2)",
+  "$defs": {
+    "iso_utc": { "type": "string", "format": "date-time", "pattern": "Z$" },
+    "sha8": { "type": "string", "pattern": "^[0-9a-f]{8}$", "description": "8 premiers caractères hexadécimaux d'un sha256" },
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "snapshot_id": {
+      "type": "string",
+      "pattern": "^[0-9A-Za-z_]+_[0-9a-f]{8}$",
+      "description": "<stem>[_<scénario>]_<sha8 du modèle>. Stem « live_AAAAMMJJ_HHMMSS » pour le direct, « JJJ_HHMMSS » pour le rejeu, « test_<cas> » pour les instantanés de test. <scénario> seulement pour une simulation (BF45, BF46). Le sha8 est celui de versions.model_sha256."
+    },
+    "speed_ms": { "type": ["number", "null"], "minimum": 0, "maximum": 80 },
+    "component_ms": { "type": ["number", "null"], "minimum": -80, "maximum": 80 },
+    "sigma_ms": { "type": ["number", "null"], "minimum": 0, "maximum": 40 },
+    "dir_from_deg": {
+      "type": ["number", "null"],
+      "minimum": 0,
+      "exclusiveMaximum": 360,
+      "description": "Direction météo : D'OÙ vient le vent, (270 − atan2(v,u)) mod 360. L'arrondi se fait AVANT le modulo (359,996 → 360,00 → 0). null si vitesse < 0,2 m/s ou nœud absent."
+    },
+    "unit_interval": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+    "status_node": { "enum": ["mesure", "estime"] },
+    "reliability_class": { "enum": ["elevee", "moyenne", "faible"] },
+    "alert_level": { "enum": ["information", "avertissement", "important", "critique"] },
+    "station_state": { "enum": ["active", "suspecte", "muette", "derive", "exclue"] },
+    "data_kind": { "enum": ["synthetique", "reel", "test"], "description": "Nature des données d'entrée. L'interface l'affiche toujours ; « test » ne doit jamais être présenté comme un résultat du modèle." },
+    "data_status": { "enum": ["complete", "degrade"], "description": "degrade si des capteurs manquent ou sont en dérive" },
+    "versions": {
+      "type": "object",
+      "required": ["model", "model_sha256", "norm", "data", "data_kind", "contract"],
+      "properties": {
+        "model": { "type": "string", "description": "Nom lisible du modèle, ex. v7" },
+        "model_sha256": { "$ref": "#/$defs/sha256", "description": "sha256 des octets du fichier de poids servi" },
+        "norm": { "$ref": "#/$defs/sha8", "description": "sha8 de norm_stats.json" },
+        "data": { "type": "string", "description": "Jeu de données d'entrée, ex. aneo_dataset_3d_v2" },
+        "data_kind": { "$ref": "#/$defs/data_kind" },
+        "contract": { "type": "string", "pattern": "^1\\.\\d+$" }
+      },
+      "additionalProperties": false
+    },
+    "interval": {
+      "type": "object",
+      "required": ["p10", "p50", "p90"],
+      "properties": { "p10": { "type": ["number", "null"] }, "p50": { "type": ["number", "null"] }, "p90": { "type": ["number", "null"] } },
+      "additionalProperties": false,
+      "description": "Intervalle à 80 %. Pour une vitesse : p50 = speed (passe servie), p10 = max(0, speed − 1,2816·sigma_speed), p90 = speed + 1,2816·sigma_speed. Tout null si inconnu."
+    },
+    "uncertainty_method": {
+      "type": "object",
+      "required": ["method", "members", "calibrated"],
+      "properties": {
+        "method": { "type": "string", "description": "ex. ensemble-masquage-v1 ; « aucune » avant M2 (members = 1, calibrated = false)" },
+        "members": { "type": "integer", "minimum": 1 },
+        "calibrated": { "type": "boolean" },
+        "scale_factor": { "type": ["number", "null"], "exclusiveMinimum": 0 },
+        "coverage_80_validation": { "type": ["number", "null"], "minimum": 0, "maximum": 1 }
+      },
+      "additionalProperties": false
+    },
+    "xy": {
+      "type": "object",
+      "required": ["x_m", "y_m"],
+      "properties": { "x_m": { "type": "number" }, "y_m": { "type": "number" } },
+      "additionalProperties": false
+    }
+  }
+}

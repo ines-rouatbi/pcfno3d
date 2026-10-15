@@ -675,6 +675,26 @@ def profile(x: float = Query(...), y: float = Query(...), stem: str | None = Non
     return out
 
 
+@router.get("/wind-farm", tags=["eolien"])
+def wind_farm(stem: str | None = None,
+              _: ApiKeyRecord | None = Depends(require_read)) -> dict:
+    """Parc eolien a un instant (lot M5) : vent au moyeu et REWS (p10/p50/p90), cisaillement
+    (shear_alpha), veer, densite, puissance et etat par eolienne, production du parc,
+    alertes vent_fort_moyeu / cisaillement et KPI hub_wind_* du domaine.
+
+    `wind_farm` suit wind-farm.schema.json et `alerts` alerts.schema.json (contrat ATOM
+    rev. 2). Les hauteurs sont au-dessus du SOL. 404 si aucun parc n'est declare
+    (`wind_farm.turbines`, opt-in). Les intervalles demandent la fiabilite M2 active.
+    """
+    from pcfno3d.windfarm import farm_report
+
+    wf = model()
+    if wf.farm is None:
+        raise HTTPException(404, "aucun parc eolien declare (configuration "
+                                 "wind_farm.turbines, voir docs/EOLIEN.md)")
+    return farm_report(_volume_for(stem), wf)
+
+
 @router.get("/dso", tags=["qualite"])
 def dso(_: ApiKeyRecord | None = Depends(require_read)) -> dict:
     """Dernier verdict DSO1-DSO5 archive, ou l'absence d'evaluation, sans rien inventer."""
