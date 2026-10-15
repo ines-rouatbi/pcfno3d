@@ -7,6 +7,7 @@ C'est l'objet que le service HTTP garde en memoire.
 
 from __future__ import annotations
 
+import json
 import threading
 import time
 from pathlib import Path
@@ -21,6 +22,8 @@ from .features import time_geo_features
 from .geometry import N_SURF, SURF_VARS, Geometry
 from .model import build_model, model_cfg_from_checkpoint
 from .normalize import Normalizer
+from .reliability import (CLASSES, NODATA_U8, STATUT_MESURE, Calibration, Reliability,
+                          assess, speed_interval)
 
 
 class Volume:
@@ -28,12 +31,17 @@ class Volume:
 
     def __init__(self, u: np.ndarray, v: np.ndarray, w: np.ndarray, geom: Geometry,
                  timestamp: str | None = None, n_sensors: int = 0,
-                 inference_s: float = 0.0) -> None:
+                 inference_s: float = 0.0, reliability: Reliability | None = None,
+                 reliability_s: float = 0.0) -> None:
         self.u, self.v, self.w = u, v, w
         self.geom = geom
         self.timestamp = timestamp
         self.n_sensors = n_sensors
+        # temps total pour livrer ce volume (DSO4) : passe servie + ensemble de fiabilite
         self.inference_s = inference_s
+        # fiabilite par noeud (lot M2), None si desactivee ; reliability_s : sa part du temps
+        self.reliability = reliability
+        self.reliability_s = reliability_s
 
     @property
     def speed(self) -> np.ndarray:
@@ -88,6 +96,34 @@ class Volume:
             "timestamp_utc": self.timestamp,
         }
 
+    def node_reliability(self, k: int, j: int, i: int) -> dict:
+        """Bloc fiabilite d'un noeud, avec les noms du contrat rev. 2 (sigma_speed,
+        sigma_u, sigma_v, sigma_w, speed_interval, status, coverage, reliability,
+        reliability_class). Valeurs None sous le relief."""
+        rel = self.reliability
+        if rel is None:
+            raise ValueError("fiabilite non calculee pour ce volume (inference.reliability)")
+
+        def r(x: float, nd: int = 3) -> float | None:
+            return round(float(x), nd) if np.isfinite(x) else None
+
+        st = int(rel.status[k, j, i])
+        if st == NODATA_U8:
+            return {"sigma_speed": None, "sigma_u": None, "sigma_v": None, "sigma_w": None,
+                    "speed_interval": {"p10": None, "p50": None, "p90": None},
+                    "status": None, "coverage": None, "reliability": None,
+                    "reliability_class": None}
+        speed = float(np.hypot(self.u[k, j, i], self.v[k, j, i]))
+        p10, p90 = speed_interval(np.float64(speed), rel.sigma_speed[k, j, i])
+        return {"sigma_speed": r(rel.sigma_speed[k, j, i]),
+                "sigma_u": r(rel.sigma_u[k, j, i]), "sigma_v": r(rel.sigma_v[k, j, i]),
+                "sigma_w": r(rel.sigma_w[k, j, i], 4),
+                "speed_interval": {"p10": r(p10), "p50": r(speed), "p90": r(p90)},
+                "status": "mesure" if st == STATUT_MESURE else "estime",
+                "coverage": r(rel.coverage[k, j, i]),
+                "reliability": r(rel.reliability[k, j, i]),
+                "reliability_class": CLASSES[int(rel.reliability_class[k, j, i])]}
+
     def to_nodes_frame(self) -> pd.DataFrame:
         """Un noeud 3D du dataset par ligne (format attendu par la base ANEO)."""
         g = self.geom
@@ -115,8 +151,23 @@ class Volume:
             w=self.w.astype(np.float32), speed=self.speed.astype(np.float32),
             direction=self.direction.astype(np.float32), z_levels=g.z_levels,
             x_m=np.arange(g.nx) * g.dx, y_m=np.arange(g.ny) * g.dy,
-            z_terrain=g.zt.astype(np.float32), timestamp=str(self.timestamp))
+            z_terrain=g.zt.astype(np.float32), timestamp=str(self.timestamp),
+            **self._reliability_arrays())
         return path
+
+    def _reliability_arrays(self) -> dict:
+        """Champs de fiabilite pour le .npz ; aucun quand elle est desactivee (le fichier
+        garde alors exactement les champs d'avant le lot M2)."""
+        rel = self.reliability
+        if rel is None:
+            return {}
+        p10, p90 = rel.speed_interval(self.speed)
+        return {"sigma_u": rel.sigma_u, "sigma_v": rel.sigma_v, "sigma_w": rel.sigma_w,
+                "sigma_speed": rel.sigma_speed, "speed_p10": p10, "speed_p90": p90,
+                "status": rel.status, "coverage": rel.coverage,
+                "reliability": rel.reliability, "reliability_class": rel.reliability_class,
+                "uncertainty": json.dumps(rel.uncertainty),
+                "reliability_info": json.dumps(rel.info)}
 
 
 @torch.no_grad()
@@ -206,6 +257,9 @@ class WindFieldModel:
         # l'application web lance 3-4 requetes en parallele a chaque instant. Sans verrou,
         # chacune lancerait sa propre passe et la machine saturerait sa memoire.
         self._lock = threading.Lock()
+        # fiabilite par noeud (lot M2) : strictement opt-in, None = rien ne change
+        src = cfg.inference.reliability
+        self.reliability = Calibration.load(src) if src is not None else None
         self.epoch = ck.get("epoch")
         self.val_score = ck.get("val_score")
         if verbose:
@@ -264,11 +318,16 @@ class WindFieldModel:
     @torch.no_grad()
     def predict(self, S: np.ndarray, hour: float, doy: int, timestamp: str | None = None,
                 keep: float = 1.0, seed: int = 0, mask_nan: bool = True,
-                tta: int | None = None, tta_keep: float | None = None) -> Volume:
+                tta: int | None = None, tta_keep: float | None = None,
+                reliability: bool | None = None, real_sensors: bool = False) -> Volume:
         """Reconstruit le volume a partir de la surface agregee S (8, ny, nx).
 
         tta / tta_keep : moyenne de plusieurs passes (voir `ensemble_forward`). Par defaut,
         la valeur de la configuration (`inference.tta`, 1 = une seule passe).
+        reliability : calculer la fiabilite par noeud (pcfno3d.reliability). None = oui si
+        `inference.reliability` est configure. La valeur servie n'en depend pas.
+        real_sensors : information seulement (donnees reelles ou non), recopiee dans
+        `reliability.info` ; le statut « mesure » n'en depend pas (contrat rev. 2, D7).
         """
         geom = self.geom
         k = self.cfg.inference.tta if tta is None else int(tta)
@@ -292,12 +351,37 @@ class WindFieldModel:
             elapsed = time.perf_counter() - t0
             del pred
 
+        rel, rel_s = None, 0.0
+        if (self.reliability is not None) if reliability is None else reliability:
+            if self.reliability is None:
+                raise ValueError("fiabilite demandee mais inference.reliability n'est pas "
+                                 "configure (JSON de calibration ou 'non_calibre')")
+            # l'ensemble compte dans le temps de livraison du volume (DSO4)
+            t1 = time.perf_counter()
+            rel = assess((u, v, w), lambda kept: self._member(S, kept, hour, doy), sensor,
+                         geom, self.cfg.reliability, self.reliability, real_sensors)
+            rel_s = time.perf_counter() - t1
         if mask_nan:
             u = np.where(geom.valid, u, np.nan)
             v = np.where(geom.valid, v, np.nan)
             w = np.where(geom.valid, w, np.nan)
         return Volume(u, v, w, geom, timestamp=timestamp, n_sensors=int(sensor.sum()),
-                      inference_s=elapsed)
+                      inference_s=elapsed + rel_s, reliability=rel, reliability_s=rel_s)
+
+    @torch.no_grad()
+    def _member(self, S: np.ndarray, kept: np.ndarray, hour: float,
+                doy: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Une passe de l'ensemble de fiabilite : capteurs `kept`, caracteristiques
+        geostrophiques / thermiques RECALCULEES sur eux (ensemble_forward, tfeat=None).
+        Sortie (u, v, w) en m/s, sans masque NaN. Post-traitement identique a la passe
+        servie : quand la correction M1 est active, elle s'applique ici aussi."""
+        s_t = torch.from_numpy(np.ascontiguousarray(S[:N_SURF]))[None].to(self.device)
+        m_t = torch.from_numpy(kept.astype(np.float32))[None].to(self.device)
+        with self._lock:
+            pred = ensemble_forward(self.model, self.geom, self.norm, s_t, m_t, hour, doy,
+                                    k=1, amp_dtype=self.amp_dtype, use_amp=self.use_amp)
+            u, v, w = (a[0].float().cpu().numpy() for a in self.norm.denorm(pred.float()))
+        return u, v, w
 
     def predict_stem(self, stem: str, keep: float = 1.0, seed: int = 0) -> Volume:
         S, hour, doy, stamp = self.surface_from_cache(stem)
@@ -309,11 +393,12 @@ class WindFieldModel:
         return self.predict(S, hour, doy, timestamp=stamp, keep=keep, seed=seed)
 
     def benchmark(self, S: np.ndarray, hour: float, doy: int, n: int = 20,
-                  warmup: int = 3) -> dict:
-        """DSO4 — temps d'inference par instant."""
+                  warmup: int = 3, reliability: bool | None = None) -> dict:
+        """DSO4 — temps d'inference par instant (fiabilite comprise si elle est active)."""
         for _ in range(warmup):
-            self.predict(S, hour, doy, mask_nan=False)
-        times = [self.predict(S, hour, doy, mask_nan=False).inference_s for _ in range(n)]
+            self.predict(S, hour, doy, mask_nan=False, reliability=reliability)
+        times = [self.predict(S, hour, doy, mask_nan=False, reliability=reliability).inference_s
+                 for _ in range(n)]
         return {"n": n, "mean_s": float(np.mean(times)), "p95_s": float(np.quantile(times, 0.95)),
                 "max_s": float(np.max(times)),
                 "conforme": bool(np.mean(times) < self.cfg.dso.time_s)}
@@ -321,7 +406,7 @@ class WindFieldModel:
     def meta(self) -> dict:
         """Description de la sortie, pour l'API et le visualiseur."""
         g = self.geom
-        return {
+        out = {
             "modele": self.checkpoint_path.name,
             "epoque": (self.epoch + 1) if self.epoch is not None else None,
             "device": str(self.device),
@@ -333,3 +418,17 @@ class WindFieldModel:
                           "wind_direction_deg"],
             "conventions": g.meta.raw.get("conventions", {}),
         }
+        # cle presente SEULEMENT si la fiabilite est active : desactivee, /api/meta reste
+        # exactement celui de main
+        if self.reliability is not None:
+            out["fiabilite"] = self.reliability_info()
+        return out
+
+    def reliability_info(self) -> dict | None:
+        """Configuration de la fiabilite (lot M2), None si desactivee."""
+        if self.reliability is None:
+            return None
+        rc, cal = self.cfg.reliability, self.reliability
+        return {"uncertainty": cal.uncertainty_method(rc.members), "keep": rc.keep,
+                "graine": rc.seed, "calibration_fichier": cal.path.name if cal.path else None,
+                "calibration_sha256": cal.sha256}

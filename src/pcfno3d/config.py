@@ -237,10 +237,15 @@ class InferenceCfg:
           thermiques RECALCULEES sur les capteurs gardes — sans quoi la passe sort de la
           distribution d'entrainement. 1 = une seule passe, comme la v7.
     tta_keep : fraction des capteurs gardee a chaque passe supplementaire.
+    reliability : fiabilite par noeud (lot M2, pcfno3d.reliability, section `reliability`).
+          None = desactivee : sortie et temps d'inference inchanges. Sinon, le chemin du JSON
+          de calibration ecrit par `pcfno3d calibrate-reliability` (sur la VALIDATION), ou
+          "non_calibre" pour des sigma bruts (calibrated: false dans la sortie).
     """
 
     tta: int = 1
     tta_keep: float = 0.7
+    reliability: Path | str | None = None
 
     def __post_init__(self) -> None:
         self.tta = int(self.tta)
@@ -249,6 +254,42 @@ class InferenceCfg:
         if not 0.0 < float(self.tta_keep) <= 1.0:
             raise ValueError("inference.tta_keep doit etre dans ]0, 1]")
         self.tta_keep = float(self.tta_keep)
+        if self.reliability is not None and str(self.reliability) != "non_calibre":
+            self.reliability = _resolve(self.reliability)
+
+
+@dataclass
+class ReliabilityCfg:
+    """Fiabilite par noeud (lot M2, DSO6). Justification des valeurs : docs/FIABILITE.md."""
+
+    members: int = 8                  # passes masquees de l'ensemble (sigma)
+    keep: float = 0.7                 # fraction des capteurs gardee par passe (comme le TTA)
+    seed: int = 2026                  # graine des masques : sortie deterministe
+    sigma_floor_m_s: float = 0.01     # sigma plancher dans la calibration (division)
+    per_level: bool = True            # k par niveau (sinon un k global par composante)
+    dz_status_m: float = 15.0         # « mesure » : capteur visible a moins de dz (rev. 2, D7)
+    coverage_length_m: float = 1000.0  # L : portee horizontale d'un capteur
+    coverage_height_m: float = 500.0   # H : decroissance de la couverture avec la hauteur
+    coverage_density_ref: float = 2.0  # D0 : densite de capteurs pour ~63 % de couverture
+    sigma_ref_m_s: float = 1.0        # echelle de sigma_vitesse dans l'indice de fiabilite
+    class_high: float = 0.6           # fiabilite >= : « elevee »
+    class_mid: float = 0.3            # fiabilite >= : « moyenne » (sinon « faible »)
+    coverage_target: float = 0.8      # DSO6 : part des valeurs vraies dans l'intervalle 80 %
+    # quantile de |erreur| / sigma vise par la calibration (validation). 0,8 = intervalle a
+    # 80 % exactement : sur le test, la couverture oscille alors AUTOUR de 0,80 et le verdict
+    # strict (>= 0,80) se joue a l'echantillonnage. Une marge (ex. 0,82) se decide sur la
+    # validation, jamais apres avoir vu le test.
+    calibration_q: float = 0.8
+
+    def __post_init__(self) -> None:
+        self.members = int(self.members)
+        if self.members < 2:
+            raise ValueError("reliability.members doit etre >= 2")
+        if not 0.0 < float(self.keep) < 1.0:
+            raise ValueError("reliability.keep doit etre dans ]0, 1[")
+        self.keep = float(self.keep)
+        if not 0.0 <= self.class_mid < self.class_high <= 1.0:
+            raise ValueError("reliability : 0 <= class_mid < class_high <= 1")
 
 
 @dataclass
@@ -304,7 +345,7 @@ class RealCfg:
 SECTIONS: dict[str, type] = {
     "paths": Paths, "model": ModelCfg, "train": TrainCfg,
     "loss": LossCfg, "mask": MaskCfg, "dso": DSOCfg, "inference": InferenceCfg,
-    "real": RealCfg,
+    "real": RealCfg, "reliability": ReliabilityCfg,
 }
 
 
@@ -322,6 +363,7 @@ class Config:
     dso: DSOCfg = field(default_factory=DSOCfg)
     inference: InferenceCfg = field(default_factory=InferenceCfg)
     real: RealCfg = field(default_factory=RealCfg)
+    reliability: ReliabilityCfg = field(default_factory=ReliabilityCfg)
     terrain_smooth_m: float = 300.0   # meme lissage du relief que le generateur
     f_coriolis: float = 8.57e-5       # s-1, latitude ~36 N (vent geostrophique)
 

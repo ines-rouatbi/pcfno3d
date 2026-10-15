@@ -468,6 +468,9 @@ def reconstruct(req: ReconstructRequest,
         "vitesse_max_m_s": round(float(volume.speed[valid].max()), 3),
         "vitesse_moyenne_m_s": round(float(volume.speed[valid].mean()), 3),
     }
+    if volume.reliability is not None:
+        # part de l'ensemble de fiabilite (lot M2) dans inference_s ; cle absente sinon
+        out["fiabilite_s"] = round(volume.reliability_s, 4)
     if req.export:
         name = f"recon_{req.stem or 'latest'}"
         out["export"] = str(export_web(volume, wf.cfg.paths.web_root / name,
@@ -577,7 +580,8 @@ def reconstruct_stations(req: StationsRequest,
     ts = pd.Timestamp(req.timestamp_utc).tz_localize(None) \
         if pd.Timestamp(req.timestamp_utc).tzinfo else pd.Timestamp(req.timestamp_utc)
     hour = ts.hour + ts.minute / 60 + ts.second / 3600
-    volume = wf.predict(S, hour, int(ts.dayofyear), timestamp=str(ts))
+    # mesures de stations REELLES (information de fiabilite ; le statut n'en depend pas)
+    volume = wf.predict(S, hour, int(ts.dayofyear), timestamp=str(ts), real_sensors=True)
     stem = f"live_{ts.strftime('%Y%m%d_%H%M%S')}"
     with _VOLUME_LOCK:
         cache = STATE.setdefault("volumes", {})
@@ -640,7 +644,13 @@ def point(x: float = Query(..., description="x en m depuis le coin sud-ouest"),
 @router.get("/profile", tags=["donnees"])
 def profile(x: float = Query(...), y: float = Query(...), stem: str | None = None,
             _: ApiKeyRecord | None = Depends(require_read)) -> dict:
-    """Profil vertical complet en un point : une entree par niveau du modele."""
+    """Profil vertical complet en un point : une entree par niveau du modele.
+
+    Avec la fiabilite active (`inference.reliability`, lot M2), chaque niveau porte aussi
+    sigma_speed, sigma_u, sigma_v, sigma_w, speed_interval (p10, p50, p90), status,
+    coverage, reliability, reliability_class — noms du contrat ATOM rev. 2 — et la reponse
+    le bloc `uncertainty` (methode, membres, calibration).
+    """
     volume = _volume_for(stem)
     g = volume.geom
     i = int(np.clip(round(x / g.dx), 0, g.nx - 1))
@@ -657,8 +667,13 @@ def profile(x: float = Query(...), y: float = Query(...), stem: str | None = Non
             if ok else None,
             "wind_w_m_s": round(float(w), 4) if ok else None,
         })
-    return {"timestamp_utc": volume.timestamp, "x_m": i * g.dx, "y_m": j * g.dy,
-            "z_terrain_m": float(g.zt[j, i]), "niveaux": niveaux}
+        if volume.reliability is not None:
+            niveaux[-1].update(volume.node_reliability(k, j, i))
+    out = {"timestamp_utc": volume.timestamp, "x_m": i * g.dx, "y_m": j * g.dy,
+           "z_terrain_m": float(g.zt[j, i]), "niveaux": niveaux}
+    if volume.reliability is not None:
+        out["uncertainty"] = volume.reliability.uncertainty
+    return out
 
 
 @router.get("/dso", tags=["qualite"])

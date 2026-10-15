@@ -9,6 +9,13 @@ Format :
     manifest.json   grille, niveaux, bornes, liste des champs, valeur de remplacement
     terrain.bin     (ny, nx)        float32, altitude du relief en m
     u.bin v.bin w.bin speed.bin     (nz, ny, nx) float32, NaN remplace par `nodata`
+
+Avec la fiabilite (lot M2, `inference.reliability`), une section `fiabilite` du manifeste
+decrit en plus :
+    sigma_u.bin sigma_v.bin sigma_w.bin sigma_speed.bin coverage.bin reliability.bin
+                                    (nz, ny, nx) float32, `nodata` sous le relief
+    status.bin                      (nz, ny, nx) uint8 : 1 mesure, 0 estime, 255 sous le relief
+    reliability_class.bin           (nz, ny, nx) uint8 : 2 elevee, 1 moyenne, 0 faible, 255
 """
 
 from __future__ import annotations
@@ -19,6 +26,7 @@ from pathlib import Path
 import numpy as np
 
 from .inference import Volume
+from .reliability import CLASSES, NODATA_U8
 
 NODATA = -9999.0
 
@@ -102,9 +110,35 @@ def export_web(volume: Volume, out_dir: str | Path, stride: int = 1,
         "inference_s": volume.inference_s,
         "capteurs_utilises": volume.n_sensors,
     }
+    if volume.reliability is not None:
+        manifest["fiabilite"] = _export_reliability(volume, out_dir, s)
     (out_dir / "manifest.json").write_text(json.dumps(manifest, indent=2, ensure_ascii=False),
                                            encoding="utf-8")
     return out_dir
+
+
+def _export_reliability(volume: Volume, out_dir: Path, s: int) -> dict:
+    """Binaires de la fiabilite (memes grille et decimation que les champs du vent)."""
+    rel = volume.reliability
+    champs = {}
+    for name in ("sigma_u", "sigma_v", "sigma_w", "sigma_speed", "coverage", "reliability"):
+        a = np.ascontiguousarray(getattr(rel, name)[:, ::s, ::s], dtype=np.float32)
+        a = np.nan_to_num(a, nan=NODATA, posinf=NODATA, neginf=NODATA)
+        (out_dir / f"{name}.bin").write_bytes(a.tobytes())
+        finite = a[a != NODATA]
+        champs[name] = {"file": f"{name}.bin", "dtype": "float32",
+                        "min": float(finite.min()) if finite.size else None,
+                        "max": float(finite.max()) if finite.size else None}
+    for name, codes in (("status", {"0": "estime", "1": "mesure"}),
+                        ("reliability_class", {str(i): c for i, c in enumerate(CLASSES)})):
+        a = np.ascontiguousarray(getattr(rel, name)[:, ::s, ::s], dtype=np.uint8)
+        (out_dir / f"{name}.bin").write_bytes(a.tobytes())
+        champs[name] = {"file": f"{name}.bin", "dtype": "uint8", "codes": codes,
+                        "nodata": NODATA_U8}
+    return {"uncertainty": rel.uncertainty, "info": rel.info,
+            "intervalle_vitesse": "p50 = speed ; p10, p90 = speed -/+ 1,2816 x sigma_speed "
+                                  "(p10 >= 0)",
+            "champs": champs}
 
 
 def export_levels_csv(volume: Volume, out_dir: str | Path,
