@@ -25,7 +25,8 @@ class ANEO3D(Dataset):
 
     def __init__(self, stems, hours, doys, geom: Geometry, train: bool,
                  n_samples: int | None = None, seed: int = 0,
-                 keep_eval: float | None = None, spacing_m: float | None = None) -> None:
+                 keep_eval: float | None = None, spacing_m: float | None = None,
+                 reseau: np.ndarray | None = None) -> None:
         self.stems = list(stems)
         self.hours = list(hours)
         self.doys = list(doys)
@@ -40,6 +41,9 @@ class ANEO3D(Dataset):
         # evaluation seulement : reseau REGULIER (un capteur tous les spacing_m), au lieu
         # d'une fraction aleatoire de la couche de surface synthetique, quasi continue
         self.spacing_m = spacing_m
+        # evaluation seulement (lot M8, E2) : reseau FIXE dans l'espace (ny, nx), le meme a
+        # chaque instant, au lieu d'un tirage par instant
+        self.reseau = None if reseau is None else np.asarray(reseau, dtype=bool)
 
     def __len__(self) -> int:
         return self.n_samples if self.n_samples else len(self.stems)
@@ -58,7 +62,9 @@ class ANEO3D(Dataset):
         stem = self.stems[j]
         S = np.load(self.cache_dir / f"{stem}_S.npy")
         Y = np.load(self.cache_dir / f"{stem}_Y.npy")
-        if not self.train and self.spacing_m:
+        if not self.train and self.reseau is not None:
+            sensor = (S[7] > 0.5) & self.reseau
+        elif not self.train and self.spacing_m:
             sensor = (S[7] > 0.5) & lattice_mask(S[7].shape, self.spacing_m, self.geom.dx, rng)
         else:
             sensor = (S[7] > 0.5) & (rng.random(S[7].shape) < keep)
@@ -165,10 +171,10 @@ def make_loaders(cfg: Config, geom: Geometry, splits: Splits) -> dict[str, DataL
 
 
 def eval_loader(cfg: Config, geom: Geometry, splits: Splits, idx: np.ndarray, seed: int,
-                keep: float | None = None,
-                spacing_m: float | None = None) -> tuple[DataLoader, np.ndarray]:
+                keep: float | None = None, spacing_m: float | None = None,
+                reseau: np.ndarray | None = None) -> tuple[DataLoader, np.ndarray]:
     """Un loader deterministe sur un sous-ensemble du test (DSO1, episodes, robustesse)."""
     te_s, te_h, te_d = splits.test
     ds = ANEO3D(te_s[idx], te_h[idx], te_d[idx], geom, train=False, seed=seed, keep_eval=keep,
-                spacing_m=spacing_m)
+                spacing_m=spacing_m, reseau=reseau)
     return DataLoader(ds, batch_size=1), te_s[idx]

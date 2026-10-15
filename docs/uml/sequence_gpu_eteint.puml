@@ -1,0 +1,44 @@
+@startuml sequence_gpu_eteint
+' Sequence « GPU eteint -> dernier etat publie » (lot M8, tache 14, p. 44 ; exigence
+' 7.6 p. 17 et section 17.1 p. 36 du cahier v9).
+' Partie 1 = comportement ACTUEL, verifie contre le Worker (depot atom-dashboard,
+' src/worker.js : proxy() et serviceDown()) et service/link.py.
+' Partie 2 = CIBLE du contrat v1 (docs/PLAN.md, GET /v1/latest) et du lot M6 :
+' NON implementee a ce jour. Ce diagramme ne pretend pas le contraire.
+skinparam shadowing false
+autonumber
+
+actor "Navigateur" as B
+participant "Worker\natom.zelqane.com" as W
+participant "Tunnel nomme\natom-origin.zelqane.com" as T
+participant "Service PC-FNO3D\n(Colab, GPU)" as S
+database "R2\n(instantanes publies)" as R2
+
+== 1. Aujourd'hui : Colab endormi ==
+B -> W : GET /api/... (sans cle)
+W -> T : proxy() + X-API-Key (cle lecture, cote serveur)
+T -x S : connecteur arrete / Colab eteint
+T --> W : 502 / 504 / 520-530
+W -> W : serviceDown(detail)
+W --> B : 503 {"error": "service_asleep"}, Retry-After: 15
+B -> B : bandeau « service endormi »\n(aucune donnee reelle affichee)
+
+note over W, S
+  En mode lien (service/link.py), le relais local repond 502
+  avec la commande de reparation, et /api/health indique "degraded".
+end note
+
+== 2. Cible (contrat v1, lot M6) : dernier etat publie ==
+group Pendant que le GPU tourne
+  S -> R2 : ecrire l'instantane {snapshot_id}/... (champs, qualite, alertes)
+  S -> R2 : PUIS remplacer le manifeste `latest`\n(ecriture atomique : jamais un `latest` partiel)
+end
+B -> W : GET /v1/latest
+W -> R2 : lire `latest`
+R2 --> W : manifeste {snapshot_id, valid_time, published_at,\nmodel_version, compute_status}
+W --> B : 200 + horodatage
+B -> W : GET /v1/fields/{snapshot_id}/{level}/{var}
+W -> R2 : lire le binaire Float32
+W --> B : 200 (dernier etat reel connu)
+B -> B : affiche le dernier etat avec son horodatage\net compute_status (calculateur arrete)
+@enduml

@@ -153,6 +153,16 @@ notebook's globals.
   (captured at the turbine columns only, `Volume.farm_context`), alerts, Weibull/AEP/wind
   rose, and EOL1 (`scripts/m5_eol1_colab.py`). Exposed as `GET /api/wind-farm`, MCP
   `production_eolienne`, CLI `wind-farm` / `windrose`.
+- **`baselines.py` / `preuves.py` / `sobriete.py`** (lot M8, `docs/PREUVES.md`) — reference
+  methods (log profile / power law × IDW / ordinary kriging, numpy-scipy, no PyKrige),
+  variogram and α fitted on **validation** only (`charger_ajustement` refuses test), and
+  the network studies E1 (density), E2 (placement by M2 uncertainty), E3 (backup sensor),
+  E5 (CodeCarbon → nvidia-smi → declared watts → duration only; never an invented
+  number). Every method is scored by `evaluate.metriques_loader`, the metric code
+  extracted from `Evaluator` (one pass over the loader, all predictors on the same
+  instants/sensors/nodes). GPU run: `scripts/m8_preuves_colab.py` (new session folder);
+  CLI `pcfno3d baselines`. Data/model cards: `docs/DATA_CARD.md`, `docs/MODEL_CARD.md`;
+  UML (PlantUML) in `docs/uml/`.
 
 ## The service layer (`service/`, `webapp/`)
 

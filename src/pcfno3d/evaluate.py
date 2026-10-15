@@ -68,79 +68,28 @@ class Evaluator:
         self.out_dir.mkdir(parents=True, exist_ok=True)
 
     # ------------------------------------------------------------------ metriques
-    @torch.no_grad()
     def evaluate_loader(self, loader, stems) -> tuple[pd.DataFrame, pd.DataFrame]:
-        """Metriques par niveau (cumulees) et par instant."""
+        """Metriques par niveau (cumulees) et par instant (voir `metriques_loader`)."""
+        return metriques_loader(loader, stems, self.geom, self.splits.stamp_of,
+                                {"modele": self.predire},
+                                self.loss_fn.roughness_ratio)["modele"]
+
+    @torch.no_grad()
+    def predire(self, s_raw, sensor, tfeat, y, j: int, stem: str) -> list[torch.Tensor]:
+        """Passe servie (ou moyenne de passes) d'un instant du loader -> u, v, w (1, nz,
+        ny, nx) en m/s, sur le device de la geometrie."""
         geom, norm, device = self.geom, self.norm, self.wf.device
-        nz = geom.nz
-        acc = {c: {k: np.zeros(4) for k in range(nz)} for c in "uvw"}   # n, sse, sum, sum2
-        spd_sum = np.zeros(nz)
-        per_instant: list[dict] = []
-
-        for s_raw, sensor, tfeat, y, j in loader:
-            s_raw, sensor, tfeat, y = (t.to(device) for t in (s_raw, sensor, tfeat, y))
-            stem = stems[int(j)]
-            if self.tta > 1:
-                hour, doy = self._time_of[stem]
-                pred = ensemble_forward(self.wf.model, geom, norm, s_raw, sensor,
-                                        float(hour), int(doy), k=self.tta, keep=self.tta_keep,
-                                        seed=int(j), amp_dtype=self.wf.amp_dtype,
-                                        use_amp=self.wf.use_amp, tfeat=tfeat)
-            else:
-                with torch.autocast(device_type=device.type, dtype=self.wf.amp_dtype,
-                                    enabled=self.wf.use_amp):
-                    pred = self.wf.model(assemble_input(s_raw, sensor, tfeat, geom, norm))
-            u, v, w = norm.denorm(pred.float())
-            row = {"stem": stem, "timestamp": self.splits.stamp_of[stem]}
-
-            for c, p in zip("uvw", (u, v, w)):
-                t = y[:, "uvw".index(c)]
-                # noeuds valides ET connus : une cible reelle peut etre partielle (NaN)
-                known = geom.valid_t & torch.isfinite(t[0])
-                for k in range(nz):
-                    m = known[k]
-                    if m.sum() == 0:
-                        continue
-                    pk, tk = p[0, k][m].double(), t[0, k][m].double()
-                    acc[c][k] += np.array([tk.numel(), ((pk - tk) ** 2).sum().item(),
-                                           tk.sum().item(), (tk ** 2).sum().item()])
-                pv, tv = p[0][known], t[0][known]
-                row[f"rmse_{c}"] = (torch.sqrt(((pv - tv) ** 2).mean()).item()
-                                    if pv.numel() else float("nan"))
-
-            known_uv = geom.valid_t & torch.isfinite(y[0, 0]) & torch.isfinite(y[0, 1])
-            for k in range(nz):
-                m = known_uv[k]
-                if m.sum() > 0:
-                    spd_sum[k] += torch.hypot(y[0, 0, k][m], y[0, 1, k][m]).double().sum().item()
-
-            # erreur de direction, hors vents calmes (direction non definie sous 1 m/s)
-            dp = torch.rad2deg(torch.atan2(v[0], u[0]))[known_uv]
-            dt = torch.rad2deg(torch.atan2(y[0, 1], y[0, 0]))[known_uv]
-            dd = torch.abs(dp - dt) % 360
-            dd = torch.minimum(dd, 360 - dd)
-            calm = torch.hypot(y[0, 0], y[0, 1])[known_uv] < 1.0
-            row["mae_dir_deg"] = ((dd[~calm].mean() if (~calm).any() else dd.mean()).item()
-                                  if dd.numel() else float("nan"))
-
-            r = geom.mass_residual(y[:, 3], u, v, w)
-            row["mass_rms"] = torch.sqrt((r[:, geom.mass_mask_t] ** 2).mean()).item()
-            row["roughness_ratio"] = self.loss_fn.roughness_ratio(u, v, y).item()
-            per_instant.append(row)
-
-        levels = []
-        for k in range(nz):
-            rec = {"z_m": int(geom.z_levels[k]), "couverture": float(geom.cover[k]),
-                   "vitesse_moyenne": float(spd_sum[k] / max(acc["u"][k][0], 1))}
-            for c in "uvw":
-                n, sse, st, st2 = acc[c][k]
-                if n == 0:
-                    continue
-                sst = st2 - st ** 2 / n
-                rec[f"rmse_{c}"] = float(np.sqrt(sse / n))
-                rec[f"r2_{c}"] = float(1 - sse / sst) if sst > 0 else float("nan")
-            levels.append(rec)
-        return pd.DataFrame(levels), pd.DataFrame(per_instant)
+        if self.tta > 1:
+            hour, doy = self._time_of[stem]
+            pred = ensemble_forward(self.wf.model, geom, norm, s_raw, sensor,
+                                    float(hour), int(doy), k=self.tta, keep=self.tta_keep,
+                                    seed=int(j), amp_dtype=self.wf.amp_dtype,
+                                    use_amp=self.wf.use_amp, tfeat=tfeat)
+        else:
+            with torch.autocast(device_type=device.type, dtype=self.wf.amp_dtype,
+                                enabled=self.wf.use_amp):
+                pred = self.wf.model(assemble_input(s_raw, sensor, tfeat, geom, norm))
+        return norm.denorm(pred.float())
 
     # ------------------------------------------------------------------ campagne
     def run(self) -> dict:
@@ -338,15 +287,8 @@ class Evaluator:
 
     def _verdicts(self, levels, levels_ep, res, res_ep, res_all, robust, timing) -> dict:
         cfg = self.cfg
-        # tolerance OMM du niveau : sert au DSO1 revise propose (voir DSOCfg)
-        levels["seuil_omm"] = np.maximum(cfg.dso.omm_floor,
-                                         cfg.dso.omm_rel * levels["vitesse_moyenne"])
-        ev = levels[levels["couverture"] >= cfg.dso.min_level_cover]
+        ev, d1 = verdicts_dso1(levels, cfg)
         dso = cfg.dso
-
-        # RMSE global sur tous les noeuds 3D : moyenne quadratique ponderee par la couverture
-        glob = {c: float(np.sqrt((ev[f"rmse_{c}"] ** 2 * ev["couverture"]).sum()
-                                 / ev["couverture"].sum())) for c in "uv"}
         r25 = robust[robust["capteurs_visibles"] == 0.25]
         rmse25 = float(max(r25["rmse_u_max"].iloc[0], r25["rmse_v_max"].iloc[0])) \
             if len(r25) else float("nan")
@@ -364,15 +306,7 @@ class Evaluator:
             "niveaux_evalues": [int(z) for z in ev["z_m"]],
             "par_niveau_synoptique": levels.to_dict(orient="records"),
             "par_niveau_episodes": levels_ep.to_dict(orient="records") if len(levels_ep) else [],
-            "dso1_rmse": bool((ev[["rmse_u", "rmse_v"]].max(axis=1) <= dso.rmse).all()),
-            "dso1_r2": bool((ev[["r2_u", "r2_v"]].min(axis=1) >= dso.r2).all()),
-            "dso1_r2_uvw": bool((ev[["r2_u", "r2_v", "r2_w"]].min(axis=1) >= dso.r2_all).all()),
-            "dso1_rmse_global_u": glob["u"],
-            "dso1_rmse_global_v": glob["v"],
-            "dso1_rmse_global_conforme": bool(max(glob.values()) <= dso.rmse),
-            # DSO1 revise PROPOSE : RMSE <= tolerance OMM du niveau (le DSO1 officiel reste
-            # `dso1_rmse`, juge au seuil fixe `dso.rmse`)
-            "critere_omm": bool((ev[["rmse_u", "rmse_v"]].max(axis=1) <= ev["seuil_omm"]).all()),
+            **d1,
             "dso2_rms_moyen": float(res["mass_rms"].mean()),
             "dso2_rms_p95": float(res["mass_rms"].quantile(0.95)),
             "dso2_rms_max": float(res["mass_rms"].max()),
@@ -393,6 +327,109 @@ class Evaluator:
             "mae_direction_deg": float(res_all["mae_dir_deg"].mean()),
             "robustesse": robust.to_dict(orient="records"),
         }
+
+
+def verdicts_dso1(levels: pd.DataFrame, cfg: Config) -> tuple[pd.DataFrame, dict]:
+    """Verdicts DSO1 d'une table par niveau (celle de `metriques_loader`).
+
+    Ajoute la colonne `seuil_omm` a `levels` (en place) et renvoie (niveaux evalues, cles
+    dso1_* et critere_omm). Partage par l'evaluation du modele et par les methodes de
+    reference (lot M8) : un meme tableau est juge par les memes formules.
+    """
+    dso = cfg.dso
+    # tolerance OMM du niveau : sert au DSO1 revise propose (voir DSOCfg)
+    levels["seuil_omm"] = np.maximum(dso.omm_floor, dso.omm_rel * levels["vitesse_moyenne"])
+    ev = levels[levels["couverture"] >= dso.min_level_cover]
+    # RMSE global sur tous les noeuds 3D : moyenne quadratique ponderee par la couverture
+    glob = {c: float(np.sqrt((ev[f"rmse_{c}"] ** 2 * ev["couverture"]).sum()
+                             / ev["couverture"].sum())) for c in "uv"}
+    return ev, {
+        "dso1_rmse": bool((ev[["rmse_u", "rmse_v"]].max(axis=1) <= dso.rmse).all()),
+        "dso1_r2": bool((ev[["r2_u", "r2_v"]].min(axis=1) >= dso.r2).all()),
+        "dso1_r2_uvw": bool((ev[["r2_u", "r2_v", "r2_w"]].min(axis=1) >= dso.r2_all).all()),
+        "dso1_rmse_global_u": glob["u"],
+        "dso1_rmse_global_v": glob["v"],
+        "dso1_rmse_global_conforme": bool(max(glob.values()) <= dso.rmse),
+        # DSO1 revise PROPOSE : RMSE <= tolerance OMM du niveau (le DSO1 officiel reste
+        # `dso1_rmse`, juge au seuil fixe `dso.rmse`)
+        "critere_omm": bool((ev[["rmse_u", "rmse_v"]].max(axis=1) <= ev["seuil_omm"]).all()),
+    }
+
+
+@torch.no_grad()
+def metriques_loader(loader, stems, geom, stamp_of: dict, predicteurs: dict,
+                     roughness_ratio) -> dict[str, tuple[pd.DataFrame, pd.DataFrame]]:
+    """Metriques par niveau (cumulees) et par instant, pour un ou plusieurs predicteurs.
+
+    predicteurs : {nom: f(s_raw, sensor, tfeat, y, j, stem) -> (u, v, w)}, chaque champ
+    (1, nz, ny, nx) en m/s sur le device de la geometrie. Tous les predicteurs voient
+    EXACTEMENT les memes instants, capteurs visibles et noeuds valides (une seule lecture
+    du loader) : c'est ce qui rend la comparaison avec les methodes de reference loyale.
+    roughness_ratio : `PhysicsLoss.roughness_ratio` (DSO3).
+    """
+    device, nz = geom.device, geom.nz
+    acc = {n: {c: {k: np.zeros(4) for k in range(nz)} for c in "uvw"}   # n, sse, sum, sum2
+           for n in predicteurs}
+    spd_sum = np.zeros(nz)
+    per_instant: dict[str, list[dict]] = {n: [] for n in predicteurs}
+
+    for s_raw, sensor, tfeat, y, j in loader:
+        s_raw, sensor, tfeat, y = (t.to(device) for t in (s_raw, sensor, tfeat, y))
+        stem = stems[int(j)]
+        known_uv = geom.valid_t & torch.isfinite(y[0, 0]) & torch.isfinite(y[0, 1])
+        for k in range(nz):
+            m = known_uv[k]
+            if m.sum() > 0:
+                spd_sum[k] += torch.hypot(y[0, 0, k][m], y[0, 1, k][m]).double().sum().item()
+
+        for nom, predire in predicteurs.items():
+            u, v, w = predire(s_raw, sensor, tfeat, y, int(j), stem)
+            row = {"stem": stem, "timestamp": stamp_of[stem]}
+            for c, p in zip("uvw", (u, v, w)):
+                t = y[:, "uvw".index(c)]
+                # noeuds valides ET connus : une cible reelle peut etre partielle (NaN)
+                known = geom.valid_t & torch.isfinite(t[0])
+                for k in range(nz):
+                    m = known[k]
+                    if m.sum() == 0:
+                        continue
+                    pk, tk = p[0, k][m].double(), t[0, k][m].double()
+                    acc[nom][c][k] += np.array([tk.numel(), ((pk - tk) ** 2).sum().item(),
+                                                tk.sum().item(), (tk ** 2).sum().item()])
+                pv, tv = p[0][known], t[0][known]
+                row[f"rmse_{c}"] = (torch.sqrt(((pv - tv) ** 2).mean()).item()
+                                    if pv.numel() else float("nan"))
+
+            # erreur de direction, hors vents calmes (direction non definie sous 1 m/s)
+            dp = torch.rad2deg(torch.atan2(v[0], u[0]))[known_uv]
+            dt = torch.rad2deg(torch.atan2(y[0, 1], y[0, 0]))[known_uv]
+            dd = torch.abs(dp - dt) % 360
+            dd = torch.minimum(dd, 360 - dd)
+            calm = torch.hypot(y[0, 0], y[0, 1])[known_uv] < 1.0
+            row["mae_dir_deg"] = ((dd[~calm].mean() if (~calm).any() else dd.mean()).item()
+                                  if dd.numel() else float("nan"))
+
+            r = geom.mass_residual(y[:, 3], u, v, w)
+            row["mass_rms"] = torch.sqrt((r[:, geom.mass_mask_t] ** 2).mean()).item()
+            row["roughness_ratio"] = roughness_ratio(u, v, y).item()
+            per_instant[nom].append(row)
+
+    out = {}
+    for nom in predicteurs:
+        levels = []
+        for k in range(nz):
+            rec = {"z_m": int(geom.z_levels[k]), "couverture": float(geom.cover[k]),
+                   "vitesse_moyenne": float(spd_sum[k] / max(acc[nom]["u"][k][0], 1))}
+            for c in "uvw":
+                n, sse, st, st2 = acc[nom][c][k]
+                if n == 0:
+                    continue
+                sst = st2 - st ** 2 / n
+                rec[f"rmse_{c}"] = float(np.sqrt(sse / n))
+                rec[f"r2_{c}"] = float(1 - sse / sst) if sst > 0 else float("nan")
+            levels.append(rec)
+        out[nom] = (pd.DataFrame(levels), pd.DataFrame(per_instant[nom]))
+    return out
 
 
 def format_report(s: dict, levels: pd.DataFrame, levels_ep: pd.DataFrame,
