@@ -35,6 +35,7 @@ from mcp.server.mcpserver import MCPServer
 
 from pcfno3d.config import Config
 from pcfno3d.inference import WindFieldModel
+from pcfno3d.windfarm import round_direction
 
 INSTRUCTIONS = """\
 Champ de vent 3D reconstruit sur la Tunisie (reseau de capteurs ANEO, modele PC-FNO3D).
@@ -199,7 +200,9 @@ def wind_profile(x_m: float, y_m: float, stem: str | None = None) -> dict:
             "sous_le_relief": not bool(np.isfinite(u)),
             "wind_u_m_s": _clean(u), "wind_v_m_s": _clean(v), "wind_w_m_s": _clean(w),
             "wind_speed_m_s": _clean(float(np.hypot(u, v))),
-            "wind_direction_deg": _clean(float((270.0 - np.degrees(np.arctan2(v, u))) % 360.0)),
+            # arrondi AVANT le modulo (regle m4) : jamais 360,0
+            "wind_direction_deg": _clean(float(round_direction(
+                270.0 - np.degrees(np.arctan2(v, u)), 3))),
         })
     return {"stem": stem, "timestamp_utc": volume.timestamp,
             "x_m": i * g.dx, "y_m": j * g.dy, "z_terrain_m": float(g.zt[j, i]),

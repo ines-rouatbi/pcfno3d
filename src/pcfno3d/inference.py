@@ -24,7 +24,7 @@ from .model import build_model, model_cfg_from_checkpoint
 from .normalize import Normalizer
 from .reliability import (CLASSES, NODATA_U8, STATUT_MESURE, Calibration, Reliability,
                           assess, speed_interval)
-from .windfarm import FarmContext, load_farm
+from .windfarm import FarmContext, load_farm, round_direction
 
 
 class Volume:
@@ -142,7 +142,8 @@ class Volume:
             "wind_v_m_s": np.round(self.v[k, j, i], 3),
             "wind_w_m_s": np.round(self.w[k, j, i], 4),
             "wind_speed_m_s": np.round(speed[k, j, i], 3),
-            "wind_direction_deg": np.round(direction[k, j, i], 1),
+            # arrondi AVANT le modulo (contrat, regle m4) : jamais 360,0
+            "wind_direction_deg": round_direction(direction[k, j, i], 1),
         })
 
     def save_npz(self, path: str | Path) -> Path:

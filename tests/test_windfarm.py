@@ -19,10 +19,12 @@ import pytest
 
 from pcfno3d.config import REPO_ROOT, ReliabilityCfg, WindFarmCfg
 from pcfno3d.realdata import isa
-from pcfno3d.windfarm import (RHO_REF, FarmContext, PowerCurve, alert_id, compute_farm,
+from pcfno3d.windfarm import (RHO_REF, FarmCalc, FarmContext, PowerCurve, TurbineCalc,
+                              _power, _state, alert_id, compute_farm,
                               density_normalized_speed, farm_from_dict, fit_weibull,
-                              hub_density, hub_wind_kpi, load_farm, meteo_direction,
-                              profile_at, rews, rotor_strips, shear_alpha, weibull_aep,
+                              hub_density, hub_wind_kpi, iso_utc, load_farm,
+                              meteo_direction, profile_at, rews, rotor_strips,
+                              round_direction, round_veer, shear_alpha, weibull_aep,
                               wind_rose, windrose_document, wrap180)
 
 SCHEMAS = Path(__file__).parent / "data" / "atom_rev2"
@@ -104,10 +106,40 @@ def test_veer_signe_horaire_et_bornes():
     assert -180 <= float(wrap180(359.999)) < 180
 
 
+def test_arrondi_avant_modulo_aux_bornes(geom, cfg):
+    """Regle m4 : arrondir AVANT le modulo. veer dans [-180, 180) (exclusiveMaximum 180),
+    direction dans [0, 360)."""
+    assert float(round_veer(179.96)) == -180.0                 # et non 180,0
+    assert float(round_veer(-179.96)) == -180.0
+    assert float(round_veer(179.94)) == 179.9
+    assert float(round_direction(359.96)) == 0.0               # et non 360,0
+    assert float(round_direction(359.94)) == 359.9
+    assert float(round_direction(-0.04)) == 0.0
+    # jusqu'au document du contrat : 179,96 ne sort jamais en 180,0
+    farm = farm_from_dict(_parc(geom, _colonnes(geom)), geom, cfg)
+    c = TurbineCalc(farm.turbines[0], farm.curves["g2"], "production", hub_speed=8.0,
+                    rews=8.0, v_n=8.0, veer_deg=179.96, rho=1.2,
+                    rho_source="atmosphere_standard", power_kw=800.0)
+    doc = c.to_contract()
+    assert doc["veer_deg"] == -180.0
+    _valide("wind-farm", {"turbines": [doc], "power_curves": {},
+                          "farm": {"power_kw": {"p10": None, "p50": 800.0, "p90": None},
+                                   "rated_kw": 2000, "n_production": 1, "n_arret": 0}})
+    c.veer_deg = -179.96
+    assert c.to_contract()["veer_deg"] == -180.0
+    c.hub_direction = 359.96
+    det = FarmCalc(farm, [c], "2025-01-06 12:00:00", 0.0, None, None, 0, {}).details()[0]
+    assert det["hub_direction_deg"] == 0.0
+
+
 def test_identifiant_alerte_sha8_du_contrat():
     """id = sha8 de « kind|cible » : meme valeur que la fixture du contrat (alerts.json)."""
     assert alert_id("cisaillement", "T-03") == "bdec1bd1"
     assert alert_id("vent_fort_moyeu", "T-03") != alert_id("cisaillement", "T-03")
+    # comme pcfno3d.alerts (M4) : pas d'instant invente
+    assert iso_utc("2025-01-06 12:00:00") == "2025-01-06T12:00:00Z"
+    with pytest.raises(ValueError):
+        iso_utc(None)
 
 
 # ------------------------------------------------------------------ courbe, densite
@@ -120,6 +152,32 @@ def test_courbe_cut_in_cut_out_et_densite_iec():
     assert c.power(density_normalized_speed(10.0, RHO_REF * 0.729)) == pytest.approx(1180)
     with pytest.raises(ValueError):
         PowerCurve("x", [0, 5, 4], [0, 1, 2], 2, 3, 25)        # vitesses non croissantes
+    with pytest.raises(ValueError, match="P > 0"):                # trou entre cut-in et out
+        PowerCurve("x", [0, 3, 4, 5, 25], [0, 0, 0, 5, 5], 5, 3, 25)
+    with pytest.raises(ValueError, match="cut-out"):              # table trop courte
+        PowerCurve("x", [0, 3, 12], [0, 0, 5], 5, 3, 25)
+
+
+def test_regle_unique_etat_et_puissance(geom, cfg):
+    """Etat et puissance sur la MEME vitesse (REWS normalise en densite) : production <=>
+    P > 0. Cas qui etait incoherent : moyeu juste sous le cut-out et rho > rho_ref."""
+    c = PowerCurve("g", **{k: v for k, v in _courbe().items() if k != "source"})
+    rng = np.random.default_rng(11)
+    for v, rho in zip(rng.uniform(0, 35, 4000), rng.uniform(0.9, 1.4, 4000)):
+        vn = float(density_normalized_speed(v, rho))
+        assert (_state(vn, c) == "production") == (float(_power(v, rho, c)) > 0), (v, rho)
+    for v in (3.0, 25.0, 25.0001):
+        assert (_state(v, c) == "production") == (float(c.power(v)) > 0)
+    cols = _colonnes(geom)
+    vol = _volume(geom, np.full(geom.shape, 24.8), np.zeros(geom.shape))
+    lourd = farm_from_dict(_parc(geom, cols, air_density=1.30), geom, cfg)
+    for t in compute_farm(vol, lourd, WCFG).turbines:
+        assert t.hub_speed == pytest.approx(24.8) and t.hub_speed < 25.0
+        assert t.v_n == pytest.approx(24.8 * (1.30 / RHO_REF) ** (1 / 3)) and t.v_n > 25
+        assert t.state == "arret_vent_fort" and t.power_kw == 0.0
+    normal = farm_from_dict(_parc(geom, cols, air_density=RHO_REF), geom, cfg)
+    for t in compute_farm(vol, normal, WCFG).turbines:
+        assert t.state == "production" and t.power_kw == 2000.0
 
 
 def test_courbes_de_demo_documentees_et_sous_betz():
@@ -329,16 +387,27 @@ def test_aep_analytique_et_densite():
 def test_rose_des_vents_frequences_et_secteurs():
     d = np.array([0, 359, 14.9, 15, 90, 180, 270, 45, 10, 200])
     s = np.array([5, 7, 4, 8, 30, 2, 13, 0.1, np.nan, 9])
-    n, sec = wind_rose(s, d, 12, WCFG.speed_bin_edges_ms, 0.2)
-    assert n == 8                                               # calme et NaN exclus
+    n, nc, sec = wind_rose(s, d, 12, WCFG.speed_bin_edges_ms, 0.2)
+    assert n == 9 and nc == 1                       # le calme compte, le NaN est exclu
     assert sum(x["frequency"] for x in sec) == pytest.approx(1.0, abs=0.01)
     assert [x["dir_center_deg"] for x in sec] == [30.0 * k for k in range(12)]
     f = {x["dir_center_deg"]: x for x in sec}
-    assert f[0.0]["frequency"] == pytest.approx(3 / 8)          # 0, 359 et 14,9 : nord
-    assert f[30.0]["frequency"] == pytest.approx(1 / 8)         # 15 : secteur suivant
-    assert f[90.0]["speed_bins"][-1] == pytest.approx(1 / 8)    # 30 m/s : classe ouverte
+    c = 1 / 12                                      # calme reparti a parts egales
+    assert f[0.0]["frequency"] == pytest.approx((3 + c) / 9, abs=1e-4)   # 0, 359, 14,9
+    assert f[30.0]["frequency"] == pytest.approx((1 + c) / 9, abs=1e-4)  # 15
+    assert f[60.0]["frequency"] == pytest.approx(c / 9, abs=1e-4)        # calme seul
+    assert f[60.0]["speed_bins"][0] == pytest.approx(c / 9, abs=1e-4)    # 1re classe
+    assert f[90.0]["speed_bins"][-1] == pytest.approx(1 / 9, abs=1e-4)   # classe ouverte
     for x in sec:
         assert sum(x["speed_bins"]) == pytest.approx(x["frequency"], abs=1e-3)
+    # 14,96 s'arrondit a 15,0 avant le classement : secteur 30, comme sa valeur publiee
+    _, _, sec2 = wind_rose([5.0], [14.96], 12, WCFG.speed_bin_edges_ms, 0.2)
+    assert sec2[1]["frequency"] == 1.0
+    # que des calmes : n_valid > 0, somme 1 ; aucun instant valide : pas de rose (None)
+    n3, nc3, sec3 = wind_rose([0.1, 0.0], [np.nan, np.nan], 12, WCFG.speed_bin_edges_ms)
+    assert n3 == nc3 == 2
+    assert sum(x["frequency"] for x in sec3) == pytest.approx(1.0, abs=0.01)
+    assert windrose_document("T", 0, 0, 60, ["2025-01-01"], [np.nan], [np.nan], WCFG) is None
     rng = np.random.default_rng(3)
     doc = windrose_document("T-01", 100.0, 200.0, 60.0,
                             ["2025-01-01 00:00", "2025-01-06 18:00"] * 250,
@@ -504,6 +573,36 @@ def test_eol1_mecanisme_sur_le_mini_jeu(wf_parc, instant, monkeypatch):
     assert r0["nmae_puissance"] == 0.0 and r0["accord_etats"] == 1.0
 
 
+def test_eol1_memes_instants_et_masques_que_dso1(wf_parc):
+    """Les capteurs visibles d'EOL1 sont ceux de l'evaluation DSO1 (eval_loader, graine
+    2000, position dans la selection synoptique), y compris en sous-echantillonnant."""
+    from pcfno3d.cache import load_index
+    from pcfno3d.dataset import eval_loader, is_synoptic, make_splits
+    from pcfno3d.windfarm import eol1
+    wf = wf_parc()
+    splits = make_splits(wf.cfg, load_index(wf.cfg))
+    te_s = splits.test[0]
+    syn = np.array([is_synoptic(splits.stamp_of[x]) for x in te_s], dtype=bool)
+    idx = np.nonzero(syn)[0] if syn.any() else np.arange(len(te_s))
+    loader, stems = eval_loader(wf.cfg, wf.geom, splits, idx, 2000, keep=0.5)
+    attendu = {str(st): int(b[1].sum()) for st, b in zip(stems, loader)}
+    r = eol1(wf, wf.farm, keep=0.5, n_instants=2)
+    assert r["instants"] == 2
+    for row in r["par_instant"]:
+        assert row["capteurs"] == attendu[row["stem"]], row["stem"]
+        assert str(te_s[idx][row["position_dso1"]]) == row["stem"]
+
+
+def test_alertes_jamais_sans_horodatage(geom, cfg):
+    farm = farm_from_dict(_parc(geom, _colonnes(geom)), geom, cfg)
+    vol = _volume(geom, 0.5 * _h_agl(geom), np.zeros(geom.shape), stamp=None)
+    calc = compute_farm(vol, farm, WCFG)
+    with pytest.raises(ValueError, match="horodatage"):
+        calc.alerts(WCFG)
+    out = calc.to_json(WCFG)
+    assert out["alerts"] == {"items": []} and out["alertes_non_produites"]
+
+
 def test_script_eol1_ecrit_dans_un_dossier_neuf(trained, parc_test, monkeypatch):
     import importlib.util
     for var, p in (("ANEO_DATA", trained.paths.data_dir), ("ANEO_CACHE", trained.paths.cache_dir),
@@ -531,8 +630,9 @@ def test_roses_du_parc_sur_une_serie(wf_parc):
     from pcfno3d.windfarm import farm_windroses
     wf = wf_parc()
     stems = [str(s) for s in load_index(wf.cfg)["stem"].iloc[:4]]
-    docs = farm_windroses(wf, wf.farm, stems)
-    assert set(docs) == {t.id for t in wf.farm.turbines}
+    docs, ecartees = farm_windroses(wf, wf.farm, stems)
+    assert set(docs) | set(ecartees) == {t.id for t in wf.farm.turbines}
+    assert not set(docs) & set(ecartees)
     for doc in docs.values():
         _valide("windrose", doc)
         if doc["n_valid"]:

@@ -56,6 +56,7 @@ from pydantic import BaseModel, Field
 from pcfno3d.config import Config
 from pcfno3d.export import export_web
 from pcfno3d.inference import Volume, WindFieldModel
+from pcfno3d.windfarm import round_direction
 
 from . import mcp_server
 from .auth import (NO_KEY_MESSAGE, OPEN_WARNING, ApiKeyRecord, ApiKeyStore, default_store_path,
@@ -662,7 +663,8 @@ def profile(x: float = Query(...), y: float = Query(...), stem: str | None = Non
             "z_asl_m": float(zl), "z_agl_m": round(float(zl - g.zt[j, i]), 2),
             "sous_le_relief": not ok,
             "wind_speed_m_s": round(float(np.hypot(u, v)), 3) if ok else None,
-            "wind_direction_deg": round(float((270.0 - np.degrees(np.arctan2(v, u))) % 360.0), 1)
+            # arrondi AVANT le modulo (regle m4 du contrat) : jamais 360,0
+            "wind_direction_deg": float(round_direction(270.0 - np.degrees(np.arctan2(v, u))))
             if ok else None,
             "wind_w_m_s": round(float(w), 4) if ok else None,
         })

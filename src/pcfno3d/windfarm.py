@@ -17,7 +17,8 @@ et conventions dans docs/EOLIEN.md ; resume :
     densite         : capteur visible le plus proche (rho de surface) ramene a la hauteur du
                       moyeu par le rapport ISA, sinon atmosphere standard ISA au moyeu.
     puissance       : v_n = REWS * (rho / rho_ref)^(1/3) (IEC 61400-12-1, normalisation en
-                      densite), puis courbe de puissance ; etat d'apres le vent au moyeu.
+                      densite), puis courbe de puissance ; etat sur le MEME v_n
+                      (production <=> cut_in < v_n <= cut_out <=> P > 0).
     intervalles     : vitesses : p50 = passe servie, p10/p90 = -/+ 1,2816 sigma (D6), sigma =
                       dispersion des passes de l'ensemble M2 a la colonne x facteur k calibre ;
                       parc : quantiles sur les MEMBRES de l'ensemble (D9).
@@ -57,10 +58,27 @@ def meteo_direction(u, v):
 
 
 def wrap180(deg):
-    """Angle ramene a [-180, 180)."""
+    """Angle ramene a [-180, 180) (sans arrondi : voir round_veer pour une valeur publiee)."""
     return (np.asarray(deg, float) + 180.0) % 360.0 - 180.0
 
 
+def round_direction(deg, nd: int = 1):
+    """Direction publiee dans [0, 360) : arrondi AVANT le modulo (contrat, regle m4).
+    359,96 -> 360,0 -> 0,0 ; arrondir apres le modulo donnerait 360,0, hors du schema."""
+    return np.round(np.round(np.asarray(deg, float), nd) % 360.0, nd)
+
+
+def round_veer(deg, nd: int = 1):
+    """Veer publie dans [-180, 180) : arrondi AVANT le modulo (regle m4).
+    179,96 -> 180,0 -> -180,0 ; -179,96 -> -180,0."""
+    return np.round((np.round(np.asarray(deg, float), nd) + 180.0) % 360.0 - 180.0, nd)
+
+
+# --- conventions d'alerte de M4 (pcfno3d.alerts, autre branche) --------------------------
+# Copie locale en attendant l'integration, qui remplacera ces deux definitions par
+# `from .alerts import alert_id, iso_utc` ; les alertes passent toutes par `_alert_meta`.
+# Comme chez M4, iso_utc(None) leve une erreur : ce module ne lui passe jamais None
+# (pas d'alerte ni de rose pour un instant sans horodatage).
 def alert_id(kind: str, target: str) -> str:
     """Identifiant stable d'une alerte : sha8 de « kind|cible » (contrat rev. 2, D8)."""
     return hashlib.sha256(f"{kind}|{target}".encode("utf-8")).hexdigest()[:8]
@@ -68,9 +86,16 @@ def alert_id(kind: str, target: str) -> str:
 
 def iso_utc(stamp) -> str:
     """Horodatage ISO 8601 en UTC termine par Z (common.schema.json, iso_utc)."""
-    t = pd.Timestamp(stamp) if stamp is not None else pd.Timestamp.now(tz="UTC")
+    if stamp is None:
+        raise ValueError("horodatage absent : iso_utc n'invente pas d'instant")
+    t = pd.Timestamp(stamp)
     t = t.tz_localize("UTC") if t.tzinfo is None else t.tz_convert("UTC")
     return t.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _alert_meta(kind: str, target: str, stamp) -> tuple[str, str]:
+    """(id, raised_at) d'une alerte : unique point de contact avec les conventions de M4."""
+    return alert_id(kind, target), iso_utc(stamp)
 
 
 # ---------------------------------------------------------------------- courbe de puissance
@@ -98,13 +123,25 @@ class PowerCurve:
             raise ValueError(f"courbe {self.model} : puissances dans [0, rated_kw]")
         if not 0 <= self.cut_in_ms < self.cut_out_ms:
             raise ValueError(f"courbe {self.model} : 0 <= cut_in_ms < cut_out_ms")
+        if self.speed_ms[-1] < self.cut_out_ms:
+            raise ValueError(f"courbe {self.model} : la table doit aller jusqu'au cut-out")
+        # regle d'etat unique : production <=> cut_in < v_n <= cut_out, et alors P > 0
+        dedans = (self.speed_ms > self.cut_in_ms) & (self.speed_ms <= self.cut_out_ms)
+        if (self.power_kw[dedans] <= 0).any():
+            raise ValueError(f"courbe {self.model} : puissance nulle entre cut-in et cut-out "
+                             "(l'etat « production » impose P > 0)")
+
+    def running(self, v_n) -> np.ndarray:
+        """En production : cut_in < v_n <= cut_out (v_n = vent normalise en densite)."""
+        v = np.asarray(v_n, float)
+        return np.isfinite(v) & (v > self.cut_in_ms) & (v <= self.cut_out_ms)
 
     def power(self, v_n) -> np.ndarray:
-        """Puissance (kW) au vent NORMALISE v_n ; 0 sous cut-in et au-dessus de cut-out."""
+        """Puissance (kW) au vent NORMALISE v_n : la table hors production vaut 0 (meme
+        regle que l'etat, `running`), et P > 0 en production."""
         v = np.asarray(v_n, float)
         p = np.interp(v, self.speed_ms, self.power_kw, left=0.0, right=0.0)
-        p = np.where((v < self.cut_in_ms) | (v > self.cut_out_ms) | ~np.isfinite(v), 0.0, p)
-        return p
+        return np.where(self.running(v), p, 0.0)
 
     def to_contract(self) -> dict:
         """Entree de power_curves (wind-farm.schema.json)."""
@@ -351,6 +388,7 @@ class TurbineCalc:
     state: str
     hub_speed: float = float("nan")
     rews: float = float("nan")
+    v_n: float = float("nan")          # REWS normalise en densite : etat ET puissance
     hub_direction: float | None = None
     shear_alpha: float | None = None
     veer_deg: float | None = None
@@ -362,7 +400,6 @@ class TurbineCalc:
     power_p10: float | None = None
     power_p90: float | None = None
     k_calibration: float | None = None
-    members_hub: np.ndarray | None = None
     members_rews: np.ndarray | None = None
     info: dict = field(default_factory=dict)
 
@@ -382,7 +419,7 @@ class TurbineCalc:
                 "hub_speed": self.interval(self.hub_speed, self.hub_sigma),
                 "rews": self.interval(self.rews, self.rews_sigma),
                 "shear_alpha": _r(self.shear_alpha, 3),
-                "veer_deg": _r(self.veer_deg, 1),
+                "veer_deg": _rv(self.veer_deg),
                 "power_kw": {"p10": _r(self.power_p10, 1), "p50": _r(self.power_kw, 1),
                              "p90": _r(self.power_p90, 1)} if dispo
                 else {"p10": None, "p50": None, "p90": None},
@@ -398,23 +435,33 @@ def _r(x, nd: int = 2):
     return round(x, nd) if np.isfinite(x) else None
 
 
-def _state(hub: float, curve: PowerCurve) -> str:
-    if not np.isfinite(hub):
+def _rv(x):
+    """Veer publie (arrondi avant le modulo), None si inconnu."""
+    return float(round_veer(x)) if x is not None and np.isfinite(x) else None
+
+
+def _rd(x):
+    """Direction publiee dans [0, 360) (arrondi avant le modulo), None si inconnue."""
+    return float(round_direction(x)) if x is not None and np.isfinite(x) else None
+
+
+def _state(v_n: float, curve: PowerCurve) -> str:
+    """REGLE UNIQUE (etat et puissance) sur le REWS normalise en densite v_n :
+    v_n <= cut-in -> arret_vent_faible, v_n > cut-out -> arret_vent_fort, sinon production,
+    et alors P = courbe(v_n) > 0 (garanti par PowerCurve)."""
+    if not np.isfinite(v_n):
         return "indisponible"
-    if hub < curve.cut_in_ms:
+    if v_n <= curve.cut_in_ms:
         return "arret_vent_faible"
-    if hub > curve.cut_out_ms:
+    if v_n > curve.cut_out_ms:
         return "arret_vent_fort"
     return "production"
 
 
-def _power(hub, rews_, rho: float, curve: PowerCurve) -> np.ndarray:
-    """Puissance (kW) : etat d'apres le vent au moyeu (anemometre de nacelle), production
-    d'apres le REWS normalise en densite. Vectorise sur hub / rews_."""
-    hub, rews_ = np.asarray(hub, float), np.asarray(rews_, float)
-    p = curve.power(density_normalized_speed(rews_, rho, curve.rho_ref))
-    marche = np.isfinite(hub) & (hub >= curve.cut_in_ms) & (hub <= curve.cut_out_ms)
-    return np.where(marche, p, 0.0)
+def _power(rews_, rho: float, curve: PowerCurve) -> np.ndarray:
+    """Puissance (kW) = courbe(REWS normalise en densite), 0 hors production (meme regle
+    que _state). Vectorise sur rews_."""
+    return curve.power(density_normalized_speed(rews_, rho, curve.rho_ref))
 
 
 def _k_at(calibration, geom: Geometry, z_asl: float) -> float:
@@ -447,12 +494,15 @@ def turbine_calc(volume, turbine: Turbine, curve: PowerCurve, wcfg, ctx: FarmCon
             "hub_asl_m": round(float(geom.zt[j, i]) + turbine.hub_agl_m, 2),
             "extrapolation_sous_premier_noeud": prof["extrapole"],
             "alpha_extrapolation": prof["alpha_bas"]}
-    calc = TurbineCalc(turbine, curve, _state(hub, curve), hub_speed=hub, rews=rw, info=info)
-    if calc.state == "indisponible" or not np.isfinite(rw):
-        calc.state, calc.hub_speed, calc.rews = "indisponible", float("nan"), float("nan")
+    calc = TurbineCalc(turbine, curve, "indisponible", hub_speed=hub, rews=rw, info=info)
+    if not (np.isfinite(hub) and np.isfinite(rw)):
+        calc.hub_speed, calc.rews = float("nan"), float("nan")
         return calc
     calc.rho, calc.rho_source, info["densite"] = hub_density(turbine, geom, ctx,
                                                              wcfg.rho_radius_m)
+    calc.v_n = float(density_normalized_speed(rw, calc.rho, curve.rho_ref))
+    calc.state = _state(calc.v_n, curve)
+    info["rews_normalise_ms"] = round(calc.v_n, 3)
     if hub >= wcfg.calm_ms:
         calc.hub_direction = float(meteo_direction(prof["u"][0], prof["v"][0]))
     a = float(shear_alpha(s[1], s[2], turbine.hub_agl_m - r, turbine.hub_agl_m + r))
@@ -460,8 +510,8 @@ def turbine_calc(volume, turbine: Turbine, curve: PowerCurve, wcfg, ctx: FarmCon
     if min(s[1], s[2]) >= wcfg.calm_ms:
         d_lo = meteo_direction(prof["u"][1], prof["v"][1])
         d_hi = meteo_direction(prof["u"][2], prof["v"][2])
-        calc.veer_deg = float(wrap180(d_hi - d_lo))
-    calc.power_kw = float(_power(hub, rw, calc.rho, curve))
+        calc.veer_deg = float(wrap180(d_hi - d_lo))       # brut ; publie par round_veer
+    calc.power_kw = float(_power(rw, calc.rho, curve))
 
     # ensemble M2 : sigma brut a la colonne x k calibre, puis intervalles (D6)
     if ctx is not None and ctx.members_uv is not None:
@@ -479,13 +529,11 @@ def turbine_calc(volume, turbine: Turbine, curve: PowerCurve, wcfg, ctx: FarmCon
             calc.hub_sigma = k * float(np.sqrt(np.mean((mh[fin] - hub) ** 2)))
             calc.rews_sigma = k * float(np.sqrt(np.mean((mr[fin] - rw) ** 2)))
             # membres ramenes a la dispersion calibree : x_0 + k (x_m - x_0)
-            calc.members_hub = np.maximum(hub + k * (mh[fin] - hub), 0.0)
             calc.members_rews = np.maximum(rw + k * (mr[fin] - rw), 0.0)
-            # intervalle de puissance : image de l'intervalle de vitesse par la courbe
-            # (hub et REWS supposes comonotones), p50 = passe servie
+            # intervalle de puissance : image de l'intervalle du REWS par la courbe (meme
+            # regle d'etat), p50 = passe servie
             t = np.linspace(-1.0, 1.0, 201)
-            p = _power(np.maximum(hub + t * Z80 * calc.hub_sigma, 0.0),
-                       np.maximum(rw + t * Z80 * calc.rews_sigma, 0.0), calc.rho, curve)
+            p = _power(np.maximum(rw + t * Z80 * calc.rews_sigma, 0.0), calc.rho, curve)
             calc.power_p10 = float(min(p.min(), calc.power_kw))
             calc.power_p90 = float(max(p.max(), calc.power_kw))
     return calc
@@ -526,7 +574,7 @@ class FarmCalc:
         out = []
         for t in self.turbines:
             d = {"id": t.turbine.id, **t.info,
-                 "hub_direction_deg": _r(t.hub_direction, 1),
+                 "hub_direction_deg": _rd(t.hub_direction),
                  "hub_sigma_ms": _r(t.hub_sigma, 3), "rews_sigma_ms": _r(t.rews_sigma, 3),
                  "k_calibration": _r(t.k_calibration, 4)}
             out.append(d)
@@ -534,34 +582,40 @@ class FarmCalc:
 
     def alerts(self, wcfg) -> list[dict]:
         """Alertes M5 au format alerts.schema.json (vent_fort_moyeu, cisaillement, D8).
-        `raised_at` = instant courant : le journal de M4 le remplace par la premiere levee."""
+        `raised_at` = instant du volume : le journal de M4 le remplace par la premiere levee.
+        Sans horodatage, aucune alerte n'est produite (on n'invente pas d'instant)."""
+        if self.timestamp is None:
+            raise ValueError("alertes impossibles : instant sans horodatage")
         items = []
-        raised = iso_utc(self.timestamp)
         for t in self.turbines:
             if t.state == "indisponible":
                 continue
             tb, c = t.turbine, t.curve
             loc = {"x_m": tb.x_m, "y_m": tb.y_m}
-            s50 = t.hub_speed
-            s90 = s50 + Z80 * t.hub_sigma if t.hub_sigma is not None else s50
+            # meme grandeur que l'etat : REWS normalise en densite (p90 si M2 a tourne)
+            f = t.v_n / t.rews if t.rews > 0 else 1.0
+            v90 = t.v_n + Z80 * t.rews_sigma * f if t.rews_sigma is not None else t.v_n
             lvl = thr = None
-            if s50 >= wcfg.high_wind_critical_ms:
-                lvl, thr, rec = "critique", wcfg.high_wind_critical_ms, (
+            if t.hub_speed >= wcfg.high_wind_critical_ms:
+                lvl, val, thr, rec = "critique", t.hub_speed, wcfg.high_wind_critical_ms, (
                     "Vent extreme au moyeu : verifier la mise en securite du parc et suspendre "
                     "toute intervention sur site")
-            elif s50 > c.cut_out_ms:
-                lvl, thr, rec = "important", c.cut_out_ms, (
+            elif t.state == "arret_vent_fort":
+                lvl, val, thr, rec = "important", t.v_n, c.cut_out_ms, (
                     "Eolienne a l'arret (vent fort) : verifier la mise en drapeau et anticiper "
                     "la perte de production")
-            elif s90 >= wcfg.high_wind_warn_frac * c.cut_out_ms:
-                lvl, thr, rec = "avertissement", wcfg.high_wind_warn_frac * c.cut_out_ms, (
-                    f"Surveiller : arret de securite possible (cut-out {c.cut_out_ms:g} m/s)")
+            elif v90 >= wcfg.high_wind_warn_frac * c.cut_out_ms:
+                lvl, val, thr, rec = ("avertissement", t.v_n,
+                                      wcfg.high_wind_warn_frac * c.cut_out_ms,
+                                      f"Surveiller : arret de securite possible (cut-out "
+                                      f"{c.cut_out_ms:g} m/s)")
             if lvl:
-                items.append(_alert("vent_fort_moyeu", tb, lvl, loc, s50, thr, "m/s",
+                items.append(_alert("vent_fort_moyeu", tb, lvl, loc, round(val, 2), thr, "m/s",
                                     f"Vent fort au moyeu de {tb.id}",
-                                    f"Vent au moyeu {s50:.1f} m/s (p90 {s90:.1f} m/s) a "
-                                    f"{tb.hub_agl_m:g} m au-dessus du sol ; arret a "
-                                    f"{c.cut_out_ms:g} m/s", rec, raised))
+                                    f"Vent au moyeu {t.hub_speed:.1f} m/s a {tb.hub_agl_m:g} m "
+                                    f"au-dessus du sol ; vent equivalent rotor normalise "
+                                    f"{t.v_n:.1f} m/s (p90 {v90:.1f}) ; arret au-dela de "
+                                    f"{c.cut_out_ms:g} m/s", rec, self.timestamp))
             a = t.shear_alpha
             if a is not None:
                 lvl = None
@@ -583,19 +637,25 @@ class FarmCalc:
                                         f"Exposant de cisaillement {a:.2f} > {thr:g} entre "
                                         f"{tb.hub_agl_m - tb.rotor_d_m / 2:g} et "
                                         f"{tb.hub_agl_m + tb.rotor_d_m / 2:g} m au-dessus du sol",
-                                        rec, raised))
+                                        rec, self.timestamp))
         return items
 
     def to_json(self, wcfg) -> dict:
-        return {"timestamp_utc": self.timestamp, "wind_farm": self.document(),
-                "alerts": {"items": self.alerts(wcfg)}, "details": self.details(),
-                "uncertainty": self.uncertainty, "membres": self.n_members,
-                "parc": {"source": self.farm.source, "sha256": self.farm.sha256,
-                         "exemple": self.farm.exemple}}
+        # sans horodatage, pas d'alerte (raised_at inconnu) : liste vide et explication
+        alertes = self.alerts(wcfg) if self.timestamp is not None else []
+        out = {"timestamp_utc": self.timestamp, "wind_farm": self.document(),
+               "alerts": {"items": alertes}, "details": self.details(),
+               "uncertainty": self.uncertainty, "membres": self.n_members,
+               "parc": {"source": self.farm.source, "sha256": self.farm.sha256,
+                        "exemple": self.farm.exemple}}
+        if self.timestamp is None:
+            out["alertes_non_produites"] = "instant sans horodatage"
+        return out
 
 
-def _alert(kind, tb, level, loc, value, threshold, unit, title, cause, rec, raised) -> dict:
-    return {"id": alert_id(kind, tb.id), "level": level, "kind": kind, "target": tb.id,
+def _alert(kind, tb, level, loc, value, threshold, unit, title, cause, rec, stamp) -> dict:
+    aid, raised = _alert_meta(kind, tb.id, stamp)
+    return {"id": aid, "level": level, "kind": kind, "target": tb.id,
             "title": title, "cause": cause, "recommendation": rec, "raised_at": raised,
             "status": "ouverte", "station_id": None, "turbine_id": tb.id, "location": loc,
             "value": float(value) if value is not None else None,
@@ -619,7 +679,7 @@ def compute_farm(volume, farm: Farm, wcfg, calibration=None,
         # des quantiles des eoliennes (les erreurs des eoliennes voisines sont correlees)
         per = np.zeros(members)
         for c in actives:
-            per += _power(c.members_hub, c.members_rews, c.rho, c.curve)
+            per += _power(c.members_rews, c.rho, c.curve)
         p10 = float(min(np.quantile(per, 0.1), total))
         p90 = float(max(np.quantile(per, 0.9), total))
     if members and calibration is not None:
@@ -708,38 +768,61 @@ def weibull_aep(curve: PowerCurve, k: float, c: float, rho: float = RHO_REF,
 
 
 def wind_rose(speeds, directions, n_sectors: int, edges, calm_ms: float = 0.2
-              ) -> tuple[int, list[dict]]:
-    """(n_valid, secteurs de windrose.schema.json). Secteurs de largeur egale, le premier
-    centre sur 0 ; dir_center_deg = PROVENANCE. Les calmes (< calm_ms, direction indefinie)
-    sont exclus ; la derniere classe de vitesse est ouverte. Somme des frequences = 1."""
+              ) -> tuple[int, int, list[dict]]:
+    """(n_valid, n_calmes, secteurs de windrose.schema.json).
+
+    Secteurs de largeur egale, le premier centre sur 0 ; dir_center_deg = PROVENANCE. La
+    direction est arrondie a 0,1 degre AVANT le modulo et le classement (regle m4), comme
+    elle est publiee. La derniere classe de vitesse est ouverte.
+
+    n_valid = instants de vitesse connue, calmes compris (< calm_ms, direction indefinie).
+    Le schema n'a pas de champ « calme » : chaque calme est reparti A PARTS EGALES entre les
+    secteurs, dans sa classe de vitesse (la premiere). Somme des frequences = 1 des que
+    n_valid > 0 ; n_valid = 0 ne donne pas de rose (voir windrose_document).
+    """
     s, d = np.asarray(speeds, float), np.asarray(directions, float)
-    ok = np.isfinite(s) & np.isfinite(d) & (s >= calm_ms)
-    s, d = s[ok], d[ok] % 360.0
+    calme = np.isfinite(s) & (s < calm_ms)
+    dirige = np.isfinite(s) & np.isfinite(d) & ~calme
     width = 360.0 / n_sectors
     edges = np.asarray(edges, float)
     nb = edges.size - 1
-    sec = np.floor(((d + width / 2.0) % 360.0) / width).astype(int) % n_sectors
-    b = np.clip(np.searchsorted(edges, s, side="right") - 1, 0, nb - 1)
-    counts = np.zeros((n_sectors, nb), int)
-    np.add.at(counts, (sec, b), 1)
-    n = int(ok.sum())
+
+    def classe(v):
+        return np.clip(np.searchsorted(edges, v, side="right") - 1, 0, nb - 1)
+
+    dd = round_direction(d[dirige], 1)
+    sec = np.floor(((dd + width / 2.0) % 360.0) / width).astype(int) % n_sectors
+    counts = np.zeros((n_sectors, nb), float)
+    np.add.at(counts, (sec, classe(s[dirige])), 1.0)
+    nc = int(calme.sum())
+    if nc:
+        np.add.at(counts, (slice(None), classe(s[calme])), 1.0 / n_sectors)
+    n = int(dirige.sum()) + nc
     out = []
     for k in range(n_sectors):
         bins = counts[k] / n if n else np.zeros(nb)
         out.append({"dir_center_deg": round(k * width, 6),
                     "frequency": round(float(counts[k].sum() / n), 4) if n else 0.0,
                     "speed_bins": [round(float(x), 4) for x in bins]})
-    return n, out
+    return n, nc, out
 
 
 def windrose_document(site_id: str, x_m: float, y_m: float, hub_agl_m: float, times,
                       speeds, directions, wcfg, curve: PowerCurve | None = None,
-                      rho: float | None = None) -> dict:
+                      rho: float | None = None) -> dict | None:
     """Objet de windrose.schema.json pour un site ou une eolienne, sur une serie d'instants
-    (rose, Weibull, AEP et facteur de capacite si une courbe est fournie)."""
-    n, sectors = wind_rose(speeds, directions, wcfg.sectors, wcfg.speed_bin_edges_ms,
-                           wcfg.calm_ms)
-    t = pd.to_datetime(pd.Series(list(times)))
+    (rose, Weibull, AEP et facteur de capacite si une courbe est fournie).
+
+    None si aucun instant n'est valide : le schema impose des frequences numeriques de somme
+    1 (regle m8) et n'admet ni null ni rose vide ; le fichier n'est alors pas produit."""
+    n, _, sectors = wind_rose(speeds, directions, wcfg.sectors, wcfg.speed_bin_edges_ms,
+                              wcfg.calm_ms)
+    if n == 0:
+        return None
+    times = list(times)
+    if any(x is None for x in times):
+        raise ValueError("rose des vents : instant sans horodatage dans la serie")
+    t = pd.to_datetime(pd.Series(times))
     fit = fit_weibull(speeds)
     weibull = None
     if fit is not None:
@@ -758,9 +841,13 @@ def windrose_document(site_id: str, x_m: float, y_m: float, hub_agl_m: float, ti
             "sectors": sectors, "weibull": weibull}
 
 
-def farm_windroses(wf, farm: Farm, stems, keep: float = 1.0) -> dict[str, dict]:
+def farm_windroses(wf, farm: Farm, stems, keep: float = 1.0
+                   ) -> tuple[dict[str, dict], dict[str, str]]:
     """Roses des vents et Weibull des eoliennes declarees sur une serie d'instants en
-    cache (une passe servie par instant, sans ensemble)."""
+    cache (une passe servie par instant, sans ensemble).
+
+    Retourne (documents par eolienne, eoliennes ecartees -> raison) : une eolienne sans
+    aucun instant valide (indisponible sur toute la serie) n'a pas de fichier."""
     wcfg = wf.cfg.wind_farm
     rows: dict[str, list] = {t.id: [] for t in farm.turbines}
     times = []
@@ -772,23 +859,32 @@ def farm_windroses(wf, farm: Farm, stems, keep: float = 1.0) -> dict[str, dict]:
         times.append(stamp)
         for c in calc.turbines:
             rows[c.turbine.id].append((c.hub_speed, c.hub_direction if c.hub_direction
-                                       is not None else np.nan, c.rho))
-    out = {}
+                                       is not None else np.nan,
+                                       c.rho if c.rho is not None else np.nan))
+    out, ecartees = {}, {}
     for t in farm.turbines:
         a = np.array(rows[t.id], float).reshape(-1, 3)
         rho = float(np.nanmean(a[:, 2])) if np.isfinite(a[:, 2]).any() else None
-        out[t.id] = windrose_document(t.id, t.x_m, t.y_m, t.hub_agl_m, times, a[:, 0],
-                                      a[:, 1], wcfg, farm.curves[t.model], rho)
-    return out
+        doc = windrose_document(t.id, t.x_m, t.y_m, t.hub_agl_m, times, a[:, 0], a[:, 1],
+                                wcfg, farm.curves[t.model], rho)
+        if doc is None:
+            ecartees[t.id] = (f"aucun instant valide sur {len(times)} (eolienne indisponible) "
+                              ": le contrat impose une somme des frequences egale a 1, pas "
+                              "de fichier")
+        else:
+            out[t.id] = doc
+    return out, ecartees
 
 
 # ---------------------------------------------------------------------- EOL1
-def truth_volume(cfg, geom: Geometry, stem: str, timestamp: str | None = None):
+def truth_volume(cfg, geom: Geometry, stem: str, timestamp: str | None = None,
+                 y: np.ndarray | None = None):
     """Verite 3D du generateur (cache Y) sous forme de Volume, NaN sous le relief et la ou
     la cible est inconnue."""
     from .inference import Volume
 
-    y = np.load(cfg.paths.cache_dir / f"{stem}_Y.npy")
+    if y is None:
+        y = np.load(cfg.paths.cache_dir / f"{stem}_Y.npy")
     ok = geom.valid & np.isfinite(y[0]) & np.isfinite(y[1])
     u, v, w = (np.where(ok, y[c], np.nan).astype(np.float32) for c in range(3))
     return Volume(u, v, w, geom, timestamp=timestamp)
@@ -805,34 +901,60 @@ def eol1_instants(cfg) -> list[str]:
     return [str(s) for s in (syn if len(syn) else te)["stem"]]
 
 
-def eol1(wf, farm: Farm, stems=None, keep: float = 1.0, seed: int = 2000,
+def eol1_dataset(cfg, geom: Geometry, keep: float, seed: int = 2000):
+    """Le MEME jeu que DSO1 (Evaluator.run) : instants synoptiques de test, ANEO3D en
+    evaluation, graine 2000. Le masque de l'instant en position p de cette selection est
+    tire par default_rng(seed + p) : identique a DSO1 pour keep = mask.keep_eval."""
+    from .cache import load_index
+    from .dataset import ANEO3D, is_synoptic, make_splits
+
+    splits = make_splits(cfg, load_index(cfg))
+    te_s, te_h, te_d = splits.test
+    syn = np.array([is_synoptic(splits.stamp_of[x]) for x in te_s], dtype=bool)
+    idx = np.nonzero(syn)[0] if syn.any() else np.arange(len(te_s))
+    return ANEO3D(te_s[idx], te_h[idx], te_d[idx], geom, train=False, seed=seed,
+                  keep_eval=keep)
+
+
+def eol1(wf, farm: Farm, keep: float = 1.0, seed: int = 2000,
          n_instants: int | None = None) -> dict:
     """EOL1 : production du parc depuis le champ RECONSTRUIT vs depuis la VERITE 3D du
     generateur, sur les instants de test.
 
         ecart = |E_rec - E_vrai| / E_vrai,   E = somme sur les instants de P_parc(t)
 
-    Meme parc, meme densite (surface de l'instant), meme courbe : seul le champ de vent
-    differe. Conforme si ecart < wind_farm.eol1_max_rel (5 %). Diagnostics : nMAE par
-    instant (|P_rec - P_vrai| / puissance installee), RMSE du vent au moyeu, accord des etats.
-    Capteurs visibles : `keep` (1,0 = production), masque tire comme DSO1 (graine seed + n).
+    Meme parc, meme densite (surface de l'instant, capteurs visibles), meme courbe : seul
+    le champ de vent differe. Conforme si ecart < wind_farm.eol1_max_rel (5 %). Diagnostics :
+    nMAE par instant (|P_rec - P_vrai| / puissance installee), RMSE du vent au moyeu, accord
+    des etats.
+
+    Instants et capteurs visibles : exactement ceux de l'evaluation DSO1 (`eol1_dataset` :
+    ANEO3D, graine 2000, masque de la POSITION dans la selection synoptique, conservee meme
+    si `n_instants` sous-echantillonne). La passe est celle de production (`predict`), avec
+    ce masque comme seul jeu de capteurs.
     """
     wcfg = wf.cfg.wind_farm
-    stems = list(stems) if stems is not None else eol1_instants(wf.cfg)
-    if n_instants is not None and len(stems) > n_instants:
-        stems = [stems[i] for i in np.unique(np.linspace(0, len(stems) - 1,
-                                                         n_instants).astype(int))]
-    if not stems:
+    ds = eol1_dataset(wf.cfg, wf.geom, keep, seed)
+    pos = list(range(len(ds)))
+    if n_instants is not None and len(pos) > n_instants:
+        pos = [int(x) for x in np.unique(np.linspace(0, len(pos) - 1, n_instants).astype(int))]
+    if not pos:
         raise ValueError("aucun instant de test en cache pour EOL1")
     rows, hub_err, etats = [], {t.id: [] for t in farm.turbines}, []
-    for n, stem in enumerate(stems):
+    for p in pos:
+        _s, sensor, _tf, y, j = ds[p]
+        stem = str(ds.stems[j])
         S, hour, doy, stamp = wf.surface_from_cache(stem)
-        vol = wf.predict(S, hour, doy, timestamp=stamp, keep=keep, seed=seed + n,
-                         reliability=False)
-        ctx = FarmContext(farm.columns, None, S[4], S[7] > 0.5)
+        S = np.array(S, copy=True)
+        S[7] = sensor.numpy()                     # masque DSO1 ; keep=1.0 le garde tel quel
+        vol = wf.predict(S, hour, doy, timestamp=stamp, keep=1.0, reliability=False)
+        vis = S[7] > 0.5
+        ctx = FarmContext(farm.columns, None, S[4], vis)
         rec = compute_farm(vol, farm, wcfg, context=ctx)
-        vrai = compute_farm(truth_volume(wf.cfg, wf.geom, stem, stamp), farm, wcfg, context=ctx)
-        rows.append({"stem": stem, "timestamp_utc": stamp, "p_rec_kw": rec.power_kw,
+        vrai = compute_farm(truth_volume(wf.cfg, wf.geom, stem, stamp, y=y.numpy()), farm,
+                            wcfg, context=ctx)
+        rows.append({"stem": stem, "timestamp_utc": stamp, "position_dso1": p,
+                     "capteurs": int(vis.sum()), "p_rec_kw": rec.power_kw,
                      "p_vrai_kw": vrai.power_kw, "n_production_rec": rec.n_production,
                      "n_production_vrai": vrai.n_production})
         for a, b in zip(rec.turbines, vrai.turbines):
@@ -847,6 +969,7 @@ def eol1(wf, farm: Farm, stems=None, keep: float = 1.0, seed: int = 2000,
     return {"critere": "EOL1", "definition": "|E_rec - E_vrai| / E_vrai, E = somme des "
             "puissances du parc sur les instants de test (champ reconstruit vs verite 3D)",
             "instants": len(rows), "capteurs_visibles": keep, "graine": seed,
+            "masques": "ceux de DSO1 (ANEO3D, graine 2000 + position synoptique)",
             "parc": {"source": farm.source, "sha256": farm.sha256, "exemple": farm.exemple,
                      "eoliennes": len(farm.turbines), "rated_kw": rated},
             "somme_p_rec_kw": e_rec, "somme_p_vrai_kw": e_vrai,

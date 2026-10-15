@@ -11,9 +11,10 @@ avec le meme parc, la meme densite (surface de l'instant) et la meme courbe :
     ecart = |E_rec - E_vrai| / E_vrai,   E = somme sur les instants de P_parc(t)
     conforme si ecart < wind_farm.eol1_max_rel (5 %)
 
-Mesure a chaque fraction de capteurs visibles de --keep (defaut 1,0 = production, puis 0,5
-= protocole DSO1) ; le verdict retenu est celui de la premiere valeur. Le test ne sert QU'AU
-verdict : rien n'y est ajuste.
+Instants et masques de capteurs : EXACTEMENT ceux de l'evaluation DSO1 (ANEO3D, graine
+2000, position dans la selection synoptique). Mesure a chaque fraction de capteurs visibles
+de --keep (defaut 1,0 = production, puis 0,5 = mask.keep_eval de DSO1) ; le verdict retenu
+est celui de la premiere valeur. Le test ne sert QU'AU verdict : rien n'y est ajuste.
 
 Tout s'ecrit dans un dossier NEUF, run_dir/eolien_pcfno3d/<modele>/eol1_<horodatage>/ : le
 script n'ouvre en ecriture aucun fichier existant.

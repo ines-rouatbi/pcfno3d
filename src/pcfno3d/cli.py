@@ -262,7 +262,10 @@ def cmd_windrose(args) -> int:
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     out = cfg.paths.run_dir / "eolien_pcfno3d" / wf.checkpoint_path.stem / f"rose_{stamp}"
     out.mkdir(parents=True, exist_ok=False)          # dossier neuf : rien n'est ecrase
-    for site, doc in farm_windroses(wf, wf.farm, stems, keep=args.keep).items():
+    docs, ecartees = farm_windroses(wf, wf.farm, stems, keep=args.keep)
+    for site, raison in ecartees.items():
+        print(f"{site} : pas de fichier - {raison}")
+    for site, doc in docs.items():
         (out / f"{site}.json").write_bytes(
             json.dumps(doc, indent=2, ensure_ascii=False).encode("utf-8"))
         w = doc["weibull"]

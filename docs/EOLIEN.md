@@ -64,6 +64,12 @@ sans géoréférencement.
 - **Direction météo** : d'où vient le vent, `(270 − atan2(v, u)) mod 360`. `u > 0` donne 270
   (vent d'ouest) et `v < 0` donne 0 (vent du nord). Elle est indéfinie sous 0,2 m/s
   (`wind_farm.calm_ms`, comme `dir_from_deg` du contrat).
+- **Arrondi avant le modulo** (règle m4 du contrat). Une direction publiée est
+  `round(d, 1) mod 360` (`round_direction`) : 359,96 donne 0,0, jamais 360,0. Un veer publié
+  est `((round(x, 1) + 180) mod 360) − 180` (`round_veer`) : 179,96 et −179,96 donnent −180,0,
+  jamais 180,0 (`exclusiveMaximum: 180`). Les tests couvrent ces bornes. La même règle est
+  appliquée aux directions arrondies hors du lot M5 : `/api/profile`, l'outil MCP
+  `wind_profile`, `Volume.to_nodes_frame` et les cartes CSV de `export.py`.
 
 ## Formules
 
@@ -106,7 +112,8 @@ Il vaut `null` si une des vitesses est nulle.
 
 Il est positif quand la direction tourne dans le sens horaire avec la hauteur (350° → 10°
 donne +20°), comme la spirale d'Ekman de l'hémisphère nord. Il vaut `null` si une des
-vitesses est un calme.
+vitesses est un calme. Le calcul garde la valeur brute ; la publication arrondit avant le
+modulo (`round_veer`, voir Conventions).
 
 **Densité de l'air au moyeu** (`air_density`, `air_density_source`, D9) :
 
@@ -126,16 +133,26 @@ Une densité de surface hors de [0,5 ; 1,6] kg/m³ est ignorée. Une éolienne i
 La courbe est interpolée linéairement, avec ρ_ref = 1,225 kg/m³. Test exact : ρ = 0,729 ρ_ref
 et v = 10 m/s donnent v_n = 9 m/s.
 
-**État** : d'après le vent **au moyeu** (anémomètre de nacelle), non normalisé.
+**État : une seule règle, la même vitesse que la puissance.** L'état et la puissance se
+lisent tous deux sur v_n, le REWS normalisé en densité :
 
-| État | Condition |
-|---|---|
-| `arret_vent_faible` | moyeu < cut-in |
-| `arret_vent_fort` | moyeu > cut-out |
-| `production` | sinon |
-| `indisponible` | colonne sans nœud valide autour du rotor |
+| État | Condition | Puissance |
+|---|---|---|
+| `arret_vent_faible` | v_n ≤ cut-in | 0 |
+| `arret_vent_fort` | v_n > cut-out | 0 |
+| `production` | cut-in < v_n ≤ cut-out | courbe(v_n) **> 0** |
+| `indisponible` | colonne sans nœud valide autour du rotor | `null` |
 
-Une éolienne à l'arrêt produit 0. Le parc donne `n_production` et `n_arret` (arrêts vent
+`PowerCurve` refuse une table qui ne va pas jusqu'au cut-out, ou qui a une puissance nulle
+entre cut-in et cut-out. On a donc toujours « production ⇔ P > 0 », ce qui est testé sur
+4 000 tirages et sur le cas qui était incohérent : moyeu à 24,8 m/s et ρ = 1,30 kg/m³ donnent
+v_n = 25,3 m/s, donc `arret_vent_fort` à 0 kW, et non plus « production » à 0 kW.
+
+Le choix assumé : un vrai contrôleur décide le cut-in et le cut-out sur l'anémomètre de
+nacelle, sans normalisation. Ici, état et puissance suivent la même grandeur, pour qu'ils
+ne se contredisent jamais. Le vent brut au moyeu reste publié (`hub_speed`) et sert au
+niveau `critique` de `vent_fort_moyeu`. La valeur de v_n est dans
+`details[].rews_normalise_ms`. Le parc donne `n_production` et `n_arret` (arrêts vent
 faible et vent fort ; les indisponibles ne comptent ni dans l'un ni dans l'autre).
 
 ## Intervalles (D6, D9)
@@ -155,7 +172,7 @@ Ils ne sont disponibles que si la fiabilité M2 a tourné (`inference.reliabilit
   pour la valeur au moyeu ou le REWS de chaque membre, où k est le facteur calibré de la
   vitesse de M2, interpolé à l'altitude ASL du moyeu (k = 1 en `non_calibre`).
 - **Puissance d'une éolienne.** C'est l'image de l'intervalle de vitesse par la courbe :
-  min et max de P sur [p10, p90], avec le moyeu et le REWS supposés comonotones. Comme la
+  min et max de P sur l'intervalle [p10, p90] du REWS, avec la même règle d'état. Comme la
   courbe n'est pas linéaire (plateau, cut-out), un intervalle symétrique serait faux.
 - **Parc** (D9). Ce sont les quantiles 10 % et 90 % de la puissance du parc **par membre**,
   pas la somme des quantiles des éoliennes : les erreurs d'éoliennes voisines sont
@@ -177,14 +194,20 @@ si aucune colonne n'est utilisable. `hub_wind_kpi(volume, h)` est l'entrée de M
 Elles suivent le format `alerts.schema.json`, avec `id` = sha8 de `kind|cible` (cible =
 identifiant de l'éolienne ; la fixture `cisaillement|T-03` → `bdec1bd1` est testée),
 `turbine_id` = cible, `location` = position déclarée, `status: "ouverte"` et
-`raised_at` = instant courant. **L'agrégation, la première levée et la clôture sont le
-travail de M4**, qui remplace `raised_at` par la date de son journal.
+`raised_at` = horodatage du volume. **L'agrégation, la première levée et la clôture sont
+le travail de M4**, qui remplace `raised_at` par la date de son journal.
+
+`alert_id` et `iso_utc` sont des copies locales de `pcfno3d.alerts` (M4, autre branche),
+regroupées dans un seul bloc. Toutes les alertes passent par `_alert_meta`, et
+l'intégration remplacera ce bloc par l'import. Comme chez M4, `iso_utc(None)` lève une
+erreur, et ce module ne lui passe jamais `None` : un volume sans horodatage ne produit
+aucune alerte (`alerts.items` vide et `alertes_non_produites` dans la réponse).
 
 | `kind` | Niveau | Condition (défauts, section `wind_farm`) |
 |---|---|---|
 | `vent_fort_moyeu` | `critique` | p50 au moyeu ≥ 35 m/s (`high_wind_critical_ms`) |
-| | `important` | p50 > cut-out : éolienne à l'arrêt vent fort |
-| | `avertissement` | p90 (p50 sans M2) ≥ 0,9 × cut-out (`high_wind_warn_frac`) |
+| | `important` | état `arret_vent_fort` (v_n > cut-out, même règle que l'état) |
+| | `avertissement` | p90 de v_n (p50 sans M2) ≥ 0,9 × cut-out (`high_wind_warn_frac`) |
 | `cisaillement` | `important` | α > 0,6 (`shear_important`) |
 | | `avertissement` | α > 0,45 (`shear_warn`) |
 | | `information` | α > 0,3 (`shear_info`, comme la fixture) |
@@ -215,9 +238,18 @@ Ils sont calculés sur une **série d'instants**, une passe servie par instant
   1 − exp(−(25/c)^k).
 - **Rose.** Les secteurs sont de largeur égale (`wind_farm.sectors`, 12 par défaut), le
   premier centré sur 0, et `dir_center_deg` est la **provenance**. Classes de vitesse :
-  `speed_bin_edges_ms`, la dernière ouverte. Les calmes (< 0,2 m/s) sont exclus, si bien
-  que `n_valid` compte les instants de direction définie. Σ `frequency` = 1 (à l'arrondi
-  4 décimales près), et la somme des `speed_bins` d'un secteur vaut sa fréquence.
+  `speed_bin_edges_ms`, la dernière ouverte. La direction est arrondie à 0,1° **avant**
+  le classement, comme elle est publiée. `n_valid` compte **tous** les instants de
+  vitesse connue, calmes compris (< 0,2 m/s, direction indéfinie). Le schéma n'a pas de
+  champ « calme » (`additionalProperties: false`) : chaque calme est donc réparti **à
+  parts égales entre les secteurs**, dans sa classe de vitesse (la première). Σ
+  `frequency` = 1 (à l'arrondi 4 décimales près), même quand tous les instants sont
+  calmes, et la somme des `speed_bins` d'un secteur vaut sa fréquence.
+- **Sans instant valide**, il n'y a **pas de fichier**. `n_valid = 0` est autorisé par le
+  schéma, mais la règle m8 (Σ = 1 ± 0,01) ne peut pas tenir, et `frequency` n'admet pas
+  `null`. `farm_windroses` renvoie l'éolienne dans ses écartées, et `pcfno3d windrose`
+  imprime pourquoi (« aucun instant valide… pas de fichier »). Cela arrive à une éolienne
+  indisponible sur toute la série.
 - `period` va du premier au dernier instant de la série (`…Z`). Sous 100 instants,
   l'interface doit signaler une statistique faible (contrat). Une AEP tirée de quelques
   jours **n'est pas** une production annuelle représentative : c'est le mécanisme qui est
@@ -257,9 +289,14 @@ la justesse de la courbe de puissance.
 
 - **Instants.** Les instants synoptiques de **test**, ceux de DSO1, avec un pas constant :
   E est proportionnelle à l'énergie.
-- **Capteurs.** Le verdict se lit à **100 %** des capteurs, le cas de production (`predict`).
-  Le script mesure aussi 50 %, le protocole DSO1, avec un masque tiré comme DSO1
-  (graine 2000 + n).
+- **Capteurs.** Instants **et masques** sont exactement ceux de l'évaluation DSO1
+  (`eol1_dataset`) : `ANEO3D` en évaluation sur la sélection synoptique de test, graine
+  2000. Le masque de l'instant en position p est tiré par `default_rng(2000 + p)`, et
+  cette position est conservée quand `--instants` sous-échantillonne. Le test le vérifie
+  contre `eval_loader`, à l'identique. La reconstruction est la passe de production
+  (`predict`), avec ce masque comme seul jeu de capteurs. Le verdict se lit à **100 %** des
+  capteurs, le cas de production ; le script mesure aussi 50 %, soit `mask.keep_eval`, les
+  masques mêmes de DSO1.
 - **Seuil.** `wind_farm.eol1_max_rel` vaut 0,05.
 - **Verdict indéfini.** Si la production vraie est nulle sur toute la série (calme), le
   verdict vaut `null`.
@@ -300,9 +337,9 @@ par instant) dans `run_dir/eolien_pcfno3d/<modèle>/eol1_<horodatage>/`. Il comp
   les tests). Le reste (`kpi`, `details`, `uncertainty`, `membres`, `parc`,
   `timestamp_utc`) est hors schéma. M6 publie `wind_farm` tel quel.
 - **Rose des vents.** Elle est produite en fichiers par `pcfno3d windrose`, sans route
-  locale ; `/v1/windrose/{site_id}` est le travail de M6. Le contrat ne précise rien sur les
-  calmes : on les exclut de `n_valid`. Avec `n_valid = 0`, les fréquences valent 0 (la
-  règle Σ = 1 est alors impossible) et `weibull` vaut `null`.
+  locale ; `/v1/windrose/{site_id}` est le travail de M6. Le schéma n'a pas de champ pour
+  les calmes : ils comptent dans `n_valid` et sont répartis à parts égales entre les
+  secteurs. Sans instant valide, aucun fichier n'est produit (voir plus haut).
 - **Position.** `turbines[].x_m/y_m` est la position **déclarée**. Le calcul utilise le
   nœud le plus proche, donné dans `details[].noeud`.
 - **`power_kw` d'une éolienne.** C'est l'image de l'intervalle de vitesse. Les quantiles
