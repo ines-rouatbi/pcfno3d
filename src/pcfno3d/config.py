@@ -267,7 +267,7 @@ class ReliabilityCfg:
     seed: int = 2026                  # graine des masques : sortie deterministe
     sigma_floor_m_s: float = 0.01     # sigma plancher dans la calibration (division)
     per_level: bool = True            # k par niveau (sinon un k global par composante)
-    dz_status_m: float = 12.5         # « mesure » : capteur reel a moins de dz du noeud
+    dz_status_m: float = 15.0         # « mesure » : capteur visible a moins de dz (rev. 2, D7)
     coverage_length_m: float = 1000.0  # L : portee horizontale d'un capteur
     coverage_height_m: float = 500.0   # H : decroissance de la couverture avec la hauteur
     coverage_density_ref: float = 2.0  # D0 : densite de capteurs pour ~63 % de couverture

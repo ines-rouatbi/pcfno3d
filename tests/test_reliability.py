@@ -14,17 +14,23 @@ import numpy as np
 import pytest
 
 from pcfno3d.config import ReliabilityCfg
-from pcfno3d.reliability import (CLASSES, COMPOSANTES, METHOD, NODATA_U8, STATUT_ESTIME,
-                                 STATUT_MESURE, Z80, Calibration, DSO6Accumulator,
-                                 RatioHistogram, coverage_index, ensemble_sigma,
-                                 fit_calibration, member_masks, node_status,
-                                 reliability_class, reliability_index, speed_interval)
+from pcfno3d.reliability import (CHAMPS_CONTRAT, CLASSES, COMPOSANTES, METHOD, NODATA_U8,
+                                 STATUT_ESTIME, STATUT_MESURE, U8_SCALE, UNCERTAINTY_AUCUNE, Z80,
+                                 Calibration, DSO6Accumulator, RatioHistogram,
+                                 calibration_block, coverage_index, ensemble_sigma,
+                                 fit_calibration, member_masks, node_status, quality_by_level,
+                                 reliability_class, reliability_index, speed_interval,
+                                 to_u8_unit)
 
 # cles EXACTES du bloc uncertainty_method du contrat ATOM (common.schema.json,
 # additionalProperties: false)
 CLES_UNCERTAINTY = {"method", "members", "calibrated", "scale_factor", "coverage_80_validation"}
-CLES_NOEUD = {"sigma_u", "sigma_v", "sigma_w", "speed_interval", "status", "coverage",
-              "reliability", "reliability_class"}
+CLES_NOEUD = {"sigma_speed", "sigma_u", "sigma_v", "sigma_w", "speed_interval", "status",
+              "coverage", "reliability", "reliability_class"}
+# variables de meta.fields (contrat rev. 2) produites par M2, et leur codage (D13)
+CHAMPS_REV2 = {"sigma_speed": "float32", "sigma_u": "float32", "sigma_v": "float32",
+               "sigma_w": "float32", "coverage": "uint8", "reliability": "uint8",
+               "status": "uint8"}
 
 
 def _sensor(geom, frac=0.3, seed=0):
@@ -32,20 +38,29 @@ def _sensor(geom, frac=0.3, seed=0):
 
 
 # ------------------------------------------------------------------ statut
-def test_statut_tout_estime_sur_synthetique(geom):
-    st = node_status(geom, _sensor(geom), real_sensors=False, dz_m=12.5)
+def test_statut_regle_d7_capteur_visible_a_15_m(geom):
+    """Rev. 2, D7 : mesure <=> capteur VISIBLE dans la colonne et |dz| <= 15 m, sur donnees
+    synthetiques comme reelles ; 255 sous le relief."""
+    sensor = _sensor(geom)
+    st = node_status(geom, sensor, dz_m=15.0)
     assert st.dtype == np.uint8 and st.shape == geom.shape
-    assert (st[geom.valid] == STATUT_ESTIME).all()
+    dz = np.abs(np.asarray(geom.z_levels, float)[:, None, None] - geom.z_sensor[None])
+    attendu = sensor[None] & (dz <= 15.0) & geom.valid
+    assert ((st == STATUT_MESURE) == attendu).all()
+    assert (st[geom.valid & ~attendu] == STATUT_ESTIME).all()
     assert (st[~geom.valid] == NODATA_U8).all()
+    # sans capteur visible, rien n'est « mesure »
+    vide = node_status(geom, np.zeros_like(sensor), dz_m=15.0)
+    assert not (vide == STATUT_MESURE).any()
 
 
-def test_statut_mesure_seulement_capteur_reel_meme_colonne_proche(geom):
+def test_statut_mesure_seulement_meme_colonne_proche(geom):
     sensor = np.zeros((geom.ny, geom.nx), bool)
     j, i = geom.ny // 2, geom.nx // 2
     sensor[j, i] = True
-    st = node_status(geom, sensor, real_sensors=True, dz_m=12.5)
+    st = node_status(geom, sensor, dz_m=15.0)
     dz = np.abs(np.asarray(geom.z_levels, float) - geom.z_sensor[j, i])
-    attendu = (dz <= 12.5) & geom.valid[:, j, i]
+    attendu = (dz <= 15.0) & geom.valid[:, j, i]
     assert ((st[:, j, i] == STATUT_MESURE) == attendu).all()
     # aucune autre colonne n'est « mesuree »
     autre = st.copy()
@@ -216,6 +231,56 @@ def test_indice_classe_et_intervalle():
     p10, p90 = speed_interval(np.array([5.0, 0.2]), np.array([1.0, 1.0]))
     assert p10[0] == pytest.approx(5 - Z80) and p90[0] == pytest.approx(5 + Z80)
     assert p10[1] == 0.0                                   # une vitesse n'est jamais < 0
+    # formule exacte du contrat rev. 2 (D6) : p10 = max(0, speed - 1,2816 sigma_speed)
+    rng = np.random.default_rng(0)
+    speed, sig = rng.uniform(0, 20, 1000), rng.uniform(0, 5, 1000)
+    p10, p90 = speed_interval(speed, sig)
+    np.testing.assert_allclose(p10, np.maximum(0, speed - 1.2815515655446004 * sig), rtol=1e-6)
+    np.testing.assert_allclose(p90, speed + 1.2815515655446004 * sig, rtol=1e-6)
+    assert round(Z80, 4) == 1.2816
+
+
+def test_codage_uint8_du_contrat():
+    """Rev. 2, D13 : coverage et reliability en uint8 quantifie (0..254 -> 0..1, 255 absent)."""
+    assert CHAMPS_CONTRAT == CHAMPS_REV2
+    a = np.array([0.0, 1.0, 0.5, np.nan, 1.2, -0.1, 1 / 254])
+    b = to_u8_unit(a)
+    assert b.dtype == np.uint8
+    assert b.tolist() == [0, 254, 127, 255, 254, 0, 1]
+    ok = np.isfinite(a) & (a >= 0) & (a <= 1)
+    assert np.abs(b[ok] * U8_SCALE - a[ok]).max() <= 0.5 / 254 + 1e-12
+    assert UNCERTAINTY_AUCUNE == {"method": "aucune", "members": 1, "calibrated": False}
+
+
+def test_blocs_quality_du_contrat(geom):
+    """quality.schema.json : by_level (parts par classe, medianes) et calibration."""
+    from pcfno3d.reliability import Reliability
+    shp = geom.shape
+    rng = np.random.default_rng(1)
+    sig = np.where(geom.valid, rng.uniform(0, 2, shp), np.nan).astype(np.float32)
+    cov = np.where(geom.valid, rng.uniform(0, 1, shp), np.nan).astype(np.float32)
+    r = reliability_index(sig, cov, 1.0)
+    rel = Reliability(sig, sig, sig, sig, node_status(geom, _sensor(geom), 15.0), cov, r,
+                      reliability_class(r, 0.6, 0.3), UNCERTAINTY_AUCUNE)
+    rows = quality_by_level(rel, geom)
+    assert len(rows) == geom.nz
+    cles = {"z_asl_m", "valid_nodes", "share_elevee", "share_moyenne", "share_faible",
+            "sigma_speed_median", "coverage_median"}
+    for k, row in enumerate(rows):
+        assert set(row) == cles and row["valid_nodes"] == int(geom.valid[k].sum())
+        if row["valid_nodes"]:
+            assert row["share_elevee"] + row["share_moyenne"] + row["share_faible"] == \
+                pytest.approx(1.0)
+            assert row["sigma_speed_median"] == pytest.approx(
+                float(np.median(sig[k][geom.valid[k]])))
+        else:
+            assert row["share_elevee"] is None and row["sigma_speed_median"] is None
+    assert calibration_block(None) is None
+    blk = calibration_block({"instants_synoptiques": 120, "capteurs_visibles": 0.5,
+                             "coverage_80": 0.81, "corr_error_sigma": float("nan"),
+                             "dso6_conforme": False})
+    assert blk == {"evaluated_on": "120 instants de test, 50% des capteurs",
+                   "coverage_80": 0.81, "corr_error_sigma": None, "dso6_pass": False}
 
 
 # ------------------------------------------------------------------ integration
@@ -290,8 +355,12 @@ def test_activee_deterministe_et_valeur_servie_inchangee(wf_fiable, instant, tmp
         x = getattr(rel, name)
         assert np.isnan(x[~g.valid]).all() and (x[g.valid] >= 0).all()
     assert (rel.sigma_u[g.valid] > 0).any()
-    assert (rel.status[g.valid] == STATUT_ESTIME).all()         # synthetique : tout estime
+    # D7 : les capteurs simules comptent ; meme regle que node_status
+    sensor = S[7] > 0.5
+    np.testing.assert_array_equal(rel.status, node_status(g, sensor, 15.0))
+    assert (rel.status[g.valid] == STATUT_MESURE).any()          # la demo de BF7
     assert (rel.status[~g.valid] == NODATA_U8).all()
+    assert rel.info["donnees_reelles"] is False
     assert set(np.unique(rel.reliability_class[g.valid])) <= {0, 1, 2}
     assert rel.uncertainty == {"method": METHOD, "members": 4, "calibrated": False,
                                "scale_factor": None, "coverage_80_validation": None}
@@ -310,7 +379,9 @@ def test_activee_deterministe_et_valeur_servie_inchangee(wf_fiable, instant, tmp
     nz, ny, nx = g.nz, len(range(0, g.ny, 2)), len(range(0, g.nx, 2))
     assert (out / "sigma_u.bin").stat().st_size == nz * ny * nx * 4
     st = np.frombuffer((out / "status.bin").read_bytes(), np.uint8)
-    assert st.size == nz * ny * nx and set(np.unique(st)) <= {0, 255}
+    assert st.size == nz * ny * nx and set(np.unique(st)) <= {0, 1, 255}
+    assert (out / "sigma_speed.bin").stat().st_size == nz * ny * nx * 4
+    assert npz["sigma_speed"].dtype == np.float32
     assert fia["champs"]["status"]["codes"] == {"0": "estime", "1": "mesure"}
 
 
@@ -320,14 +391,19 @@ def test_noeud_noms_du_contrat(wf_fiable, instant):
     k, j, i = (int(x[0]) for x in np.nonzero(g.valid))
     n = vol.node_reliability(k, j, i)
     assert set(n) == CLES_NOEUD
-    assert n["status"] == "estime" and n["reliability_class"] in CLASSES
+    assert n["status"] in ("estime", "mesure") and n["reliability_class"] in CLASSES
     si = n["speed_interval"]
     assert set(si) == {"p10", "p50", "p90"} and si["p10"] <= si["p50"] <= si["p90"]
-    assert si["p50"] == round(float(vol.speed[k, j, i]), 3)    # p50 = vitesse servie (D6)
+    sp, sg = float(vol.speed[k, j, i]), float(vol.reliability.sigma_speed[k, j, i])
+    assert si["p50"] == round(sp, 3)                            # p50 = vitesse servie (D6)
+    assert si["p10"] == round(max(0.0, sp - Z80 * sg), 3)
+    assert si["p90"] == round(sp + Z80 * sg, 3)
+    assert n["sigma_speed"] == round(sg, 3)
     assert 0 <= n["coverage"] <= 1 and 0 <= n["reliability"] <= 1
     k2, j2, i2 = (int(x[0]) for x in np.nonzero(~g.valid))
     sous = vol.node_reliability(k2, j2, i2)
     assert set(sous) == CLES_NOEUD and sous["status"] is None and sous["sigma_u"] is None
+    assert sous["sigma_speed"] is None
 
 
 def test_api_profile_bloc_incertitude(wf_fiable, instant):
@@ -346,7 +422,7 @@ def test_api_profile_bloc_incertitude(wf_fiable, instant):
     assert set(body["uncertainty"]) == CLES_UNCERTAINTY
     for niv in body["niveaux"]:
         assert CLES_NOEUD <= set(niv)
-        assert niv["status"] in ("estime", None)
+        assert niv["status"] in ("estime", "mesure", None)
         assert (niv["status"] is None) == niv["sous_le_relief"]
     json.dumps(body, allow_nan=False)                      # JSON strict : aucun NaN
 

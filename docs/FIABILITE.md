@@ -1,8 +1,9 @@
 # Lot M2 — fiabilité du champ reconstruit (DSO6)
 
 *Module : `src/pcfno3d/reliability.py`. Besoins BF7, BF8, BF9 ; critère DSO6 ; contrat du
-nœud virtuel (§ 8.4) et contrat ATOM (`common.schema.json` : `status_node`, `interval`,
-`uncertainty_method`, `reliability_class`).*
+nœud virtuel (§ 8.4) et contrat ATOM **révision 2** (`DECISIONS-rev2.md` : D6, D7, D13, B3,
+B5 ; `common.schema.json` : `sigma_ms`, `status_node`, `interval`, `uncertainty_method`,
+`reliability_class` ; `quality.schema.json`).*
 
 ## Statut : prêt, **verdict DSO6 en attente de la session GPU**
 
@@ -11,24 +12,33 @@ de `scripts/m2_calibration_colab.py`, à lancer sur GPU.
 
 ## Ce que chaque nœud reçoit
 
-| Champ | Contenu |
-|---|---|
-| `sigma_u`, `sigma_v`, `sigma_w` | incertitude **calibrée** de chaque composante (m/s) |
-| `speed_interval` | `p10`, `p50`, `p90` de la vitesse horizontale |
-| `status` | `mesure` ou `estime` (`null` sous le relief) |
-| `coverage` | indice de couverture par les capteurs visibles, dans [0, 1] |
-| `reliability`, `reliability_class` | indice de fiabilité dans [0, 1] ; `elevee` / `moyenne` / `faible` |
-| `uncertainty` (par volume) | `method`, `members`, `calibrated`, `scale_factor`, `coverage_80_validation`, exactement les clés du contrat |
+Les noms et les codages sont ceux de `meta.fields` dans la révision 2 (D13).
+
+| Champ | Codage du contrat | Contenu |
+|---|---|---|
+| `sigma_speed` | float32 | écart-type **calibré** de la norme horizontale (m/s), qui donne l'intervalle |
+| `sigma_u`, `sigma_v`, `sigma_w` | float32 | écart-type **calibré** de chaque composante (m/s) |
+| `status` | uint8 | 1 mesuré, 0 estimé, 255 sous le relief ; `mesure` / `estime` / `null` en JSON |
+| `coverage` | uint8 quantifié | indice de couverture par les capteurs visibles, dans [0, 1] |
+| `reliability` | uint8 quantifié | indice de fiabilité dans [0, 1] |
+| `reliability_class` | — | `elevee` / `moyenne` / `faible` (profils et quality) |
+| `speed_interval` | — | `p10`, `p50`, `p90` de la vitesse |
+| `uncertainty` (par volume) | — | `method`, `members`, `calibrated`, `scale_factor`, `coverage_80_validation` ; `{method: "aucune", members: 1, calibrated: false}` sans M2 (B5, `UNCERTAINTY_AUCUNE`) |
+
+« uint8 quantifié » : octet = round(254·x), 255 = absent, relu en octet × 1/254
+(`to_u8_unit`, `U8_SCALE`). M2 calcule en float32 (`Volume`, `.npz`, manifeste web) ; la
+publication `fields/{var}.f32|u8` est le travail de M6, qui réutilise ces fonctions.
 
 ## Méthode
 
-**Valeur servie.** C'est la passe **unique** avec les capteurs fournis, inchangée (revue D6).
+**Valeur servie.** C'est la passe **unique** avec les capteurs fournis, inchangée (D6).
 La moyenne de plusieurs passes dégrade DSO1 (étape A de v8) : l'ensemble sert uniquement à
 mesurer la dispersion. Ainsi `p50 = speed`.
 
 **σ brut.** On fait N passes masquées (défaut N = 8). Chacune garde chaque capteur visible
 avec la probabilité `keep = 0,7`, avec des graines fixes. Les caractéristiques
 géostrophiques et thermiques sont **recalculées** sur les capteurs gardés, comme pour le TTA.
+Si la correction M1 est active, chaque passe la reçoit aussi.
 
     σ = sqrt( (1/N) · Σ_i (x_i − x_0)² )     x_0 = passe servie, pour u, v, w et la vitesse
 
@@ -37,29 +47,35 @@ niveau :
 
     k = quantile_q( |erreur| / σ_brut ) / 1,2816
 
-avec q = `reliability.calibration_q`, par défaut 0,8. Il est mesuré sur la sélection
-synoptique de validation (graine 1000), avec les capteurs visibles de DSO1
-(`mask.keep_eval`). Les ratios passent par un histogramme log10 de 4 000 classes, ce qui
-garde une mémoire constante. `fit_calibration` et `Calibration.load` **refusent** le test.
-Le JSON gelé contient :
+avec q = `reliability.calibration_q`. Il est mesuré sur la sélection synoptique de
+validation (graine 1000), avec les capteurs visibles de DSO1 (`mask.keep_eval`). Les ratios
+passent par un histogramme log10 de 4 000 classes, ce qui garde une mémoire constante.
+`fit_calibration` et `Calibration.load` **refusent** le test. Le JSON gelé contient :
 
-- les k ;
+- les k et le quantile visé ;
 - la couverture **obtenue** sur la validation ;
 - le modèle, les graines et les membres.
 
 Son sha256 est exposé.
 
-**Intervalle.** `p10, p90 = speed ∓ 1,2816 · σ_vitesse calibré`, avec p10 ≥ 0. C'est une
-approximation gaussienne autour de la passe servie, **pas** les quantiles empiriques de
-l'ensemble : avec 8 membres, un quantile à 10 % ne serait pas stable.
+**Intervalle (D6).** C'est exactement la formule du contrat :
 
-**Statut (revue D7).** Un nœud est « mesuré » seulement si trois conditions tiennent :
+    p50 = speed      p10 = max(0, speed − 1,2816 · sigma_speed)      p90 = speed + 1,2816 · sigma_speed
 
-- les données sont **réelles** (`/api/reconstruct/stations`, `predict(real_sensors=True)`) ;
-- un capteur visible se trouve dans la même colonne ;
-- l'écart d'altitude vérifie |z_nœud − z_capteur| ≤ 12,5 m.
+avec `sigma_speed` calibré (testé à 1e-6 près, et nœud par nœud dans `/api/profile`). C'est
+une dispersion symétrique autour de la passe servie, **pas** les quantiles empiriques de
+l'ensemble, écartés par le contrat.
 
-Sur le jeu synthétique, tout est « estimé ».
+**Statut (D7).** Un nœud est « mesuré » (1) si :
+
+- la colonne (i, j) porte un capteur **visible** ;
+- et |z_nœud − z_capteur| ≤ 15 m (`reliability.dz_status_m`).
+
+La règle vaut **pour les données réelles comme synthétiques** : les capteurs simulés comptent,
+c'est la démonstration de BF7. Sinon le nœud est « estimé » (0), et 255 sous le relief.
+La nature des données (`versions.data_kind`) est portée ailleurs ; `predict(real_sensors=…)`
+n'est plus qu'une information recopiée dans `reliability.info["donnees_reelles"]`, sans effet
+sur le statut.
 
 **Couverture.** Densité gaussienne des capteurs visibles (L = 1 km), saturée et atténuée
 avec la hauteur au-dessus du sol (H = 500 m) :
@@ -75,6 +91,12 @@ La classe est `elevee` si r ≥ 0,6, `moyenne` si r ≥ 0,3, `faible` sinon.
 Les constantes (L, H, D0, σ_ref, seuils de classe) sont des **choix d'ingénierie
 documentés**, réglables dans la section `reliability`, et non des valeurs ajustées. Seuls
 les k sont appris, sur la validation.
+
+**Blocs `quality` (`quality.schema.json`).** `quality_by_level` produit `by_level` : parts
+`elevee` / `moyenne` / `faible`, médianes de `sigma_speed` et de la couverture, `null` pour un
+niveau sans nœud. `calibration_block` produit `calibration` depuis le résumé DSO6
+(`evaluated_on`, `coverage_80`, `corr_error_sigma`, `dso6_pass`), ou `null` tant qu'aucun
+verdict n'existe : jamais un 0 pour une valeur inconnue (B5).
 
 ## Utilisation
 
@@ -96,11 +118,13 @@ inference:
 
 Une fois la fiabilité activée, elle apparaît partout :
 
-- `Volume.reliability` ;
-- le `.npz` : σ et couverture en float32, `status` et `reliability_class` en uint8, 255
-  sous le relief ;
-- la section `fiabilite` du manifeste web, avec des binaires de même grille ;
-- `/api/profile`, avec les noms du contrat par niveau plus le bloc `uncertainty` ;
+- `Volume.reliability`, dont `sigma_speed` ;
+- le `.npz` : σ (dont `sigma_speed`), couverture et fiabilité en float32, `status` et
+  `reliability_class` en uint8, 255 sous le relief ;
+- la section `fiabilite` du manifeste web, avec des binaires de même grille
+  (`sigma_speed.bin` compris) ;
+- `/api/profile`, avec les noms du contrat par niveau (`sigma_speed` compris) plus le bloc
+  `uncertainty` ;
 - `/api/meta`.
 
 Le temps de l'ensemble est **compris** dans `inference_s`, donc dans DSO4.
@@ -117,24 +141,40 @@ Deux conditions, mesurées sur le test synoptique avec la calibration de validat
 La couverture est un comptage exact. Spearman est calculé sur un échantillon à graine fixe
 (20 000 couples par niveau et composante).
 
-## Points à trancher (signalés, pas décidés)
+## Choix tranchés (relecture stage-b5, contrat rév. 2)
 
-1. **Marge de calibration.** Avec q = 0,8, la couverture sur le test oscille *autour* de
-   0,80, et le verdict strict ≥ 0,80 dépend alors de l'échantillonnage (testé sur un bruit
-   connu). Une marge (q = 0,82 par exemple) se décide **sur la validation, avant** de
-   regarder le test.
-2. **`scale_factor`.** Le contrat n'a qu'un facteur. On y met le k global de la vitesse, et
-   les k appliqués (par composante et par niveau) sont dans le JSON.
-3. **Capteurs visibles.** La calibration et DSO6 se mesurent à `mask.keep_eval` (50 %),
-   comme DSO1. En production, `predict` voit 100 % des capteurs, donc des σ plus petits ;
-   la calibration à 50 % est conservatrice ou non selon le comportement de k avec la
-   densité, ce qui est à vérifier sur GPU (`--keep 1.0`).
+1. **Marge de calibration.** `calibration_q` vaut **0,8** par défaut. Avec q = 0,8 pile, la
+   couverture sur le test oscille *autour* de 0,80, et le verdict strict ≥ 0,80 dépend alors
+   de l'échantillonnage (testé sur un bruit connu). Une marge éventuelle (q = 0,82 par
+   exemple) se décide **sur la validation, avant** de regarder le test, et elle est écrite
+   dans le JSON (`quantile`).
+2. **`scale_factor`.** Le contrat n'a qu'un facteur. On y met le **k global de la vitesse**
+   (celui de `sigma_speed`, qui donne l'intervalle) ; les k appliqués, par composante et par
+   niveau, sont dans le JSON.
+3. **Capteurs visibles.** La calibration et DSO6 se mesurent à `mask.keep_eval` (**50 %**),
+   comme DSO1, alors qu'en production `predict` voit **100 %** des capteurs, donc des σ plus
+   petits. La mesure à keep 1,0 est **prévue en session GPU** (`--keep 1.0`), pour vérifier
+   que k ne dépend pas de la densité ; sinon, la calibration servie sera celle à 1,0.
 4. **Correction M1.** Quand `inference.correction` est active, chaque passe de l'ensemble
-   doit recevoir la même correction que la passe servie (même post-traitement dans
-   `WindFieldModel._member`). La fusion avec M1 a été essayée localement (branche
-   `essai/m2-plus-m1`, non poussée) : 266 tests passent, dont
+   reçoit la même correction que la passe servie (même post-traitement dans
+   `WindFieldModel._member`). La fusion avec M1 est essayée localement (branche
+   `essai/m2-plus-m1`, jamais poussée) et testée par
    `test_avec_correction_m1_chaque_passe_est_corrigee`, ignoré tant que M1 n'est pas sur
-   `main` et qui échoue si `_member` oublie la correction. La calibration est rangée dans
-   le même dossier que l'évaluation (`..._corr<sha8>`) : elle ne vaut que pour cette sortie.
-5. **Coût.** N passes supplémentaires par instant. DSO4 (< 1 s) sur v7 avec 8 membres est
+   `main` et qui échoue si `_member` oublie la correction. La calibration est rangée dans le
+   même dossier que l'évaluation (`..._corr<sha8>`) : elle ne vaut que pour cette sortie.
+5. **Upload et stations réelles.** `real_sensors` **ne compte plus** pour le statut (D7). On
+   le garde seulement comme information : `/api/reconstruct/stations` passe `True`, l'upload
+   ANEO et le cache passent `False`, sans effet sur `status`.
+6. **Coût.** N passes supplémentaires par instant. DSO4 (< 1 s) sur v7 avec 8 membres est
    à mesurer sur GPU ; on peut réduire `reliability.members` si besoin.
+
+## Écarts restants avec les schémas rév. 2 (hors M2)
+
+- `/api/profile` n'est pas la route du contrat : celle-ci (`/v1/profiles/{id}/{point_id}`)
+  est produite par M6. Nos niveaux portent en plus `sigma_u/v/w`, que le profil rév. 2
+  n'accepte pas (`additionalProperties: false`), et gardent leurs anciens noms
+  (`z_agl_m`, `sous_le_relief`, `wind_*`).
+- `sigma_ms` borne σ à 40 m/s dans le contrat : aucune troncature côté M2, c'est au
+  publieur de vérifier.
+- `min_agl_m` (B1) : le masque `geom.valid` vient de la grille du générateur. Que
+  « NaN ⇔ z − relief < 5 m » tienne exactement est à vérifier par M6 à la publication.

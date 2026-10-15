@@ -16,9 +16,11 @@ formules sont justifies dans docs/FIABILITE.md ; resume :
                       passe si elle est active.
     sigma calibre   : k * sigma brut, k par composante et par niveau, ajuste sur la VALIDATION
                       pour que |erreur| <= 1,2816 * k * sigma dans 80 % des cas.
-    intervalle      : p50 = vitesse servie ; p10, p90 = vitesse -/+ 1,2816 * sigma_vitesse
-                      calibre (p10 tronque a 0) — approximation gaussienne, pas des quantiles
-                      empiriques de l'ensemble.
+    intervalle      : p50 = vitesse servie ; p10 = max(0, vitesse - 1,2816 * sigma_speed),
+                      p90 = vitesse + 1,2816 * sigma_speed, sigma_speed = ecart-type CALIBRE de
+                      la norme horizontale (contrat rev. 2, D6) — pas de quantiles empiriques.
+    statut          : 1 « mesure » si la colonne porte un capteur VISIBLE a moins de 15 m du
+                      noeud, donnees reelles OU synthetiques (rev. 2, D7) ; 0 « estime ».
 
 Strictement opt-in : `inference.reliability` vaut None par defaut, et rien ne change alors
 (ni la sortie, ni le temps d'inference).
@@ -43,6 +45,13 @@ COMPOSANTES = ("u", "v", "w", "speed")
 STATUT_ESTIME, STATUT_MESURE, NODATA_U8 = 0, 1, 255
 CLASSES = ("faible", "moyenne", "elevee")  # codes 0, 1, 2 ; 255 sous le relief
 NON_CALIBRE = "non_calibre"
+# bloc uncertainty du contrat quand la fiabilite est desactivee (rev. 2, B5)
+UNCERTAINTY_AUCUNE = {"method": "aucune", "members": 1, "calibrated": False}
+# variables du contrat rev. 2 produites par M2, avec leur codage (D13)
+CHAMPS_CONTRAT = {"sigma_speed": "float32", "sigma_u": "float32", "sigma_v": "float32",
+                  "sigma_w": "float32", "coverage": "uint8", "reliability": "uint8",
+                  "status": "uint8"}
+U8_SCALE = 1.0 / 254.0                     # uint8 quantifie : 0..254 -> 0..1, 255 = absent
 
 # histogrammes de |erreur| / sigma pour la calibration : log10 dans [-4, 4], 4000 classes
 # (largeur 0,002 decade, soit ~0,5 % sur k) — la memoire ne depend pas du nombre de noeuds
@@ -50,21 +59,30 @@ _H_LO, _H_HI, _H_N = -4.0, 4.0, 4000
 
 
 # ---------------------------------------------------------------------- statut, couverture
-def node_status(geom: Geometry, sensor: np.ndarray, real_sensors: bool,
-                dz_m: float) -> np.ndarray:
+def node_status(geom: Geometry, sensor: np.ndarray, dz_m: float) -> np.ndarray:
     """(nz, ny, nx) uint8 : 1 mesure, 0 estime, 255 sous le relief.
 
-    « mesure » : donnees REELLES, capteur visible dans la meme colonne (i, j), et
-    |z_noeud - z_capteur| <= dz_m (altitudes au-dessus de la mer). Sur donnees synthetiques,
-    tout est « estime » : aucun capteur n'y mesure quoi que ce soit (D7).
+    « mesure » (contrat rev. 2, D7) : la colonne (i, j) porte un capteur VISIBLE et
+    |z_noeud - z_capteur| <= dz_m (15 m ; altitudes au-dessus de la mer). Vaut pour les
+    donnees reelles comme synthetiques : les capteurs simules comptent, la nature des
+    donnees est portee ailleurs (versions.data_kind).
     """
     st = np.full(geom.shape, STATUT_ESTIME, dtype=np.uint8)
-    if real_sensors:
-        z = np.asarray(geom.z_levels, float)[:, None, None]
-        near = np.abs(z - geom.z_sensor[None]) <= dz_m
-        st[near & sensor[None] & geom.valid] = STATUT_MESURE
+    z = np.asarray(geom.z_levels, float)[:, None, None]
+    near = np.abs(z - geom.z_sensor[None]) <= dz_m
+    st[near & sensor[None] & geom.valid] = STATUT_MESURE
     st[~geom.valid] = NODATA_U8
     return st
+
+
+def to_u8_unit(a: np.ndarray) -> np.ndarray:
+    """Valeur de [0, 1] -> uint8 quantifie du contrat (rev. 2, D13) : round(254 x), 255 si
+    NaN. Relecture : octet x U8_SCALE."""
+    a = np.asarray(a, np.float64)
+    out = np.full(a.shape, NODATA_U8, dtype=np.uint8)
+    ok = np.isfinite(a)
+    out[ok] = np.rint(np.clip(a[ok], 0.0, 1.0) * 254.0).astype(np.uint8)
+    return out
 
 
 def coverage_index(geom: Geometry, sensor: np.ndarray, length_m: float, height_m: float,
@@ -248,7 +266,8 @@ def reliability_class(r: np.ndarray, high: float, mid: float) -> np.ndarray:
 
 
 def speed_interval(speed: np.ndarray, sigma_speed: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    """(p10, p90) autour de la vitesse servie (p50) : -/+ 1,2816 sigma, p10 >= 0."""
+    """(p10, p90) autour de la vitesse servie (p50) : p10 = max(0, speed - 1,2816 sigma_speed),
+    p90 = speed + 1,2816 sigma_speed (contrat rev. 2, D6 ; sigma_speed calibre)."""
     half = Z80 * sigma_speed
     return np.maximum(speed - half, 0.0).astype(np.float32), (speed + half).astype(np.float32)
 
@@ -277,7 +296,8 @@ def assess(served: tuple[np.ndarray, np.ndarray, np.ndarray],
            sensor: np.ndarray, geom: Geometry, rcfg, calibration: Calibration,
            real_sensors: bool = False) -> Reliability:
     """Fiabilite d'un volume servi. `predict(masque)` refait une passe (u, v, w) avec ce
-    masque de capteurs (caracteristiques recalculees, correction M1 comprise si active)."""
+    masque de capteurs (caracteristiques recalculees, correction M1 comprise si active).
+    `real_sensors` est une INFORMATION (donnees reelles ou non) : le statut n'en depend pas."""
     members = [predict(m) for m in member_masks(sensor, rcfg.members, rcfg.keep, rcfg.seed)]
     sig = calibration.apply(ensemble_sigma(served, members))
     cov = coverage_index(geom, sensor, rcfg.coverage_length_m, rcfg.coverage_height_m,
@@ -289,11 +309,54 @@ def assess(served: tuple[np.ndarray, np.ndarray, np.ndarray],
     info = {"methode": METHOD, "membres": rcfg.members, "keep": rcfg.keep, "graine": rcfg.seed,
             "calibration_sha256": calibration.sha256,
             "calibration_fichier": calibration.path.name if calibration.path else None,
-            "statut_reel": bool(real_sensors)}
+            "donnees_reelles": bool(real_sensors), "dz_statut_m": rcfg.dz_status_m}
     return Reliability(sig["u"], sig["v"], sig["w"], sig["speed"],
-                       node_status(geom, sensor, real_sensors, rcfg.dz_status_m), cov, r,
+                       node_status(geom, sensor, rcfg.dz_status_m), cov, r,
                        reliability_class(r, rcfg.class_high, rcfg.class_mid),
                        calibration.uncertainty_method(rcfg.members), info)
+
+
+# ---------------------------------------------------------------------- quality (contrat)
+def quality_by_level(rel: Reliability, geom: Geometry) -> list[dict]:
+    """`by_level` de quality.schema.json : parts par classe, medianes de sigma_speed et de
+    la couverture, sur les noeuds valides de chaque niveau (null si aucun noeud)."""
+    out = []
+    for k in range(geom.nz):
+        ok = geom.valid[k]
+        n = int(ok.sum())
+        cl = rel.reliability_class[k][ok]
+
+        def part(code: int) -> float | None:
+            return float((cl == code).mean()) if n else None
+
+        def med(a: np.ndarray) -> float | None:
+            a = a[k][ok]
+            a = a[np.isfinite(a)]
+            return float(np.median(a)) if a.size else None
+
+        out.append({"z_asl_m": float(geom.z_levels[k]), "valid_nodes": n,
+                    "share_elevee": part(2), "share_moyenne": part(1), "share_faible": part(0),
+                    "sigma_speed_median": med(rel.sigma_speed),
+                    "coverage_median": med(rel.coverage)})
+    return out
+
+
+def calibration_block(dso6_summary: dict | None) -> dict | None:
+    """`calibration` de quality.schema.json depuis un resume DSO6 (Evaluator.dso6), ou None
+    tant qu'aucun verdict n'existe (jamais un 0 pour une valeur inconnue, B5)."""
+    if not dso6_summary:
+        return None
+
+    def fini(x):
+        return float(x) if x is not None and np.isfinite(x) else None
+
+    keep = dso6_summary.get("capteurs_visibles")
+    return {"evaluated_on": f"{dso6_summary['instants_synoptiques']} instants de test, "
+                            f"{keep:.0%} des capteurs" if keep is not None
+            else f"{dso6_summary['instants_synoptiques']} instants de test",
+            "coverage_80": fini(dso6_summary["coverage_80"]),
+            "corr_error_sigma": fini(dso6_summary["corr_error_sigma"]),
+            "dso6_pass": bool(dso6_summary["dso6_conforme"])}
 
 
 # ---------------------------------------------------------------------- DSO6

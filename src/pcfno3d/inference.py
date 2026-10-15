@@ -97,8 +97,9 @@ class Volume:
         }
 
     def node_reliability(self, k: int, j: int, i: int) -> dict:
-        """Bloc fiabilite d'un noeud, avec les noms du contrat (sigma_u, speed_interval,
-        status, coverage, reliability, reliability_class). Valeurs None sous le relief."""
+        """Bloc fiabilite d'un noeud, avec les noms du contrat rev. 2 (sigma_speed,
+        sigma_u, sigma_v, sigma_w, speed_interval, status, coverage, reliability,
+        reliability_class). Valeurs None sous le relief."""
         rel = self.reliability
         if rel is None:
             raise ValueError("fiabilite non calculee pour ce volume (inference.reliability)")
@@ -108,13 +109,14 @@ class Volume:
 
         st = int(rel.status[k, j, i])
         if st == NODATA_U8:
-            return {"sigma_u": None, "sigma_v": None, "sigma_w": None,
+            return {"sigma_speed": None, "sigma_u": None, "sigma_v": None, "sigma_w": None,
                     "speed_interval": {"p10": None, "p50": None, "p90": None},
                     "status": None, "coverage": None, "reliability": None,
                     "reliability_class": None}
         speed = float(np.hypot(self.u[k, j, i], self.v[k, j, i]))
         p10, p90 = speed_interval(np.float64(speed), rel.sigma_speed[k, j, i])
-        return {"sigma_u": r(rel.sigma_u[k, j, i]), "sigma_v": r(rel.sigma_v[k, j, i]),
+        return {"sigma_speed": r(rel.sigma_speed[k, j, i]),
+                "sigma_u": r(rel.sigma_u[k, j, i]), "sigma_v": r(rel.sigma_v[k, j, i]),
                 "sigma_w": r(rel.sigma_w[k, j, i], 4),
                 "speed_interval": {"p10": r(p10), "p50": r(speed), "p90": r(p90)},
                 "status": "mesure" if st == STATUT_MESURE else "estime",
@@ -324,8 +326,8 @@ class WindFieldModel:
         la valeur de la configuration (`inference.tta`, 1 = une seule passe).
         reliability : calculer la fiabilite par noeud (pcfno3d.reliability). None = oui si
         `inference.reliability` est configure. La valeur servie n'en depend pas.
-        real_sensors : mesures de capteurs REELS (statut « mesure » possible) ; False pour
-        le jeu synthetique, ou tout est « estime ».
+        real_sensors : information seulement (donnees reelles ou non), recopiee dans
+        `reliability.info` ; le statut « mesure » n'en depend pas (contrat rev. 2, D7).
         """
         geom = self.geom
         k = self.cfg.inference.tta if tta is None else int(tta)
