@@ -263,7 +263,7 @@ def test_mcp_initialise_et_liste_les_outils(client):
     tools = {t["name"] for t in _rpc(client, "tools/list").json()["result"]["tools"]}
     assert tools == {"grid_meta", "list_instants", "wind_at_point", "wind_profile",
                      "wind_field_at_altitude", "instant_summary", "dso_report",
-                     "export_instant"}
+                     "export_instant", "alertes_actives"}
 
 
 def test_mcp_outils_de_lecture(client):

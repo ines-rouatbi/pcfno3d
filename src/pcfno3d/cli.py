@@ -144,6 +144,49 @@ def cmd_dso6(args) -> int:
     return 0 if summary["dso6_conforme"] else 3
 
 
+def cmd_alertes(args) -> int:
+    """Alertes (lot M4) sur des instants du cache, dans l'ordre chronologique.
+
+    Ecrit le journal JSONL (alerts.journal, defaut run_dir/logs/alertes.jsonl, ou --journal)
+    et, avec --out, le document du dernier instant (format alerts.schema.json rev. 2).
+    """
+    from .alerts import MoteurAlertes
+    from .cache import load_index
+    from .inference import WindFieldModel
+
+    cfg = _load_cfg(args)
+    out = Path(args.out) if args.out else None
+    if out is not None and out.exists():
+        print(f"{out} existe deja : il n'est jamais ecrase", file=sys.stderr)
+        return 1
+    index = load_index(cfg)
+    rows = index[index["stem"].isin(args.stem.split(","))] if args.stem \
+        else index[index["split"] == args.split]
+    rows = rows.sort_values("timestamp").head(args.limit) if args.limit else \
+        rows.sort_values("timestamp")
+    if rows.empty:
+        print("aucun instant a evaluer", file=sys.stderr)
+        return 1
+    wf = WindFieldModel(cfg, checkpoint=args.checkpoint, device=args.device)
+    moteur = MoteurAlertes(cfg, journal=Path(args.journal) if args.journal else True)
+    res = None
+    for stem in rows["stem"]:
+        S, hour, doy, stamp = wf.surface_from_cache(stem)
+        volume = wf.predict(S, hour, doy, timestamp=stamp)
+        res = moteur.evaluer_modele(wf, S, hour, doy, volume, cle=f"stem:{stem}")
+        n = res.ouvertes()
+        print(f"{stem} {res.instant} | ouvertes : " + ", ".join(f"{k} {v}" for k, v in n.items())
+              + f" | masse {res.physics['mass_residual_rms']:.2e} "
+              f"({'ok' if res.physics['mass_residual_ok'] else 'HORS SEUIL'})")
+    if out is not None:
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_bytes((json.dumps(res.document(), indent=2, ensure_ascii=False) + "\n")
+                        .encode("utf-8"))
+        print(f"alertes -> {out}")
+    print(f"journal -> {moteur.journal.path}")
+    return 0
+
+
 def cmd_dso_weights(args) -> int:
     """Poids de u, v par niveau, mesures sur la VALIDATION d'un modele existant."""
     from . import dso
@@ -594,6 +637,15 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--instants", type=int, help="nombre d'instants (defaut : tous)")
     s.add_argument("--keep", type=float, help="capteurs visibles (defaut : mask.keep_eval)")
     s.set_defaults(func=cmd_dso6)
+
+    s = sub.add_parser("alertes", help="alertes (M4) sur des instants du cache, dans l'ordre")
+    s.add_argument("--stem", help="instants, ex. 006_000000,006_030000 (defaut : --split)")
+    s.add_argument("--split", default="test", choices=["train", "val", "test"])
+    s.add_argument("--limit", type=int, help="nombre maximal d'instants")
+    s.add_argument("--journal", help="journal JSONL (defaut : alerts.journal)")
+    s.add_argument("--out", help="document JSON du dernier instant (jamais ecrase)")
+    s.add_argument("--checkpoint"), s.add_argument("--device")
+    s.set_defaults(func=cmd_alertes)
 
     s = sub.add_parser("dso-weights",
                        help="poids u, v par niveau mesures sur la validation (v8)")

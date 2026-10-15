@@ -350,17 +350,22 @@ def _securite(cfg: Config) -> dict:
 
 
 # ---------------------------------------------------------------------------- helpers
+def _stem_par_defaut(wf: WindFieldModel) -> str:
+    """Premier instant de test du cache (sinon le premier instant)."""
+    from pcfno3d.cache import load_index
+    index = load_index(wf.cfg)
+    test = index[index["split"] == "test"]
+    rows = test if len(test) else index
+    if rows.empty:
+        raise HTTPException(400, "aucun instant en cache : precise 'stem'")
+    return str(rows["stem"].iloc[0])
+
+
 def _volume_for(stem: str | None, keep: float = 1.0) -> Volume:
     """Volume d'un instant, memorise (un instant complet pese ~18 Mo en memoire)."""
     wf = model()
     if stem is None:
-        from pcfno3d.cache import load_index
-        index = load_index(wf.cfg)
-        test = index[index["split"] == "test"]
-        rows = test if len(test) else index
-        if rows.empty:
-            raise HTTPException(400, "aucun instant en cache : precise 'stem'")
-        stem = str(rows["stem"].iloc[0])
+        stem = _stem_par_defaut(wf)
     cache = STATE.setdefault("volumes", {})
     cache_key = f"{stem}:{keep:.3f}"
     volume = cache.get(cache_key)
@@ -514,18 +519,30 @@ async def reconstruct_upload(file: UploadFile = File(...), keep: float = 1.0,
                 "detail": f"CSV non conforme au contrat ANEO ({rapport['verdict']}) : "
                           + " ; ".join(rapport["motifs"]),
                 "qualite": rapport})
-        volume = wf.predict_csv(tmp_path, keep=keep, exclure=masque)
+        moteur = STATE.get("alertes")
+        if moteur is None:
+            volume = wf.predict_csv(tmp_path, keep=keep, exclure=masque)
+        else:
+            # meme passe que predict_csv, en gardant S pour les alertes (lot M4)
+            S, hour, doy, stamp = wf.surface_from_csv(tmp_path, masque)
+            volume = wf.predict(S, hour, doy, timestamp=stamp, keep=keep)
+            alertes = moteur.evaluer_modele(wf, S, hour, doy, volume, rapport=rapport)
     except (ValueError, KeyError) as exc:
         raise HTTPException(400, f"CSV invalide : {exc}") from exc
     finally:
         tmp_path.unlink(missing_ok=True)
     valid = wf.geom.valid
-    return {"timestamp_utc": volume.timestamp, "capteurs_utilises": volume.n_sensors,
-            "inference_s": round(volume.inference_s, 4),
-            "vitesse_max_m_s": round(float(volume.speed[valid].max()), 3),
-            "statut_qualite": rapport["verdict"],
-            "avertissements": rapport["motifs"] + rapport["avertissements"],
-            "qualite": rapport}
+    out = {"timestamp_utc": volume.timestamp, "capteurs_utilises": volume.n_sensors,
+           "inference_s": round(volume.inference_s, 4),
+           "vitesse_max_m_s": round(float(volume.speed[valid].max()), 3),
+           "statut_qualite": rapport["verdict"],
+           "avertissements": rapport["motifs"] + rapport["avertissements"],
+           "qualite": rapport}
+    if moteur is not None:
+        # alertes activees seulement : sinon la reponse garde exactement ses cles
+        out["alertes"] = alertes.document()
+        out["physique"] = alertes.physics
+    return out
 
 
 class StationObs(BaseModel):
@@ -675,6 +692,38 @@ def profile(x: float = Query(...), y: float = Query(...), stem: str | None = Non
     return out
 
 
+def _alertes_stem(stem: str | None):
+    """Alertes d'un instant du cache (lot M4), memorisees par instant dans le moteur."""
+    moteur = STATE.get("alertes")
+    if moteur is None:
+        raise HTTPException(409, "alertes desactivees : alerts.enabled = false dans la "
+                                 "configuration du service")
+    wf = model()
+    stem = stem or _stem_par_defaut(wf)
+    volume = _volume_for(stem)
+    try:
+        S, hour, doy, _ = wf.surface_from_cache(stem)
+    except KeyError as exc:
+        raise HTTPException(404, f"instant inconnu : {stem}") from exc
+    Y = (np.load(wf.cfg.paths.cache_dir / f"{stem}_Y.npy")
+         if moteur.acfg.rho_source == "verite_synthetique" else None)
+    return moteur.evaluer_modele(wf, S, hour, doy, volume, Y=Y, cle=f"stem:{stem}")
+
+
+@router.get("/alerts", tags=["qualite"])
+def alerts(stem: str | None = Query(None, description='instant en cache, ex. "004_120000" ; '
+                                                       "absent : dernieres alertes calculees"),
+           _: ApiKeyRecord | None = Depends(require_read)) -> dict:
+    """Alertes de l'instant (lot M4, AN1), au format `alerts.schema.json` du contrat ATOM
+    rev. 2 : `{"items": [...]}`, ouvertes et closes recentes, avec niveau, cause et
+    recommandation. Sans `stem` : les dernieres alertes calculees (upload compris), sinon
+    le premier instant de test. 409 si les alertes sont desactivees (`alerts.enabled`)."""
+    moteur = STATE.get("alertes")
+    if moteur is not None and stem is None and moteur.dernier is not None:
+        return moteur.dernier.document()
+    return _alertes_stem(stem).document()
+
+
 @router.get("/dso", tags=["qualite"])
 def dso(_: ApiKeyRecord | None = Depends(require_read)) -> dict:
     """Dernier verdict DSO1-DSO5 archive, ou l'absence d'evaluation, sans rien inventer."""
@@ -739,6 +788,12 @@ def create_app() -> FastAPI:
                             device=os.environ.get("PCFNO3D_DEVICE") or None)
         STATE.update({"model": wf, "cfg": cfg, "volumes": {}, **_securite(cfg)})
         mcp_server.set_model(wf)          # le MCP reutilise le modele deja charge
+        # alertes (lot M4) : strictement opt-in ; un seul moteur (un seul journal) pour
+        # l'API et le MCP
+        if cfg.alerts.enabled:
+            from pcfno3d.alerts import MoteurAlertes
+            STATE["alertes"] = MoteurAlertes(cfg)
+        mcp_server.set_alertes(STATE.get("alertes"))
         async with mcp_app.router.lifespan_context(mcp_app):
             yield
         STATE.clear()

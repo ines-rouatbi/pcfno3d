@@ -17,6 +17,7 @@ Outils :
     wind_field_at_altitude    carte decimee a une altitude
     instant_summary           statistiques d'un instant (vitesse, direction, temps d'inference)
     dso_report                dernier verdict DSO1-DSO5 archive
+    alertes_actives           alertes ouvertes d'un instant (lot M4), si alerts.enabled
 
 Les outils de lecture n'ecrivent rien. `export_instant` ecrit sur le disque du serveur et
 exige donc la portee `admin` lorsque l'authentification est active.
@@ -73,6 +74,27 @@ def set_model(model: WindFieldModel) -> None:
     global _MODEL
     _MODEL = model
     _VOLUMES.clear()
+
+
+_ALERTES: Any = None
+_ALERTES_FIXE = False
+
+
+def set_alertes(moteur) -> None:
+    """Partage le moteur d'alertes de l'API HTTP (un seul journal), ou None (desactive)."""
+    global _ALERTES, _ALERTES_FIXE
+    _ALERTES, _ALERTES_FIXE = moteur, True
+
+
+def get_alertes():
+    """Moteur d'alertes (lot M4) ; en stdio, construit au premier appel si alerts.enabled."""
+    global _ALERTES
+    if _ALERTES is None and not _ALERTES_FIXE:
+        cfg = get_model().cfg
+        if cfg.alerts.enabled:
+            from pcfno3d.alerts import MoteurAlertes
+            _ALERTES = MoteurAlertes(cfg)
+    return _ALERTES
 
 
 def _default_stem(wf: WindFieldModel) -> str:
@@ -307,6 +329,39 @@ def dso_report() -> dict:
     # la table de robustesse (4 lignes) est gardee : c'est elle qui montre qu'un modele
     # fait mieux avec moins de capteurs, le defaut que corrige mask.p_full
     return {"disponible": True, "fichier": str(out), "resume": summary}
+
+
+@mcp.tool()
+def alertes_actives(stem: str | None = None) -> dict:
+    """Alertes OUVERTES d'un instant (lot M4) : capteurs en derive ou muets, stations
+    insuffisantes, incoherence physique, derive des entrees, zones mal couvertes.
+
+    Chaque alerte porte un niveau (information, avertissement, important, critique), une
+    cause et une recommandation ; format du contrat ATOM rev. 2 (alerts.schema.json).
+    Renvoie aussi le nombre d'alertes ouvertes par niveau et le bloc `physique` (residu
+    de masse de l'instant). Si les alertes sont desactivees (alerts.enabled = false), le
+    dit au lieu d'inventer une liste vide.
+
+    Args:
+        stem: instant (JJJ_HHMMSS) ; None = dernieres alertes calculees, sinon le premier
+              instant de test.
+    """
+    moteur = get_alertes()
+    if moteur is None:
+        return {"disponible": False,
+                "message": "alertes desactivees (alerts.enabled = false dans la configuration)"}
+    if stem is None and moteur.dernier is not None:
+        res = moteur.dernier
+    else:
+        stem, volume = _volume(stem)
+        wf = get_model()
+        S, hour, doy, _ = wf.surface_from_cache(stem)
+        res = moteur.evaluer_modele(wf, S, hour, doy, volume, cle=f"stem:{stem}")
+    ouvertes = [a for a in res.items if a["status"] == "ouverte"]
+    return {"disponible": True, "stem": stem, "instant": res.instant,
+            "ouvertes_par_niveau": res.ouvertes(), "items": ouvertes,
+            "closes_recentes": len(res.items) - len(ouvertes),
+            "physique": res.physics, "derive_capteurs": res.derive}
 
 
 @mcp.tool()
