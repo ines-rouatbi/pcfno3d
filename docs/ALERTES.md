@@ -21,9 +21,9 @@ soit le lot qui les détecte :
 
 | `kind` | Lot | Détection | Cible | Niveau |
 |---|---|---|---|---|
-| `hors_plage` | M3 | rapport du contrat ANEO (`qualite.stations_hors_plage`) | capteur `c<i>_<j>` | avertissement |
+| `hors_plage` | M3 | règles du contrat ANEO (`PLAGES`, densité), réappliquées par `stations_hors_plage` au fichier reçu | capteur `c<i>_<j>` | avertissement |
 | `station_muette` | M3 | rapport du contrat (absences, valeurs figées) | capteur | avertissement |
-| `stations_insuffisantes` | M3 | rapport du contrat ; sans rapport (instants du cache), part de mailles-capteurs disponibles | `domaine` | important (< 70 %), critique (< 30 %) |
+| `stations_insuffisantes` | M3 | rapport du contrat ; sans rapport : part de mailles disponibles (treillis) ou de stations **attendues** (stations réelles, voir plus bas) | `domaine` | important (< 70 %), critique (< 30 %) |
 | `capteur_derive` | M4 | capteur masqué comparé à la reconstruction faite sans lui | capteur | important ; critique si l'écart ≥ 2 × seuil |
 | `incoherence_physique` | M4 | résidu de continuité de l'instant > seuil DSO2 ; condition au sol (seuil à régler) | `domaine:masse`, `domaine:sol` | important ; critique si ≥ 10 × seuil ; sol : avertissement |
 | `derive_entrees` | M4 | statistiques des entrées vs entraînement (`norm_stats.json`) | `domaine:<variable>` | avertissement ; important si ≥ 2 × seuil |
@@ -135,8 +135,23 @@ vitesse ; sinon, la couverture est recalculée (`coverage_index`, sans l'ensembl
 
 **Alertes M3.** Elles viennent du rapport de `pcfno3d.contract` (upload) et suivent **les
 seuils du rapport** (`rapport["seuils"]`). Les `point_id` deviennent `c<ix>_<iy>`, avec
-`ix = (point_id − 1) mod nx`. Le lot M4 a ajouté au rapport
-`qualite.stations_hors_plage`, un ajout additif.
+`ix = (point_id − 1) mod nx`.
+
+Le rapport M3 reste **exactement** celui de main, sans aucune clé ajoutée (opt-in strict,
+testé sur le corps complet de l'upload, en 200 comme en 422). Le rapport ne liste pas les
+stations hors plage. Quand les alertes sont actives, `stations_hors_plage()` relit donc le
+fichier reçu avec les **règles** du contrat (`PLAGES`, `_ecart_densite`, tolérance du
+rapport).
+
+**`stations_insuffisantes` sans rapport (`alerts.reseau`).** Cette alerte dépend du réseau :
+
+- **`treillis_synthetique`** (défaut, un capteur par maille) : part = mailles disponibles /
+  mailles.
+- **`stations_aneo`** (stations réelles : quelques dizaines pour ~125 000 mailles) : part =
+  stations disponibles / stations **attendues**, déclarées (`alerts.stations_attendues`) ou
+  reçues (argument `stations_disponibles`). À défaut de ce dernier, on compte les mailles
+  qui portent une station. Si le nombre attendu est inconnu, **aucune alerte** n'est émise
+  plutôt qu'une alerte fausse ; sans cette règle, l'alerte serait critique en permanence.
 
 **Externes (M5).** `alertes_externes(items)` accepte `vent_fort_moyeu` et `cisaillement` :
 kind, target, level, title, cause, recommendation, plus les champs facultatifs. L'id est
@@ -162,6 +177,9 @@ Le cycle de vie suit ces règles :
   se lève à nouveau, c'est un nouvel épisode avec un nouveau `raised_at`.
 - **Ordre chronologique** : seul un instant postérieur au dernier journalisé écrit. Un
   instant antérieur est évalué en consultation, sans écrire.
+- **Ligne illisible** : une ligne tronquée (arrêt brutal, synchro Drive) est ignorée à la
+  relecture, avec un avertissement, et comptée (`lignes_illisibles`). Le service démarre
+  quand même.
 
 `kpi.open_alerts` = `compter_ouvertes(items)`. `stations_summary` = `resume_stations(items,
 n_capteurs)` : `derive`, `muette`, `exclue` (hors plage) d'après les alertes ouvertes.
@@ -180,7 +198,8 @@ Quand `enabled` vaut `false` (défaut), rien ne change, ce qui est testé :
 
 - la valeur servie est identique bit à bit, et les alertes ne la modifient jamais, même
   activées ;
-- la réponse de l'upload garde exactement ses clés ;
+- le corps de l'upload (200 et 422) et le rapport M3 sont identiques à ceux de main,
+  comparés récursivement, hors temps mesuré et horloge ;
 - aucun journal n'est écrit ;
 - `GET /api/alerts` répond `409` et l'outil MCP renvoie `disponible: false`.
 
@@ -195,6 +214,19 @@ Quand `enabled` vaut `false` (défaut), rien ne change, ce qui est testé :
 **Coût.** On compte 9 passes par instant (`derive_cote²`), et seulement pour
 `/api/alerts` : `predict` et DSO4 ne sont pas touchés. Sur CPU (15 à 25 s par passe pour
 v7), une évaluation de dérive prend plusieurs minutes ; c'est un usage GPU.
+
+Le calcul ne bloque pas le service :
+
+- l'upload lit le fichier en `async`, puis exécute contrat, inférence et alertes dans un
+  thread du pool (`run_in_threadpool`) ; `/api/health` répond pendant ce temps (testé) ;
+- `/api/alerts` est une route synchrone, que FastAPI exécute aussi dans le pool ;
+- les passes restent sérialisées par le verrou de `WindFieldModel`, et l'état des alertes
+  par le verrou du moteur.
+
+**Densité « vérité ».** Avec `rho_source: verite_synthetique`, l'API, l'outil MCP et la
+commande `alertes` chargent Y de la même façon (`MoteurAlertes.verite`) : le résultat mis en
+cache pour un instant ne dépend pas de l'interface qui l'a calculé. Sans Y (upload, direct),
+on se replie sur `extrapolation_surface`.
 
 ## AN1 : simulation de pannes et de dérives
 
@@ -213,19 +245,37 @@ Elles sont tirées à graine fixe et espacées d'au moins `cote + 1` mailles :
 On déroule ensuite la chaîne complète : passe servie, 9 passes et persistance.
 
 **Comptage.** L'unité est le couple (scénario, maille-capteur). Une maille est **signalée**
-si elle reçoit au moins une alerte capteur dans la journée.
+si elle reçoit au moins une alerte `capteur_derive` dans la journée.
 
-| Mesure | Définition |
-|---|---|
-| détection | signalés parmi les défaillants : dérives d'**amplitude effective** ≥ `e_ref` = 1 m/s (le seuil de la fixture du contrat), et pannes |
-| fausses alertes | **part des signalés qui sont sains**. C'est la question de l'opérateur : « cette alerte est-elle fausse ? ». Rapportée aux 125 000 capteurs sains, une proportion de 5 % ferait 6 000 fausses alertes, ce qui n'aurait pas de sens. |
-| taux de faux positifs | signalés parmi les sains : publié, hors verdict |
-| détail | détection par type et par classe d'amplitude, de 0 à 0,5, 0,5 à 1, 1 à 2, 2 à 3, plus de 3 m/s |
+| Mesure | Définition | Verdict |
+|---|---|---|
+| détection | signalés parmi les **dérives** d'amplitude effective ≥ `e_ref` = 1 m/s (le seuil de la fixture du contrat) | **oui**, ≥ 90 % |
+| fausses alertes | **part des signalés qui sont sains** (FDR) : la question de l'opérateur, « cette alerte est-elle fausse ? » | **oui**, < 5 % |
+| sains signalés / sains | taux de faux positifs par capteur | publié à côté |
+| fausses alertes par instant | nombre moyen de capteurs sains en alerte à un instant | publié à côté |
+| pannes (valeurs figées) | détection par la règle M3 ou par une alerte, et fausses alertes de la règle M3 | **hors verdict** : leur détection par égalité exacte est quasi certaine et gonflerait le taux |
+| détail | détection par type et par classe d'amplitude, de 0 à 0,5, 0,5 à 1, 1 à 2, 2 à 3, plus de 3 m/s | publié à côté |
+
+**Protocole fixé (`an1.PROTOCOLE`).** La part de fausses alertes dépend de la **prévalence**
+des défauts : plus on injecte de dérives, plus elle baisse. Le verdict officiel se mesure
+donc avec un protocole constant :
+
+- **40 dérives et 10 pannes par jour** ;
+- `e_ref` = 1 m/s ;
+- les 8 types de dérive du plan `PLAN_DERIVES`, en rotation.
+
+Avec 125 000 capteurs, 40 dérives par jour donnent une prévalence de ~3·10⁻⁴. Une part de
+fausses alertes de 5 % correspond alors à ~2 fausses alertes par jour.
+
+Si l'on passe d'autres valeurs (`--derives-par-jour`, `--pannes-par-jour`, `--e-ref`), le
+script les accepte, mais il marque tout le résultat `statut: "exploratoire"`, avec
+`an1_conforme: null`, et **ne produit aucun verdict officiel**.
 
 **Entrées.** Chaque instant **propre** sert à mesurer les fausses alertes. Le même instant,
 avec une erreur d'unité connue (K, hPa, fraction, g/m³), sert à mesurer la détection.
 
-**Verdict.** AN1 est vert si les deux familles, capteurs et entrées, passent toutes les deux.
+**Verdict.** AN1 est vert si les deux familles, dérives de capteurs et entrées, passent
+toutes les deux, et seulement sous le protocole fixé.
 
 **Seuils : validation seulement.** `choisir_kappa` prend le plus petit κ (donc la meilleure
 détection) dont la part de fausses alertes reste sous `--fdr-cible` = 2,5 % **sur la
@@ -233,30 +283,36 @@ validation**, ce qui laisse une marge sous 5 %. On le fait pour chaque statistiq
 retient celle qui détecte le mieux. Le JSON porte `jeu: "validation"`, et `charger_seuils`
 refuse tout autre jeu. Le test ne sert qu'au verdict.
 
-**Mesure CPU (mini-jeu, mécanisme seulement).** Les conditions sont un modèle de 2 époques,
-un jour de validation et un jour de test, 8 dérives et 2 pannes par jour.
+**Mesure CPU (mini-jeu, mécanisme seulement, exploratoire).** Les conditions sont un modèle
+de 2 époques, un jour de validation et un jour de test, 8 dérives et 2 pannes par jour.
 
-| Statistique | κ retenu | Détection (validation) | Fausses alertes (validation) |
+| Statistique | κ retenu | Détection des dérives (validation) | Fausses alertes (validation) |
 |---|---|---|---|
 | innovation | 3,5 | 1,00 | 0,00 |
-| influence | 13,75 | 0,25 | 0,00 |
+| influence | 13,75 | 0,00 | 0,00 |
 
-Sur le test, avec l'innovation, la détection vaut 1,00 et la part de fausses alertes 0,10.
-Pour les entrées, la détection vaut 1,00 et il n'y a aucune fausse alerte. Le verdict est
-donc **non conforme sur ce mini-jeu**, avec un seul jour de réglage et 200 capteurs : c'est
-attendu. Les tests vérifient le mécanisme, pas ce chiffre.
+Sur le test, avec l'innovation :
+
+- détection des dérives 1,00 ;
+- part de fausses alertes 0,10 ;
+- sains signalés / sains 0,005, soit 0,5 fausse alerte par instant ;
+- pannes (hors verdict) 1,00 ;
+- entrées : détection 1,00, aucune fausse alerte.
+
+Hors protocole, il n'y a pas de verdict. Les tests vérifient le mécanisme, pas ces
+chiffres.
 
 **Session GPU (`scripts/m4_an1_colab.py`).**
 
 ```bash
-!python scripts/m4_an1_colab.py -c colab            # --derives-par-jour 40 --figees-par-jour 10
+!python scripts/m4_an1_colab.py -c colab            # protocole : 40 dérives, 10 pannes par jour
 ```
 
 Tout s'écrit dans un dossier **neuf**, `run_dir/alertes_pcfno3d/<modèle>/session_<horodatage>/`,
 sans rien écraser :
 
 - `seuils_validation.json` : κ, statistique, courbe κ → détection et fausses alertes ;
-- `an1_test.json` : verdict ;
+- `an1_test.json` : verdict, ou `exploratoire` hors protocole ;
 - `resume.json` : avec la distribution du résidu de masse et de la condition au sol sur la
   validation.
 

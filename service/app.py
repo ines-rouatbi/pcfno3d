@@ -47,6 +47,7 @@ from pathlib import Path
 import numpy as np
 from fastapi import (APIRouter, Depends, FastAPI, File, HTTPException, Query, Request,
                      UploadFile)
+from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -497,12 +498,19 @@ async def reconstruct_upload(file: UploadFile = File(...), keep: float = 1.0,
     contrat juge fausses (hors plage, densite, figees, sans u/v/T) sont MASQUEES avant
     l'inference : le modele ne recoit jamais une valeur que le rapport signale.
     """
-    from pcfno3d.contract import Grille, Seuils, valider_fichier
-
     wf = model()
     data = await file.read()
     if len(data) > MAX_UPLOAD_MB * 1024 * 1024:
         raise HTTPException(413, f"fichier trop gros (> {MAX_UPLOAD_MB} Mo)")
+    # contrat, inference et alertes : des secondes (minutes sur CPU avec les alertes) de
+    # calcul bloquant, hors de la boucle d'evenements (sinon /api/health attend aussi)
+    return await run_in_threadpool(_upload_calcul, wf, data, file.filename, keep)
+
+
+def _upload_calcul(wf: WindFieldModel, data: bytes, filename: str | None, keep: float):
+    """Partie bloquante de l'upload, executee dans un thread du pool."""
+    from pcfno3d.contract import Grille, Seuils, valider_fichier
+
     # gzip reconnu a ses octets magiques : lecteurs (pyarrow, pandas) decompressent
     # d'apres l'extension, quel que soit le nom envoye par le client
     suffix = ".csv.gz" if data[:2] == b"\x1f\x8b" else ".csv"
@@ -511,9 +519,9 @@ async def reconstruct_upload(file: UploadFile = File(...), keep: float = 1.0,
         tmp_path = Path(tmp.name)
     try:
         masque: dict = {}
-        rapport = valider_fichier(tmp_path, Grille.depuis_meta(wf.geom.meta.raw),
-                                  Seuils.upload(), nom=file.filename or tmp_path.name,
-                                  masque=masque)
+        grille = Grille.depuis_meta(wf.geom.meta.raw)
+        rapport = valider_fichier(tmp_path, grille, Seuils.upload(),
+                                  nom=filename or tmp_path.name, masque=masque)
         if rapport["verdict"] == "rejet":
             return JSONResponse(status_code=422, content={
                 "detail": f"CSV non conforme au contrat ANEO ({rapport['verdict']}) : "
@@ -526,7 +534,11 @@ async def reconstruct_upload(file: UploadFile = File(...), keep: float = 1.0,
             # meme passe que predict_csv, en gardant S pour les alertes (lot M4)
             S, hour, doy, stamp = wf.surface_from_csv(tmp_path, masque)
             volume = wf.predict(S, hour, doy, timestamp=stamp, keep=keep)
-            alertes = moteur.evaluer_modele(wf, S, hour, doy, volume, rapport=rapport)
+            from pcfno3d.alerts import stations_hors_plage
+            hp = stations_hors_plage(tmp_path, grille.n_stations, grille.node_id_start,
+                                     rapport["seuils"]["tol_densite_rel"])
+            alertes = moteur.evaluer_modele(wf, S, hour, doy, volume, rapport=rapport,
+                                            hors_plage=hp)
     except (ValueError, KeyError) as exc:
         raise HTTPException(400, f"CSV invalide : {exc}") from exc
     finally:
@@ -705,9 +717,8 @@ def _alertes_stem(stem: str | None):
         S, hour, doy, _ = wf.surface_from_cache(stem)
     except KeyError as exc:
         raise HTTPException(404, f"instant inconnu : {stem}") from exc
-    Y = (np.load(wf.cfg.paths.cache_dir / f"{stem}_Y.npy")
-         if moteur.acfg.rho_source == "verite_synthetique" else None)
-    return moteur.evaluer_modele(wf, S, hour, doy, volume, Y=Y, cle=f"stem:{stem}")
+    return moteur.evaluer_modele(wf, S, hour, doy, volume, Y=moteur.verite(wf, stem),
+                                 cle=f"stem:{stem}")
 
 
 @router.get("/alerts", tags=["qualite"])

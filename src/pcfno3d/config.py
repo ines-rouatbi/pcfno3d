@@ -328,6 +328,11 @@ class AlertsCfg:
     # part de capteurs disponibles, sans rapport du contrat (instants du cache)
     capteurs_part_min: float = 0.70
     capteurs_part_critique: float = 0.30
+    # reseau d'entree (snapshot.network.kind) : "treillis_synthetique" = un capteur par
+    # maille ; "stations_aneo" = stations reelles, part rapportee aux stations ATTENDUES
+    # (`stations_attendues` ; None = inconnu, pas d'alerte stations_insuffisantes)
+    reseau: str = "treillis_synthetique"
+    stations_attendues: int | None = None
 
     def __post_init__(self) -> None:
         self.enabled = bool(self.enabled)
@@ -337,6 +342,8 @@ class AlertsCfg:
             self.seuils = _resolve(self.seuils)
         if self.derive_statistique not in ("influence", "innovation"):
             raise ValueError("alerts.derive_statistique : 'influence' ou 'innovation'")
+        if self.reseau not in ("treillis_synthetique", "stations_aneo"):
+            raise ValueError("alerts.reseau : treillis_synthetique ou stations_aneo")
         if self.rho_source not in ("atmosphere_standard", "extrapolation_surface",
                                    "verite_synthetique"):
             raise ValueError("alerts.rho_source : atmosphere_standard, "

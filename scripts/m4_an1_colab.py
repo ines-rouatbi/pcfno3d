@@ -4,14 +4,21 @@ A lancer dans une session Colab, depuis le depot installe, avec le cache et le c
 
     !python scripts/m4_an1_colab.py -c colab
 
+Protocole du verdict (an1.PROTOCOLE) : 40 derives et 10 pannes par jour, e_ref = 1 m/s.
+La part de fausses alertes depend de la prevalence des defauts : avec d'autres reglages
+(--derives-par-jour, --pannes-par-jour, --e-ref), le resultat est marque « exploratoire »
+et AUCUN verdict officiel n'est produit (an1_conforme = null).
+
 1. VALIDATION (jours de validation, instants synoptiques dans l'ordre) : injection de
    derives (biais, gain, girouette) et de pannes (valeurs figees) sur des capteurs tires a
    graine fixe, chaine d'alertes complete, pour les DEUX statistiques de derive
    (« innovation » et « influence », memes passes). Pour chacune, le plus petit kappa
    dont la part de fausses alertes reste sous --fdr-cible ; la statistique retenue est
    celle qui detecte le mieux a ce kappa. -> seuils_validation.json (jeu: validation)
-2. TEST (jours de test, autre graine) avec ces seuils FIGES : detection, fausses alertes,
-   verdict AN1. Le test ne sert QU'AU verdict : rien n'y est ajuste. -> an1_test.json
+2. TEST (jours de test, autre graine) avec ces seuils FIGES : detection des derives,
+   fausses alertes (part des signales qui sont sains), et a cote sains signales / sains,
+   fausses alertes par instant, pannes (hors verdict). Le test ne sert QU'AU verdict :
+   rien n'y est ajuste. -> an1_test.json
 3. Distributions sur la validation du residu de masse et de la condition au sol par instant
    (pour juger alerts.sol_rms_max_m_s, laisse a null tant qu'il n'est pas decide).
 
@@ -73,11 +80,13 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--device")
     ap.add_argument("--jours-validation", type=int, help="defaut : tous les jours")
     ap.add_argument("--jours-test", type=int, help="defaut : tous les jours")
-    ap.add_argument("--derives-par-jour", type=int, default=40)
-    ap.add_argument("--figees-par-jour", type=int, default=10)
-    ap.add_argument("--e-ref", type=float, default=1.0,
+    ap.add_argument("--derives-par-jour", type=int, default=None,
+                    help="defaut : protocole (40) ; autre valeur = exploratoire")
+    ap.add_argument("--pannes-par-jour", type=int, default=None,
+                    help="valeurs figees par jour ; defaut : protocole (10)")
+    ap.add_argument("--e-ref", type=float, default=None,
                     help="amplitude effective (m/s) a partir de laquelle une derive compte "
-                         "dans la detection AN1 (defaut 1.0, le seuil du contrat)")
+                         "dans la detection (defaut : protocole, 1.0, le seuil du contrat)")
     ap.add_argument("--fdr-cible", type=float, default=0.025,
                     help="part de fausses alertes visee SUR LA VALIDATION (marge sous 5 %%)")
     ap.add_argument("--graine", type=int, default=4)
@@ -90,6 +99,17 @@ def main(argv: list[str] | None = None) -> int:
     from pcfno3d.cache import load_index
     from pcfno3d.config import Config
     from pcfno3d.inference import WindFieldModel
+
+    P = an1.PROTOCOLE
+    n_der = P["derives_par_jour"] if args.derives_par_jour is None else args.derives_par_jour
+    n_pan = P["pannes_par_jour"] if args.pannes_par_jour is None else args.pannes_par_jour
+    e_ref = P["e_ref_m_s"] if args.e_ref is None else args.e_ref
+    officiel = (n_der, n_pan, e_ref) == (P["derives_par_jour"], P["pannes_par_jour"],
+                                         P["e_ref_m_s"])
+    statut = "officiel" if officiel else "exploratoire"
+    if not officiel:
+        print(f"EXPLORATOIRE : {n_der} derives, {n_pan} pannes par jour, e_ref {e_ref} "
+              f"(protocole : {P}) -> pas de verdict AN1 officiel")
 
     cfg = Config.load(args.config)
     cfg.inference.reliability = None          # passes simples : la fiabilite n'y joue pas
@@ -111,9 +131,9 @@ def main(argv: list[str] | None = None) -> int:
 
     # 1. VALIDATION : reglage de kappa et choix de la statistique
     rng = np.random.default_rng(args.graine)
-    sim_val = [an1.simuler_jour(wf, j, a, rng, args.derives_par_jour, args.figees_par_jour,
+    sim_val = [an1.simuler_jour(wf, j, a, rng, n_der, n_pan,
                                 STATISTIQUES) for j in val]
-    choix = {st: an1.choisir_kappa(sim_val, st, fdr_cible=args.fdr_cible, e_ref=args.e_ref)
+    choix = {st: an1.choisir_kappa(sim_val, st, fdr_cible=args.fdr_cible, e_ref=e_ref)
              for st in STATISTIQUES}
     for st, c in choix.items():
         v = c["validation"]
@@ -125,7 +145,7 @@ def main(argv: list[str] | None = None) -> int:
                                               -c["validation"]["fausses_alertes"]))
     seuils = {**best, "derive_min_m_s": a.derive_min_m_s, "modele": wf.checkpoint_path.name,
               "jours_validation": [j[0].split("_")[0] for j in val],
-              "derives_par_jour": args.derives_par_jour, "figees_par_jour": args.figees_par_jour,
+              "derives_par_jour": n_der, "pannes_par_jour": n_pan, "statut": statut,
               "graine": args.graine, "alternatives": {st: {k: c[k] for k in (
                   "derive_kappa", "cible_atteinte", "validation")} for st, c in choix.items()}}
     _ecrire(out / "seuils_validation.json", seuils)
@@ -136,20 +156,26 @@ def main(argv: list[str] | None = None) -> int:
     t1 = time.perf_counter()
     rng = np.random.default_rng(args.graine + 1000)
     st = best["derive_statistique"]
-    sim_test = [an1.simuler_jour(wf, j, a, rng, args.derives_par_jour, args.figees_par_jour,
+    sim_test = [an1.simuler_jour(wf, j, a, rng, n_der, n_pan,
                                  (st,)) for j in test]
-    capteurs = an1.evaluer_an1(sim_test, st, best["derive_kappa"], args.e_ref)
+    capteurs = an1.evaluer_an1(sim_test, st, best["derive_kappa"], e_ref)
     entrees = an1.evaluer_entrees(sim_test)
-    verdict = bool(capteurs["an1_capteurs_conforme"] and entrees["an1_entrees_conforme"])
-    an1_test = {"jeu": "test", "seuils_validation": str(out / "seuils_validation.json"),
+    verdict = (bool(capteurs["an1_capteurs_conforme"] and entrees["an1_entrees_conforme"])
+               if officiel else None)
+    an1_test = {"jeu": "test", "statut": statut, "protocole": P,
+                "reglages": {"derives_par_jour": n_der, "pannes_par_jour": n_pan,
+                             "e_ref_m_s": e_ref},
+                "seuils_validation": str(out / "seuils_validation.json"),
                 "jours_test": [j[0].split("_")[0] for j in test], "capteurs": capteurs,
                 "entrees": entrees, "an1_conforme": verdict,
                 "criteres": {"detection_min": an1.DETECTION_MIN,
                              "fausses_alertes_max": an1.FAUSSES_MAX}}
     _ecrire(out / "an1_test.json", an1_test)
-    print(f"test : detection {capteurs['detection']:.3f} (derives "
-          f"{capteurs['detection_derives']}, pannes {capteurs['detection_pannes']}) | "
-          f"fausses alertes {capteurs['fausses_alertes']:.3f} | entrees : detection "
+    print(f"test : detection des derives {capteurs['detection']} | fausses alertes "
+          f"{capteurs['fausses_alertes']:.3f} (sains signales / sains "
+          f"{capteurs['taux_faux_positifs']}, par instant "
+          f"{capteurs['fausses_alertes_par_instant']}) | pannes hors verdict "
+          f"{capteurs['pannes_hors_verdict']['detection']} | entrees : detection "
           f"{entrees['detection']}, fausses {entrees['fausses_alertes']}  "
           f"({time.perf_counter() - t1:.0f} s)")
 
@@ -159,7 +185,7 @@ def main(argv: list[str] | None = None) -> int:
               "seuils": {k: seuils[k] for k in ("derive_statistique", "derive_kappa",
                                                 "fdr_cible", "e_ref_m_s", "cible_atteinte")},
               "validation": best["validation"], "test": capteurs, "entrees_test": entrees,
-              "an1_conforme": verdict,
+              "an1_conforme": verdict, "statut": statut,
               "physique_validation": {
                   "mass_residual_rms": _quantiles([p["mass_residual_rms"] for p in phys]),
                   "ground_condition_rms_ms": _quantiles([p["ground_condition_rms_ms"]
@@ -169,8 +195,9 @@ def main(argv: list[str] | None = None) -> int:
                   "rho_source": a.rho_source},
               "duree_s": round(time.perf_counter() - t0, 1)}
     _ecrire(out / "resume.json", resume)
-    print(f"\nAN1 -> {'CONFORME' if verdict else 'NON CONFORME'} | resume -> "
-          f"{out / 'resume.json'}")
+    mot = ("EXPLORATOIRE (pas de verdict)" if verdict is None
+           else "CONFORME" if verdict else "NON CONFORME")
+    print(f"\nAN1 -> {mot} | resume -> {out / 'resume.json'}")
     return 0
 
 

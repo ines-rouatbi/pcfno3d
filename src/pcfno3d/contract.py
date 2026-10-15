@@ -868,9 +868,6 @@ def indicateurs(dfc: pd.DataFrame, grille: Grille, seuils: Seuils | None = None)
         "couverture": couverture,
         "stations_a_masquer": {**_ids(a_masquer.any(axis=1)),
                                "couples": int(a_masquer.sum())},
-        # stations dont au moins une ligne est hors plage ou de densite incoherente : cibles
-        # des alertes `hors_plage` du lot M4 (pcfno3d.alerts)
-        "stations_hors_plage": _ids(anom.any(axis=1)),
         # retire par valider_dataframe (non JSON) : point_id a masquer, par instant
         "_masque": {pd.Timestamp(t): (np.nonzero(a_masquer[:, k])[0] + 1)
                     for k, t in enumerate(instants) if a_masquer[:, k].any()},

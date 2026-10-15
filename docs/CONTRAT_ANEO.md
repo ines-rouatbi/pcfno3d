@@ -39,10 +39,6 @@ indisponible) : le modèle ne reçoit jamais une valeur que le rapport signale. 
 non finie est aussi masquée (et mise à 0) dans `WindFieldModel.surface_from_csv` : un NaN
 traverserait la moyenne par blocs et rendrait toute la sortie NaN.
 
-`qualite.stations_hors_plage` (ajout du lot M4, mêmes champs `nombre` / `ids` / `tronque`)
-liste les stations dont au moins une ligne est hors plage ou de densité incohérente : ce
-sont les cibles des alertes `hors_plage` (`docs/ALERTES.md`).
-
 | verdict | réponse |
 |---|---|
 | `rejet` | `422`, corps `{"detail": ..., "qualite": <rapport>}` |
