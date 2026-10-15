@@ -12,6 +12,12 @@ latest EN DERNIER, et latest ne recule jamais (valid_time). Lecture : /v1/latest
 
 Pannes : `couper(predicat, apres_traitement=False)` ferme la connexion SANS reponse pour la
 prochaine requete qui satisfait le predicat (avant ou apres l'avoir traitee).
+`echecs_apres_commit = n` : les n prochains commits d'instantane levent une exception APRES
+avoir ecrit snapshots/{id}/_commit.json, avant l'index et latest (comme v1.js:359-390 qui
+plante entre ses ecritures R2) -> 500. `corrige = False` reproduit le Worker ACTUEL : un
+commit rejoue repond « unchanged » sans rien reparer ; `corrige = True`, le Worker CORRIGE :
+le rejeu refait l'index et latest de facon idempotente depuis _commit.json.
+Toute exception de traitement donne 500 (comme le try/catch de handleV1).
 """
 
 from __future__ import annotations
@@ -59,6 +65,8 @@ class Worker:
         self.journal: list[tuple[str, str, int]] = []
         self.pannes: list[tuple] = []
         self.heartbeats = 0
+        self.echecs_apres_commit = 0
+        self.corrige = False
 
     def couper(self, predicat, apres_traitement: bool = False) -> None:
         self.pannes.append((predicat, apres_traitement))
@@ -72,22 +80,28 @@ class Worker:
 
     # -------------------------------------------------------------- logique
     def traiter(self, methode: str, chemin: str, entetes, corps: bytes) -> tuple[int, dict]:
-        parts = [urllib.parse.unquote(p) for p in chemin.split("?")[0].split("/") if p]
+        url = urllib.parse.urlsplit(chemin)
+        parts = [urllib.parse.unquote(p) for p in url.path.split("/") if p]
         if parts[:1] != ["v1"]:
             return 404, {"error": "route_inconnue"}
         parts = parts[1:]
-        with self.r2.lock:
-            if parts and (parts[0] == "publish" or (parts[0] == "heartbeat"
-                                                    and methode == "POST")):
-                return self._publication(methode, parts, entetes, corps)
-            return self._lecture(parts)
+        try:
+            with self.r2.lock:
+                if parts and (parts[0] == "publish" or (parts[0] == "heartbeat"
+                                                        and methode == "POST")):
+                    return self._publication(methode, parts, entetes, corps)
+                return self._lecture(parts, urllib.parse.parse_qs(url.query))
+        except Exception as e:                      # handleV1 : erreur_interne, 500
+            return 500, {"error": "erreur_interne", "message": str(e)}
 
-    def _lecture(self, parts) -> tuple[int, dict]:
+    def _lecture(self, parts, q) -> tuple[int, dict]:
         if parts == ["latest"]:
             doc = self.r2.json("latest.json")
             return (200, doc) if doc else (404, {"error": "absent"})
         if parts == ["times"]:
-            items = self.r2.json("index/times.json") or []
+            de, a = (q.get("from") or [None])[0], (q.get("to") or [None])[0]
+            items = [x for x in (self.r2.json("index/times.json") or [])
+                     if (not de or x["valid_time"] >= de) and (not a or x["valid_time"] <= a)]
             return 200, {"total": len(items), "next": None, "items": items}
         if len(parts) == 2 and parts[0] == "meta":
             if not self.r2.json(f"models/{parts[1]}/_commit.json"):
@@ -147,6 +161,9 @@ class Worker:
     def _verifier(self, prefixe, files) -> list[str]:
         pb = []
         for f in files:
+            if not PATH_RE.match(str(f.get("path") or "")):
+                pb.append(f"{f.get('path')} : chemin invalide")
+                continue
             o = self.r2.objets.get(f"{prefixe}/{f['path']}")
             if o is None:
                 pb.append(f"{f['path']} : absent")
@@ -168,12 +185,18 @@ class Worker:
         pb += self._verifier(f"models/{sha8}", m["files"]) if not pb else []
         if not pb:
             meta = self.r2.json(f"models/{sha8}/meta.json")
-            g = meta["grid"]
-            terr = self.r2.objets[f"models/{sha8}/terrain.f32"]
-            if len(terr[0]) != g["nx"] * g["ny"] * 4:
-                pb.append("terrain.f32 : taille")
-            if meta["terrain"]["sha256"] != terr[1]:
-                pb.append("terrain.f32 : sha256 != meta")
+            g = (meta or {}).get("grid")
+            if not g or meta["versions"]["model_sha256"] != m["versions"]["model_sha256"]:
+                pb.append("meta.json : versions.model_sha256 different du manifeste")
+            else:
+                terr = self.r2.objets[f"models/{sha8}/terrain.f32"]
+                if len(terr[0]) != g["nx"] * g["ny"] * 4:
+                    pb.append("terrain.f32 : taille")
+                if meta["terrain"]["sha256"] != terr[1]:
+                    pb.append("terrain.f32 : sha256 != meta")
+                for v in meta.get("fields") or []:
+                    if not (meta.get("encoding") or {}).get(v):
+                        pb.append(f"meta.encoding.{v} absent")
         if pb:
             return 422, {"error": "publication_refusee", "problems": pb}
         self.r2.put_json(f"models/{sha8}/_commit.json", {**m, "committed_at": _now()})
@@ -181,10 +204,14 @@ class Worker:
 
     def _commit_instantane(self, sid, commite, corps) -> tuple[int, dict]:
         if commite:
+            if self.corrige:                        # Worker corrige : rejeu reparateur
+                self._indexer(sid, self.r2.json(f"snapshots/{sid}/_commit.json"))
             return 200, {"ok": True, "snapshot_id": sid, "unchanged": True}
         m = json.loads(corps.decode("utf-8"))
-        if m.get("snapshot_id") != sid or not m.get("files") or m.get("data_status") not in (
-                "complete", "degrade"):
+        if m.get("snapshot_id") != sid or not m.get("files") or not m.get("valid_time") \
+                or not m.get("versions"):
+            return 422, {"error": "manifeste_invalide"}
+        if m.get("data_status") not in ("complete", "degrade"):
             return 422, {"error": "manifeste_invalide"}
         sha8 = sid[-8:]
         if m["versions"]["model_sha256"][:8] != sha8:
@@ -211,12 +238,23 @@ class Worker:
         if pb:
             return 422, {"error": "publication_refusee", "problems": pb}
         publie = _now()
+        self.r2.put_json(f"snapshots/{sid}/_commit.json", {**m, "published_at": publie})
+        if self.echecs_apres_commit > 0:
+            self.echecs_apres_commit -= 1
+            raise RuntimeError("panne simulee apres _commit.json (index et latest non ecrits)")
+        self._indexer(sid, {**m, "published_at": publie})
+        return 200, {"ok": True, "snapshot_id": sid, "published_at": publie,
+                     "files": len(m["files"])}
+
+    def _indexer(self, sid, m) -> None:
+        """Index puis latest (en dernier), idempotent : ce que v1.js fait apres _commit.json,
+        et ce que le rejeu d'un commit refait dans le Worker corrige."""
+        publie = m["published_at"]
         latest = {"snapshot_id": sid, "valid_time": m["valid_time"],
                   "generated_at": m.get("generated_at") or publie, "published_at": publie,
                   "last_observation_at": m.get("last_observation_at"),
                   "data_status": m["data_status"], "versions": m["versions"],
                   "href": f"/v1/snapshots/{sid}"}
-        self.r2.put_json(f"snapshots/{sid}/_commit.json", {**m, "published_at": publie})
         alertes = self.r2.json(f"snapshots/{sid}/alerts.json")
         ouvertes = sum(a["status"] == "ouverte" for a in alertes["items"]) \
             if alertes is not None else None
@@ -228,8 +266,6 @@ class Worker:
         courant = self.r2.json("latest.json")
         if not courant or courant["valid_time"] <= m["valid_time"]:
             self.r2.put_json("latest.json", latest)
-        return 200, {"ok": True, "snapshot_id": sid, "published_at": publie,
-                     "files": len(m["files"])}
 
 
 def _now() -> str:

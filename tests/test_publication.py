@@ -29,6 +29,9 @@ ATOM = REPO / "tests" / "data" / "atom_rev2"
 DEMO = REPO / "configs" / "eolien" / "parc_demo.yaml"
 GEN = "2025-01-12T12:00:02Z"
 JETON = "jeton-de-test-" + "x" * 24          # faux jeton, uniquement pour le Worker simule
+# ancrage suppose des configs Colab, pour la CLI et le rejeu
+ANCRE = ["--set", "real.origin_lat=36.0", "--set", "real.origin_lon=9.7",
+         "--set", "real.origin_assumed=true"]
 
 FILE_SCHEMA = {"latest.json": "latest", "times.json": "times", "snapshot.json": "snapshot",
                "quality.json": "quality", "alerts.json": "alerts", "stations.json": "stations",
@@ -109,10 +112,15 @@ def validate_mjs(tmp_path_factory):
 
 @pytest.fixture(scope="module")
 def trained(cfg, index, norm):
+    """Modele du mini-jeu, avec l'ancrage SUPPOSE des configs Colab (M6 refuse de publier
+    un domaine sans ancrage) ; restaure a la fin du module."""
     from pcfno3d.train import Trainer
     if not cfg.paths.ckpt_best.exists():
         Trainer(cfg, device="cpu", verbose=False).fit()
-    return cfg
+    avant = (cfg.real.origin_lat, cfg.real.origin_lon, cfg.real.origin_assumed)
+    cfg.real.origin_lat, cfg.real.origin_lon, cfg.real.origin_assumed = 36.0, 9.7, True
+    yield cfg
+    cfg.real.origin_lat, cfg.real.origin_lon, cfg.real.origin_assumed = avant
 
 
 @pytest.fixture(scope="module")
@@ -317,6 +325,10 @@ def test_direct_depuis_un_csv(complet, trained, tmp_path, schemas):
     assert valider_python(schemas, d) == []
     dq = json.loads((d / "data-quality.json").read_text(encoding="utf-8"))
     assert dq["files"]["received"] == 1
+    cap = inst.info["capteurs"]                          # comptage exact, capteurs a 50 m
+    assert cap["estime"] is False and 0 < cap["utilises"] <= cap["presents"]
+    net = json.loads((d / "snapshot.json").read_text(encoding="utf-8"))["network"]
+    assert net["sensors_visible"] == cap["utilises"]
     assert dq["period"]["from"] <= inst.valid_time <= dq["period"]["to"]
 
 
@@ -415,8 +427,11 @@ def test_coupure_pendant_les_fichiers_ne_casse_pas_latest(serveur, depot_complet
 
 
 def test_coupure_au_commit(serveur, depot_complet):
-    """Commit coupe AVANT traitement : rien ne bascule. Commit traite mais reponse perdue :
-    la reprise recoit « unchanged » et latest est bien le nouvel instantane."""
+    """Commit coupe AVANT traitement : rien ne bascule. Commit entierement traite (index et
+    latest ecrits) mais reponse perdue : la reprise recoit « unchanged ». Ce n'est PAS
+    « unchanged » qui prouve la publication (le Worker actuel le repond aussi quand il a
+    plante apres _commit.json, voir test_echec_apres_commit_*) : c'est la relecture de
+    /v1/times et /v1/latest faite par le client."""
     from pcfno3d.publish import PublicationRefusee
     depot, insts = depot_complet
     w = serveur.worker
@@ -475,10 +490,15 @@ def test_jeton_jamais_expose(serveur, depot_complet, capsys, monkeypatch):
         assert JETON not in texte and "autre-jeton" not in texte
     with pytest.raises(ValueError, match="https"):
         ClientPublication("http://atom.zelqane.com", token=JETON)
-    prod = ClientPublication("https://atom.zelqane.com", token=JETON, tentatives=1)
-    with pytest.raises(PublicationRefusee, match="test"):
-        prod.publier(depot.dossier(insts[0].snapshot_id))
-    assert prod.requetes == 0
+    # data_kind « test » : seulement vers un hote de bouclage ; hote normalise
+    for url in ("https://atom.zelqane.com", "https://ATOM.Zelqane.com.",
+                "https://exemple.invalid"):
+        prod = ClientPublication(url, token=JETON, tentatives=1)
+        with pytest.raises(PublicationRefusee, match="bouclage"):
+            prod.publier(depot.dossier(insts[0].snapshot_id))
+        assert prod.requetes == 0
+    assert ClientPublication("http://localhost:1", token=JETON).local
+    assert ClientPublication("http://[::1]:1", token=JETON).local
     monkeypatch.delenv("ATOM_PUBLISH_TOKEN", raising=False)
     with pytest.raises(ValueError, match="ATOM_PUBLISH_TOKEN"):
         ClientPublication(serveur.url)
@@ -515,6 +535,17 @@ def test_export_netcdf(depot_complet, geom, tmp_path, moteur):
     assert attrs["version_normalisation"] == inst.versions["norm"]
     assert attrs["projection"] == "equirectangulaire_tangent_noeud_0_0"
     assert "statut" in variables and "sigma_u" in variables
+    # CF : temps, grid_mapping, coordonnees de projection, ancrage suppose dit sur lat/lon
+    assert {"time", "crs"} <= set(variables)
+    assert variables["u"][1]["grid_mapping"] == "crs"
+    assert variables["u"][1]["coordinates"] == "time lat lon"
+    assert variables["x"][1]["standard_name"] == "projection_x_coordinate"
+    assert variables["time"][1]["standard_name"] == "time"
+    assert "SUPPOSEE" in variables["lat"][1]["long_name"]
+    xr = pytest.importorskip("xarray")
+    with xr.open_dataset(p) as ds:
+        assert str(ds["time"].values)[:19] == inst.valid_time[:19]
+        assert set(ds["u"].dims) == {"altitude", "y", "x"}
     # memes valeurs que fields/u.f32
     if moteur == "netcdf4":
         import netCDF4
@@ -574,7 +605,8 @@ def test_cli_publish_local_puis_distant(trained, serveur, tmp_path, monkeypatch,
     stems = _instants(trained, 2)
     racine = tmp_path / "cli"
     base = ["--data-dir", str(trained.paths.data_dir), "--cache-dir",
-            str(trained.paths.cache_dir), "--run-dir", str(trained.paths.run_dir), "-c", "test"]
+            str(trained.paths.cache_dir), "--run-dir", str(trained.paths.run_dir), "-c",
+            "test", *ANCRE]
     rc = main(base + ["publish", "--stem", stems[0], "--sortie", str(racine),
                       "--data-kind", "test", "--device", "cpu", "--exports"])
     assert rc == 0
@@ -598,7 +630,7 @@ def test_rejeu_local(trained, tmp_path, monkeypatch, capsys):
     args = ["-c", "test", "--data-dir", str(trained.paths.data_dir), "--cache-dir",
             str(trained.paths.cache_dir), "--run-dir", str(trained.paths.run_dir),
             "--sortie", str(tmp_path / "rejeu"), "--limite", "2", "--device", "cpu",
-            "--data-kind", "test"]
+            "--data-kind", "test", *ANCRE]
     assert rejeu.main(args) == 0
     times = json.loads((tmp_path / "rejeu" / "index" / "times.json").read_text("utf-8"))
     assert times["total"] == 2
@@ -606,3 +638,260 @@ def test_rejeu_local(trained, tmp_path, monkeypatch, capsys):
     times = json.loads((tmp_path / "rejeu" / "index" / "times.json").read_text("utf-8"))
     assert times["total"] == 3
     assert "deja publie" in capsys.readouterr().out
+
+
+# ------------------------------------------------------------------ corrections de relecture
+def test_sans_ancrage_refuse(nu, trained):
+    """M6 n'invente pas de position : sans real.origin_lat/lon, aucune publication."""
+    from pcfno3d.publish import instantane_du_cache
+    avant = trained.real.origin_lat
+    trained.real.origin_lat = None
+    try:
+        with pytest.raises(ValueError, match="ancrage"):
+            instantane_du_cache(nu, _instants(trained, 1)[0], data_kind="test",
+                                generated_at=GEN)
+    finally:
+        trained.real.origin_lat = avant
+
+
+def test_open_alerts_null_sans_m4(nu, trained, tmp_path, schemas):
+    """M4 inactif : open_alerts null dans times.json (local et dossier), jamais 0."""
+    from pcfno3d.publish import DepotLocal, instantane_du_cache
+    depot = DepotLocal(tmp_path / "pub")
+    inst = instantane_du_cache(nu, _instants(trained, 1)[0], data_kind="test", depot=depot,
+                               generated_at=GEN)
+    assert inst.open_alerts is None
+    d = depot.ecrire(inst)
+    assert depot.times()[0]["open_alerts"] is None
+    t = json.loads((d / "times.json").read_text(encoding="utf-8"))
+    assert t["items"][0]["open_alerts"] is None
+    assert valider_python(schemas, d) == []
+
+
+def test_reseau_en_capteurs_50m(depot_complet, complet, geom):
+    """B4 : total, visibles et perdus comptes en capteurs du treillis a 50 m (meme unite) ;
+    depuis le cache, ESTIMATION round(fraction x stride^2) par maille, dite comme telle."""
+    depot, insts = depot_complet
+    inst = insts[0]
+    d = depot.dossier(inst.snapshot_id)
+    S, *_ = complet.surface_from_cache(inst.snapshot_id[:-9])
+    k = geom.stride ** 2
+    attendu = int(np.rint(np.clip(S[7], 0, 1) * k).sum())
+    net = json.loads((d / "snapshot.json").read_text(encoding="utf-8"))["network"]
+    st = json.loads((d / "stations.json").read_text(encoding="utf-8"))["items"]
+    assert net["sensors_visible"] == attendu and attendu > int((S[7] > 0.5).sum())
+    perdus = sum(s["state"] in ("muette", "exclue") for s in st)
+    assert net["sensors_total"] - net["sensors_visible"] == perdus
+    assert inst.info["capteurs"]["estime"] is True
+    dq = json.loads((d / "data-quality.json").read_text(encoding="utf-8"))
+    assert dq["sensors"]["total"] == net["sensors_total"]
+    assert dq["sensors"]["observed"] == net["sensors_visible"]
+
+
+def test_stations_doc_identifiant_hors_treillis(geom):
+    """Hauteur inconnue (identifiant non c<i>_<j>) : null (B5), jamais 0."""
+    from pcfno3d.publish import stations_doc
+    items = [{"status": "ouverte", "station_id": "ANEO-12", "kind": "station_muette",
+              "location": {"x_m": 0.0, "y_m": 0.0}, "value": None}]
+    out = stations_doc(items, geom, np.zeros((8, geom.ny, geom.nx), np.float32), GEN)
+    assert out[0]["height_agl_m"] is None
+
+
+def test_echec_apres_commit_worker_actuel(serveur, depot_complet):
+    """Worker ACTUEL plante apres _commit.json : la reprise du commit repond « unchanged »
+    sans rien reparer. Le client relit /v1/times et /v1/latest, rejoue le commit une fois,
+    puis leve PublicationIncomplete (jamais un succes)."""
+    from pcfno3d.publish import PublicationIncomplete
+    depot, insts = depot_complet
+    w = serveur.worker
+    c = _client(serveur)
+    c.publier(depot.dossier(insts[0].snapshot_id))
+    sid2 = insts[1].snapshot_id
+    w.echecs_apres_commit = 1
+    with pytest.raises(PublicationIncomplete, match="Worker"):
+        c.publier(depot.dossier(sid2))
+    assert f"snapshots/{sid2}/_commit.json" in w.r2.objets
+    assert w.r2.json("latest.json")["snapshot_id"] == insts[0].snapshot_id
+    assert sid2 not in {t["snapshot_id"] for t in w.r2.json("index/times.json")}
+    commits = [j for j in w.journal if j[1].endswith(f"/{sid2}/commit")]
+    assert [j[2] for j in commits] == [500, 200, 200]          # echec, reprise, rejeu
+
+
+def test_echec_apres_commit_worker_corrige(serveur, depot_complet):
+    """Worker CORRIGE : la relance de la publication rejoue le commit, qui refait l'index
+    et latest ; le client le verifie par relecture."""
+    from pcfno3d.publish import PublicationRefusee
+    depot, insts = depot_complet
+    w = serveur.worker
+    w.corrige = True
+    c = _client(serveur, tentatives=1)
+    c.publier(depot.dossier(insts[0].snapshot_id))
+    sid2 = insts[1].snapshot_id
+    w.echecs_apres_commit = 1
+    with pytest.raises(PublicationRefusee):
+        c.publier(depot.dossier(sid2))                         # 500, une seule tentative
+    assert w.r2.json("latest.json")["snapshot_id"] == insts[0].snapshot_id
+    rep = c.publier(depot.dossier(sid2))                       # relance : reparee
+    assert rep.get("unchanged") is True
+    assert w.r2.json("latest.json")["snapshot_id"] == sid2
+    assert sid2 in {t["snapshot_id"] for t in w.r2.json("index/times.json")}
+    assert c.est_publie(sid2, insts[1].valid_time) == (True, "ok")
+
+
+def test_rejeu_ne_marque_ni_ne_purge_un_echec(trained, serveur, tmp_path, monkeypatch):
+    """Rejeu --remote --purger contre le Worker actuel en panne apres _commit.json : code 3,
+    dossier local garde, rien de marque publie ; Worker corrige : la relance termine, marque
+    et purge."""
+    sys.path.insert(0, str(REPO / "scripts"))
+    import m6_rejeu_colab as rejeu
+    monkeypatch.setenv("ATOM_PUBLISH_TOKEN", JETON)
+    racine = tmp_path / "rejeu"
+    args = ["-c", "test", "--data-dir", str(trained.paths.data_dir), "--cache-dir",
+            str(trained.paths.cache_dir), "--run-dir", str(trained.paths.run_dir),
+            "--sortie", str(racine), "--limite", "1", "--device", "cpu", "--data-kind", "test",
+            "--remote", serveur.url, "--purger", *ANCRE]
+    w = serveur.worker
+    w.echecs_apres_commit = 10
+    assert rejeu.main(args) == 3
+    dossiers = [p for p in (racine / "snapshots").iterdir() if not p.name.startswith(".")]
+    assert len(dossiers) == 1 and (dossiers[0] / "publish-manifest.json").exists()
+    assert not (racine / "index" / "publies_distant.json").exists()
+    w.echecs_apres_commit, w.corrige = 0, True
+    assert rejeu.main(args) == 0
+    assert not dossiers[0].exists()                              # purge apres verification
+    pub = json.loads((racine / "index" / "publies_distant.json").read_text("utf-8"))
+    assert pub[serveur.url] == [dossiers[0].name]
+
+
+def test_redirection_jamais_suivie(depot_complet):
+    """Une 302 du Worker devient une erreur : le jeton ne part jamais vers l'hote de la
+    redirection (second serveur local qui enregistre les en-tetes)."""
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    from pcfno3d.publish import ClientPublication, PublicationRefusee
+    vus = []
+
+    class Cible(BaseHTTPRequestHandler):
+        def log_message(self, *a):
+            pass
+
+        def _r(self):
+            vus.append(dict(self.headers.items()))
+            self.send_response(200)
+            self.send_header("content-length", "2")
+            self.end_headers()
+            self.wfile.write(b"{}")
+        do_GET = do_PUT = do_POST = _r
+
+    cible = ThreadingHTTPServer(("127.0.0.1", 0), Cible)
+    url_cible = f"http://127.0.0.1:{cible.server_address[1]}"
+
+    class Redirige(BaseHTTPRequestHandler):
+        def log_message(self, *a):
+            pass
+
+        def _r(self):
+            n = int(self.headers.get("content-length") or 0)
+            self.rfile.read(n)
+            self.send_response(302)
+            self.send_header("location", url_cible + self.path)
+            self.send_header("content-length", "0")
+            self.end_headers()
+        do_GET = do_PUT = do_POST = _r
+
+    source = ThreadingHTTPServer(("127.0.0.1", 0), Redirige)
+    for s in (cible, source):
+        threading.Thread(target=s.serve_forever, daemon=True).start()
+    try:
+        c = ClientPublication(f"http://127.0.0.1:{source.server_address[1]}", token=JETON,
+                              tentatives=1, pause_s=0.0, journal=None)
+        with pytest.raises(PublicationRefusee, match="redirection"):
+            c._requete("PUT", "/v1/publish/x_0123abcd/files/a.json", b"{}")
+        depot, insts = depot_complet
+        with pytest.raises(PublicationRefusee, match="redirection"):
+            c.publier(depot.dossier(insts[0].snapshot_id))
+        assert vus == []                       # aucune requete, donc aucun jeton, chez la cible
+    finally:
+        for s in (cible, source):
+            s.shutdown()
+            s.server_close()
+
+
+def test_index_local_repare(nu, trained, tmp_path):
+    """Coupure entre le renommage du dossier et l'index : a l'ouverture, DepotLocal complete
+    index/times.json et latest.json depuis les dossiers presents, et retire les dossiers
+    temporaires abandonnes."""
+    from pcfno3d.publish import DepotLocal, instantane_du_cache
+    racine = tmp_path / "pub"
+    depot = DepotLocal(racine)
+    a, b = _instants(trained, 2)
+    depot.ecrire(instantane_du_cache(nu, a, data_kind="test", depot=depot, generated_at=GEN))
+    ib = instantane_du_cache(nu, b, data_kind="test", depot=depot, generated_at=GEN)
+    depot.ecrire(ib)
+    # etat apres coupure : index sans l'instantane b, latest encore sur a, temporaire laisse
+    items = [t for t in depot.times() if t["snapshot_id"] != ib.snapshot_id]
+    (racine / "index" / "times.json").write_bytes(json.dumps(
+        {"total": 1, "next": None, "items": items}).encode("utf-8"))
+    (racine / "latest.json").write_bytes(
+        (depot.dossier(items[0]["snapshot_id"]) / "latest.json").read_bytes())
+    (racine / "snapshots" / f".{ib.snapshot_id}.partiel123").mkdir()
+    rouvert = DepotLocal(racine)
+    assert ib.snapshot_id in rouvert.repares and "latest.json" in rouvert.repares
+    assert [t["snapshot_id"] for t in rouvert.times()][0] == ib.snapshot_id
+    assert len(rouvert.times()) == 2 and rouvert.times()[0]["open_alerts"] is None
+    assert rouvert.latest()["snapshot_id"] == ib.snapshot_id
+    assert not list((racine / "snapshots").glob(".*"))
+    assert DepotLocal(racine).repares == []                    # rien a refaire ensuite
+
+
+def test_exports_refaits_depuis_le_dossier(depot_complet, geom, trained, tmp_path,
+                                           monkeypatch):
+    """Exports DE3 depuis le dossier PUBLIE : seuls les manquants sont refaits, un CSV qui
+    echoue a l'ecriture ne laisse pas de .tmp, valeurs = champs publies."""
+    import pandas as pd
+
+    from pcfno3d.export_noeuds import _lire_netcdf, chemins_exports, exporter_dossier
+    depot, insts = depot_complet
+    sid = insts[0].snapshot_id
+    dossier = depot.dossier(sid)
+    rc = trained.reliability
+    ex = tmp_path / "exports"
+    faits = exporter_dossier(dossier, geom, ex, rc.class_high, rc.class_mid)
+    assert set(faits) == {"netcdf", "csv"}
+    assert exporter_dossier(dossier, geom, ex, rc.class_high, rc.class_mid) == {}
+    ch = chemins_exports(ex, sid)
+    ch["csv"].unlink()
+    assert set(exporter_dossier(dossier, geom, ex, rc.class_high, rc.class_mid)) == {"csv"}
+    df = pd.read_csv(ch["csv"], keep_default_na=False, na_values=[""])
+    assert len(df) == int(insts[0].champs.valide.sum())
+    _, attrs, _ = _lire_netcdf(ch["netcdf"])
+    assert attrs["snapshot_id"] == sid
+    ch["csv"].unlink()
+
+    def panne(self, *a, **k):
+        raise OSError("disque plein (simule)")
+
+    monkeypatch.setattr(pd.DataFrame, "to_csv", panne)
+    with pytest.raises(OSError):
+        exporter_dossier(dossier, geom, ex, rc.class_high, rc.class_mid)
+    assert not ch["csv"].exists() and not list(ch["csv"].parent.glob(".*tmp*"))
+
+
+def test_cli_instantane_existant(trained, tmp_path):
+    """Instantane deja ecrit : configuration differente -> refus ; meme configuration ->
+    reutilise tel quel, exports faits depuis CE dossier (aucun recalcul melange)."""
+    from pcfno3d.cli import main
+    stem = _instants(trained, 1)[0]
+    racine = tmp_path / "cli"
+    base = ["--data-dir", str(trained.paths.data_dir), "--cache-dir",
+            str(trained.paths.cache_dir), "--run-dir", str(trained.paths.run_dir), "-c",
+            "test", *ANCRE, "publish", "--stem", stem, "--sortie", str(racine),
+            "--device", "cpu"]
+    assert main(base + ["--data-kind", "test"]) == 0
+    sid = json.loads((racine / "latest.json").read_text(encoding="utf-8"))["snapshot_id"]
+    avant = (racine / "snapshots" / sid / "publish-manifest.json").read_bytes()
+    assert main(base + ["--data-kind", "synthetique"]) == 1
+    assert main(base + ["--data-kind", "test", "--exports"]) == 0
+    assert (racine / "snapshots" / sid / "publish-manifest.json").read_bytes() == avant
+    assert (racine / "exports" / sid / f"{sid}_noeuds.csv").exists()

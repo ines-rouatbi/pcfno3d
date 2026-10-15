@@ -9,6 +9,10 @@
             direction, statut, source, sigma_u, sigma_v, sigma_w, couverture, fiabilite,
             classe_fiabilite, version_modele, version_donnees, version_normalisation.
 
+Ecarts assumes a la spec 8.4 : `node_id` est le point_id du noeud 3D du GENERATEUR (unique),
+pas un identifiant ANEO (le capteur d'un noeud mesure est dans `source`) ; u, v, w sont la
+PASSE SERVIE (contrat rev. 2, D6), pas la moyenne de l'ensemble (qui degrade DSO1).
+
 Les valeurs sont EXACTEMENT celles de l'instantane publie (`publish.ChampsPublies` : meme
 masque B1, memes float32). « Chaque export est verifie par un schema de sortie avant d'etre
 livre » (spec 8.4) : le CSV passe un schema Pandera, le NetCDF est relu et controle, et le
@@ -28,7 +32,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from .publish import CALME_MS, Instantane, latlon
+from .publish import CALME_MS, ChampsPublies, Instantane, latlon
 from .reliability import NODATA_U8, STATUT_MESURE
 from .windfarm import round_direction
 
@@ -156,9 +160,12 @@ def exporter_csv(inst: Instantane, geom, path: str | Path) -> Path:
     schema_csv().validate(df, lazy=True)
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(f".{path.name}.tmp{os.getpid()}")
-    with open(tmp, "w", encoding="utf-8", newline="\n") as f:
-        df.to_csv(f, index=False, lineterminator="\n")
-    os.replace(tmp, path)
+    try:
+        with open(tmp, "w", encoding="utf-8", newline="\n") as f:
+            df.to_csv(f, index=False, lineterminator="\n")
+        os.replace(tmp, path)
+    finally:
+        tmp.unlink(missing_ok=True)             # jamais de .tmp abandonne
     return path
 
 
@@ -171,6 +178,9 @@ def _variables(inst: Instantane, geom, georef: dict) -> list[tuple]:
     y = np.arange(ny) * float(geom.dy)
     xx, yy = np.meshgrid(x, y)
     lat, lon = latlon(georef, xx, yy)
+    suppose = " - position SUPPOSEE (ancrage choisi, non mesure)" if georef["suppose"] else ""
+    temps = (pd.Timestamp(inst.valid_time).tz_convert(None)
+             - pd.Timestamp("1970-01-01")).total_seconds()
     u, v = ch.f32["u"], ch.f32["v"]
     with np.errstate(invalid="ignore"):
         d = round_direction(270.0 - np.degrees(np.arctan2(v, u)), 2).astype(np.float32)
@@ -182,13 +192,27 @@ def _variables(inst: Instantane, geom, georef: dict) -> list[tuple]:
         ("altitude", ("altitude",), z, {"units": "m", "long_name": "altitude au-dessus du "
                                         "niveau de la mer", "positive": "up", "axis": "Z"}),
         ("y", ("y",), y, {"units": "m", "long_name": "y vers le nord depuis le noeud (0, 0)",
-                          "axis": "Y"}),
+                          "standard_name": "projection_y_coordinate", "axis": "Y"}),
         ("x", ("x",), x, {"units": "m", "long_name": "x vers l'est depuis le noeud (0, 0)",
-                          "axis": "X"}),
+                          "standard_name": "projection_x_coordinate", "axis": "X"}),
+        ("time", (), np.float64(temps), {"units": "seconds since 1970-01-01 00:00:00",
+                                         "standard_name": "time", "calendar": "standard",
+                                         "long_name": "instant des mesures sources (UTC)"}),
+        ("crs", (), np.int8(0), {
+            "long_name": "plan tangent equirectangulaire au noeud (0, 0) (contrat ATOM D4) ; "
+                         "aucun grid_mapping_name CF ne le decrit : lat/lon 2D font foi",
+            "projection": georef["projection"], "latitude_of_origin": float(georef["lat0"]),
+            "longitude_of_origin": float(georef["lon0"]),
+            "rotation_deg": float(georef["rotation_deg"]),
+            "m_per_deg_lat": float(georef["m_per_deg_lat"]),
+            "m_per_deg_lon": float(georef["m_per_deg_lon"]),
+            "georef_suppose": int(bool(georef["suppose"]))}),
         ("lat", ("y", "x"), lat, {"units": "degrees_north", "standard_name": "latitude",
-                                  "long_name": "latitude (projection D4 du contrat ATOM)"}),
+                                  "long_name": "latitude (projection D4 du contrat ATOM)"
+                                               + suppose}),
         ("lon", ("y", "x"), lon, {"units": "degrees_east", "standard_name": "longitude",
-                                  "long_name": "longitude (projection D4 du contrat ATOM)"}),
+                                  "long_name": "longitude (projection D4 du contrat ATOM)"
+                                               + suppose}),
         ("z_terrain", ("y", "x"), ch.terrain, {"units": "m", "long_name": "altitude du relief",
                                                "standard_name": "surface_altitude"}),
         ("u", DIMS, u, {"units": "m s-1", "standard_name": "eastward_wind",
@@ -228,7 +252,8 @@ def _variables(inst: Instantane, geom, georef: dict) -> list[tuple]:
         ]
     for _, dims, _, at in out:
         if dims == DIMS:
-            at["coordinates"] = "lat lon"          # CF : coordonnees geographiques
+            at["coordinates"] = "time lat lon"     # CF : temps et coordonnees geographiques
+            at["grid_mapping"] = "crs"
     return out
 
 
@@ -269,7 +294,10 @@ def _ecrire_netcdf4(path: Path, variables: list[tuple], attrs: dict, shape) -> N
             var = ds.createVariable(nom, a.dtype, dims, zlib=len(dims) == 3, complevel=4,
                                     fill_value=fill)
             var.setncatts(at)
-            var[:] = a
+            if dims:
+                var[:] = a
+            else:
+                var.assignValue(a)
         ds.setncatts(attrs)
 
 
@@ -283,7 +311,10 @@ def _ecrire_scipy(path: Path, variables: list[tuple], attrs: dict, shape) -> Non
         for nom, dims, a, at in variables:
             a = np.asarray(a)
             var = ds.createVariable(nom, a.dtype, dims)
-            var[:] = a
+            if dims:
+                var[:] = a
+            else:
+                var.data[()] = a                    # scalaire (assignValue casse sous numpy 1.26)
             if a.dtype == np.int8:
                 var._FillValue = np.int8(-1)
             elif a.dtype == np.float32 and len(dims) == 3:
@@ -323,7 +354,7 @@ def verifier_netcdf(path: str | Path, inst: Instantane, geom) -> dict:
     if {k: dims.get(k) for k in DIMS} != {"altitude": nz, "y": ny, "x": nx}:
         erreurs.append(f"dimensions {dims} != altitude {nz}, y {ny}, x {nx}")
     for nom in ("u", "v", "w", "vitesse", "direction", "hauteur_sol", "lat", "lon",
-                "altitude", "x", "y", "z_terrain"):
+                "altitude", "x", "y", "z_terrain", "time"):
         if nom not in variables:
             erreurs.append(f"variable {nom} absente")
             continue
@@ -331,6 +362,14 @@ def verifier_netcdf(path: str | Path, inst: Instantane, geom) -> dict:
             erreurs.append(f"{nom} sans unite")
         if nom in ("u", "v", "w", "vitesse", "direction") and variables[nom][0] != DIMS:
             erreurs.append(f"{nom} : dimensions {variables[nom][0]} != {DIMS}")
+        if nom in ("u", "v", "w") and variables[nom][1].get("grid_mapping") != "crs":
+            erreurs.append(f"{nom} sans grid_mapping")
+    for nom, sn in (("x", "projection_x_coordinate"), ("y", "projection_y_coordinate"),
+                    ("time", "time")):
+        if nom in variables and variables[nom][1].get("standard_name") != sn:
+            erreurs.append(f"{nom} : standard_name != {sn}")
+    if "crs" not in variables:
+        erreurs.append("variable crs absente")
     for k in ("version_modele", "model_sha256", "version_donnees", "version_normalisation",
               "data_kind", "projection", "lat0", "lon0", "snapshot_id", "timestamp_utc"):
         if k not in attrs:
@@ -364,6 +403,76 @@ def exporter_netcdf(inst: Instantane, geom, path: str | Path, moteur: str | None
         raise
     os.replace(tmp, path)
     return path
+
+
+def charger_instantane(dossier: str | Path, geom, class_high: float,
+                       class_mid: float) -> Instantane:
+    """Relit un instantane PUBLIE (dossier de DepotLocal) : les exports se font depuis ce
+    qui est publie, jamais depuis un nouveau calcul. coverage / reliability sont relus
+    quantifies (octet / 254) ; la classe de fiabilite, non publiee, est recalculee depuis
+    la fiabilite relue avec les seuils de la configuration (reliability.class_high/mid).
+    Refuse un dossier dont la grille ou le relief different de `geom`."""
+    d = Path(dossier)
+    man = json.loads((d / "publish-manifest.json").read_bytes().decode("utf-8"))
+    sid = man["snapshot_id"]
+    sha8 = sid[-8:]
+    meta_b = (d / "models" / sha8 / "meta.json").read_bytes()
+    meta = json.loads(meta_b.decode("utf-8"))
+    g = meta["grid"]
+    nz, ny, nx = geom.shape
+    if (g["nz"], g["ny"], g["nx"]) != (nz, ny, nx) or \
+            [float(z) for z in g["levels_asl_m"]] != [float(z) for z in geom.z_levels]:
+        raise ValueError(f"{sid} : grille publiee differente de la geometrie du modele")
+    terrain = np.fromfile(d / "models" / sha8 / "terrain.f32", "<f4").reshape(ny, nx)
+    if not np.array_equal(terrain, np.asarray(geom.zt, np.float32)):
+        raise ValueError(f"{sid} : relief publie different de celui du modele")
+    z = np.asarray(g["levels_asl_m"], np.float64)[:, None, None]
+    valide = (z - terrain.astype(np.float64)[None]) >= float(g["min_agl_m"])
+    f32, u8 = {}, {}
+    for c in meta["fields"]:
+        enc = meta["encoding"][c]
+        dt = "<f4" if enc["dtype"] == "float32" else "u1"
+        a = np.fromfile(d / enc["file"], dt).reshape(nz, ny, nx)
+        (u8 if dt == "u1" else f32)[c] = a.astype(np.float32) if dt == "<f4" else a
+    ch = ChampsPublies(terrain, valide, float(g["min_agl_m"]), f32, u8)
+    if "reliability" in u8:
+        def relu(c):
+            a = u8[c].astype(np.float32) * np.float32(meta["encoding"][c]["scale"])
+            a[u8[c] == NODATA_U8] = np.nan
+            return a
+        ch.coverage, ch.reliability = relu("coverage"), relu("reliability")
+        cl = np.where(ch.reliability >= class_high, 2,
+                      np.where(ch.reliability >= class_mid, 1, 0)).astype(np.uint8)
+        cl[~valide] = NODATA_U8
+        ch.reliability_class = cl
+    return Instantane(sid, sha8, man["valid_time"], man["generated_at"],
+                      man["last_observation_at"], man["data_status"], man["versions"], {},
+                      {"meta.json": meta_b}, man, {}, None, ch)
+
+
+def chemins_exports(racine_exports: str | Path, sid: str) -> dict[str, Path]:
+    d = Path(racine_exports) / sid
+    return {"netcdf": d / f"{sid}.nc", "csv": d / f"{sid}_noeuds.csv"}
+
+
+def exporter_dossier(dossier: str | Path, geom, racine_exports: str | Path,
+                     class_high: float, class_mid: float, netcdf: bool = True,
+                     csv: bool = True) -> dict[str, Path]:
+    """Exports DE3 d'un instantane PUBLIE, seulement ceux qui MANQUENT (une relance refait
+    un NetCDF ou un CSV absent, sans toucher a ceux qui existent). {nom: chemin} des
+    fichiers ecrits."""
+    sid = Path(dossier).name
+    cibles = {k: p for k, p in chemins_exports(racine_exports, sid).items()
+              if {"netcdf": netcdf, "csv": csv}[k] and not p.exists()}
+    if not cibles:
+        return {}
+    inst = charger_instantane(dossier, geom, class_high, class_mid)
+    out = {}
+    if "netcdf" in cibles:
+        out["netcdf"] = exporter_netcdf(inst, geom, cibles["netcdf"])
+    if "csv" in cibles:
+        out["csv"] = exporter_csv(inst, geom, cibles["csv"])
+    return out
 
 
 def exporter(inst: Instantane, geom, dossier: str | Path, netcdf: bool = True,

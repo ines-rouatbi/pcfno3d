@@ -274,7 +274,8 @@ class WindFieldModel:
                   f"| {self.device} | {self.geom.summary()}")
 
     # ------------------------------------------------------------------ entrees
-    def surface_from_csv(self, path: str | Path, exclure: dict | None = None
+    def surface_from_csv(self, path: str | Path, exclure: dict | None = None,
+                         comptage: dict | None = None
                          ) -> tuple[np.ndarray, float, int, str]:
         """Mesures de surface d'un instant -> (S (8, ny, nx), heure, jour de l'annee, date).
 
@@ -300,6 +301,12 @@ class WindFieldModel:
         dispo &= np.isfinite(vals).all(axis=0)
         if exclure:
             dispo &= ~np.isin(df["point_id"].to_numpy(), exclure.get(stamp, []))
+        if comptage is not None:
+            # capteurs a 50 m de l'instant, AVANT l'agregation par maille (lot M6, B4) :
+            # presents dans le fichier, utilises (dispo), interpoles (mask_i_obs = 0)
+            obs = pd.to_numeric(df["mask_i_obs"], errors="coerce").fillna(0).to_numpy() > 0.5
+            comptage.update({"presents": int(len(df)), "utilises": int(dispo.sum()),
+                             "interpoles": int((~obs).sum()), "estime": False})
         vals = np.where(np.isfinite(vals), vals, 0.0)
         S = np.zeros((8, self.geom.ny_s * self.geom.nx_s), dtype=np.float32)
         flat = self.geom.pid_to_surf[df["point_id"].values]

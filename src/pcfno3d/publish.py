@@ -61,12 +61,9 @@ CONTRACT_VERSION = "1.0"
 MAX_FILE_BYTES = 8 * 1024 * 1024          # limite du Worker par fichier (413 au-dela)
 TOKEN_ENV = "ATOM_PUBLISH_TOKEN"          # meme variable que contract/tools/publish.mjs
 DATA_KINDS = ("synthetique", "reel", "test")
-PRODUCTION_HOSTS = ("atom.zelqane.com",)
 # D4 : plan tangent equirectangulaire au noeud (0, 0)
 M_PER_DEG_LAT = 110574
 M_PER_DEG_LON_EQUATEUR = 111320.0
-# ancrage SUPPOSE quand la configuration n'en donne pas (meme choix que configs/colab.yaml)
-ANCRAGE_SUPPOSE = (36.0, 9.7)
 MIN_AGL_DEFAUT = 5.0                      # B1 : 5 m pour v7 (meta.json du generateur)
 CALME_MS = 0.2                            # direction null en dessous (dir_from_deg)
 # variables du contrat (meta.fields), dans l'ordre des fixtures
@@ -161,15 +158,20 @@ def versions_modele(wf, data_kind: str, data: str | None = None,
 def georef_contrat(cfg, geom) -> dict:
     """georef de meta.json (D4) : lat0/lon0 = noeud (0, 0), plan tangent equirectangulaire
     (110574 m par degre de latitude, 111320 cos(lat0) par degre de longitude), emprise des
-    4 coins. Sans ancrage configure (`real.origin_*`), l'ancrage SUPPOSE de configs/colab.yaml
-    avec `suppose: true`. (realdata.GeoRef utilise une sphere, 111195 m par degre : ecart
-    documente dans docs/PUBLICATION.md, realdata n'est pas modifie.)"""
+    4 coins. L'ancrage vient UNIQUEMENT de la configuration (`real.origin_lat/lon`,
+    `origin_assumed` -> `suppose`) : M6 n'invente pas de position et refuse de publier sans
+    ancrage. (realdata.GeoRef utilise une sphere, 111195 m par degre : ecart documente dans
+    docs/PUBLICATION.md, realdata n'est pas modifie.)"""
     real = cfg.real
     if real.origin_lat is None or real.origin_lon is None:
-        lat0, lon0, suppose = ANCRAGE_SUPPOSE[0], ANCRAGE_SUPPOSE[1], True
-    else:
-        lat0, lon0 = float(real.origin_lat), float(real.origin_lon)
-        suppose = bool(real.origin_assumed)
+        raise ValueError(
+            "publication refusee : domaine sans ancrage geographique. Le contrat exige "
+            "meta.georef (lat0/lon0 du noeud (0, 0)) : renseigner real.origin_lat, "
+            "real.origin_lon et real.origin_assumed (true si la position est choisie et non "
+            "mesuree) dans la configuration, comme configs/colab.yaml, colab_v8.yaml et "
+            "local_v7.yaml (ancrage suppose 36,0 N 9,7 E).")
+    lat0, lon0 = float(real.origin_lat), float(real.origin_lon)
+    suppose = bool(real.origin_assumed)
     rot = float(real.rotation_deg)
     m_lon = round(M_PER_DEG_LON_EQUATEUR * math.cos(math.radians(lat0)), 3)
     g = {"lat0": lat0, "lon0": lon0, "rotation_deg": rot,
@@ -459,13 +461,14 @@ def stations_doc(items: list[dict], geom, S: np.ndarray, valid_time: str) -> lis
         ij = _maille_capteur(sid, geom)
         loc = a["location"] or ({"x_m": ij[0] * geom.dx, "y_m": ij[1] * geom.dy}
                                 if ij else {"x_m": 0.0, "y_m": 0.0})
+        # identifiant hors treillis (non c<i>_<j>) : hauteur inconnue -> null (B5), jamais 0
         h = float(geom.zrel_sensor[ij[1], ij[0]]) if ij else None
         speed = direction = None
         if e == "derive" and ij is not None:
             u, v = float(S[0][ij[1], ij[0]]), float(S[1][ij[1], ij[0]])
             speed, direction = _r(math.hypot(u, v), 2), _direction(u, v)
         out.append({"id": sid, "x_m": loc["x_m"], "y_m": loc["y_m"],
-                    "height_agl_m": _r(h, 2) if h is not None else 0.0,
+                    "height_agl_m": _r(h, 2) if h is not None else None,
                     "state": e, "last_seen": valid_time if e == "derive" else None,
                     "speed": speed, "dir_from_deg": direction,
                     "bias_ms": _r(a["value"], 3) if e == "derive" else None,
@@ -474,12 +477,12 @@ def stations_doc(items: list[dict], geom, S: np.ndarray, valid_time: str) -> lis
 
 
 def data_quality_doc(valid_time: str, rapport: dict | None, n_total: int, n_observes: int,
-                     n_interpoles: int, n_mailles: int, n_muettes: int,
-                     n_exclues: int) -> dict:
-    """data-quality.json (D12). Avec un rapport du contrat M3 (upload CSV) : periode,
-    verdict du fichier, muettes, interpolees, hors plage. Instant du cache : l'instant
-    lui-meme est le fichier recu ; les mailles sans mesure reelle (mask_i_obs = 0) sont les
-    interpolees."""
+                     n_interpoles: int, n_presents: int, n_muettes: int,
+                     n_exclues: int, estime: bool = False) -> dict:
+    """data-quality.json (D12), comptes en capteurs a 50 m. Avec un rapport du contrat M3
+    (upload CSV) : periode, verdict du fichier, muettes, interpolees, hors plage. Instant du
+    cache : l'instant lui-meme est le fichier recu, et les capteurs sont ESTIMES depuis la
+    disponibilite par maille (`comptage_depuis_surface`), ce que dit le detail."""
     files = {"received": 1, "accepted": 1, "rejected": 0, "quarantined": 0}
     period = {"from": valid_time, "to": valid_time}
     issues = []
@@ -507,13 +510,28 @@ def data_quality_doc(valid_time: str, rapport: dict | None, n_total: int, n_obse
     if n_interpoles:
         issues.append({"kind": "valeur_interpolee", "target": "treillis",
                        "count": int(n_interpoles),
-                       "detail": "Mailles sans mesure reelle (mask_i_obs = 0), interpolees"})
+                       "detail": "Capteurs sans mesure reelle (mask_i_obs = 0), interpoles"
+                       + (" ; compte ESTIME depuis la disponibilite par maille" if estime
+                          else "")})
     return {"period": period, "files": files,
             "sensors": {"total": int(n_total), "observed": int(n_observes),
                         "interpolated": int(n_interpoles), "muette": int(n_muettes),
                         "exclue": int(n_exclues)},
-            "interpolated_fraction": round(n_interpoles / max(n_mailles, 1), 4),
+            "interpolated_fraction": round(n_interpoles / max(n_presents, 1), 4),
             "issues": issues}
+
+
+def comptage_depuis_surface(S: np.ndarray, geom) -> dict:
+    """Capteurs a 50 m d'un instant dont on n'a que la disponibilite AGREGEE par maille
+    (cache : S[7] = au moins un capteur disponible dans le bloc stride x stride). ESTIMATION :
+    round(fraction x stride^2) capteurs utilises par maille (1 seul capteur par maille si
+    le modele n'agrege pas : les autres n'entrent pas dans l'instant)."""
+    k = geom.stride ** 2 if getattr(geom, "pool_surface_enabled", True) else 1
+    frac = np.clip(np.nan_to_num(np.asarray(S[7], np.float64)), 0.0, 1.0)
+    utilises = int(np.rint(frac * k).sum())
+    presents = int(frac.size * k)
+    return {"presents": presents, "utilises": utilises, "interpoles": presents - utilises,
+            "estime": True}
 
 
 def windrose_points(farm, wcfg, serie: dict, actuel: dict, valid_time: str) -> dict:
@@ -544,6 +562,7 @@ def construire_instantane(wf, volume, S: np.ndarray, *, stem: str, data_kind: st
                           serie_vent: dict | None = None, historique: list[dict] | None = None,
                           generated_at: str | None = None,
                           last_observation_at: str | None = "valid_time",
+                          capteurs: dict | None = None,
                           garder_champs: bool = False) -> Instantane:
     """Construit un instantane complet (tous les fichiers du contrat) pour un Volume.
 
@@ -554,6 +573,8 @@ def construire_instantane(wf, volume, S: np.ndarray, *, stem: str, data_kind: st
     rapport : rapport du contrat ANEO (M3) pour data-quality ; None pour un instant du cache.
     dso6 : resume DSO6 (quality.calibration), None tant qu'aucun verdict n'existe.
     serie_vent / historique : etat du DepotLocal (roses des vents, times.json).
+    capteurs : comptage des capteurs a 50 m (B4 : unite « capteur ») ; None = estimation
+        depuis la disponibilite par maille (`comptage_depuis_surface`).
     """
     geom, cfg = wf.geom, wf.cfg
     if volume.timestamp is None:
@@ -593,17 +614,27 @@ def construire_instantane(wf, volume, S: np.ndarray, *, stem: str, data_kind: st
         items = farm_calc.alerts(cfg.wind_farm)            # alertes brutes de M5
     else:
         items = []
-    open_alerts = sum(a["status"] == "ouverte" for a in items)
+    # times.open_alerts : null quand M4 est inactif (jamais 0, ni les seules alertes de M5)
+    open_alerts = sum(a["status"] == "ouverte" for a in items) if alertes is not None \
+        else None
 
     # ---- reseau (B4) et stations
     if cfg.alerts.reseau != "treillis_synthetique":
         raise ValueError("reseau stations_aneo : stations.json doit lister TOUTES les stations "
                          "(B4) ; M6 ne sait publier que le treillis synthetique pour l'instant")
     stations = stations_doc(items, geom, S, valid_time) if alertes is not None else []
+    # unite « capteur » = capteur du treillis a 50 m (B4, fixtures), la meme pour le total,
+    # les visibles et les perdus (muets ou exclus, listes dans stations.json)
+    capteurs = dict(capteurs) if capteurs is not None else comptage_depuis_surface(S, geom)
     perdus = sum(s["state"] in ("muette", "exclue") for s in stations)
-    visibles = int(sensor.sum())
+    visibles = int(capteurs["utilises"])
     network = {"kind": cfg.alerts.reseau, "sensors_total": visibles + perdus,
                "sensors_visible": visibles, "unit": "capteur"}
+    if network["sensors_total"] - network["sensors_visible"] != perdus:
+        raise ValueError("reseau incoherent : total - visibles != capteurs perdus")
+    if not capteurs["estime"] and visibles + perdus > capteurs["presents"]:
+        raise ValueError(f"reseau incoherent : {visibles} capteurs utilises + {perdus} perdus "
+                         f"> {capteurs['presents']} capteurs presents dans le fichier")
 
     # ---- points declares, profils (M2) et roses des vents (M5)
     rel = volume.reliability
@@ -673,11 +704,11 @@ def construire_instantane(wf, volume, S: np.ndarray, *, stem: str, data_kind: st
                                                            "p90": None},
                                               "rated_kw": 0, "n_production": 0, "n_arret": 0},
                      "power_curves": {}}
-    n_interp = int((~sensor).sum())
-    dq = data_quality_doc(valid_time, rapport, network["sensors_total"], visibles, n_interp,
-                          int(sensor.size),
+    dq = data_quality_doc(valid_time, rapport, network["sensors_total"], visibles,
+                          int(capteurs["interpoles"]), int(capteurs["presents"]),
                           sum(s["state"] == "muette" for s in stations),
-                          sum(s["state"] == "exclue" for s in stations))
+                          sum(s["state"] == "exclue" for s in stations),
+                          estime=bool(capteurs["estime"]))
     fichiers["stations.json"] = json_bytes({"items": stations})
     fichiers["alerts.json"] = json_bytes({"items": items})
     fichiers["wind-farm.json"] = json_bytes(wind_farm)
@@ -697,7 +728,7 @@ def construire_instantane(wf, volume, S: np.ndarray, *, stem: str, data_kind: st
                         "files": [_entree(p, b) for p, b in modele.items()]}
     info = {"noeuds_retires_min_agl": ch.retires, "fiabilite": rel is not None,
             "alertes": alertes is not None, "parc": wf.farm is not None,
-            "historique": len(historique or [])}
+            "historique": len(historique or []), "capteurs": capteurs}
     return Instantane(sid, sha8, valid_time, generated_at, last_observation_at, data_status,
                       versions, fichiers, modele, manifeste, manifeste_modele, open_alerts,
                       ch if garder_champs else None, info, vent)
@@ -739,7 +770,8 @@ def instantane_du_csv(wf, path: str | Path, *, data_kind: str,
                               masque=masque)
     if rapport["verdict"] == "rejet":
         raise ValueError("CSV rejete par le contrat ANEO : " + " ; ".join(rapport["motifs"]))
-    S, hour, doy, stamp = wf.surface_from_csv(path, masque)
+    comptage: dict = {}
+    S, hour, doy, stamp = wf.surface_from_csv(path, masque, comptage=comptage)
     vol = wf.predict(S, hour, doy, timestamp=stamp)
     res = None
     if moteur is not None:
@@ -751,7 +783,7 @@ def instantane_du_csv(wf, path: str | Path, *, data_kind: str,
     # entree dans CET instantane (last_observation_at = valid_time)
     return construire_instantane(
         wf, vol, S, stem=stem_direct(stamp), data_kind=data_kind, alertes=res,
-        rapport=rapport, dso6=dso6,
+        rapport=rapport, dso6=dso6, capteurs=comptage,
         serie_vent=depot.serie_vent() if depot is not None else None,
         historique=depot.times() if depot is not None else None,
         generated_at=generated_at, garder_champs=garder_champs)
@@ -786,6 +818,44 @@ class DepotLocal:
         self.racine = Path(racine)
         self.snapshots = self.racine / "snapshots"
         self.index = self.racine / "index"
+        self.repares: list[str] = []
+        if self.snapshots.is_dir():
+            self.reparer()
+
+    def reparer(self) -> list[str]:
+        """Complete index/times.json et latest.json depuis les dossiers d'instantanes
+        presents (une coupure entre le renommage du dossier et l'index ne laisse pas de trou
+        definitif) et supprime les dossiers temporaires abandonnes. Les entrees de l'index
+        sans dossier (purge apres publication) sont gardees. Renvoie les ids ajoutes."""
+        for tmp in self.snapshots.glob(".*.partiel*"):
+            shutil.rmtree(tmp, ignore_errors=True)
+        items = {t["snapshot_id"]: t for t in self.times()}
+        ajoutes, plus_recent = [], None
+        for d in sorted(p for p in self.snapshots.iterdir() if p.is_dir()):
+            if not (d / "publish-manifest.json").exists():
+                continue
+            man = _lire_json(d / "publish-manifest.json", None)
+            snap = _lire_json(d / "snapshot.json", {})
+            sid, vt = man["snapshot_id"], man["valid_time"]
+            if sid not in items:
+                oa = (snap.get("kpi") or {}).get("open_alerts")
+                items[sid] = {"snapshot_id": sid, "valid_time": vt,
+                              "open_alerts": sum(oa.values()) if oa is not None else None}
+                ajoutes.append(sid)
+            if plus_recent is None or vt > plus_recent[1]:
+                plus_recent = (d, vt)
+        if ajoutes:
+            liste = sorted(items.values(), key=lambda t: t["valid_time"], reverse=True)
+            _ecrire_atomique(self.index / "times.json",
+                             json_bytes({"total": len(liste), "next": None, "items": liste}))
+        courant = self.latest()
+        if plus_recent is not None and (courant is None
+                                        or courant["valid_time"] < plus_recent[1]):
+            _ecrire_atomique(self.racine / "latest.json",
+                             (plus_recent[0] / "latest.json").read_bytes())
+            ajoutes.append("latest.json")
+        self.repares = ajoutes
+        return ajoutes
 
     # -------------------------------------------------------------- lecture
     def times(self) -> list[dict]:
@@ -877,35 +947,58 @@ class PublicationRefusee(RuntimeError):
         self.status, self.corps = status, corps
 
 
+class PublicationIncomplete(PublicationRefusee):
+    """Commit accepte (ou deja present) mais l'index ou latest du Worker ne le montrent
+    pas : l'instantane n'est PAS publie. Reparation cote Worker necessaire."""
+
+
 def jeton_publication(env: str = TOKEN_ENV) -> str | None:
     """Jeton depuis l'environnement (jamais un argument de ligne de commande)."""
     tok = os.environ.get(env, "").strip()
     return tok or None
 
 
+def normaliser_hote(host: str) -> str:
+    """Hote compare en minuscules, sans point final (ATOM.zelqane.com. == atom.zelqane.com)."""
+    return host.strip().lower().rstrip(".")
+
+
 def _boucle_locale(host: str) -> bool:
-    if host in ("localhost",):
+    host = normaliser_hote(host)
+    if host == "localhost":
         return True
     try:
-        return ipaddress.ip_address(host).is_loopback
+        return ipaddress.ip_address(host.strip("[]")).is_loopback
     except ValueError:
         return False
+
+
+class _SansRedirection(urllib.request.HTTPRedirectHandler):
+    """Aucune redirection suivie : une 3xx devient une erreur. Sinon urllib renverrait la
+    requete, en-tete Authorization compris, vers l'hote de la redirection."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
 
 
 class ClientPublication:
     """Client du protocole de contract/tools/publish.mjs (meme ordre, memes en-tetes).
 
         1. PUT /v1/publish/model/{sha8}/files/{path} (meta.json, terrain.f32) puis
-           POST /v1/publish/model/{sha8}/commit — une seule fois par modele et par
+           POST /v1/publish/model/{sha8}/commit - une seule fois par modele et par
            processus (le Worker rend de toute facon ces appels idempotents) ;
         2. PUT /v1/publish/{id}/files/{path} pour chaque fichier du manifeste, en-tete
            X-Content-SHA256, chemin encode (/ -> %2F) ;
-        3. POST /v1/publish/{id}/commit avec le manifeste : latest ne bascule qu'ici ;
+        3. POST /v1/publish/{id}/commit avec le manifeste, puis RELECTURE : le commit n'est
+           reussi que si GET /v1/times?from=vt&to=vt contient l'id ET GET /v1/latest a un
+           valid_time >= vt (latest ne recule jamais). Sinon le commit est rejoue une fois
+           (le Worker corrige refait l'index et latest), puis PublicationIncomplete ;
         4. POST /v1/heartbeat.
 
     Reprises : 3 tentatives sur erreur reseau ou 5xx (comme publish.mjs pour les PUT ;
     ici aussi pour les commits, que le Worker rend idempotents). Un 4xx arrete tout.
-    Le jeton n'apparait dans aucun message, aucune exception, aucun repr.
+    Aucune redirection n'est suivie (le jeton ne part jamais vers un autre hote). Le jeton
+    n'apparait dans aucun message, aucune exception, aucun repr.
     """
 
     def __init__(self, base_url: str, token: str | None = None, timeout: float = 120.0,
@@ -913,11 +1006,12 @@ class ClientPublication:
         url = urllib.parse.urlsplit(base_url.rstrip("/"))
         if url.scheme not in ("http", "https") or not url.hostname:
             raise ValueError(f"URL de publication invalide : {base_url!r}")
-        if url.scheme == "http" and not _boucle_locale(url.hostname):
+        self.host = normaliser_hote(url.hostname)
+        self.local = _boucle_locale(self.host)
+        if url.scheme == "http" and not self.local:
             raise ValueError("publication en http vers un hote distant refusee : le jeton "
                              "passerait en clair (https obligatoire hors 127.0.0.1)")
         self.base = base_url.rstrip("/")
-        self.host = url.hostname
         self._token = token if token is not None else jeton_publication()
         if not self._token:
             raise ValueError(f"jeton de publication absent : definir la variable "
@@ -926,6 +1020,7 @@ class ClientPublication:
         self.journal = journal or (lambda *_: None)
         self.modeles_commites: set[str] = set()
         self.requetes = 0
+        self._opener = urllib.request.build_opener(_SansRedirection())
 
     def __repr__(self) -> str:                      # jamais le jeton
         return f"ClientPublication({self.base!r})"
@@ -942,10 +1037,15 @@ class ClientPublication:
                                          headers=h)
             self.requetes += 1
             try:
-                with urllib.request.urlopen(req, timeout=self.timeout) as r:
+                with self._opener.open(req, timeout=self.timeout) as r:
                     return r.status, r.read()
             except urllib.error.HTTPError as e:
                 texte = e.read().decode("utf-8", "replace")[:2000]
+                if 300 <= e.code < 400:
+                    raise PublicationRefusee(f"{methode} {chemin} : redirection {e.code} "
+                                             "refusee (le jeton ne suit jamais une "
+                                             "redirection) : verifier l'URL du Worker",
+                                             e.code, texte) from None
                 if e.code < 500 or essai >= self.tentatives:
                     raise PublicationRefusee(f"{methode} {chemin} : {e.code} {texte}",
                                              e.code, texte) from None
@@ -979,6 +1079,28 @@ class ClientPublication:
         self.journal(f"commit {prefixe} : {json.dumps(doc, ensure_ascii=False)}")
         return doc
 
+    def _lire(self, chemin: str):
+        _, rep = self._requete("GET", chemin, auth=False)
+        return json.loads(rep.decode("utf-8"))
+
+    def est_publie(self, sid: str, valid_time: str) -> tuple[bool, str]:
+        """(publie, raison) : l'id est dans /v1/times a son valid_time ET /v1/latest n'est
+        pas plus ancien que lui. Lectures publiques, sans jeton."""
+        q = urllib.parse.urlencode({"from": valid_time, "to": valid_time})
+        try:
+            times = self._lire(f"/v1/times?{q}")
+        except PublicationRefusee as e:
+            return False, f"/v1/times illisible ({e.status})"
+        if not any(t.get("snapshot_id") == sid for t in times.get("items", [])):
+            return False, "absent de /v1/times"
+        try:
+            latest = self._lire("/v1/latest")
+        except PublicationRefusee as e:
+            return False, f"/v1/latest illisible ({e.status})"
+        if not latest.get("valid_time") or latest["valid_time"] < valid_time:
+            return False, f"/v1/latest en retard ({latest.get('snapshot_id')})"
+        return True, "ok"
+
     # -------------------------------------------------------------- protocole
     def verifier_meta_publiee(self, sha8: str, meta: dict) -> None:
         """meta d'un modele est IMMUABLE : si /v1/meta/{sha8} existe deja et differe
@@ -997,18 +1119,19 @@ class ClientPublication:
 
     def publier(self, dossier: str | Path, battement: bool = True) -> dict:
         """Publie un dossier d'instantane (disposition DepotLocal / fixtures). Renvoie la
-        reponse du commit de l'instantane."""
+        reponse du commit de l'instantane ; PublicationIncomplete si le Worker ne montre
+        pas l'instantane apres commit (jamais a marquer publie, jamais a purger)."""
         d = Path(dossier)
         manifeste = json.loads((d / "publish-manifest.json").read_bytes().decode("utf-8"))
         sid = manifeste["snapshot_id"]
         if not _ID_RE.match(sid):
             raise ValueError(f"snapshot_id invalide : {sid!r}")
         sha8 = sid[-8:]
-        prod = self.host in PRODUCTION_HOSTS
-        if prod and (manifeste["versions"].get("data_kind") == "test"
-                     or "fixtures" in d.resolve().parts):
-            raise PublicationRefusee("refus : un instantane de test ne se publie jamais en "
-                                     "production")
+        test = manifeste["versions"].get("data_kind") == "test" \
+            or "fixtures" in d.resolve().parts
+        if test and not self.local:
+            raise PublicationRefusee("refus : un instantane de test ne se publie que vers un "
+                                     "hote de bouclage (localhost, 127.0.0.1, ::1)")
         mdir = d / "models" / sha8
         mman = json.loads((mdir / "model-manifest.json").read_bytes().decode("utf-8"))
         if sha8 not in self.modeles_commites:
@@ -1018,7 +1141,21 @@ class ClientPublication:
             self._commit(f"/v1/publish/model/{sha8}", mman)
             self.modeles_commites.add(sha8)
         self._put_tous(f"/v1/publish/{sid}", d, manifeste["files"])
+        vt = manifeste["valid_time"]
         rep = self._commit(f"/v1/publish/{sid}", manifeste)
+        ok, raison = self.est_publie(sid, vt)
+        if not ok:
+            # commit present mais index / latest non ecrits (echec du Worker apres
+            # _commit.json) : un seul rejeu, que le Worker corrige rend reparateur
+            self.journal(f"commit {sid} non visible ({raison}) : rejeu du commit")
+            rep = self._commit(f"/v1/publish/{sid}", manifeste)
+            ok, raison = self.est_publie(sid, vt)
+        if not ok:
+            raise PublicationIncomplete(
+                f"{sid} commite mais non publie ({raison}) apres rejeu du commit : "
+                "reparation necessaire cote Worker (index/times.json et latest.json a "
+                "refaire depuis snapshots/{id}/_commit.json) ; ne pas marquer publie, ne pas "
+                "purger le dossier local")
         if battement:
             self.battement()
         return rep
@@ -1026,3 +1163,25 @@ class ClientPublication:
     def battement(self) -> None:
         """POST /v1/heartbeat : compute_status reste « online » tant qu'il arrive."""
         self._requete("POST", "/v1/heartbeat", b"")
+
+
+# ---------------------------------------------------------------------- reprise
+def champs_attendus(wf) -> list[str]:
+    """meta.fields que produirait ce WindFieldModel (M2 actif ou non)."""
+    return list(CHAMPS_VENT) + (list(CHAMPS_M2) if wf.reliability is not None else [])
+
+
+def differences_configuration(dossier: str | Path, versions: dict,
+                              champs: list[str]) -> list[str]:
+    """Ecarts entre un instantane deja publie et la configuration courante (versions,
+    champs publies). Vide = compatible : on peut reutiliser le dossier tel quel."""
+    d = Path(dossier)
+    man = json.loads((d / "publish-manifest.json").read_bytes().decode("utf-8"))
+    meta = json.loads((d / "models" / man["snapshot_id"][-8:] / "meta.json").read_bytes()
+                      .decode("utf-8"))
+    out = [f"versions.{k} : publie {man['versions'].get(k)!r}, configuration {v!r}"
+           for k, v in versions.items() if man["versions"].get(k) != v]
+    if list(meta["fields"]) != list(champs):
+        out.append(f"champs publies {meta['fields']} != configuration {champs} "
+                   "(fiabilite M2 activee d'un cote seulement ?)")
+    return out

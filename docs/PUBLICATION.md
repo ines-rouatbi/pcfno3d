@@ -36,17 +36,17 @@ snapshots/<id>/
 |---|---|
 | B1 | `grid.min_agl_m` lu dans `meta.json` du générateur (`noeuds_3d.min_z_rel_m`, 5 m). Le masque publié est **recalculé** sur le relief publié (float32) : `z_asl − relief < min_agl_m` ⇔ NaN / 255. Un nœud valide pour le contrat sans valeur du modèle est une **erreur** (rien n'est inventé) ; un nœud du générateur sous `min_agl_m` (arrondi) devient absent et est compté (`info["noeuds_retires_min_agl"]`). |
 | B2 | `x0_m = y0_m = 0`, nœud (i, j) en `(i·dx, j·dy)`, `domain.x_max_m = (nx − 1)·dx`. |
-| B4 | `network.kind = alerts.reseau` (treillis). `stations.json` = capteurs **signalés** par une alerte ouverte (dérive, muette, exclue), identifiant `c<i>_<j>`. `sensors_visible` = mailles avec une mesure utilisée ; `sensors_total = visible + muettes + exclues`. |
+| B4 | `network.kind = alerts.reseau` (treillis). `stations.json` = capteurs **signalés** par une alerte ouverte (dérive, muette, exclue), identifiant `c<i>_<j>`. Unité « capteur » = **capteur du treillis à 50 m** (comme la fixture), la même pour `sensors_total`, `sensors_visible` et les perdus : `sensors_visible` = capteurs dont la mesure entre dans l'instant, `sensors_total = visibles + muets + exclus` (contrôlé à la construction). CSV (direct) : comptage **exact** avant agrégation (`surface_from_csv(..., comptage=)`). Instant du cache : seule la disponibilité agrégée par maille existe, le nombre est **ESTIMÉ** à `round(fraction × stride²)` par maille (1 par maille si le modèle n'agrège pas), et le détail de `data-quality` le dit. |
 | B5 | Lot inactif ⇒ `null`, jamais 0 : sans M2, `uncertainty = {aucune, 1, false}`, parts et médianes `null`, `share_high_reliability: null`, ni σ ni statut publiés, pas de profil ; sans M4, `physics`, `stations_summary` et `kpi.open_alerts` `null`. |
 | D1 | `model_sha256` = sha256 des octets du fichier de poids (lu une fois par processus) ; `norm` = sha8 de `norm_stats.json` ; `snapshot_id = <stem>_<sha8>`, stem du cache `JJJ_HHMMSS` pour le rejeu, `live_AAAAMMJJ_HHMMSS` pour le direct (CSV). |
 | D3 | `models/<sha8>/meta.json` et `terrain.f32` publiés **une fois** par modèle et par processus ; le manifeste d'instantané ne les contient pas. |
-| D4 | `georef` : plan tangent équirectangulaire au nœud (0, 0), `m_per_deg_lat = 110574`, `m_per_deg_lon = 111320·cos(lat0)`, `bounds` des 4 coins, `crs = plan-tangent-local`. Sans `real.origin_*`, ancrage **supposé** 36,0 N 9,7 E (celui de `configs/colab.yaml`), `suppose: true`. |
+| D4 | `georef` : plan tangent équirectangulaire au nœud (0, 0), `m_per_deg_lat = 110574`, `m_per_deg_lon = 111320·cos(lat0)`, `bounds` des 4 coins, `crs = plan-tangent-local`. L'ancrage vient **uniquement** de `real.origin_lat/lon` (`suppose` = `real.origin_assumed`) : sans ancrage configuré, M6 **refuse** de publier (`colab.yaml`, `colab_v8.yaml` et `local_v7.yaml` portent l'ancrage supposé 36,0 N 9,7 E, `origin_assumed: true`). |
 | D5, D6 | Profils : nœud (i, j) de l'éolienne, `z_terrain_m = terrain[j·nx+i]`, valeurs = champs publiés arrondis, `p50 = speed`, `p10/p90 = speed ∓ 1,2816·sigma_speed` (p10 ≥ 0). |
 | D7 | `status` de M2 (capteur visible à ≤ 15 m), y compris sur données synthétiques. |
 | D8 | Alertes de M4 (journal JSONL : `raised_at` = première levée, `ouverte`/`close`). |
 | D10 | `kpi.hub_wind_*` = `windfarm.hub_wind_kpi` sur le domaine à `wind_farm.hub_height_agl_m`. |
 | D11 | `physics` = bloc de M4 (`alerts.physique`), `null` si une valeur est indéfinie. |
-| D12 | `data-quality.json` : rapport du contrat M3 pour un CSV (période, verdict, muettes, hors plage, interpolées) ; pour un instant du cache, l'instant lui-même est le « fichier reçu ». |
+| D12 | `data-quality.json` (capteurs à 50 m) : rapport du contrat M3 pour un CSV (période, verdict, muettes, hors plage, interpolées) ; pour un instant du cache, l'instant lui-même est le « fichier reçu » et les comptes sont estimés (voir B4). |
 | D13 | Un fichier par variable, tous niveaux, codage décrit dans `meta.encoding`. |
 | D15 | `versions.data_kind` : `synthetique` (défaut), `reel` ou `test`, choisi explicitement. |
 | D16 | `data_status = degrade` si un capteur est muet, exclu ou en dérive, ou si les capteurs disponibles sont insuffisants ; sinon `complete`. |
@@ -68,12 +68,29 @@ document fait échouer la construction au lieu de produire un JSON invalide.
    chaque fichier est relu et comparé au manifeste avant l'envoi ;
 4. `POST /v1/publish/<id>/commit` avec le manifeste ; `latest` ne bascule **qu'ici**, après
    vérification par le Worker de la présence, de la taille et du sha256 de chaque fichier ;
-5. `POST /v1/heartbeat`.
+5. **relecture** : le commit n'est réussi que si `GET /v1/times?from=vt&to=vt` contient
+   l'id **et** `GET /v1/latest` a un `valid_time ≥ vt` (latest ne recule jamais). Sinon le
+   commit est rejoué **une fois** (le Worker corrigé refait l'index et latest de façon
+   idempotente), puis `PublicationIncomplete` : code 3 en CLI et dans le rejeu, rien n'est
+   marqué publié, rien n'est purgé, et le message demande une réparation côté Worker ;
+6. `POST /v1/heartbeat`.
+
+Pourquoi la relecture : `v1.js` écrit `_commit.json`, puis l'index, puis `latest`. S'il
+échoue entre les deux, un commit rejoué répond « 200 unchanged » **sans rien réparer**
+(Worker actuel). « unchanged » ne prouve donc pas la publication ; seule la relecture le
+fait.
 
 Reprises : 3 tentatives sur erreur réseau ou 5xx (PUT et commits, idempotents côté
-Worker) ; un 4xx arrête tout. Refus avant toute requête : `http://` vers un hôte autre que
-la boucle locale (le jeton passerait en clair), instantané `data_kind = test` vers
-`atom.zelqane.com` (même règle que `publish.mjs`).
+Worker) ; un 4xx arrête tout. **Aucune redirection n'est suivie** (opener sans
+`HTTPRedirectHandler`) : une 3xx est une erreur, le jeton ne part jamais vers un autre
+hôte. Refus avant toute requête : `http://` vers un hôte autre que la boucle locale (le
+jeton passerait en clair) ; instantané `data_kind = test` (ou tiré de `fixtures/`) vers
+tout hôte **autre que** `localhost`, `127.0.0.1` ou `::1` (hôte normalisé : minuscules,
+point final retiré).
+
+**Ne jamais publier deux flux en même temps vers le même Worker** (rejeu + direct, deux
+rejeux) : le Worker réécrit `index/times.json` par lecture-modification-écriture, deux
+commits simultanés peuvent perdre une entrée de l'historique.
 
 ### HIS1 — atomicité
 
@@ -81,13 +98,21 @@ la boucle locale (le jeton passerait en clair), instantané `data_kind = test` v
 |---|---|
 | au milieu des PUT de l'instantané | exception, aucun commit, `latest` et `index/times.json` inchangés ; relancer termine la publication |
 | sur le commit, avant traitement | `latest` inchangé |
-| commit traité, réponse perdue | la reprise reçoit `unchanged: true`, `latest` = le nouvel instantané |
+| commit traité, réponse perdue | la reprise reçoit `unchanged: true` ; la relecture confirme `latest` = le nouvel instantané |
+| Worker actuel en panne après `_commit.json` | reprise « unchanged », relecture négative, commit rejoué, toujours négatif → `PublicationIncomplete` ; rejeu : code 3, dossier local gardé, rien de marqué |
+| Worker corrigé, même panne | la relance rejoue le commit, qui refait l'index et `latest` ; relecture positive |
+| redirection 302 | erreur, aucune requête (donc aucun jeton) vers la cible de la redirection |
 | fichier modifié après construction | refusé par le client avant l'envoi ; un manifeste qui annonce un fichier non déposé est refusé par le Worker (422) |
 | écriture locale interrompue | ni dossier d'instantané ni dossier temporaire ; `latest.json` local inchangé |
+| coupure entre le renommage du dossier et l'index local | à l'ouverture, `DepotLocal` complète `index/times.json` et `latest.json` depuis les dossiers présents et supprime les temporaires abandonnés |
 
 Le dépôt local suit la même règle que le Worker : dossier écrit sous un nom temporaire puis
 renommé, `index/times.json` ensuite, `latest.json` **en dernier** (`os.replace`), et
 `latest` ne recule jamais (un instantané plus ancien publié après n'y touche pas).
+`open_alerts` de l'index local vaut **null** quand M4 est inactif (jamais 0, ni le compte
+des seules alertes brutes de M5). Les séries de vent des roses
+(`index/vent_points.json`) ne sont pas reconstruites : un point perdu par une coupure
+manque à la rose, sans autre effet.
 
 ### Jeton
 
@@ -111,9 +136,23 @@ python scripts/m6_rejeu_colab.py -c colab
 python scripts/m6_rejeu_colab.py -c colab --remote https://atom.zelqane.com [--purger]
 ```
 
-Reprise : un instant déjà écrit (local) ou déjà commité sur ce Worker
-(`index/publies_distant.json`) est sauté sans recalcul. Au redémarrage, le suivi de
-dérive de M4 repart de zéro (le journal, lui, est relu).
+- **Disque** : racine par défaut sur le disque **local** de Colab
+  (`/content/pcfno3d_publication_rejeu`), jamais le Drive ; hors Colab,
+  `run_dir/publication_rejeu`. Avant de commencer, le script affiche la taille estimée
+  (≈ 52,5 Mo par instantané v7 avec M2, 24 Mo sans) et **refuse** (code 4) si l'espace
+  libre ne suffit pas pour les instants restants. Exports DE3 **désactivés par défaut**
+  (`--exports` : jusqu'à ~250 Mo de plus par instant v7, borne haute non compressée).
+- **R2** : un rejeu complet v7 avec M2 ≈ **6,3 Go**, et le Worker n'a **aucune route de
+  suppression** : chaque rejeu s'ajoute (offre gratuite R2 : 10 Go). À décider avant de
+  lancer `--remote`.
+- **Reprise** : un instant déjà écrit (local) ou déjà publié **et vérifié** sur ce Worker
+  (`index/publies_distant.json`) est sauté sans recalcul ; un export DE3 manquant est
+  refait depuis le dossier publié ; un dossier existant écrit avec une autre configuration
+  (versions, champs M2) arrête le rejeu (code 1). `--purger` ne supprime un dossier
+  qu'après une publication vérifiée. Au redémarrage, le suivi de dérive de M4 repart de
+  zéro (le journal, lui, est relu).
+- Codes : 0 terminé, 1 erreur ou configuration différente, 2 jeton absent, 3 publication
+  incomplète (Worker), 4 disque insuffisant.
 
 ## CLI
 
@@ -124,27 +163,46 @@ ATOM_PUBLISH_TOKEN=… pcfno3d publish --stem … --remote https://atom.zelqane.
 ```
 
 Dossier par défaut : `run_dir/publication`. M2, M4 et M5 sont pris dans la configuration
-(`inference.reliability`, `alerts.enabled`, `wind_farm.turbines`).
+(`inference.reliability`, `alerts.enabled`, `wind_farm.turbines`). Un instantané déjà
+écrit n'est **jamais** recalculé ni mélangé à un nouveau calcul : si la configuration
+diffère (versions, champs publiés), refus (code 1) ; sinon il est réutilisé tel quel et
+les exports manquants sont faits **depuis ce dossier**. Code 3 : publication incomplète.
 
 ## DE3 — exports NetCDF et CSV (spec 8.4)
 
-`export_noeuds.exporter(inst, geom, dossier)` (ou `--exports`) écrit, **hors** du dossier
-publié, `exports/<id>/<id>.nc` et `exports/<id>/<id>_noeuds.csv`, avec exactement les
-valeurs publiées (même masque B1, mêmes float32).
+`export_noeuds.exporter_dossier(dossier, geom, racine_exports, ...)` (ou `--exports`)
+relit l'instantané **publié** et écrit, **hors** du dossier publié,
+`exports/<id>/<id>.nc` et `exports/<id>/<id>_noeuds.csv` — seulement ceux qui manquent.
+Les valeurs sont exactement les valeurs publiées (même masque B1, mêmes float32 ;
+couverture et fiabilité relues quantifiées à 1/254 ; la classe de fiabilité, non publiée,
+est recalculée depuis la fiabilité relue avec `reliability.class_high/mid`, d'où un écart
+possible à ±1/508 d'un seuil). Fichier temporaire puis renommage ; un échec ne laisse
+jamais de `.tmp`.
 
 - **NetCDF** : dimensions `(altitude, y, x)` ; `u, v, w, vitesse, direction,
   hauteur_sol` (+ `sigma_u/v/w/speed, couverture, fiabilite, statut, classe_fiabilite`
   avec M2) ; coordonnées `x, y, altitude, lat(y, x), lon(y, x)` (projection D4),
-  `z_terrain` ; unités et `standard_name` CF ; versions (`version_modele`,
-  `model_sha256`, `version_donnees`, `data_kind`, `version_normalisation`, contrat),
-  projection et ancrage en attributs globaux. netCDF4 (compressé) s'il est installé,
-  sinon scipy (NetCDF3, dépendance du paquet).
+  `z_terrain` ; unités et `standard_name` CF (`x`/`y` : `projection_x/y_coordinate`) ;
+  coordonnée scalaire `time` (secondes depuis 1970, `standard_name: time`) ; variable
+  `crs` référencée par `grid_mapping` sur chaque champ 3D (`coordinates = "time lat
+  lon"`). CF n'a **aucun** `grid_mapping_name` pour le plan tangent équirectangulaire D4 :
+  `crs` porte les paramètres D4 sans `grid_mapping_name`, et ce sont les `lat/lon` 2D
+  (coordonnées auxiliaires, CF § 5.6) qui géolocalisent ; un vérificateur CF strict le
+  signalera (aucun n'est installé ici ; relu par xarray dans les tests). Quand l'ancrage
+  est supposé, le `long_name` de `lat`/`lon` le dit, en plus de l'attribut global
+  `georef_suppose`. Versions (`version_modele`, `model_sha256`, `version_donnees`,
+  `data_kind`, `version_normalisation`, contrat), projection et ancrage en attributs
+  globaux. netCDF4 (compressé) s'il est installé, sinon scipy (NetCDF3, dépendance du
+  paquet).
 - **CSV** : colonnes de la spec 8.4 dans leur ordre (`node_id, x_m, y_m, altitude_m,
   hauteur_sol_m, timestamp_utc, u, v, w, vitesse, direction, statut, source, sigma_u,
   sigma_v, sigma_w, couverture, fiabilite, classe_fiabilite, version_modele,
-  version_donnees, version_normalisation`). `node_id` = point_id du nœud 3D du générateur
-  (unique) ; `source` = capteur `c<i>_<j>` pour un nœud mesuré, « modèle PC-FNO3D »
-  sinon ; `version_modele = <nom>@<sha8>`. Inconnu = cellule vide.
+  version_donnees, version_normalisation`). `source` = capteur `c<i>_<j>` pour un nœud
+  mesuré, « modèle PC-FNO3D » sinon ; `version_modele = <nom>@<sha8>`. Inconnu = cellule
+  vide. **Écarts à la spec 8.4** : `node_id` est le point_id du nœud 3D du **générateur**
+  (unique), pas un identifiant ANEO (le capteur d'un nœud mesuré est dans `source`) ;
+  `u, v, w` sont la **passe servie** (D6), pas la « moyenne de l'ensemble » de la spec (la
+  moyenne dégrade DSO1).
 - « Chaque export est vérifié par un schéma de sortie avant d'être livré » : le CSV passe
   un schéma Pandera (`schema_csv` : colonnes exactes et ordonnées, plages, valeurs
   permises), le NetCDF est relu et contrôlé (`verifier_netcdf`) ; le fichier n'apparaît
@@ -163,16 +221,20 @@ passent pas par R2 (> 8 Mo, pas de route Worker) : `assets.export_netcdf/csv` re
    donc **aucun profil** (`profile: false`). À trancher : le validateur devrait accepter un
    intervalle null quand `sigma_speed` est null.
 2. **Fichiers obligatoires même lot inactif.** `validate.mjs` exige `alerts.json`,
-   `wind-farm.json` et `data-quality.json`. Sans M4 : `alerts.json` = alertes brutes du
-   parc M5 ou `[]` et `kpi.open_alerts: null`, mais le Worker calcule
-   `times.open_alerts` depuis `alerts.json` et y met 0 au lieu de null. Sans parc :
-   `wind-farm.json` vide (`turbines: []`, `rated_kw: 0`, puissance null).
-3. **Réseau.** Unité « capteur » = maille du modèle portant une mesure (convention M4), pas
-   le capteur à 50 m ; `stations.json` : `quality_score` toujours null, `last_seen` null pour
-   un capteur muet ou exclu. Mode `stations_aneo` (liste complète) **non produit** : refus
-   explicite.
+   `wind-farm.json` et `data-quality.json` même quand le lot est inactif. Sans M4 :
+   `alerts.json` = alertes brutes du parc M5 ou `[]`, `kpi.open_alerts: null`, et
+   `open_alerts: null` dans le `times.json` local ; le Worker actuel calcule
+   `times.open_alerts` depuis `alerts.json` (0 au lieu de null) — il sera corrigé pour
+   prendre `snapshot.kpi.open_alerts`. Sans parc : `wind-farm.json` vide (`turbines: []`,
+   `rated_kw: 0`, puissance null).
+3. **Réseau.** Capteurs à 50 m **estimés** pour un instant du cache (voir B4) ;
+   `stations.json` : `quality_score` toujours null, `last_seen` null pour un capteur muet
+   ou exclu, `height_agl_m` null pour un identifiant hors treillis (le schéma exige un
+   nombre : un tel cas échouerait à la validation, jamais un 0 silencieux). Mode
+   `stations_aneo` (liste complète) **non produit** : refus explicite.
 4. **data-quality d'un instant du cache** : pas de rapport M3 (le cache ne passe pas par le
-   contrat) ; « fichier reçu » = l'instant, interpolées = mailles sans mesure réelle.
+   contrat) ; « fichier reçu » = l'instant, interpolés = capteurs estimés sans mesure
+   réelle.
 5. **Pas de simulation** : `scenario` toujours null (BF45, BF46 non publiés).
 6. **Roses des vents** seulement pour les éoliennes déclarées (pas de point `site`).
 7. **Battement** : un `POST /v1/heartbeat` après chaque publication, pas de battement
@@ -187,7 +249,12 @@ passent pas par R2 (> 8 Mo, pas de route Worker) : `assets.export_netcdf/csv` re
 9. **Règle B1 sur v7** : vérifiée sur le mini-jeu (masque publié = masque du générateur) ;
    sur la géométrie v7, elle est vérifiée au premier instant de la session GPU (erreur
    immédiate et explicite si un nœud au-dessus de 5 m n'a pas de valeur).
-10. **Stockage** : 120 instants v7 ≈ 6,3 Go dans R2 avec M2 (offre gratuite R2 : 10 Go).
+10. **Stockage** : 120 instants v7 ≈ 6,3 Go dans R2 avec M2 par rejeu, sans route de
+    suppression (offre gratuite R2 : 10 Go).
+11. **Worker** : sa correction (rejeu d'un commit qui refait l'index et `latest`,
+    `open_alerts` pris dans `snapshot.kpi`) est en cours sur l'autre dépôt ; d'ici là, une
+    panne entre `_commit.json` et `latest` donne `PublicationIncomplete` (réparation
+    manuelle de `index/times.json` et `latest.json` côté R2).
 
 ## Pour publier pour de vrai
 

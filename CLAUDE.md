@@ -162,9 +162,13 @@ notebook's globals.
   the float32 terrain (`NaN <=> z - terrain < min_agl_m`). `DepotLocal` writes atomically
   (temp dir + rename, `latest.json` last, never backwards); `ClientPublication` follows
   `publish.mjs` (model once, files, commit, heartbeat) — the publish token comes ONLY from
-  `ATOM_PUBLISH_TOKEN`, never argv/logs. HIS1 is tested against `tests/worker_simule.py`
-  (Python copy of the Worker's publish routes, with connection cuts). NetCDF/CSV exports
-  (spec 8.4) stay local, checked by an output schema before delivery.
+  `ATOM_PUBLISH_TOKEN`, never argv/logs, and redirects are never followed. A commit counts
+  only once `/v1/times` and `/v1/latest` show it (the current Worker answers "unchanged"
+  without repairing a crash after `_commit.json`): else `PublicationIncomplete`, nothing
+  marked or purged. Publishing REFUSES a config without `real.origin_lat/lon`. HIS1 is
+  tested against `tests/worker_simule.py` (Python copy of the Worker's publish routes,
+  with connection cuts and the post-`_commit.json` failure). NetCDF/CSV exports (spec 8.4)
+  are made from the PUBLISHED folder, checked by an output schema before delivery.
 
 ## The service layer (`service/`, `webapp/`)
 

@@ -327,10 +327,18 @@ def cmd_windrose(args) -> int:
 
 def cmd_publish(args) -> int:
     """Instantane au format du contrat ATOM rev. 2 (lot M6), ecrit en local ; avec --remote,
-    publie ensuite vers le Worker (jeton : variable d'environnement ATOM_PUBLISH_TOKEN)."""
+    publie ensuite vers le Worker (jeton : variable d'environnement ATOM_PUBLISH_TOKEN).
+
+    Un instantane deja ecrit n'est jamais recalcule ni melange a un nouveau calcul : s'il
+    existe, la commande verifie que la configuration est la meme (sinon refus, code 1),
+    exporte DEPUIS CE dossier les fichiers DE3 manquants et le publie tel quel.
+    Codes : 0 ok ; 1 refus ou erreur ; 2 jeton absent ; 3 publication incomplete (Worker)."""
+    from .export_noeuds import exporter_dossier
     from .inference import WindFieldModel
-    from .publish import (TOKEN_ENV, ClientPublication, DepotLocal, PublicationRefusee,
-                          instantane_du_cache, instantane_du_csv, jeton_publication)
+    from .publish import (TOKEN_ENV, ClientPublication, DepotLocal, PublicationIncomplete,
+                          PublicationRefusee, champs_attendus, differences_configuration,
+                          instantane_du_cache, instantane_du_csv, jeton_publication,
+                          snapshot_id, versions_modele)
 
     cfg = _load_cfg(args)
     client = None
@@ -348,30 +356,47 @@ def cmd_publish(args) -> int:
         from .alerts import MoteurAlertes
         moteur = MoteurAlertes(cfg)
     dso6 = json.loads(Path(args.dso6).read_bytes().decode("utf-8")) if args.dso6 else None
-    kw = dict(data_kind=args.data_kind, depot=depot, moteur=moteur, dso6=dso6,
-              garder_champs=args.exports)
-    if args.csv:
-        inst = instantane_du_csv(wf, args.csv, **kw)
-    else:
-        stem = args.stem
-        if stem is None:
-            from .windfarm import eol1_instants
-            stem = eol1_instants(cfg)[0]
-        inst = instantane_du_cache(wf, stem, **kw)
-    if depot.existe(inst.snapshot_id):
-        print(f"{inst.snapshot_id} deja ecrit dans {depot.dossier(inst.snapshot_id)} "
-              "(immuable) : rien n'est reecrit")
-        dossier = depot.dossier(inst.snapshot_id)
-    else:
-        dossier = depot.ecrire(inst)
-        print(f"instantane {inst.snapshot_id} ({inst.data_status}) -> {dossier}")
-    if args.exports and inst.champs is not None:
-        from .export_noeuds import exporter
-        for nom, p in exporter(inst, wf.geom, racine / "exports" / inst.snapshot_id).items():
+    kw = dict(data_kind=args.data_kind, depot=depot, moteur=moteur, dso6=dso6)
+    try:
+        versions = versions_modele(wf, args.data_kind)
+        inst = None
+        if args.csv:
+            inst = instantane_du_csv(wf, args.csv, **kw)
+            sid = inst.snapshot_id
+        else:
+            stem = args.stem
+            if stem is None:
+                from .windfarm import eol1_instants
+                stem = eol1_instants(cfg)[0]
+            sid = snapshot_id(stem, versions["model_sha256"][:8])
+        if depot.existe(sid):
+            diff = differences_configuration(depot.dossier(sid), versions,
+                                             champs_attendus(wf))
+            if diff:
+                print(f"{sid} existe deja avec une autre configuration : refus (un instantane "
+                      "est immuable) -> " + " ; ".join(diff), file=sys.stderr)
+                return 1
+            print(f"{sid} deja ecrit dans {depot.dossier(sid)} (immuable) : reutilise tel quel")
+        else:
+            if inst is None:
+                inst = instantane_du_cache(wf, stem, **kw)
+            depot.ecrire(inst)
+            print(f"instantane {sid} ({inst.data_status}) -> {depot.dossier(sid)}")
+    except ValueError as exc:
+        print(f"ERREUR : {exc}", file=sys.stderr)
+        return 1
+    dossier = depot.dossier(sid)
+    if args.exports:
+        rc = cfg.reliability
+        for nom, p in exporter_dossier(dossier, wf.geom, racine / "exports", rc.class_high,
+                                       rc.class_mid).items():
             print(f"export {nom} -> {p}")
     if client is not None:
         try:
             rep = client.publier(dossier)
+        except PublicationIncomplete as exc:
+            print(f"PUBLICATION INCOMPLETE : {exc}", file=sys.stderr)
+            return 3
         except PublicationRefusee as exc:
             print(f"publication refusee : {exc}", file=sys.stderr)
             return 1
