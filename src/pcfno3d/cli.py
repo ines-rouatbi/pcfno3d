@@ -10,6 +10,7 @@
     export-web    volume -> binaires + manifeste pour le visualiseur
     wind-farm     parc eolien declare a un instant : moyeu, REWS, puissance, alertes (M5)
     windrose      roses des vents + Weibull + AEP des eoliennes sur une serie d'instants (M5)
+    publish       instantane du contrat ATOM rev. 2 : local, ou Worker avec --remote (M6)
     import-real   donnees REELLES (stations + radiosondes / champ maille) -> cache
     validate      contrat de donnees ANEO : verdict, rapport qualite, quarantaine
     serve         application web + API JSON + serveur MCP (fastapi + uvicorn)
@@ -321,6 +322,86 @@ def cmd_windrose(args) -> int:
         print(f"{site} : {doc['n_valid']} instants | Weibull "
               + (f"k={w['k']} c={w['c_ms']} m/s AEP={w['aep_mwh']} MWh" if w else "indisponible"))
     print(f"-> {out}")
+    return 0
+
+
+def cmd_publish(args) -> int:
+    """Instantane au format du contrat ATOM rev. 2 (lot M6), ecrit en local ; avec --remote,
+    publie ensuite vers le Worker (jeton : variable d'environnement ATOM_PUBLISH_TOKEN).
+
+    Un instantane deja ecrit n'est jamais recalcule ni melange a un nouveau calcul : s'il
+    existe, la commande verifie que la configuration est la meme (sinon refus, code 1),
+    exporte DEPUIS CE dossier les fichiers DE3 manquants et le publie tel quel.
+    Codes : 0 ok ; 1 refus ou erreur ; 2 jeton absent ; 3 publication incomplete (Worker)."""
+    from .export_noeuds import exporter_dossier
+    from .inference import WindFieldModel
+    from .publish import (TOKEN_ENV, ClientPublication, DepotLocal, PublicationIncomplete,
+                          PublicationRefusee, champs_attendus, differences_configuration,
+                          instantane_du_cache, instantane_du_csv, jeton_publication,
+                          snapshot_id, versions_modele)
+
+    cfg = _load_cfg(args)
+    client = None
+    if args.remote:
+        # jeton verifie AVANT le calcul ; jamais lu sur la ligne de commande
+        if jeton_publication() is None:
+            print(f"jeton absent : definir {TOKEN_ENV} dans l'environnement", file=sys.stderr)
+            return 2
+        client = ClientPublication(args.remote)
+    racine = Path(args.sortie) if args.sortie else cfg.paths.run_dir / "publication"
+    depot = DepotLocal(racine)
+    wf = WindFieldModel(cfg, checkpoint=args.checkpoint, device=args.device, verbose=False)
+    moteur = None
+    if cfg.alerts.enabled:
+        from .alerts import MoteurAlertes
+        moteur = MoteurAlertes(cfg)
+    dso6 = json.loads(Path(args.dso6).read_bytes().decode("utf-8")) if args.dso6 else None
+    kw = dict(data_kind=args.data_kind, depot=depot, moteur=moteur, dso6=dso6)
+    try:
+        versions = versions_modele(wf, args.data_kind)
+        inst = None
+        if args.csv:
+            inst = instantane_du_csv(wf, args.csv, **kw)
+            sid = inst.snapshot_id
+        else:
+            stem = args.stem
+            if stem is None:
+                from .windfarm import eol1_instants
+                stem = eol1_instants(cfg)[0]
+            sid = snapshot_id(stem, versions["model_sha256"][:8])
+        if depot.existe(sid):
+            diff = differences_configuration(depot.dossier(sid), versions,
+                                             champs_attendus(wf))
+            if diff:
+                print(f"{sid} existe deja avec une autre configuration : refus (un instantane "
+                      "est immuable) -> " + " ; ".join(diff), file=sys.stderr)
+                return 1
+            print(f"{sid} deja ecrit dans {depot.dossier(sid)} (immuable) : reutilise tel quel")
+        else:
+            if inst is None:
+                inst = instantane_du_cache(wf, stem, **kw)
+            depot.ecrire(inst)
+            print(f"instantane {sid} ({inst.data_status}) -> {depot.dossier(sid)}")
+    except ValueError as exc:
+        print(f"ERREUR : {exc}", file=sys.stderr)
+        return 1
+    dossier = depot.dossier(sid)
+    if args.exports:
+        rc = cfg.reliability
+        for nom, p in exporter_dossier(dossier, wf.geom, racine / "exports", rc.class_high,
+                                       rc.class_mid).items():
+            print(f"export {nom} -> {p}")
+    if client is not None:
+        try:
+            rep = client.publier(dossier)
+        except PublicationIncomplete as exc:
+            print(f"PUBLICATION INCOMPLETE : {exc}", file=sys.stderr)
+            return 3
+        except PublicationRefusee as exc:
+            print(f"publication refusee : {exc}", file=sys.stderr)
+            return 1
+        print(f"publie : {rep.get('snapshot_id')} "
+              f"{'(deja publie)' if rep.get('unchanged') else ''}".rstrip())
     return 0
 
 
@@ -758,6 +839,19 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--keep", type=float, default=1.0, help="fraction de capteurs utilises")
     s.add_argument("--checkpoint"), s.add_argument("--device")
     s.set_defaults(func=cmd_windrose)
+
+    s = sub.add_parser("publish", help="instantane du contrat ATOM rev. 2, local ou Worker (M6)")
+    src = s.add_mutually_exclusive_group()
+    src.add_argument("--stem", help="instant en cache (defaut : premier instant de test)")
+    src.add_argument("--csv", help="fichier de mesures ANEO (direct, contrat M3)")
+    s.add_argument("--sortie", help="dossier du depot local (defaut : run_dir/publication)")
+    s.add_argument("--data-kind", default="synthetique", choices=("synthetique", "reel", "test"),
+                   help="nature des donnees (versions.data_kind, D15)")
+    s.add_argument("--dso6", help="resume DSO6 (JSON de `pcfno3d dso6`) pour quality.calibration")
+    s.add_argument("--exports", action="store_true", help="NetCDF + CSV des noeuds (DE3)")
+    s.add_argument("--remote", help="URL du Worker ; jeton dans ATOM_PUBLISH_TOKEN, jamais ici")
+    s.add_argument("--checkpoint"), s.add_argument("--device")
+    s.set_defaults(func=cmd_publish)
 
     s = sub.add_parser("import-real", help="donnees reelles -> cache du pipeline")
     s.add_argument("--stations", required=True,

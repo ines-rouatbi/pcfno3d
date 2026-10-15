@@ -1,0 +1,117 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://atom.zelqane.com/contract/v1/meta.schema.json",
+  "title": "GET /v1/meta et /v1/meta/{sha8} — géométrie du domaine (fichier par modèle : models/{sha8}/meta.json)",
+  "type": "object",
+  "required": ["versions", "grid", "domain", "georef", "terrain", "fields", "encoding", "units", "conventions"],
+  "properties": {
+    "versions": { "$ref": "common.schema.json#/$defs/versions" },
+    "grid": {
+      "type": "object",
+      "required": ["nx", "ny", "nz", "dx_m", "dy_m", "x0_m", "y0_m", "min_agl_m", "levels_asl_m", "order", "valid_nodes", "valid_fraction_by_level"],
+      "properties": {
+        "nx": { "type": "integer", "minimum": 2 },
+        "ny": { "type": "integer", "minimum": 2 },
+        "nz": { "type": "integer", "minimum": 1 },
+        "dx_m": { "type": "number", "exclusiveMinimum": 0 },
+        "dy_m": { "type": "number", "exclusiveMinimum": 0 },
+        "x0_m": { "type": "number", "description": "x du nœud (0, 0). Le nœud (i, j) est en x = x0 + i·dx (0 pour v7)" },
+        "y0_m": { "type": "number", "description": "y du nœud (0, 0). Le nœud (i, j) est en y = y0 + j·dy (0 pour v7)" },
+        "min_agl_m": { "type": "number", "minimum": 0, "description": "Hauteur minimale d'un nœud au-dessus du sol (5,0 pour v7). Règle : NaN (ou 255 en uint8) ⇔ z_asl − relief < min_agl_m" },
+        "levels_asl_m": {
+          "type": "array",
+          "items": { "type": "number" },
+          "minItems": 1,
+          "uniqueItems": true,
+          "description": "Altitudes AU-DESSUS DU NIVEAU DE LA MER, strictement croissantes (contrôlé par validate.mjs)"
+        },
+        "order": { "const": "zyx_sud_ouest", "description": "Fichier tous niveaux : index = k·ny·nx + j·nx + i ; j = 0 au sud, i = 0 à l'ouest" },
+        "valid_nodes": { "type": "integer", "minimum": 0, "description": "Nombre de nœuds (i, j, k) avec z_asl − relief ≥ min_agl_m" },
+        "valid_fraction_by_level": { "type": "array", "items": { "type": "number", "minimum": 0, "maximum": 1 } }
+      },
+      "additionalProperties": false
+    },
+    "domain": {
+      "type": "object",
+      "required": ["x_max_m", "y_max_m", "origin", "crs"],
+      "properties": {
+        "x_max_m": { "type": "number", "description": "x0 + (nx − 1)·dx" },
+        "y_max_m": { "type": "number", "description": "y0 + (ny − 1)·dy" },
+        "origin": { "const": "noeud_0_0_sud_ouest" },
+        "crs": { "const": "plan-tangent-local", "description": "Plan tangent équirectangulaire au nœud (0, 0), voir georef" }
+      },
+      "additionalProperties": false
+    },
+    "terrain": {
+      "type": "object",
+      "required": ["min_m", "max_m", "href", "sha256", "bytes", "source"],
+      "properties": {
+        "min_m": { "type": "number" },
+        "max_m": { "type": "number" },
+        "href": { "type": "string", "pattern": "^/v1/terrain/[0-9a-f]{8}$", "description": "/v1/terrain/{sha8} : Float32 LE ny·nx, altitude du sol au nœud (i, j) en m au-dessus de la mer, sans nodata. Immuable" },
+        "sha256": { "$ref": "common.schema.json#/$defs/sha256" },
+        "bytes": { "type": "integer", "minimum": 1 },
+        "source": { "type": "string", "description": "générateur synthétique | MNT public (nom)" }
+      },
+      "additionalProperties": false
+    },
+    "fields": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "enum": ["u", "v", "w", "speed", "sigma_speed", "sigma_u", "sigma_v", "sigma_w", "coverage", "reliability", "status"] },
+      "description": "Variables publiées, une par fichier fields/{var}.{f32|u8} de nz·ny·nx valeurs. status : 1 = mesuré, 0 = estimé"
+    },
+    "encoding": {
+      "type": "object",
+      "description": "Codage de chaque variable de fields (toutes y figurent)",
+      "propertyNames": { "enum": ["u", "v", "w", "speed", "sigma_speed", "sigma_u", "sigma_v", "sigma_w", "coverage", "reliability", "status"] },
+      "additionalProperties": {
+        "type": "object",
+        "required": ["dtype", "file", "nodata", "scale"],
+        "properties": {
+          "dtype": { "enum": ["float32", "uint8"], "description": "Little-endian pour float32" },
+          "file": { "type": "string", "pattern": "^fields/[a-z_]+\\.(f32|u8)$" },
+          "nodata": { "enum": ["NaN", 255] },
+          "scale": { "type": ["number", "null"], "description": "uint8 quantifié : valeur = octet × scale (1/254 pour coverage et reliability, 0..254 → 0..1) ; 1 pour status ; null pour float32" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "units": { "type": "object", "additionalProperties": { "type": "string" } },
+    "georef": {
+      "type": "object",
+      "required": ["lat0", "lon0", "rotation_deg", "projection", "m_per_deg_lat", "m_per_deg_lon", "bounds", "suppose"],
+      "properties": {
+        "lat0": { "type": "number", "minimum": -90, "maximum": 90, "description": "Latitude du nœud (0, 0)" },
+        "lon0": { "type": "number", "minimum": -180, "maximum": 180, "description": "Longitude du nœud (0, 0)" },
+        "rotation_deg": { "type": "number", "description": "Angle de l'axe x depuis l'Est, sens antihoraire. Est = x·cos θ − y·sin θ, Nord = x·sin θ + y·cos θ" },
+        "projection": { "const": "equirectangulaire_tangent_noeud_0_0", "description": "lat = lat0 + Nord / m_per_deg_lat ; lon = lon0 + Est / m_per_deg_lon" },
+        "m_per_deg_lat": { "const": 110574 },
+        "m_per_deg_lon": { "type": "number", "exclusiveMinimum": 0, "description": "111320·cos(lat0)" },
+        "bounds": {
+          "type": "object",
+          "required": ["lat_min", "lat_max", "lon_min", "lon_max"],
+          "properties": { "lat_min": { "type": "number" }, "lat_max": { "type": "number" }, "lon_min": { "type": "number" }, "lon_max": { "type": "number" } },
+          "additionalProperties": false,
+          "description": "Emprise des 4 coins du domaine"
+        },
+        "suppose": { "type": "boolean", "description": "true tant que la position réelle n'est pas fournie (tâche 61) : l'interface DOIT afficher « position supposée »" }
+      },
+      "additionalProperties": false
+    },
+    "conventions": {
+      "type": "object",
+      "required": ["u", "v", "w", "direction", "altitude", "nodata"],
+      "properties": {
+        "u": { "const": "positif_est" },
+        "v": { "const": "positif_nord" },
+        "w": { "const": "positif_haut" },
+        "direction": { "const": "meteo_provenance", "description": "(270 − atan2(v,u)) mod 360, arrondi avant le modulo" },
+        "altitude": { "const": "asl", "description": "m au-dessus de la mer ; z_agl = z_asl − relief" },
+        "nodata": { "const": "null_json_nan_f32_255_u8" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

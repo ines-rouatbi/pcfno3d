@@ -1,0 +1,131 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://atom.zelqane.com/contract/v1/data-quality.schema.json",
+  "title": "GET /v1/data-quality/{id} — qualité des données d'entrée (rapport de M3)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "period",
+    "files",
+    "sensors",
+    "interpolated_fraction",
+    "issues"
+  ],
+  "properties": {
+    "period": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "from",
+        "to"
+      ],
+      "properties": {
+        "from": {
+          "$ref": "common.schema.json#/$defs/iso_utc"
+        },
+        "to": {
+          "$ref": "common.schema.json#/$defs/iso_utc"
+        }
+      }
+    },
+    "files": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "received",
+        "accepted",
+        "rejected",
+        "quarantined"
+      ],
+      "properties": {
+        "received": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "accepted": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "rejected": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "quarantined": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "sensors": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "total",
+        "observed",
+        "interpolated",
+        "muette",
+        "exclue"
+      ],
+      "properties": {
+        "total": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "observed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "interpolated": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "muette": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "exclue": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "interpolated_fraction": {
+      "$ref": "common.schema.json#/$defs/unit_interval"
+    },
+    "issues": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "kind",
+          "target",
+          "count",
+          "detail"
+        ],
+        "properties": {
+          "kind": {
+            "enum": [
+              "fichier_rejete",
+              "quarantaine",
+              "capteur_muet",
+              "valeur_interpolee",
+              "hors_plage"
+            ]
+          },
+          "target": {
+            "type": "string",
+            "description": "fichier ou capteur"
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "detail": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

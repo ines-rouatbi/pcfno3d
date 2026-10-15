@@ -63,6 +63,8 @@ python -m pcfno3d train                   # resumes automatically from artifacts
 python -m pcfno3d evaluate                # test metrics + DSO1-DSO5 verdict
 python -m pcfno3d reconstruct --stem 004_120000 --altitude 120 --web
 python -m pcfno3d alertes --split test --limit 8   # M4 alerts, chronological, JSONL journal
+python -m pcfno3d publish --stem 004_120000 --exports   # M6: ATOM rev. 2 snapshot, local
+python scripts/m6_rejeu_colab.py -c colab            # M6: 120 test instants, as live
 
 pcfno3d apikey create app-web --scope read   # secret shown once; only its hash is stored
 pcfno3d serve --port 8000                    # web app /app/ · API /api/docs · MCP /mcp
@@ -153,6 +155,20 @@ notebook's globals.
   (captured at the turbine columns only, `Volume.farm_context`), alerts, Weibull/AEP/wind
   rose, and EOL1 (`scripts/m5_eol1_colab.py`). Exposed as `GET /api/wind-farm`, MCP
   `production_eolienne`, CLI `wind-farm` / `windrose`.
+- **`publish.py` / `export_noeuds.py`** (lot M6, HIS1/DE3, `docs/PUBLICATION.md`) — a
+  `Volume` (+ M2/M4/M5 when active, else the B5 nulls) becomes one ATOM rev. 2 snapshot
+  laid out exactly like `contract/fixtures/<case>/` (validated by the contract's
+  `validate.mjs`, copied in `tests/data/atom_rev2/tools/`). The B1 mask is recomputed on
+  the float32 terrain (`NaN <=> z - terrain < min_agl_m`). `DepotLocal` writes atomically
+  (temp dir + rename, `latest.json` last, never backwards); `ClientPublication` follows
+  `publish.mjs` (model once, files, commit, heartbeat) — the publish token comes ONLY from
+  `ATOM_PUBLISH_TOKEN`, never argv/logs, and redirects are never followed. A commit counts
+  only once `/v1/times` and `/v1/latest` show it (the current Worker answers "unchanged"
+  without repairing a crash after `_commit.json`): else `PublicationIncomplete`, nothing
+  marked or purged. Publishing REFUSES a config without `real.origin_lat/lon`. HIS1 is
+  tested against `tests/worker_simule.py` (Python copy of the Worker's publish routes,
+  with connection cuts and the post-`_commit.json` failure). NetCDF/CSV exports (spec 8.4)
+  are made from the PUBLISHED folder, checked by an output schema before delivery.
 
 ## The service layer (`service/`, `webapp/`)
 

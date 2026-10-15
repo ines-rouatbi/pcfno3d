@@ -30,6 +30,8 @@ serve = ["fastapi>=0.115", "uvicorn[standard]>=0.34", "python-multipart>=0.0.20"
 dev = ["pytest>=8.0", "ruff>=0.6"]
 # donnees reelles : telechargement ERA5 (Copernicus CDS) et lecture NetCDF
 real = ["cdsapi>=0.7.4", "xarray>=2024.1", "netCDF4>=1.6"]
+# publication M6 : export NetCDF4 compresse (sans lui, repli NetCDF3 via scipy)
+publish = ["netCDF4>=1.6"]
 
 [project.scripts]
 pcfno3d = "pcfno3d.cli:main"
