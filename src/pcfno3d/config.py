@@ -293,6 +293,64 @@ class ReliabilityCfg:
 
 
 @dataclass
+class AlertsCfg:
+    """Alertes (lot M4, critere AN1). Justification des valeurs : docs/ALERTES.md.
+
+    Strictement opt-in : `enabled: false` par defaut, et rien ne change alors (ni la sortie
+    du modele, ni les reponses de l'API ; /api/alerts repond 409).
+    """
+
+    enabled: bool = False
+    journal: Path | str | None = None      # JSONL ; None = run_dir/logs/alertes.jsonl
+    seuils: Path | str | None = None       # JSON regle sur la VALIDATION (m4_an1_colab.py)
+    retention_close_h: float = 24.0        # une alerte close reste publiee 24 h
+    max_par_type: int = 100                # au plus 100 alertes d'un meme type par instant
+    # capteur en derive : capteur masque compare a la reconstruction faite sans lui
+    derive_statistique: str = "innovation"  # ou "influence" : choix sur la validation
+    derive_cote: int = 3                   # groupes en treillis cote x cote : cote^2 passes
+    derive_fenetre: int = 4                # instants retenus pour la persistance
+    derive_min_instants: int = 3           # instants observes exiges dans la fenetre
+    derive_kappa: float = 6.0              # seuil en ecarts robustes (regle sur validation)
+    derive_min_m_s: float = 0.5            # plancher de l'ecart moyen (tolerance OMM)
+    derive_echelle_plancher_m_s: float = 0.05
+    derive_facteur_critique: float = 2.0   # critique si ecart >= 2 x seuil
+    # derive des entrees (statistiques de l'instant vs entrainement, norm_stats.json)
+    entrees_z_max: float = 3.0             # |moyenne - mu| / sd au-dela : derive
+    entrees_ecart_extreme: float = 5.0     # valeur a plus de 5 sd : extreme
+    entrees_part_extreme: float = 0.02     # derive si plus de 2 % des capteurs extremes
+    # coherence physique (contrat rev. 2, D11)
+    rho_source: str = "extrapolation_surface"
+    sol_rms_max_m_s: float | None = None   # condition au sol : pas d'alerte sans seuil regle
+    masse_facteur_critique: float = 10.0
+    # couverture (M2) : maille de 2 km
+    couverture_maille_m: float = 2000.0
+    couverture_min: float = 0.2
+    # part de capteurs disponibles, sans rapport du contrat (instants du cache)
+    capteurs_part_min: float = 0.70
+    capteurs_part_critique: float = 0.30
+
+    def __post_init__(self) -> None:
+        self.enabled = bool(self.enabled)
+        if self.journal is not None and str(self.journal).lower() != "off":
+            self.journal = _resolve(self.journal)
+        if self.seuils is not None:
+            self.seuils = _resolve(self.seuils)
+        if self.derive_statistique not in ("influence", "innovation"):
+            raise ValueError("alerts.derive_statistique : 'influence' ou 'innovation'")
+        if self.rho_source not in ("atmosphere_standard", "extrapolation_surface",
+                                   "verite_synthetique"):
+            raise ValueError("alerts.rho_source : atmosphere_standard, "
+                             "extrapolation_surface ou verite_synthetique")
+        self.derive_cote = int(self.derive_cote)
+        self.derive_fenetre = int(self.derive_fenetre)
+        self.derive_min_instants = int(self.derive_min_instants)
+        if self.derive_cote < 2:
+            raise ValueError("alerts.derive_cote doit etre >= 2")
+        if not 1 <= self.derive_min_instants <= self.derive_fenetre:
+            raise ValueError("alerts : 1 <= derive_min_instants <= derive_fenetre")
+
+
+@dataclass
 class DSOCfg:
     """Seuils des objectifs de l'entreprise (DSO1 a DSO5)."""
 
@@ -345,7 +403,7 @@ class RealCfg:
 SECTIONS: dict[str, type] = {
     "paths": Paths, "model": ModelCfg, "train": TrainCfg,
     "loss": LossCfg, "mask": MaskCfg, "dso": DSOCfg, "inference": InferenceCfg,
-    "real": RealCfg, "reliability": ReliabilityCfg,
+    "real": RealCfg, "reliability": ReliabilityCfg, "alerts": AlertsCfg,
 }
 
 
@@ -364,6 +422,7 @@ class Config:
     inference: InferenceCfg = field(default_factory=InferenceCfg)
     real: RealCfg = field(default_factory=RealCfg)
     reliability: ReliabilityCfg = field(default_factory=ReliabilityCfg)
+    alerts: AlertsCfg = field(default_factory=AlertsCfg)
     terrain_smooth_m: float = 300.0   # meme lissage du relief que le generateur
     f_coriolis: float = 8.57e-5       # s-1, latitude ~36 N (vent geostrophique)
 
