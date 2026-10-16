@@ -12,8 +12,8 @@ suivi de sa source dans le dépôt. Les critères non encore mesurés sont marqu
 | Notebook de référence | `notebooks/current/fno3d_v7.ipynb` (avec ses sorties Colab) ; code identique bloc à bloc à `fno3d_v7_1.ipynb`, porté dans le paquet `pcfno3d` 0.4.0 | `CLAUDE.md` ; `src/pcfno3d/__init__.py` |
 | Fidélité du portage | le paquet retrouve la table DSO1 du notebook à **0,0000 m/s** près aux 12 niveaux (Colab, 2026-10-12) ; 453,3 M paramètres chargés en `strict=True` | `docs/REPRODUCTIBILITE.md` ; `tukhnanutha.md` § 5 |
 | Taille du checkpoint | 1,81 Go | `CLAUDE.md` |
-| Empreinte sha256 des poids | `b2529442…` (préfixe) — **empreinte complète à remplir** : `python -c "import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],'rb').read()).hexdigest())" <run_dir>/best_dso_v7.pt` | `docs/REPRODUCTIBILITE.md` |
-| `norm_stats.json` | fait partie du modèle (dénormalisation) ; sha256 **à remplir** avec la même commande | `CLAUDE.md` ; `docs/REPRODUCTIBILITE.md` |
+| Empreinte sha256 des poids | `b2529442ee6fcdb18d3f35fe176663022604395743c161a25541ccd4e365e7de` (sha256 des octets de `best_dso_v7.pt`, 1 813 028 515 octets ; D1) | `versions.model_sha256` du `latest.json` et des `models/b2529442/meta.json` publiés par M6 dans le dépôt local `AppData/Local/pcfno3d/runs/v7/publication/` (8 instantanés du 2025-02-28, générés le 2026-10-15), calculé par `publish.versions_modele` sur le fichier servi ; préfixe identique à `docs/REPRODUCTIBILITE.md` |
+| `norm_stats.json` | fait partie du modèle (dénormalisation) ; sha256 `7bae6748f270fa5e3f08a69a7f8e919f01d641d29b125981168cc15a03ee25f7` (1 038 octets) | `versions.norm` publié = `7bae6748` (sha8, même dépôt local) ; empreinte complète calculée le 2026-10-16 sur `AppData/Local/pcfno3d/runs/v7/norm_stats.json`, préfixe identique au sha8 publié |
 | Statut | v7 reste le modèle servi : la v8 (affinage) n'est pas meilleure | `tukhnanutha.md` § 5 ; `docs/rapport_dso1.md` § 3 |
 
 ## Architecture
