@@ -258,11 +258,23 @@ def reliability_index(sigma_speed: np.ndarray, coverage: np.ndarray,
             * (0.5 + 0.5 * np.asarray(coverage, np.float64))).astype(np.float32)
 
 
-def reliability_class(r: np.ndarray, high: float, mid: float) -> np.ndarray:
-    """uint8 : 2 elevee (r >= high), 1 moyenne (r >= mid), 0 faible, 255 sous le relief."""
+def classe_octet(q: np.ndarray, high: float, mid: float) -> np.ndarray:
+    """Classe depuis l'octet PUBLIE de la fiabilite (contrat rev. 2, D13 : r = octet / 254),
+    comme le tableau de bord la recalcule. uint8 : 2 elevee (r >= high), 1 moyenne
+    (r >= mid), 0 faible, 255 absent."""
+    q = np.asarray(q, np.uint8)
+    r = q.astype(np.float64) / 254.0
     out = np.where(r >= high, 2, np.where(r >= mid, 1, 0)).astype(np.uint8)
-    out[~np.isfinite(r)] = NODATA_U8
+    out[q == NODATA_U8] = NODATA_U8
     return out
+
+
+def reliability_class(r: np.ndarray, high: float, mid: float) -> np.ndarray:
+    """uint8 : 2 elevee (r >= high), 1 moyenne (r >= mid), 0 faible, 255 sous le relief.
+    La classe est prise sur la valeur quantifiee publiee (to_u8_unit), pas sur r brut :
+    un noeud a la meme classe dans l'API, l'instantane, les exports et le tableau de bord
+    qui reclasse depuis le champ `reliability` publie (docs/FIABILITE.md)."""
+    return classe_octet(to_u8_unit(r), high, mid)
 
 
 def speed_interval(speed: np.ndarray, sigma_speed: np.ndarray) -> tuple[np.ndarray, np.ndarray]:

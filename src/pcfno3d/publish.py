@@ -132,6 +132,12 @@ def _r(x, nd: int = 3) -> float | None:
     return round(x, nd) if math.isfinite(x) else None
 
 
+def _octet(q) -> float | None:
+    """Valeur publiee d'un champ uint8 de [0, 1] (octet / 254, D13), None si absent (255)."""
+    q = int(q)
+    return None if q == NODATA_U8 else round(q / 254.0, 4)
+
+
 def _nombre_entier(x: float):
     """25.0 -> 25 (les niveaux et le pas s'ecrivent comme dans les fixtures)."""
     x = float(x)
@@ -402,8 +408,10 @@ def profil_point(point_id: str, i: int, j: int, geom, ch: ChampsPublies, sensor:
                        "speed_interval": {"p10": _r(max(0.0, speed - Z80 * sig)),
                                           "p50": speed, "p90": _r(speed + Z80 * sig)},
                        "status": "mesure" if st == STATUT_MESURE else "estime",
-                       "coverage": _r(ch.coverage[k, j, i]),
-                       "reliability": _r(ch.reliability[k, j, i]),
+                       # valeurs publiees (octet / 254, D13) : la classe ci-dessous en
+                       # est deduite avec les seuils de la configuration
+                       "coverage": _octet(ch.u8["coverage"][k, j, i]),
+                       "reliability": _octet(ch.u8["reliability"][k, j, i]),
                        "reliability_class": CLASSES[int(ch.reliability_class[k, j, i])]})
         niveaux.append(lv)
     return {"point_id": point_id, "i": int(i), "j": int(j),

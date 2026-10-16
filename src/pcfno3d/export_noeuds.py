@@ -33,7 +33,7 @@ import numpy as np
 import pandas as pd
 
 from .publish import CALME_MS, ChampsPublies, Instantane, latlon
-from .reliability import NODATA_U8, STATUT_MESURE
+from .reliability import NODATA_U8, STATUT_MESURE, classe_octet
 from .windfarm import round_direction
 
 COLONNES_CSV = ("node_id", "x_m", "y_m", "altitude_m", "hauteur_sol_m", "timestamp_utc",
@@ -409,8 +409,9 @@ def charger_instantane(dossier: str | Path, geom, class_high: float,
                        class_mid: float) -> Instantane:
     """Relit un instantane PUBLIE (dossier de DepotLocal) : les exports se font depuis ce
     qui est publie, jamais depuis un nouveau calcul. coverage / reliability sont relus
-    quantifies (octet / 254) ; la classe de fiabilite, non publiee, est recalculee depuis
-    la fiabilite relue avec les seuils de la configuration (reliability.class_high/mid).
+    quantifies (octet / 254) ; la classe de fiabilite, non publiee dans les champs, est
+    recalculee depuis l'octet relu avec les seuils de la configuration
+    (reliability.class_high/mid) : meme regle que reliability_class, donc meme classe.
     Refuse un dossier dont la grille ou le relief different de `geom`."""
     d = Path(dossier)
     man = json.loads((d / "publish-manifest.json").read_bytes().decode("utf-8"))
@@ -441,8 +442,8 @@ def charger_instantane(dossier: str | Path, geom, class_high: float,
             a[u8[c] == NODATA_U8] = np.nan
             return a
         ch.coverage, ch.reliability = relu("coverage"), relu("reliability")
-        cl = np.where(ch.reliability >= class_high, 2,
-                      np.where(ch.reliability >= class_mid, 1, 0)).astype(np.uint8)
+        # meme regle que reliability_class : classe prise sur l'octet publie
+        cl = classe_octet(u8["reliability"], class_high, class_mid)
         cl[~valide] = NODATA_U8
         ch.reliability_class = cl
     return Instantane(sid, sha8, man["valid_time"], man["generated_at"],

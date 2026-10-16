@@ -240,6 +240,31 @@ def test_regle_b1_nan_sous_min_agl(depot_complet, geom):
     np.testing.assert_array_equal(~sous, geom.valid)
 
 
+def test_classe_de_fiabilite_comme_le_tableau_de_bord(depot_complet, trained):
+    """Une seule classe par noeud : le front reclasse depuis `reliability` publie (octet /
+    254) avec 0,75 / 0,5 ; la classe de M2 (quality, kpi, profils) doit etre la meme."""
+    from pcfno3d.reliability import CLASSES
+    depot, insts = depot_complet
+    rc = trained.reliability
+    assert (rc.class_high, rc.class_mid) == (0.75, 0.5)
+    for inst in insts:
+        d = depot.dossier(inst.snapshot_id)
+        q8 = np.fromfile(d / "fields/reliability.u8", "u1")
+        ok = q8 != 255
+        front = np.where(q8 / 254 >= 0.75, 2, np.where(q8 / 254 >= 0.5, 1, 0))
+        cl = inst.champs.reliability_class.reshape(-1)
+        np.testing.assert_array_equal(cl[ok], front[ok])
+        snap = json.loads((d / "snapshot.json").read_text(encoding="utf-8"))
+        assert snap["kpi"]["share_high_reliability"] == round(float((front[ok] == 2).mean()), 4)
+        for p in (d / "profiles").glob("*.json"):
+            for lv in json.loads(p.read_text(encoding="utf-8"))["levels"]:
+                if lv["below_terrain"]:
+                    continue
+                r = lv["reliability"]
+                attendu = "elevee" if r >= 0.75 else "moyenne" if r >= 0.5 else "faible"
+                assert lv["reliability_class"] == attendu and attendu in CLASSES
+
+
 def test_validate_mjs_du_contrat(depot_complet, validate_mjs):
     """Les 3 instantanes du mini-jeu passent validate.mjs (rev. 2) : schemas, sha256 des deux
     manifestes, NaN <=> min_agl_m, profils, roses, open_alerts, reseau."""

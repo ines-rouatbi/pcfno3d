@@ -41,7 +41,7 @@ snapshots/<id>/
 | D1 | `model_sha256` = sha256 des octets du fichier de poids (lu une fois par processus) ; `norm` = sha8 de `norm_stats.json` ; `snapshot_id = <stem>_<sha8>`, stem du cache `JJJ_HHMMSS` pour le rejeu, `live_AAAAMMJJ_HHMMSS` pour le direct (CSV). |
 | D3 | `models/<sha8>/meta.json` et `terrain.f32` publiés **une fois** par modèle et par processus ; le manifeste d'instantané ne les contient pas. |
 | D4 | `georef` : plan tangent équirectangulaire au nœud (0, 0), `m_per_deg_lat = 110574`, `m_per_deg_lon = 111320·cos(lat0)`, `bounds` des 4 coins, `crs = plan-tangent-local`. L'ancrage vient **uniquement** de `real.origin_lat/lon` (`suppose` = `real.origin_assumed`) : sans ancrage configuré, M6 **refuse** de publier (`colab.yaml`, `colab_v8.yaml` et `local_v7.yaml` portent l'ancrage supposé 36,0 N 9,7 E, `origin_assumed: true`). |
-| D5, D6 | Profils : nœud (i, j) de l'éolienne, `z_terrain_m = terrain[j·nx+i]`, valeurs = champs publiés arrondis, `p50 = speed`, `p10/p90 = speed ∓ 1,2816·sigma_speed` (p10 ≥ 0). |
+| D5, D6 | Profils : nœud (i, j) de l'éolienne, `z_terrain_m = terrain[j·nx+i]`, valeurs = champs publiés arrondis (`coverage`, `reliability` = octet / 254, et `reliability_class` déduite de cette valeur avec 0,75 / 0,5), `p50 = speed`, `p10/p90 = speed ∓ 1,2816·sigma_speed` (p10 ≥ 0). |
 | D7 | `status` de M2 (capteur visible à ≤ 15 m), y compris sur données synthétiques. |
 | D8 | Alertes de M4 (journal JSONL : `raised_at` = première levée, `ouverte`/`close`). |
 | D10 | `kpi.hub_wind_*` = `windfarm.hub_wind_kpi` sur le domaine à `wind_farm.hub_height_agl_m`. |
@@ -174,9 +174,9 @@ les exports manquants sont faits **depuis ce dossier**. Code 3 : publication inc
 relit l'instantané **publié** et écrit, **hors** du dossier publié,
 `exports/<id>/<id>.nc` et `exports/<id>/<id>_noeuds.csv` — seulement ceux qui manquent.
 Les valeurs sont exactement les valeurs publiées (même masque B1, mêmes float32 ;
-couverture et fiabilité relues quantifiées à 1/254 ; la classe de fiabilité, non publiée,
-est recalculée depuis la fiabilité relue avec `reliability.class_high/mid`, d'où un écart
-possible à ±1/508 d'un seuil). Fichier temporaire puis renommage ; un échec ne laisse
+couverture et fiabilité relues quantifiées à 1/254 ; la classe de fiabilité, non publiée
+dans les champs, est recalculée depuis l'octet relu avec `reliability.class_high/mid`
+(0,75 / 0,5), la même règle que la classe publiée : aucun écart, voir `docs/FIABILITE.md`). Fichier temporaire puis renommage ; un échec ne laisse
 jamais de `.tmp`.
 
 - **NetCDF** : dimensions `(altitude, y, x)` ; `u, v, w, vitesse, direction,

@@ -90,7 +90,27 @@ avec la hauteur au-dessus du sol (H = 500 m) :
 
     r = exp(−σ_vitesse / 1 m/s) · (0,5 + 0,5 · couverture)
 
-La classe est `elevee` si r ≥ 0,6, `moyenne` si r ≥ 0,3, `faible` sinon.
+La classe est `elevee` si r ≥ 0,75, `moyenne` si r ≥ 0,5, `faible` sinon
+(`reliability.class_high` / `class_mid`).
+
+**Pourquoi 0,75 / 0,5 (et plus 0,6 / 0,3).** Le tableau de bord ne lit pas la classe : il
+la **recalcule** depuis le champ `reliability` publié, avec 0,75 et 0,5, les seuils des
+instantanés de test du contrat (`contract/tools/make-fixtures.mjs`, branche `contrat-v1` du
+dépôt du tableau de bord). Avec 0,6 / 0,3 côté modèle, un même nœud aurait eu deux classes
+(par exemple r = 0,65 : `elevee` dans `quality.json` et les profils, `moyenne` sur la
+carte). Les seuils ont donc été alignés sur ceux du tableau de bord (décision du
+coordinateur, 2026-10-16) ; ce sont des choix d'ingénierie, pas des valeurs ajustées sur
+des données, et aucun verdict (DSO6 porte sur σ, pas sur la classe) n'en dépend.
+
+**Classe prise sur la valeur publiée.** `reliability` est publié en uint8 (octet / 254,
+D13). La classe est calculée sur cette valeur quantifiée (`classe_octet`), exactement
+comme le tableau de bord la recalcule, et non sur r brut : sans cela, un nœud à
+r ∈ [0,498 ; 0,5[ (publié 127/254 = 0,5) serait `faible` pour le modèle et `moyenne` pour
+la carte. Conséquence : r = 0,75 tout juste (publié 190/254 ≈ 0,748) est `moyenne`. Les
+profils publient la même valeur quantifiée (`coverage`, `reliability` à 10⁻⁴), et les
+exports NetCDF / CSV recalculent la classe depuis l'octet relu avec la même règle : une
+seule classe par nœud partout (testé : `test_classe_prise_sur_la_valeur_publiee`,
+`test_classe_de_fiabilite_comme_le_tableau_de_bord`).
 
 Les constantes (L, H, D0, σ_ref, seuils de classe) sont des **choix d'ingénierie
 documentés**, réglables dans la section `reliability`, et non des valeurs ajustées. Seuls

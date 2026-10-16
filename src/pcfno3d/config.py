@@ -272,8 +272,10 @@ class ReliabilityCfg:
     coverage_height_m: float = 500.0   # H : decroissance de la couverture avec la hauteur
     coverage_density_ref: float = 2.0  # D0 : densite de capteurs pour ~63 % de couverture
     sigma_ref_m_s: float = 1.0        # echelle de sigma_vitesse dans l'indice de fiabilite
-    class_high: float = 0.6           # fiabilite >= : « elevee »
-    class_mid: float = 0.3            # fiabilite >= : « moyenne » (sinon « faible »)
+    # seuils de classe = ceux du tableau de bord et des fixtures du contrat (0,75 / 0,5) :
+    # le front reclasse depuis le champ `reliability` publie (docs/FIABILITE.md)
+    class_high: float = 0.75          # fiabilite >= : « elevee »
+    class_mid: float = 0.5            # fiabilite >= : « moyenne » (sinon « faible »)
     coverage_target: float = 0.8      # DSO6 : part des valeurs vraies dans l'intervalle 80 %
     # quantile de |erreur| / sigma vise par la calibration (validation). 0,8 = intervalle a
     # 80 % exactement : sur le test, la couverture oscille alors AUTOUR de 0,80 et le verdict

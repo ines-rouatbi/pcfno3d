@@ -242,10 +242,12 @@ def test_bloc_uncertainty_cles_du_contrat(geom, tmp_path):
 
 # ------------------------------------------------------------------ fiabilite, intervalle
 def test_indice_classe_et_intervalle():
-    r = reliability_index(np.array([0.0, 0.5, 3.0, np.nan]), np.array([1.0, 0.5, 0.0, 0.5]),
+    r = reliability_index(np.array([0.0, 0.2, 3.0, np.nan]), np.array([1.0, 0.5, 0.0, 0.5]),
                           sigma_ref=1.0)
     assert r[0] == pytest.approx(1.0) and r[2] == pytest.approx(0.5 * np.exp(-3.0))
-    cl = reliability_class(r, 0.6, 0.3)
+    rc = ReliabilityCfg()
+    assert (rc.class_high, rc.class_mid) == (0.75, 0.5)    # seuils du tableau de bord
+    cl = reliability_class(r, rc.class_high, rc.class_mid)
     assert [CLASSES[x] for x in cl[:3]] == ["elevee", "moyenne", "faible"]
     assert cl[3] == NODATA_U8
     p10, p90 = speed_interval(np.array([5.0, 0.2]), np.array([1.0, 1.0]))
@@ -272,6 +274,24 @@ def test_codage_uint8_du_contrat():
     assert UNCERTAINTY_AUCUNE == {"method": "aucune", "members": 1, "calibrated": False}
 
 
+def test_classe_prise_sur_la_valeur_publiee():
+    """Le tableau de bord reclasse depuis `reliability` publie (octet / 254) avec 0,75 / 0,5
+    (fixtures du contrat, make-fixtures.mjs) : la classe de M2 doit etre la meme partout."""
+    from pcfno3d.reliability import classe_octet
+    # pres des seuils : 0,4985 est publie 127/254 = 0,5 -> « moyenne » pour le front ;
+    # 0,75 tout juste est publie 190/254 = 0,748 (190,5 arrondi au pair) -> « moyenne »
+    r = np.array([0.4985, 0.4975, 0.749, 0.7505, 0.75, 0.5], np.float32)
+    assert [CLASSES[x] for x in reliability_class(r, 0.75, 0.5)] == \
+        ["moyenne", "faible", "moyenne", "elevee", "moyenne", "moyenne"]
+    # balayage : classe de M2 == classe recalculee comme le front, sur l'octet publie
+    r = np.linspace(0.0, 1.0, 20001).astype(np.float32)
+    q = to_u8_unit(r)
+    front = np.where(q / 254 >= 0.75, 2, np.where(q / 254 >= 0.5, 1, 0))
+    np.testing.assert_array_equal(reliability_class(r, 0.75, 0.5), front)
+    np.testing.assert_array_equal(classe_octet(q, 0.75, 0.5), front)
+    assert classe_octet(np.array([255], np.uint8), 0.75, 0.5)[0] == NODATA_U8
+
+
 def test_blocs_quality_du_contrat(geom):
     """quality.schema.json : by_level (parts par classe, medianes) et calibration."""
     from pcfno3d.reliability import Reliability
@@ -281,7 +301,7 @@ def test_blocs_quality_du_contrat(geom):
     cov = np.where(geom.valid, rng.uniform(0, 1, shp), np.nan).astype(np.float32)
     r = reliability_index(sig, cov, 1.0)
     rel = Reliability(sig, sig, sig, sig, node_status(geom, _sensor(geom), 15.0), cov, r,
-                      reliability_class(r, 0.6, 0.3), UNCERTAINTY_AUCUNE)
+                      reliability_class(r, 0.75, 0.5), UNCERTAINTY_AUCUNE)
     rows = quality_by_level(rel, geom)
     assert len(rows) == geom.nz
     cles = {"z_asl_m", "valid_nodes", "share_elevee", "share_moyenne", "share_faible",
