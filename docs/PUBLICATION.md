@@ -176,8 +176,9 @@ relit l'instantané **publié** et écrit, **hors** du dossier publié,
 Les valeurs sont exactement les valeurs publiées (même masque B1, mêmes float32 ;
 couverture et fiabilité relues quantifiées à 1/254 ; la classe de fiabilité, non publiée
 dans les champs, est recalculée depuis l'octet relu avec `reliability.class_high/mid`
-(0,75 / 0,5), la même règle que la classe publiée : aucun écart, voir `docs/FIABILITE.md`). Fichier temporaire puis renommage ; un échec ne laisse
-jamais de `.tmp`.
+(0,75 / 0,5), la même règle que la classe publiée : aucun écart, voir
+`docs/FIABILITE.md`). Fichier temporaire puis renommage ; un échec ne laisse jamais de
+`.tmp`.
 
 - **NetCDF** : dimensions `(altitude, y, x)` ; `u, v, w, vitesse, direction,
   hauteur_sol` (+ `sigma_u/v/w/speed, couverture, fiabilite, statut, classe_fiabilite`

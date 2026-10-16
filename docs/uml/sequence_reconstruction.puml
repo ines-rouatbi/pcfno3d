@@ -71,7 +71,7 @@ opt export (portee admin)
 end
 
 group publication lot M6 (pcfno3d publish, m6_rejeu_colab.py ; hors route HTTP)
-  R -> R : construire_instantane() puis DepotLocal.ecrire()\n(dossier temporaire + renommage, latest.json en dernier)
-  R -> W : ClientPublication.publier() vers /v1/publish/... :\nfichiers, commit, relecture /v1/times + /v1/latest, battement
+  R -> R : construire_instantane() puis DepotLocal.ecrire()\n(dossier temporaire + renommage,\nlatest.json en dernier)
+  R -> W : ClientPublication.publier() vers /v1/publish/... :\nfichiers, commit, relecture /v1/times\n+ /v1/latest, battement
 end
 @enduml

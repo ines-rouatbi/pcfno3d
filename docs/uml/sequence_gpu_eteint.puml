@@ -18,13 +18,13 @@ participant "Service PC-FNO3D\n(GPU, publish.py)" as S
 database "R2 SNAPSHOTS\n(instantanes commites)" as R2
 
 == 1. Pendant que le GPU tourne : publication (ClientPublication.publier) ==
-S -> W : PUT /v1/publish/model/{sha8}/files/... puis POST .../commit\n(une fois par modele, jeton ATOM_PUBLISH_TOKEN)
+S -> W : PUT /v1/publish/model/{sha8}/files/...\npuis POST .../commit (une fois par modele,\njeton ATOM_PUBLISH_TOKEN)
 W -> R2 : models/{sha8}/meta.json, terrain.f32, _commit.json
 S -> W : PUT /v1/publish/{id}/files/{path}\n(X-Content-SHA256, 8 Mo max)
 W -> R2 : snapshots/{id}/... (champs, qualite, alertes, profils)
 S -> W : POST /v1/publish/{id}/commit (manifeste)
-W -> R2 : verifier taille + sha256 de chaque fichier\nPUIS _commit.json, index/times.json, latest.json en dernier\n(latest ne recule jamais)
-S -> W : relecture GET /v1/times et GET /v1/latest\n(commit compte seulement s'il y figure, sinon PublicationIncomplete)
+W -> R2 : verifier taille + sha256 de chaque fichier\nPUIS _commit.json, index/times.json,\nlatest.json en dernier (latest ne recule jamais)
+S -> W : relecture GET /v1/times et GET /v1/latest\n(commit compte seulement s'il y figure,\nsinon PublicationIncomplete)
 S -> W : POST /v1/heartbeat
 W -> R2 : heartbeat.json {at}
 
@@ -33,7 +33,7 @@ S -[#gray]x W : plus de battement (Colab arrete)
 B -> W : GET /v1/latest
 W -> R2 : lire latest.json et heartbeat.json
 R2 --> W : {snapshot_id, valid_time, ...} + {at}
-W --> B : 200 {..., heartbeat_at, compute_status}\n(offline si dernier battement > 5 min, unknown si aucun)
+W --> B : 200 {..., heartbeat_at, compute_status}\n(offline si dernier battement > 5 min,\nunknown si aucun)
 B -> W : GET /v1/fields/{id}/{niveau}/{var}
 W -> R2 : lecture partielle du fichier tous niveaux
 W --> B : 200 (NaN -> null, uint8 x scale, 255 -> null)

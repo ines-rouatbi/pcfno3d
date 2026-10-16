@@ -218,7 +218,7 @@ package "pcfno3d.publish / export_noeuds (M6)" {
   ClientPublication ..> DepotLocal : publie un dossier
   PublicationIncomplete --|> PublicationRefusee
   Volume ..> ChampsPublies : champs_publies()
-  note "construire_instantane(wf, volume, S, ...) ; exports NetCDF / CSV (DE3)\nrelus depuis le dossier PUBLIE : export_noeuds.exporter_dossier()" as N_M6
+  note "construire_instantane(wf, volume, S, ...) ;\nexports NetCDF / CSV (DE3) relus depuis\nle dossier PUBLIE : export_noeuds.exporter_dossier()" as N_M6
 }
 
 package "pcfno3d.baselines / preuves / sobriete (M8)" {

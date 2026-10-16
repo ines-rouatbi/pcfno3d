@@ -32,7 +32,7 @@ rectangle "Service PC-FNO3D (pcfno3d + service/)" {
   usecase "Verifier l'etat du service\nGET /api/health (public)" as UC_sante
   usecase "Entrainer et evaluer le modele\npcfno3d train / evaluate" as UC_eval
   usecase "Comparer aux methodes de reference\net etudier le reseau (E1, E2, E3)\npcfno3d baselines, m8_preuves_colab.py" as UC_preuve
-  usecase "Publier un instantane et l'historique\n(R2, latest, /v1/times) <<M6>>\npcfno3d publish, m6_rejeu_colab.py" as UC_pub
+  usecase "Publier un instantane\net l'historique (R2, latest,\n/v1/times) <<M6>>" as UC_pub
 }
 
 Res --> UC_val
