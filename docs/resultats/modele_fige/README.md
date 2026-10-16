@@ -88,6 +88,9 @@ Les poids (1,81 Go) ne vont pas dans git.
       `sha256.txt` de la session).
 - [x] Archiver le notebook **exécuté** (avec ses sorties), tel que la session l'a laissé :
       `m1_bloc10i_execute.ipynb` (copie du Drive du 16/10, 17 cellules avec sorties, sans secret).
-- [ ] Constituer sur le Drive `aneo_fno3d_runs/fige/modele_fige_2026-10.zip` : poids,
-      `norm_stats.json`, configuration, `decision_10i.json` et `SHA256SUMS`.
+- [x] Constituer sur le Drive `aneo_fno3d_runs/fige/modele_fige_2026-10.zip` (16/10,
+      1 813 093 577 octets, sans compression) : `best_dso_v7.pt`, `norm_stats.json`,
+      `couche_limite_v7.json`, `decision_10i.json`, `decision_10i_par_niveau.csv`, `sha256.txt`
+      et `regle.txt` de la session. Empreintes relues à la création, identiques à `SHA256SUMS`.
+      La configuration est celle du dépôt au tag `v7-fige` (`configs/colab.yaml`).
 - [x] Investiguer l'écart de sha256 de `test_summary.json` sur le Drive : expliqué ci-dessus.
