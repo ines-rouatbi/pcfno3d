@@ -86,8 +86,8 @@ Les poids (1,81 Go) ne vont pas dans git.
       `sha256.txt` de la session et le rejeu du BLOC 10).
 - [x] Ajouter à `SHA256SUMS` le sha256 complet de `couche_limite_v7.json` (lu dans le
       `sha256.txt` de la session).
-- [ ] Archiver le notebook **exécuté** (avec ses sorties), tel que la session l'a laissé ; le
-      dépôt n'en contient que la version aux sorties vidées.
+- [x] Archiver le notebook **exécuté** (avec ses sorties), tel que la session l'a laissé :
+      `m1_bloc10i_execute.ipynb` (copie du Drive du 16/10, 17 cellules avec sorties, sans secret).
 - [ ] Constituer sur le Drive `aneo_fno3d_runs/fige/modele_fige_2026-10.zip` : poids,
       `norm_stats.json`, configuration, `decision_10i.json` et `SHA256SUMS`.
 - [x] Investiguer l'écart de sha256 de `test_summary.json` sur le Drive : expliqué ci-dessus.
