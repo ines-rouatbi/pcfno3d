@@ -12,7 +12,8 @@ DSO4 **non conforme** avec la fiabilité (4,563 s pour 8 membres). Seconde lectu
 (16/10/2026, version 2) : DSO6 **conforme** — mesure **non indépendante** du test, la
 première, non conforme, reste publiée —, mais DSO4 toujours **non conforme** avec la
 fiabilité synchrone (4,2 à 4,7 s). D'où la **fiabilité différée** (section du même nom) :
-DSO4 juge la valeur seule, la fiabilité est un produit à part. Chiffres complets dans
+DSO4 juge la valeur seule — **0,440 s, conforme** (16/10/2026) —, la fiabilité est un
+produit à part, prête 3,834 s plus tard (lot 4, sans verdict). Chiffres complets dans
 « Historique des mesures DSO6 » ci-dessous. La version 2 change deux choses :
 
 - **A. Ensemble par lots** (DSO4) : les N passes masquées passent par lots de
@@ -355,6 +356,19 @@ fiabilité **synchrone**, 8 membres : lot 1 4,531 s, lot 4 4,207 s, lot 8 4,744 
 (**non conforme**). Une passe v7 sature déjà le GPU : le regroupement par lots ne gagne
 presque rien. Conséquence : la **fiabilité différée** (section du même nom), décidée le
 16/10/2026 ; DSO4 se remesure alors sur la valeur seule (`--dso4-seulement`).
+
+### Mesure DSO4 avec la fiabilité différée — Colab L4, v7, 16/10/2026
+
+Source : `aneo_fno3d_runs/v7/fiabilite_pcfno3d/best_dso_v7/session_20261016T134302Z/resume_dso4.json` (`--dso4-seulement`, calibration de la
+version 2).
+
+| Mesure | Temps | DSO4 (< 1 s) |
+|---|---|---|
+| Valeur seule (passe servie) | **0,440 s** | **conforme** |
+| Valeur servie, fiabilité active (différée) | 0,444 s | conforme |
+| Délai de la fiabilité différée, lot 4 | 3,834 s | sans verdict |
+| idem, lot 1 | 4,152 s | sans verdict |
+| idem, lot 8 | 4,383 s | sans verdict |
 
 ## Choix tranchés (relecture stage-b5, contrat rév. 2)
 

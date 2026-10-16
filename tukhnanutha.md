@@ -106,10 +106,27 @@ a terrain correction.
   with a local R2, next to the v7 model service on CPU. **8 test instants** (day 017,
   valid times 2025-02-28 00:00–21:00 UTC, every 3 h) are published in that local R2, with
   M2 and M4 inactive (their blocks are `null`, B5). Nothing is hosted on Cloudflare.
-- **Colab GPU session in progress** for the DSO6 verdict (M2), AN1 (M4), EOL1 (M5, on the
-  demonstration farm only) and the M6 replay of the test instants. **No verdict yet**: the
-  model card lists these criteria as "en attente du GPU" until the session's outputs are read.
-- **M1** (last bounded DSO1 attempt, cell 10i) is waiting for its own GPU session.
+- **GPU verdicts measured** (Colab L4, model v7, 15-16/10/2026; Drive folders under
+  `aneo_fno3d_runs/v7/`; summary in `docs/BILAN_FINAL.md`):
+  - **DSO6 (M2)**: first reading (15/10, q 0.8) **non-conforming** — 80 % coverage u 0.751,
+    v 0.811, w 0.794, speed 0.796; second reading (16/10, q = 0.90 chosen by the validation
+    rule) **conforming** — 0.871 / 0.912 / 0.896 / 0.904, Spearman 0.295 / 0.311 / 0.231 /
+    0.291. The rule was set after the first reading: **not an independent measure**.
+  - **DSO4**: served value alone **0.440 s, conforming** (0.444 s with reliability active);
+    the deferred reliability is ready 3.834 s later (batch 4), no verdict. Synchronous
+    reliability (4.2–4.7 s) was non-conforming.
+  - **AN1 (M4)**: v1 **non-conforming** (drifts detected 5.2 %, input false alerts 6.7 %);
+    v2 (spatial detector chosen on validation) **conforming on a second reading** — drifts
+    detected 100 %, false alerts 2.2 %, input false alerts 0 %.
+  - **EOL1 (M5)**: 1.71 % (threshold 5 %) on the **demonstration** farm (3 turbines, 12 MW),
+    conforming on that example only; the official verdict needs the real farm.
+  - **HIS1 (M6)**: the 120 test instants replayed as live in the rev. 2 format (9.1 s per
+    instant on L4); 8 instants (day 017) republished to the local deployment.
+  - **M8**: L6 max u, v RMSE v7 0.665 m/s vs 5.027–6.487 for the references; E1: v7 holds
+    DSO5 down to 50 % of the sensors; E2 **negative result** (σ-guided placement worse than
+    random, −1.109 m/s); E3: kriging 0.192 m/s beats v7 1.495 m/s as backup sensor; E5:
+    9.3 µWh GPU per reconstruction, CO₂ and training energy not measured.
+- **M1** (last bounded DSO1 attempt, cell 10i) is still waiting for its A100 session.
 - **DSO1 is still not met at 650–1000 m**; v7 remains the served model (numbers below).
 
 **The drift flagged in July is resolved.** The project converged on a single architecture, the

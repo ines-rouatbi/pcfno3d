@@ -49,10 +49,15 @@ stays the served model. Remaining lever: a spatially varying geostrophic input (
 M5, M6, M8 are done and reviewed, on `agent/ines/*` branches, integrated on
 `agent/ines/finalisation` — their merge to `main` waits for a PR (`gh` not logged in).
 Deployment is **local only** (ines-pc: dashboard Worker under `wrangler dev` with a local R2,
-v7 service on CPU, 8 test instants published). A Colab GPU session is running for DSO6 (M2),
-AN1 (M4), EOL1 (M5, demonstration farm only) and the M6 replay — **no verdict yet**; M1
-(cell 10i) waits for its GPU session; DSO1 is still not met at 650–1000 m. Details:
-`tukhnanutha.md` § 5 "Delivery state".
+v7 service on CPU, 8 test instants published). GPU verdicts measured on Colab L4
+(15-16/10/2026, `docs/BILAN_FINAL.md`): DSO6 non-conforming on first reading, **conforming
+on a second (non-independent) reading** (q = 0.90 chosen on validation); DSO4 **0.440 s**
+for the served value with deferred reliability (reliability ready 3.8 s later, no verdict);
+AN1 v1 non-conforming, **v2 conforming on a second reading** (drifts 100 %, false alerts
+2.2 %); EOL1 1.71 % on the **demonstration** farm only (official verdict needs the real
+farm); M6 replayed the 120 test instants; M8 measured (L6: max u, v RMSE v7 0.665 vs 5.027–6.487
+m/s; E2 is a negative result). M1 (cell 10i) still waits for its A100 session; DSO1 is
+still not met at 650–1000 m. Details: `tukhnanutha.md` § 5 "Delivery state".
 
 `notebooks/archive/` holds the architectures explored and then dropped (FNO2D variants, U-Net/FNO,
 GNN, DeepONet, ResNet, ViT). They are history, not alternatives to maintain — do not "fix" them.

@@ -20,7 +20,7 @@ signifie qu'aucune mesure n'existe encore, jamais une valeur supposée.*
 | DSO1 révisé proposé (tolérance OMM) | max(0,5 ; 10 % de la vitesse) | — | conforme | `docs/rapport_dso1.md` |
 | DSO2 résidu de masse | ≤ 1e-4 | 2,58e-5 | conforme | notebook v7 |
 | DSO3 rugosité | [0,9 ; 1,1] | 0,951 | conforme | notebook v7, M0 |
-| DSO4 inférence (valeur servie) | < 1 s | 0,447 s (L4) ; 91 ms (A100, notebook) | conforme | M2 v2, `session_20261016T115325Z` |
+| DSO4 inférence (valeur servie) | < 1 s | 0,440 s (L4), fiabilité active : 0,444 s ; 91 ms (A100, notebook) | conforme | `fiabilite_pcfno3d/.../session_20261016T134302Z/resume_dso4.json` |
 | DSO5 RMSE à 25 % des capteurs | ≤ 0,7 m/s | 0,646 | conforme | notebook v7 |
 
 **M1, dernière tentative bornée sur DSO1** (correction post-modèle du vent moyen par niveau,
@@ -44,18 +44,31 @@ DSO4 et fiabilité :
 
 - La fiabilité synchrone prend 4,2 à 4,7 s par instant, quelle que soit la taille de lot : une
   passe v7 sature déjà le L4.
-- Sur décision de l'utilisatrice, la fiabilité est **différée**. DSO4 juge la valeur seule ;
-  l'incertitude arrive environ 4 s plus tard, et l'API affiche « en_cours » puis « prete ».
+- Sur décision de l'utilisatrice, la fiabilité est **différée**. DSO4 juge la valeur seule :
+  **0,440 s, conforme** (0,444 s avec la fiabilité active). L'incertitude arrive **3,8 s** plus
+  tard (lot de 4, pour information, sans verdict) ; l'API affiche « en_cours » puis « prete ».
 
 ## 3. Alertes (M4, AN1)
 
 | Mesure | Dérives capteur détectées | Fausses alertes | Dérive des entrées | Verdict |
 |---|---|---|---|---|
 | v1, 16/10, test (protocole officiel 40 dérives + 10 pannes par jour) | 5,2 % | 0 % | détection 100 %, fausses alertes 6,7 % | **non conforme** |
-| v2 (cohérence avec les voisins + persistance) | en attente | en attente | en attente | en attente |
+| v2, 16/10, test, même protocole (cohérence avec les voisins + modèle de sites + persistance) | **100 %** | **2,2 %** | détection 100 %, fausses alertes 0 % | **conforme (seconde lecture)** |
 
-Les pannes (valeurs figées) sont détectées à 100 %, hors verdict. Source :
-`alertes_pcfno3d/.../session_20261016T121344Z`.
+Les pannes (valeurs figées) sont détectées à 100 %, hors verdict.
+
+- **Détecteur v2 retenu sur la validation :** spatial, rayon 2, persistance sur 4 instants,
+  correction de site, κ 10,5.
+- **Détection par type de défaut (test) :**
+  - biais : 0,5 m/s → 12 % ; 1 m/s → 97 % ; 2 et 3 m/s → 100 % ;
+  - gain : 0,15 → 68 % ; 0,3 → 87 % ;
+  - girouette : 15° → 83 % ; 30° → 100 %.
+- **Dérive des entrées :** la règle v1 donnait 6,7 % de fausses alertes, dues à w (vent vertical) ;
+  le vent est exclu en v2.
+- **Statut :** la v2 a été conçue après la première lecture du test, donc son verdict est une
+  seconde lecture.
+- **Sources :** `alertes_pcfno3d/.../session_20261016T121344Z` (v1) et
+  `session_v2_20261016T142959Z` (v2).
 
 ## 4. Éolien (M5, EOL1)
 
@@ -128,7 +141,6 @@ La CI est verte. Le déploiement est **local** sur ines-pc, par décision de l'u
 ## 8. Ce qui reste ouvert
 
 - **DSO1 à 650–1 000 m :** verdict de M1 en attente ; sinon, limite assumée et documentée.
-- **AN1 :** mesure du détecteur v2 en attente.
 - **EOL1 officiel :** il faut le parc réel.
 - **Données réelles :** aucun capteur ANEO réel n'est encore importé, et l'ancrage géographique
   du domaine reste supposé.

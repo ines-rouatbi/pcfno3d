@@ -7,12 +7,11 @@ de référence) et L9 (études d'aide au dimensionnement du réseau) ; tâches 7
 
 Diagrammes UML du lot (tâche 14, PlantUML comme le prévoit le cahier p. 23) : `docs/uml/cas_utilisation.puml`, `docs/uml/classes.puml`, `docs/uml/sequence_reconstruction.puml`, `docs/uml/sequence_gpu_eteint.puml` (rendu : `plantuml docs/uml/*.puml`).
 
-## Statut : prêt, **tous les chiffres v7 sont en attente de la session GPU**
+## Statut : chiffres v7 **mesurés** (Colab L4, 16/10/2026) ; E2 est un résultat négatif
 
-Les tests CPU vérifient le **mécanisme** sur le mini-jeu (40 × 20 points, 4 niveaux, 6
-jours). Ils ne disent rien de la v7 face aux références : ces chiffres viendront de
-`scripts/m8_preuves_colab.py` sur Colab. Rien ci-dessous n'est un résultat de la v7, sauf
-ce qui est explicitement cité avec sa source.
+Session `scripts/m8_preuves_colab.py` : `aneo_fno3d_runs/v7/preuves_pcfno3d/best_dso_v7/session_20261016T125440Z`. Résultats dans
+« Résultats v7 (GPU) » ci-dessous. Les tests CPU vérifient le **mécanisme** sur le mini-jeu
+(40 × 20 points, 4 niveaux, 6 jours) ; leurs chiffres ne disent rien de la v7.
 
 ## Définitions retenues (cahier des charges v9)
 
@@ -154,11 +153,45 @@ le journal du BLOC 9 de `notebooks/current/fno3d_v7.ipynb` (`historique_entraine
 | Époques journalisées | 80 (61 à 140 ; reprise à l'époque 60) | idem |
 | Durée journalisée | 9 582 s, soit 119,8 s par époque en moyenne | somme des durées par époque |
 | Époques 1 à 60 | **non journalisées** (session précédente) : non estimées | — |
-| Énergie, CO₂ | **à mesurer** : la puissance n'a pas été journalisée | — |
+| Énergie, CO₂ | **non mesurés** : la puissance n'a pas été journalisée | — |
 
 **Comparaison à une simulation numérique.** Le cahier (p. 8) indique « plusieurs heures de
 calcul par instant » pour CFD / WRF. Le dépôt ne contient aucune mesure d'énergie d'une
 simulation WRF : la comparaison chiffrée reste à sourcer.
+
+## Résultats v7 (GPU) — Colab L4, 16/10/2026
+
+Session `aneo_fno3d_runs/v7/preuves_pcfno3d/best_dso_v7/session_20261016T125440Z`. Test synoptique : 120 instants, 50 % des capteurs visibles, mêmes
+instants, capteurs et nœuds pour toutes les méthodes.
+
+**Ajustement (validation, 64 instants).** Variogramme exponentiel, pépite ≈ 0, palier
+1,105, portée 7 741 m ; α = 0,06.
+
+**L6 — comparaison aux références.**
+
+| Méthode | RMSE max u, v (m/s) | RMSE global u / v (m/s) | R² min |
+|---|---|---|---|
+| **PC-FNO3D v7** | **0,665** (1 000 m) | **0,542 / 0,437** | **0,991** |
+| loi de puissance + IDW | 5,027 | 2,974 / 3,474 | 0,569 |
+| loi de puissance + krigeage | 5,031 | 2,979 / 3,478 | 0,568 |
+| profil log + IDW | 6,481 | 4,171 / 3,269 | 0,156 |
+| profil log + krigeage | 6,487 | 4,176 / 3,275 | 0,155 |
+
+**E1 — densité.** PC-FNO3D tient DSO5 (RMSE ≤ 0,7 m/s) jusqu'à **50 % des capteurs**.
+Aucun réseau régulier testé (un capteur tous les 300 m, 500 m ou 1 000 m) ne le tient, et
+aucune référence ne le tient, quelle que soit la densité.
+
+**E2 — placement guidé par σ : RÉSULTAT NÉGATIF.** RMSE max 2,387 m/s avec le placement
+guidé par σ, contre 1,278 m/s en moyenne au hasard (écart-type 0,021) : gain **−1,109 m/s**.
+Le σ de M2 ne guide pas le placement des stations.
+
+**E3 — capteur virtuel de secours.** Erreur vectorielle RMS (p95) : krigeage 0,192 (0,38),
+IDW 0,268 (0,545), plus proche voisin 0,446 (0,899), PC-FNO3D 1,495 m/s (3,216). Sur ce
+treillis très dense, les voisins valent mieux que la reconstruction 3D.
+
+**E5 — sobriété.** Inférence : **9,3 µWh GPU** par reconstruction (0,465 s ; nvidia-smi,
+GPU seul). CO₂ **non calculé** (intensité carbone non fournie). Entraînement **non
+mesuré**. CodeCarbon absent de la session.
 
 ## Résultats CPU du mini-jeu (mécanisme seulement)
 
@@ -181,7 +214,7 @@ construction.
 | E5 | durées seules, `energie_kwh = null` (ni CodeCarbon ni nvidia-smi sur ce poste) |
 | Script | dossier de session neuf, aucun fichier existant réécrit, JSON en fins de ligne LF (test) |
 
-## Session GPU (reste à faire)
+## Session GPU (faite le 16/10/2026 ; commandes pour la rejouer)
 
 ```python
 !pip install codecarbon            # facultatif : sinon nvidia-smi, sinon durées seules

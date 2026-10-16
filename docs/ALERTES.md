@@ -6,14 +6,15 @@ AN1 ; contrat ATOM **révision 2** (`DECISIONS-rev2.md` : D8, D11, B5, m9 ;
 `alerts.schema.json`, `common.schema.json` : `alert_level`, `station_state` ;
 `snapshot.schema.json` : `physics`, `kpi.open_alerts`, `stations_summary`).*
 
-## Statut : v1 mesurée **non conforme** ; v2 prête, **en attente d'une seconde lecture du test**
+## Statut : v1 mesurée **non conforme** ; v2 mesurée **conforme en seconde lecture** (non indépendante)
 
 La v1 (statistique « innovation ») a été mesurée sur GPU le 16/10/2026 : AN1 **non
 conforme** (voir l'historique ci-dessous). La v2 (détecteur de cohérence spatiale, règle des
 entrées sans le vent) a été conçue **après** cette première lecture du test. Son verdict
 sera donc une **seconde mesure sur le même test**, pas une mesure indépendante : le choix
 de la méthode a été influencé par ce que la première lecture a montré, même si aucun seuil
-n'est réglé sur le test.
+n'est réglé sur le test. Mesurée le 16/10/2026 (Colab L4, v7), la v2 est **conforme**
+(dérives détectées 100 %, fausses alertes 2,2 %) : verdict de **seconde lecture**.
 
 Les tests CPU vérifient le mécanisme sur le mini-jeu (modèle de 2 époques) : ils ne disent
 rien de la qualité de détection sur v7. Le chiffre AN1 vient de
@@ -39,10 +40,24 @@ Cette section n'est jamais supprimée ni réécrite : chaque mesure s'y ajoute, 
   en dérive ne déplace presque pas la reconstruction. L'innovation (mesure − reconstruction
   sans le capteur) est noyée, et κ doit monter à 12,75 pour tenir le FDR.
 
-### 2. Seconde lecture — v2 : à venir
+- **Source** : `aneo_fno3d_runs/v7/alertes_pcfno3d/best_dso_v7/session_20261016T121344Z`.
 
-Commande et protocole plus bas (« Session GPU »). Le résultat sera ajouté ici, marqué
-« seconde mesure sur le test, après une première lecture (16/10/2026, non conforme) ».
+### 2. Seconde lecture — v2, Colab L4, modèle v7, 16/10/2026
+
+*Seconde mesure sur le test, après une première lecture (16/10/2026, non conforme).*
+
+- **Protocole officiel** : le même (40 dérives et 10 pannes par jour).
+- **Détecteur retenu sur la validation** : `spatiale`, rayon 2 (R2), L4, persistance sur
+  4 instants (W4), correction de site apprise sur les 10 jours d'entraînement, κ = 10,5.
+- **Test (verdict)** : dérives détectées **100 %**, fausses alertes **2,2 %** (capteurs
+  sains signalés / capteurs sains : 7,5·10⁻⁶ ; 0,275 fausse alerte par instant).
+- **Par type** : biais 0,5 m/s 12 %, 1 m/s 97 %, 2 et 3 m/s 100 % ; gain 0,15 68 %,
+  0,3 87 % ; girouette 15° 83 %, 30° 100 %. Pannes (hors verdict) 100 %.
+- **Dérive des entrées** : détection 100 %, fausses alertes 0 % (la règle v1, rejouée sur
+  les mêmes instants, donne 6,7 %, toutes dues à `wind_w`).
+- **Verdict : AN1 CONFORME (seconde lecture)** — mesure non indépendante du test ; la
+  première lecture, non conforme, reste publiée ci-dessus.
+- **Source** : `aneo_fno3d_runs/v7/alertes_pcfno3d/best_dso_v7/session_v2_20261016T142959Z`.
 
 ## Un document par instant
 
