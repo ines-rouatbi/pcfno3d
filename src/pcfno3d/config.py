@@ -322,8 +322,15 @@ class AlertsCfg:
     seuils: Path | str | None = None       # JSON regle sur la VALIDATION (m4_an1_colab.py)
     retention_close_h: float = 24.0        # une alerte close reste publiee 24 h
     max_par_type: int = 100                # au plus 100 alertes d'un meme type par instant
-    # capteur en derive : capteur masque compare a la reconstruction faite sans lui
-    derive_statistique: str = "innovation"  # ou "influence" : choix sur la validation
+    # capteur en derive. v2 (defaut) : « spatiale », mesure comparee a la mediane de ses
+    # voisins (aucune passe du modele) ; v1 : « innovation » / « influence », capteur masque
+    # compare a la reconstruction faite sans lui ; « combinee » : spatiale + innovation.
+    # Le choix et les seuils se reglent sur la validation (scripts/m4_an1_colab.py).
+    derive_statistique: str = "spatiale"
+    derive_rayon: int = 2                  # voisinage : carre de 2 r + 1 mailles (spatiale)
+    derive_rayon_echelle: int = 2          # echelle locale : carre de 2 r + 1 mailles
+    derive_min_voisins: int = 3            # voisins disponibles exiges (sinon non evalue)
+    derive_sites: Path | str | None = None  # correction de site apprise sur l'ENTRAINEMENT
     derive_cote: int = 3                   # groupes en treillis cote x cote : cote^2 passes
     derive_fenetre: int = 4                # instants retenus pour la persistance
     derive_min_instants: int = 3           # instants observes exiges dans la fenetre
@@ -331,10 +338,14 @@ class AlertsCfg:
     derive_min_m_s: float = 0.5            # plancher de l'ecart moyen (tolerance OMM)
     derive_echelle_plancher_m_s: float = 0.05
     derive_facteur_critique: float = 2.0   # critique si ecart >= 2 x seuil
-    # derive des entrees (statistiques de l'instant vs entrainement, norm_stats.json)
-    entrees_z_max: float = 3.0             # |moyenne - mu| / sd au-dela : derive
+    # derive des entrees (statistiques de l'instant vs entrainement, norm_stats.json).
+    # v2 : vent exclu (sa meteo faisait les fausses alertes de la v1), seuils regles sur
+    # la validation par une grille fixee d'avance (an1.GRILLE_ENTREES).
+    entrees_z_max: float = 5.0             # |moyenne - mu| / sd au-dela : derive
     entrees_ecart_extreme: float = 5.0     # valeur a plus de 5 sd : extreme
-    entrees_part_extreme: float = 0.02     # derive si plus de 2 % des capteurs extremes
+    entrees_part_extreme: float = 0.25     # derive si plus de 25 % des capteurs extremes
+    entrees_variables: tuple[str, ...] = ("temperature_c", "air_density_kg_m3",
+                                          "relative_humidity_pct", "pressure_pa")
     # coherence physique (contrat rev. 2, D11)
     rho_source: str = "extrapolation_surface"
     sol_rms_max_m_s: float | None = None   # condition au sol : pas d'alerte sans seuil regle
@@ -357,8 +368,17 @@ class AlertsCfg:
             self.journal = _resolve(self.journal)
         if self.seuils is not None:
             self.seuils = _resolve(self.seuils)
-        if self.derive_statistique not in ("influence", "innovation"):
-            raise ValueError("alerts.derive_statistique : 'influence' ou 'innovation'")
+        if self.derive_statistique not in ("influence", "innovation", "spatiale", "combinee"):
+            raise ValueError("alerts.derive_statistique : 'spatiale', 'innovation', "
+                             "'influence' ou 'combinee'")
+        if self.derive_sites is not None:
+            self.derive_sites = _resolve(self.derive_sites)
+        self.entrees_variables = tuple(str(v) for v in self.entrees_variables)
+        self.derive_rayon = int(self.derive_rayon)
+        self.derive_rayon_echelle = int(self.derive_rayon_echelle)
+        self.derive_min_voisins = int(self.derive_min_voisins)
+        if self.derive_rayon < 1 or self.derive_rayon_echelle < 1:
+            raise ValueError("alerts.derive_rayon et derive_rayon_echelle doivent etre >= 1")
         if self.reseau not in ("treillis_synthetique", "stations_aneo"):
             raise ValueError("alerts.reseau : treillis_synthetique ou stations_aneo")
         if self.rho_source not in ("atmosphere_standard", "extrapolation_surface",

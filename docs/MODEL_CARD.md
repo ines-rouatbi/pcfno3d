@@ -64,7 +64,7 @@ Source : `docs/rapport_dso1.md` § 2 (table du BLOC 10, retrouvée par le paquet
 | DSO4 inférence (GPU) | < 1 s | 91 ms (notebook v7, `tukhnanutha.md` § 5) ; 104 ms (campagne v8, `docs/rapport_dso1.md`) | conforme |
 | DSO5 RMSE avec 25 % des capteurs | ≤ 0,7 m/s | 0,646 m/s | conforme |
 | DSO6 fiabilité des indicateurs | couverture 80 % et corrélation > 0 | module prêt (lot M2) | **en attente du GPU** (`docs/FIABILITE.md`) |
-| AN1 alertes | ≥ 90 % de détection, < 5 % de fausses alertes | module prêt (lot M4) | **en attente du GPU** (`docs/ALERTES.md`) |
+| AN1 alertes | ≥ 90 % de détection, < 5 % de fausses alertes | v1 (16/10/2026, test) : dérives détectées 5,2 %, 0 % de fausses alertes ; entrées : fausses alertes 6,7 % | **non conforme** (v1) ; v2 (détecteur spatial) en attente d'une **seconde lecture** du test, qui ne sera pas une mesure indépendante (`docs/ALERTES.md`) |
 | EOL1 production éolienne | écart < 5 % | module prêt (lot M5) | **en attente du GPU** (`docs/EOLIEN.md`) |
 | HIS1 historique | toute reconstruction passée retrouvée avec ses indicateurs et versions | publication et historique implémentés (lot M6 : `src/pcfno3d/publish.py`, R2, `latest`, `/v1/times`) ; atomicité testée sur CPU contre un Worker simulé | rejeu des 120 instants de test **en attente du GPU** (`docs/PUBLICATION.md`) |
 | DE2 reproductibilité | même entrée et même version → même sortie | égalité bit à bit sur CPU (mini-modèle), test automatique | conforme sur le mini-modèle ; à rejouer sur v7 CPU (`docs/REPRODUCTIBILITE.md`) |
@@ -122,7 +122,7 @@ session GPU du lot M8 (`docs/PREUVES.md`).
 ```bash
 python -m pcfno3d -c colab evaluate          # table DSO1-DSO5 (GPU)
 python scripts/m2_calibration_colab.py -c colab   # DSO6
-python scripts/m4_an1_colab.py -c colab           # AN1
+python scripts/m4_an1_colab.py -c colab --deuxieme-lecture   # AN1 (v2)
 python scripts/m5_eol1_colab.py -c colab          # EOL1
 python scripts/m8_preuves_colab.py -c colab       # L6, E1, E2, E3, E5
 ```
