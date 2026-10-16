@@ -17,14 +17,16 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from pcfno3d.alerts import (CHAMPS, KINDS, NIVEAUX, JournalAlertes, MoteurAlertes,
-                            SuiviDerive, agreger, alert_id, alerte, alertes_contrat,
-                            alertes_couverture, alertes_disponibilite, alertes_entrees,
+from pcfno3d.alerts import (CHAMPS, KINDS, NIVEAUX, JournalAlertes, ModeleSites,
+                            MoteurAlertes, SuiviDerive, agreger, ajuster_sites, alert_id,
+                            alerte, alertes_contrat, alertes_couverture,
+                            alertes_derive, alertes_disponibilite, alertes_entrees,
                             alertes_externes,
                             alertes_physique, charger_seuils, compter_ouvertes, derive_entrees,
-                            ecarts_capteurs, groupes, interp_colonne, iso_utc, normaliser,
-                            physique, resume_stations, rho_instant, stations_hors_plage,
-                            verifier_alerte)
+                            drapeaux_derive, ecarts_capteurs, ecarts_spatiaux, groupes,
+                            interp_colonne, iso_utc, mediane_pile, normaliser,
+                            physique, regle_entrees, resume_stations, rho_instant,
+                            stations_hors_plage, verifier_alerte, voisins)
 from pcfno3d.config import AlertsCfg
 
 REPO = Path(__file__).resolve().parents[1]
@@ -179,6 +181,23 @@ def test_derive_entrees_unites_fausses():
     al = alertes_entrees(st)
     assert len(al) == 1 and al[0]["kind"] == "derive_entrees"
     assert al[0]["target"] == "domaine:temperature_c" and al[0]["level"] == "important"
+    # v2 : un jour de vent fort (u a +4 sd, w a queue lourde) n'est plus une derive des
+    # entrees (source des fausses alertes de la v1) ; la v1 l'aurait signale
+    W = S.copy()
+    W[0] += 4.0 * sd[0]
+    W[2, :2] += 6.0 * sd[2]                                 # 10 % de w extremes
+    stw = derive_entrees(W, sensor, mu, sd)
+    assert not any(x["derive"] for x in stw)
+    assert {x["variable"] for x in stw if not x["evaluee"]} == {"wind_u_m_s", "wind_v_m_s",
+                                                                 "wind_w_m_s"}
+    tous = ["wind_u_m_s", "wind_v_m_s", "wind_w_m_s", "temperature_c", "air_density_kg_m3",
+            "relative_humidity_pct", "pressure_pa"]
+    assert set(regle_entrees(stw, 3.0, 0.02, tous)) == {"wind_u_m_s", "wind_w_m_s"}   # v1
+    # humidite en fraction : toutes les valeurs a plus de 5 sd -> detectee par la part
+    H = S.copy()
+    H[5] *= 0.01
+    sth = derive_entrees(H, sensor, mu, sd, z_max=8.0, part_extreme=0.5)
+    assert [x["variable"] for x in sth if x["derive"]] == ["relative_humidity_pct"]
 
 
 def test_physique_d11_et_alerte_de_masse(geom):
@@ -286,6 +305,14 @@ def test_seuils_regles_sur_la_validation_seulement(tmp_path):
     p.write_text(json.dumps({"jeu": "test", "methode": METHOD}), encoding="utf-8")
     with pytest.raises(ValueError, match="validation"):
         charger_seuils(p)
+    # un JSON v1 (session du 16/10/2026) reste relisible ; une methode inconnue non
+    p.write_text(json.dumps({"jeu": "validation", "methode": "alertes-m4-v1",
+                             "derive_statistique": "innovation", "derive_kappa": 12.75}),
+                 encoding="utf-8")
+    assert charger_seuils(p)["derive_kappa"] == 12.75
+    p.write_text(json.dumps({"jeu": "validation", "methode": "autre"}), encoding="utf-8")
+    with pytest.raises(ValueError, match="methode"):
+        charger_seuils(p)
     p.write_text(json.dumps({"jeu": "validation", "methode": METHOD,
                              "derive_statistique": "influence", "derive_kappa": 9.5}),
                  encoding="utf-8")
@@ -295,6 +322,145 @@ def test_seuils_regles_sur_la_validation_seulement(tmp_path):
     with pytest.raises(ValueError):
         AlertsCfg(derive_min_instants=5, derive_fenetre=4)
     assert AlertsCfg().enabled is False                      # strictement opt-in
+    assert AlertsCfg().derive_statistique == "spatiale"      # v2 : aucune passe du modele
+    with pytest.raises(ValueError):
+        AlertsCfg(derive_rayon=0)
+
+
+# ------------------------------------------------------------------ detecteur spatial (v2)
+def _champ_lisse(ny=30, nx=40, t=0.0, bruit=0.05, graine=0):
+    """S (8, ny, nx) : vent lisse qui tourne avec t, petit bruit, tous capteurs presents."""
+    rng = np.random.default_rng(graine)
+    j, i = np.meshgrid(np.arange(ny), np.arange(nx), indexing="ij")
+    S = np.zeros((8, ny, nx))
+    S[0] = 5.0 + 0.05 * i + np.cos(t) + rng.normal(0, bruit, (ny, nx))
+    S[1] = -2.0 + 0.03 * j + np.sin(t) + rng.normal(0, bruit, (ny, nx))
+    S[7] = 1.0
+    return S
+
+
+def test_voisins_et_mediane_robuste():
+    rng = np.random.default_rng(3)
+    f = rng.normal(size=(7, 9))
+    f[2, 3] = np.nan
+    pile = voisins(f, 2)
+    assert pile.shape == (24, 7, 9)
+    assert np.isnan(pile[:, 0, 0]).sum() == 24 - 8           # coin : 8 voisins existent
+    with np.errstate(all="ignore"):
+        import warnings
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            ref = np.nanmedian(pile, axis=0)
+    np.testing.assert_allclose(mediane_pile(pile), ref)
+    assert np.isnan(mediane_pile(np.full((4, 2, 2), np.nan))).all()
+
+
+def test_detecteur_spatial_injection_et_capteurs_sains():
+    """Derives connues (biais, gain, girouette) sur un champ lisse : signalees ; capteurs
+    sains : rien ; un voisin en derive ne fausse pas la mediane ; deterministe."""
+    cibles = {(10, 10): "biais", (10, 20): "gain", (20, 30): "girouette"}
+    suivi = SuiviDerive(4, "vecteur")
+    for k in range(4):
+        S = _champ_lisse(t=0.3 * k, graine=k)
+        for (j, i), typ in cibles.items():
+            u, v = S[0, j, i], S[1, j, i]
+            if typ == "biais":
+                S[0, j, i] += 1.0
+            elif typ == "gain":
+                S[0, j, i], S[1, j, i] = 1.3 * u, 1.3 * v
+            else:
+                a = np.radians(30.0)
+                S[0, j, i], S[1, j, i] = (u * np.cos(a) - v * np.sin(a),
+                                          u * np.sin(a) + v * np.cos(a))
+        ec = ecarts_spatiaux(S, S[7] > 0.5, rayon=2, rayon_echelle=2)
+        ec2 = ecarts_spatiaux(S, S[7] > 0.5, rayon=2, rayon_echelle=2)
+        np.testing.assert_array_equal(ec.z, ec2.z)            # deterministe
+        assert ec.echelle_locale is not None and ec.echelle == pytest.approx(0.05, rel=0.5)
+        suivi.ajouter(f"2025-01-06T{3 * k:02d}:00:00Z", ec)
+    flag, st = suivi.drapeaux(kappa=6.0, min_m_s=0.5, min_instants=4)
+    assert {tuple(x) for x in np.argwhere(flag)} == set(cibles)
+    assert st["a"][10, 10] == pytest.approx(1.0, abs=0.15)    # le biais, en m/s
+    # sans derive : aucun capteur signale
+    s0 = SuiviDerive(4, "vecteur")
+    for k in range(4):
+        S = _champ_lisse(t=0.3 * k, graine=10 + k)
+        s0.ajouter(f"2025-01-06T{3 * k:02d}:00:00Z", ecarts_spatiaux(S, S[7] > 0.5))
+    assert not s0.drapeaux(6.0, 0.5, 4)[0].any()
+    # capteurs absents : non evalues (NaN), jamais inventes
+    S = _champ_lisse()
+    S[7, :, :5] = 0.0
+    ec = ecarts_spatiaux(S, S[7] > 0.5, min_voisins=3)
+    assert np.isnan(ec.z[:, :5]).all() and np.isfinite(ec.z[:, 7:]).all()
+    # alerte au format du contrat : seuil = kappa x echelle locale, valeur >= seuil
+    from types import SimpleNamespace
+    g = SimpleNamespace(stride=2, dx=100.0, dy=100.0)
+    al = alertes_derive(g, flag, st, 6.0, 0.5, 2.0, "spatiale", rayon=2)
+    assert len(al) == 3 and all(a["value"] >= a["threshold"] for a in al)
+    assert "mediane" in al[0]["cause"]
+    for a in al:
+        verifier_alerte(dict(a, raised_at="2025-01-06T09:00:00Z"))
+
+
+def test_modele_de_sites_appris_sur_l_entrainement(tmp_path):
+    """Un ecart de site qui se repete (crete : +20 % du vent des voisins) est appris sur
+    l'entrainement puis retire : la crete n'est plus suspecte, une derive l'est toujours."""
+    def instant(k, crete=True, biais=0.0):
+        S = _champ_lisse(t=0.4 * k, graine=100 + k)
+        if crete:
+            S[0, 15, 15] *= 1.2
+            S[1, 15, 15] *= 1.2
+        S[0, 5, 30] += biais
+        return S, 3.0 * k
+    m = ajuster_sites((instant(k) for k in range(12)), rayon=2, info={"jours": ["001"]})
+    path = m.sauver(tmp_path / "sites_R2.npz")
+    m2 = ModeleSites.charger(path, forme=(30, 40))
+    np.testing.assert_array_equal(m2.coef, m.coef)
+    assert m2.rayon == 2 and m2.info["jeu"] == "entrainement"
+    with pytest.raises(ValueError, match="grille"):
+        ModeleSites.charger(path, forme=(10, 10))
+    with pytest.raises(ValueError, match="rayon"):
+        ecarts_spatiaux(*instant(0)[:1], np.ones((30, 40), bool), rayon=1, sites=m2,
+                        heure=0.0)
+    # un modele marque autrement qu'« entrainement » est refuse
+    meta = json.dumps({"jeu": "validation", "methode": "sites-lineaires-v1", "rayon": 2})
+    with open(tmp_path / "faux.npz", "wb") as f:
+        np.savez(f, coef=m.coef, meta=np.array(meta))
+    with pytest.raises(ValueError, match="entrainement"):
+        ModeleSites.charger(tmp_path / "faux.npz")
+    sans, avec = SuiviDerive(4, "vecteur"), SuiviDerive(4, "vecteur")
+    for k in range(20, 24):
+        S, h = instant(k, biais=1.0)
+        sans.ajouter(f"2025-01-07T{k - 20:02d}:00:00Z", ecarts_spatiaux(S, S[7] > 0.5))
+        avec.ajouter(f"2025-01-07T{k - 20:02d}:00:00Z",
+                     ecarts_spatiaux(S, S[7] > 0.5, sites=m2, heure=h))
+    f_sans = sans.drapeaux(6.0, 0.5, 4)[0]
+    f_avec = avec.drapeaux(6.0, 0.5, 4)[0]
+    assert f_sans[15, 15] and f_sans[5, 30]                   # crete suspecte sans site
+    assert not f_avec[15, 15] and f_avec[5, 30]               # crete expliquee, derive vue
+    assert f_avec.sum() == 1
+
+
+def test_persistance_vectorielle_et_combinee():
+    from pcfno3d.alerts import Ecarts, combiner, composantes
+    d = np.zeros((2, 3, 3))
+    d[0, 1, 1] = 1.0
+    s = np.full((3, 3), 0.1)
+    v = SuiviDerive(2, "vecteur")
+    v.ajouter("a", Ecarts(d, np.abs(d[0]), np.abs(d[0]) / 0.1, 0.1, (0.0, 0.0), s))
+    v.ajouter("b", Ecarts(-d, np.abs(d[0]), np.abs(d[0]) / 0.1, 0.1, (0.0, 0.0), s))
+    st = v.statistiques()                         # +1 puis -1 : le cumul s'annule
+    assert st["a"][1, 1] == pytest.approx(0.0) and st["n"][1, 1] == 2
+    with pytest.raises(ValueError):
+        v.ajouter("c", Ecarts(d, d[0], d[0], 0.1, (0.0, 0.0)))      # sans echelle locale
+    with pytest.raises(ValueError):
+        SuiviDerive(2, "autre")
+    c = combiner({"z": np.array([8.0]), "a": np.array([1.0]), "n": np.array([4]),
+                  "echelle": 0.1}, {"z": np.array([2.0]), "n": np.array([3])})
+    assert c["z"][0] == 5.0 and c["n"][0] == 3 and c["a"][0] == 1.0
+    assert drapeaux_derive(c, 5.0, 0.5, 3)[0]
+    assert composantes("combinee") == ("spatiale", "innovation")
+    with pytest.raises(ValueError):
+        composantes("autre")
 
 
 def test_stations_insuffisantes_selon_le_reseau():
@@ -399,7 +565,7 @@ def test_moteur_document_conforme_et_valeur_servie_inchangee(wf, tmp_path, schem
             np.testing.assert_array_equal(S, S0)
         _valide(schema_alertes, res.document())
         assert set(res.physics) == CLES_PHYSICS and res.derive["evaluee"] is True
-        assert res.derive["passes"] == 9
+        assert res.derive["passes"] == 0 and res.derive["statistique"] == "spatiale"
     assert set(res.document()) == {"items"}
     kinds = {a["kind"] for a in res.items}
     assert "capteur_derive" in kinds
@@ -419,44 +585,113 @@ def test_moteur_document_conforme_et_valeur_servie_inchangee(wf, tmp_path, schem
     assert r0.derive["evaluee"] is False
 
 
+def test_moteur_innovation_v1_toujours_disponible(wf, tmp_path):
+    """La statistique v1 (innovation, cote^2 passes) reste selectionnable ; sans membre,
+    elle n'est pas evaluee, alors que le detecteur spatial n'en a pas besoin."""
+    import copy
+    cfg = copy.copy(wf.cfg)
+    cfg.alerts = AlertsCfg(derive_statistique="innovation")
+    moteur = MoteurAlertes(cfg, journal=False)
+    stem = _jour(cfg, "test")[0]
+    S, hour, doy, stamp = wf.surface_from_cache(stem)
+    vol = wf.predict(S, hour, doy, timestamp=stamp)
+    res = moteur.evaluer_modele(wf, S, hour, doy, vol)
+    assert res.derive["evaluee"] and res.derive["passes"] == 9
+    st = wf.norm.stats
+    sans = MoteurAlertes(cfg, journal=False).evaluer(
+        wf.geom, S, (vol.u, vol.v, vol.w), stamp, None, st["surf_mu"], st["surf_sd"])
+    assert sans.derive["evaluee"] is False and "membre" in sans.derive["raison"]
+    cfg.alerts = AlertsCfg()                               # spatiale : pas de membre requis
+    sp = MoteurAlertes(cfg, journal=False).evaluer(
+        wf.geom, S, (vol.u, vol.v, vol.w), stamp, None, st["surf_mu"], st["surf_sd"])
+    assert sp.derive["evaluee"] is True and sp.derive["passes"] == 0
+
+
+def _sites_mini(wf):
+    from pcfno3d import an1
+    return an1.ajuster_sites_entrainement(wf, _jour(wf.cfg, "train"), (1, 2))
+
+
 def test_simulation_an1_sur_le_mini_jeu(wf):
-    """Mecanisme AN1 sur CPU : injection, chaine d'alertes, comptage. Le modele du mini-jeu
-    est minuscule : on verifie le mecanisme (derives fortes et pannes detectees), pas le
-    chiffre de v7, qui vient de scripts/m4_an1_colab.py sur GPU."""
+    """Mecanisme AN1 sur CPU : injection, detecteurs (spatial avec / sans site, innovation),
+    reglage sur la validation, verdict sur le test. Le modele du mini-jeu est minuscule :
+    on verifie le mecanisme (derives fortes et pannes detectees), pas le chiffre de v7, qui
+    vient de scripts/m4_an1_colab.py sur GPU."""
     from pcfno3d import an1
     acfg = AlertsCfg()
     plan = (("biais", 4.0), ("biais", 8.0), ("gain", 1.0))
+    sites = _sites_mini(wf)
+    with pytest.raises(ValueError, match="hors entrainement"):
+        an1.ajuster_sites_entrainement(wf, _jour(wf.cfg, "val"), (2,))
+    dets = [an1.Detecteur("spatiale", 3, 2, 2, False), an1.Detecteur("spatiale", 3, 2, 2, True),
+            an1.Detecteur("spatiale", 4, 1, 2, True), an1.Detecteur("innovation", 3),
+            an1.Detecteur("combinee", 3, 2, 2, True)]
+    assert len({d.cle for d in dets}) == len(dets)
     jours = [an1.simuler_jour(wf, _jour(wf.cfg, sp), acfg, np.random.default_rng(k), 6, 2,
-                              plan=plan) for k, sp in enumerate(("val", "test"))]
+                              dets, plan=plan, sites=sites, par_instant=(sp == "test"))
+             for k, sp in enumerate(("val", "test"))]
     for j in jours:
         assert len(j["derives"]) == 6 and len(j["figees"]) == 2
         cells = [d["cellule"] for d in j["derives"]] + [f["cellule"] for f in j["figees"]]
         assert len(set(cells)) == 8
-        assert all(j["figee_signalee"][f["cellule"]] for f in j["figees"])   # regle M3
+        assert all(j["figee_signalee"][6:])                            # regle M3
         assert all(d["ecart_moyen"] >= 4.0 - 1e-6 for d in j["derives"]
                    if d["type"] == "biais")
         assert len(j["physique"]) == 4 and set(j["physique"][0]) == CLES_PHYSICS
-    choix = an1.choisir_kappa(jours[:1], "innovation", fdr_cible=0.025)
-    assert choix["jeu"] == "validation" and choix["derive_statistique"] == "innovation"
-    res = an1.evaluer_an1(jours[1:], "innovation", choix["derive_kappa"], e_ref=1.0)
-    assert res["derives_ref"] == 6
-    assert res["detection"] >= 5 / 6                 # derives seules, de 4 m/s et plus
+        assert set(j["detecteurs"]) == {d.cle for d in dets}
+    # determinisme : meme graine, memes defauts, memes statistiques
+    bis = an1.simuler_jour(wf, _jour(wf.cfg, "val"), acfg, np.random.default_rng(0), 6, 2,
+                           dets[:2], plan=plan, sites=sites)
+    for d in dets[:2]:
+        np.testing.assert_array_equal(bis["detecteurs"][d.cle]["defauts"],
+                                      jours[0]["detecteurs"][d.cle]["defauts"])
+        np.testing.assert_array_equal(bis["detecteurs"][d.cle]["sains_hauts"],
+                                      jours[0]["detecteurs"][d.cle]["sains_hauts"])
+    choix = an1.choisir_detecteur(jours[:1], fdr_cible=0.025)
+    assert choix["jeu"] == "validation" and choix["detecteur"] in {d.cle for d in dets}
+    assert set(choix["alternatives"]) == {d.cle for d in dets}
+    assert choix["derive_statistique"] in ("spatiale", "innovation", "combinee")
+    for cle in (d.cle for d in dets if d.spatial):
+        r = an1.evaluer_an1(jours[1:], cle, choix["alternatives"][cle]["kappa"], e_ref=1.0)
+        assert r["derives_ref"] == 6 and r["detection"] >= 5 / 6, (cle, r)
+    res = an1.evaluer_an1(jours[1:], choix["detecteur"], choix["derive_kappa"], e_ref=1.0)
+    assert res["detection"] >= 5 / 6
     pan = res["pannes_hors_verdict"]                 # hors verdict (egalite exacte)
     assert pan["pannes"] == 2 and pan["detection_regle_m3"] == 1.0
-    assert 0.0 <= res["fausses_alertes"] <= 1.0 and res["capteurs_sains"] > 150
+    assert 0.0 <= res["fausses_alertes"] <= 1.0 and res["capteurs_sains"] > 100
     assert res["fausses_alertes_par_instant"] is not None
     assert res["taux_faux_positifs"] == res["fausses_alertes_n"] / res["capteurs_sains"]
     assert an1.PROTOCOLE == {"derives_par_jour": 40, "pannes_par_jour": 10,
                              "e_ref_m_s": 1.0}
     assert set(res["detection_par_type"]) == {"biais:4", "biais:8", "gain:1"}
-    ent = an1.evaluer_entrees(jours)
-    assert ent["detection"] == 1.0 and ent["instants"] == 8
     assert isinstance(res["an1_capteurs_conforme"], bool)
+    # entrees : regle choisie sur la validation, appliquee au test
+    reg = an1.choisir_regle_entrees(jours[:1])
+    assert reg["jeu"] == "validation" and "wind_u_m_s" not in reg["entrees_variables"]
+    assert reg["validation"]["detection"] == 1.0 and reg["validation"]["fausses_alertes"] == 0
+    ent = an1.evaluer_entrees(jours[1:], {"z_max": reg["entrees_z_max"],
+                                          "part_extreme": reg["entrees_part_extreme"],
+                                          "variables": reg["entrees_variables"]})
+    assert ent["detection"] == 1.0 and ent["instants"] == 4 and ent["fausses_alertes"] == 0
+    assert an1.evaluer_entrees(jours)["instants"] == 8
 
 
-def test_script_an1_colab_dossier_neuf(trained, monkeypatch):
+def test_grille_des_detecteurs_fixee_d_avance():
+    from pcfno3d import an1
+    g = an1.detecteurs()
+    assert g[0].statistique == "spatiale" and g[-1].statistique == "combinee"
+    assert len(g) == len({d.cle for d in g}) == 2 * 36 + 2 * 3
+    assert an1.Detecteur("spatiale", 4, 2, 2, True).seuils() == {
+        "derive_statistique": "spatiale", "derive_fenetre": 4, "derive_min_instants": 4,
+        "derive_rayon": 2, "derive_rayon_echelle": 2, "derive_sites": "sites_R2.npz"}
+    with pytest.raises(ValueError):
+        an1.Detecteur("spatiale", 4)                     # rayon requis
+
+
+def test_script_an1_colab_dossier_neuf(trained, monkeypatch, tmp_path):
     """scripts/m4_an1_colab.py sur le mini-jeu : session neuve, rien d'ecrase, seuils de
-    validation relisibles par le service ; hors protocole, AUCUN verdict officiel."""
+    validation (et modele de sites) relisibles par le service ; hors protocole, AUCUN
+    verdict officiel ; seconde lecture declaree."""
     import importlib.util
     for var, p in (("ANEO_DATA", trained.paths.data_dir), ("ANEO_CACHE", trained.paths.cache_dir),
                    ("ANEO_RUN", trained.paths.run_dir)):
@@ -467,23 +702,45 @@ def test_script_an1_colab_dossier_neuf(trained, monkeypatch):
     spec.loader.exec_module(mod)
     avant = {p: p.stat().st_mtime_ns for p in trained.paths.run_dir.rglob("*") if p.is_file()}
     assert mod.main(["-c", "test", "--device", "cpu", "--derives-par-jour", "6",
-                     "--pannes-par-jour", "2"]) == 0
+                     "--pannes-par-jour", "2", "--statistiques", "spatiale,innovation",
+                     "--deuxieme-lecture"]) == 0
     for p, t in avant.items():
         assert p.stat().st_mtime_ns == t, p
-    sessions = sorted((trained.paths.run_dir / "alertes_pcfno3d").glob("*/session_*"))
+    sessions = sorted((trained.paths.run_dir / "alertes_pcfno3d").glob("*/session_v2_*"))
     assert sessions
     s = sessions[-1]
     seuils = charger_seuils(s / "seuils_validation.json")
-    assert seuils["derive_statistique"] in ("influence", "innovation")
+    assert seuils["jeu"] == "validation" and seuils["methode"] == "alertes-m4-v2"
+    assert seuils["derive_statistique"] in ("spatiale", "innovation")
+    assert {"entrees_z_max", "entrees_part_extreme", "entrees_variables",
+            "alternatives"} <= set(seuils)
+    assert len(list(s.glob("sites_R*.npz"))) == 3          # un modele par rayon de la grille
     t = json.loads((s / "an1_test.json").read_text(encoding="utf-8"))
     assert t["jeu"] == "test" and t["statut"] == "exploratoire"
     assert t["an1_conforme"] is None                 # hors protocole : pas de verdict
+    assert t["lecture"] == "deuxieme" and "premiere lecture" in t["note"]
+    assert t["premiere_lecture"]["an1_conforme"] is False
     assert t["reglages"] == {"derives_par_jour": 6, "pannes_par_jour": 2, "e_ref_m_s": 1.0}
     assert {"detection", "fausses_alertes", "taux_faux_positifs",
             "fausses_alertes_par_instant", "pannes_hors_verdict"} <= set(t["capteurs"])
+    assert "fausses_par_variable" in t["entrees_regle_v1_diagnostic"]
     resume = json.loads((s / "resume.json").read_text(encoding="utf-8"))
     assert resume["physique_validation"]["mass_residual_rms"]["n"] > 0
     assert resume["statut"] == "exploratoire" and resume["an1_conforme"] is None
+    # le service relit ces seuils (et le modele de sites retenu) sans rien recalculer
+    import copy
+    cfg = copy.copy(trained)
+    cfg.alerts = AlertsCfg(enabled=True, seuils=s / "seuils_validation.json")
+    moteur = MoteurAlertes(cfg, journal=False)
+    assert moteur.acfg.derive_statistique == seuils["derive_statistique"]
+    assert moteur.acfg.entrees_z_max == seuils["entrees_z_max"]
+    assert (moteur.sites is not None) == bool(seuils.get("derive_sites"))
+    # un seuil marque « test » est refuse par le service
+    faux = tmp_path / "seuils_test.json"
+    faux.write_text(json.dumps({**seuils, "jeu": "test"}), encoding="utf-8")
+    cfg.alerts = AlertsCfg(enabled=True, seuils=faux)
+    with pytest.raises(ValueError, match="validation"):
+        MoteurAlertes(cfg, journal=False)
 
 
 # ------------------------------------------------------------------ service

@@ -7,7 +7,8 @@ quel que soit le lot qui les detecte, avec un niveau, une cause et une recommand
     hors_plage              M3    rapport du contrat ANEO (stations hors plage / densite)
     station_muette          M3    rapport du contrat ANEO (absences, valeurs figees)
     stations_insuffisantes  M3    rapport du contrat (ou part de capteurs, instants du cache)
-    capteur_derive          M4    capteur masque compare a la reconstruction faite sans lui
+    capteur_derive          M4    coherence spatiale (mesure vs mediane des voisins, v2) ou
+                                  capteur masque compare a la reconstruction faite sans lui
     incoherence_physique    M4    residu de continuite de l'instant > seuil DSO2 (D11)
     derive_entrees          M4    statistiques des entrees vs entrainement (norm_stats.json)
     zone_mal_couverte       M2    indice de couverture < 0,2 sur une maille de 2 km
@@ -41,7 +42,9 @@ import pandas as pd
 
 from .geometry import SURF_VARS, Geometry
 
-METHOD = "alertes-m4-v1"
+METHOD = "alertes-m4-v2"
+# seuils relisibles : v1 (innovation / influence seules) et v2 (detecteur spatial, entrees)
+METHODES_SEUILS = ("alertes-m4-v1", METHOD)
 KINDS = {"hors_plage": "M3", "station_muette": "M3", "stations_insuffisantes": "M3",
          "capteur_derive": "M4", "incoherence_physique": "M4", "derive_entrees": "M4",
          "zone_mal_couverte": "M2", "vent_fort_moyeu": "M5", "cisaillement": "M5"}
@@ -53,8 +56,15 @@ CHAMPS = ("id", "level", "kind", "target", "title", "cause", "recommendation", "
           "status", "station_id", "turbine_id", "location", "value", "threshold", "unit")
 RHO_SOURCES = ("atmosphere_standard", "extrapolation_surface", "verite_synthetique")
 CIBLE_DOMAINE = "domaine"
-STATISTIQUES = ("influence", "innovation")
+# statistiques qui demandent des passes du modele sans groupe de capteurs (cote^2 passes)
+STATISTIQUES_PASSES = ("influence", "innovation")
+# spatiale : mesure vs mediane des voisins (aucune passe) ; combinee : spatiale + innovation
+STATISTIQUES = ("influence", "innovation", "spatiale", "combinee")
 MAD_NORMALE = 1.4826                 # MAD -> ecart-type pour une loi normale
+RAYLEIGH_MEDIANE = 1.1774            # mediane de |d| pour d gaussien 2D d'ecart-type 1
+# variables de la derive des entrees (v2) : le vent en est exclu (voir derive_entrees)
+VARIABLES_ENTREES = ("temperature_c", "air_density_kg_m3", "relative_humidity_pct",
+                     "pressure_pa")
 
 
 # ---------------------------------------------------------------------- briques
@@ -385,11 +395,21 @@ def alertes_physique(phys: dict, seuil_masse: float, facteur_critique: float = 1
 
 # ---------------------------------------------------------------------- M4 : entrees
 def derive_entrees(S: np.ndarray, sensor: np.ndarray, surf_mu, surf_sd,
-                   z_max: float = 3.0, ecart_extreme: float = 5.0,
-                   part_extreme: float = 0.02) -> list[dict]:
-    """Par variable de surface : z de la moyenne de l'instant et part de valeurs extremes,
-    par rapport aux statistiques d'ENTRAINEMENT (norm_stats.json)."""
+                   z_max: float = 5.0, ecart_extreme: float = 5.0,
+                   part_extreme: float = 0.25,
+                   variables: Iterable[str] = VARIABLES_ENTREES) -> list[dict]:
+    """Par variable de surface : z de la moyenne de l'instant et part de valeurs extremes
+    (|z| > ecart_extreme), par rapport aux statistiques d'ENTRAINEMENT (norm_stats.json).
+
+    Toutes les variables sont decrites ; seules celles de `variables` peuvent etre en
+    derive (`evaluee`). v2 : le vent (u, v, w) n'en fait plus partie. Son z moyen et sa
+    part de valeurs extremes suivent la meteo du jour (jour de vent fort ; w de surface a
+    queue lourde en relief, 1,9 % de valeurs a plus de 5 sd un jour d'entrainement pour un
+    seuil de 2 %) : c'est la source des fausses alertes de la v1 (docs/ALERTES.md). Une
+    erreur d'unite du vent n'etait de toute facon pas detectable ainsi.
+    """
     sensor = np.asarray(sensor, bool)
+    variables = set(variables)
     out = []
     for c, var in enumerate(SURF_VARS):
         mu, sd = float(np.ravel(surf_mu)[c]), max(float(np.ravel(surf_sd)[c]), 1e-12)
@@ -400,24 +420,36 @@ def derive_entrees(S: np.ndarray, sensor: np.ndarray, surf_mu, surf_sd,
         z = (x - mu) / sd
         zm = float(z.mean())
         pe = float((np.abs(z) > ecart_extreme).mean())
+        ev = var in variables
         out.append({"variable": var, "z_moyen": zm, "part_extreme": pe, "n": int(x.size),
-                    "derive": bool(abs(zm) >= z_max or pe >= part_extreme)})
+                    "evaluee": ev,
+                    "derive": bool(ev and (abs(zm) >= z_max or pe >= part_extreme))})
     return out
 
 
-def alertes_entrees(stats: list[dict], z_max: float = 3.0, part_extreme: float = 0.02
-                    ) -> list[dict]:
+def regle_entrees(stats: list[dict], z_max: float, part_extreme: float,
+                  variables: Iterable[str] = VARIABLES_ENTREES) -> list[str]:
+    """Variables en derive pour une regle donnee, depuis les statistiques brutes de
+    `derive_entrees` (reglage sur la validation sans recalcul)."""
+    variables = set(variables)
+    return [s["variable"] for s in stats if s["variable"] in variables
+            and (abs(s["z_moyen"]) >= z_max or s["part_extreme"] >= part_extreme)]
+
+
+def alertes_entrees(stats: list[dict], z_max: float = 5.0, part_extreme: float = 0.25,
+                    ecart_extreme: float = 5.0) -> list[dict]:
     out = []
     for s in stats:
         if not s["derive"]:
             continue
-        fort = abs(s["z_moyen"]) >= 2 * z_max or s["part_extreme"] >= 5 * part_extreme
+        fort = abs(s["z_moyen"]) >= 2 * z_max or s["part_extreme"] >= 0.9
         out.append(alerte(
             "derive_entrees", f"{CIBLE_DOMAINE}:{s['variable']}",
             "important" if fort else "avertissement",
             f"Entree {s['variable']} hors du domaine d'entrainement",
             f"Moyenne a {s['z_moyen']:+.1f} ecarts-types de l'entrainement ; "
-            f"{100 * s['part_extreme']:.1f} % des capteurs a plus de 5 ecarts-types",
+            f"{100 * s['part_extreme']:.1f} % des capteurs a plus de {ecart_extreme:g} "
+            "ecarts-types",
             "Verifier les unites et l'etalonnage de cette variable ; la reconstruction "
             "extrapole hors de ce que le modele a appris",
             value=s["z_moyen"], threshold=z_max, unit="ecart-type"))
@@ -458,6 +490,7 @@ class Ecarts:
     z: np.ndarray                 # (ny, nx) |ecart centre| / echelle
     echelle: float                # m/s : 1,4826 MAD des composantes (plancher)
     centre: tuple[float, float]
+    echelle_locale: np.ndarray | None = None   # (ny, nx) m/s, detecteur spatial seulement
 
 
 def normaliser(d: np.ndarray, plancher: float) -> Ecarts:
@@ -491,8 +524,8 @@ def ecarts_capteurs(S: np.ndarray, sensor: np.ndarray, geom: Geometry,
     """
     statistiques = tuple(statistiques)
     for st in statistiques:
-        if st not in STATISTIQUES:
-            raise ValueError(f"statistique de derive inconnue : {st!r}")
+        if st not in STATISTIQUES_PASSES:
+            raise ValueError(f"statistique de derive (passes) inconnue : {st!r}")
     sensor = np.asarray(sensor, bool)
     zc = geom.z_sensor
     gid = groupes(geom.ny, geom.nx, cote)
@@ -514,19 +547,206 @@ def ecarts_capteurs(S: np.ndarray, sensor: np.ndarray, geom: Geometry,
     return {st: normaliser(d[st], plancher) for st in statistiques}
 
 
+def voisins(f: np.ndarray, rayon: int) -> np.ndarray:
+    """(ny, nx) -> (n, ny, nx) : les n = (2 rayon + 1)^2 - 1 voisines de chaque maille
+    (centre exclu), NaN hors du domaine."""
+    r = int(rayon)
+    ny, nx = f.shape
+    p = np.pad(np.asarray(f, float), r, constant_values=np.nan)
+    return np.stack([p[r + dj:r + dj + ny, r + di:r + di + nx]
+                     for dj in range(-r, r + 1) for di in range(-r, r + 1) if dj or di])
+
+
+def mediane_pile(pile: np.ndarray) -> np.ndarray:
+    """Mediane le long de l'axe 0 en ignorant les NaN (tri : les NaN vont a la fin) ; NaN
+    si aucune valeur. Plus rapide que np.nanmedian sur ~125 000 mailles."""
+    t = np.sort(pile, axis=0)
+    n = np.isfinite(t).sum(axis=0)
+    lo = np.take_along_axis(t, np.maximum((n - 1) // 2, 0)[None], 0)[0]
+    hi = np.take_along_axis(t, np.maximum(n // 2, 0)[None], 0)[0]
+    return np.where(n > 0, 0.5 * (lo + hi), np.nan)
+
+
+SITES_METHODE = "sites-lineaires-v1"
+N_CARAC_SITE = 5                     # 1, u voisins, v voisins, sin(heure), cos(heure)
+
+
+def heure_utc(instant) -> float:
+    """Heure UTC decimale d'un instant (« ...Z » ou horodatage sans fuseau = UTC)."""
+    t = pd.Timestamp(iso_utc(instant))
+    return t.hour + t.minute / 60.0 + t.second / 3600.0
+
+
+def caracteristiques_site(med_u: np.ndarray, med_v: np.ndarray, heure: float) -> np.ndarray:
+    """(5, ny, nx) : 1, vent des voisins (u, v), cycle diurne (sin, cos de l'heure UTC)."""
+    un = np.ones_like(med_u, dtype=float)
+    w = 2 * np.pi * float(heure) / 24.0
+    return np.stack([un, med_u, med_v, un * np.sin(w), un * np.cos(w)])
+
+
+class ModeleSites:
+    """Correction de site, apprise sur les jours d'ENTRAINEMENT seulement (v2).
+
+    L'ecart naturel d'un capteur a la mediane de ses voisins n'est pas un bruit : il vient
+    de son site (relief, rugosite, vents de pente qui s'inversent entre le jour et la nuit)
+    et se repete d'un jour a l'autre. Par maille, une regression lineaire (ridge) de cet
+    ecart (u, v) sur [1, u voisins, v voisins, sin h, cos h] l'apprend ; le detecteur
+    compare ensuite la mesure a « mediane des voisins + ecart de site attendu ». Le
+    modele fait partie du reglage (comme norm_stats.json) : il est ajuste sans les jours
+    de validation ni de test, et `charger` refuse tout autre jeu.
+    """
+
+    def __init__(self, coef: np.ndarray, rayon: int, info: dict | None = None) -> None:
+        self.coef = np.asarray(coef, np.float32)          # (ny, nx, 5, 2)
+        self.rayon = int(rayon)
+        self.info = dict(info or {})
+
+    def predire(self, med_u: np.ndarray, med_v: np.ndarray, heure: float) -> np.ndarray:
+        X = np.nan_to_num(caracteristiques_site(med_u, med_v, heure))
+        return (X[:, None] * np.moveaxis(self.coef, (2, 3), (0, 1))).sum(axis=0)
+
+    def sauver(self, path: str | Path) -> Path:
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        meta = json.dumps({**self.info, "methode": SITES_METHODE, "rayon": self.rayon,
+                           "jeu": "entrainement"}, ensure_ascii=False)
+        with open(path, "wb") as f:
+            np.savez_compressed(f, coef=self.coef, meta=np.array(meta))
+        return path
+
+    @classmethod
+    def charger(cls, path: str | Path, forme: tuple[int, int] | None = None) -> "ModeleSites":
+        with np.load(Path(path)) as z:
+            coef, meta = z["coef"], json.loads(str(z["meta"]))
+        if meta.get("jeu") != "entrainement" or meta.get("methode") != SITES_METHODE:
+            raise ValueError("modele de sites : ajuste sur l'entrainement seulement "
+                             f"({SITES_METHODE}), recu {meta.get('jeu')!r} / "
+                             f"{meta.get('methode')!r}")
+        if forme is not None and tuple(coef.shape[:2]) != tuple(forme):
+            raise ValueError(f"modele de sites {coef.shape[:2]} != grille {tuple(forme)}")
+        return cls(coef, meta["rayon"], meta)
+
+
+def ajuster_sites(instants: Iterable[tuple[np.ndarray, float]], rayon: int,
+                  ridge: float = 1.0, min_voisins: int = 3, info: dict | None = None
+                  ) -> ModeleSites:
+    """Moindres carres par maille (ridge `ridge`) sur des instants (S, heure UTC) des jours
+    d'ENTRAINEMENT : ecart a la mediane des voisins ~ caracteristiques_site. Une passe,
+    sommes accumulees (memoire independante du nombre d'instants)."""
+    XtX = XtY = None
+    n = 0
+    for S, heure in instants:
+        sensor = np.asarray(S[7], float) > 0.5
+        r, med = ecart_voisins(S, sensor, rayon, min_voisins)
+        X = caracteristiques_site(med[0], med[1], heure)
+        ok = np.isfinite(r).all(axis=0) & np.isfinite(X).all(axis=0)
+        X = np.where(ok, X, 0.0)
+        r = np.where(ok, r, 0.0)
+        a = X[:, None] * X[None]                            # (5, 5, ny, nx)
+        b = X[:, None] * r[None]                            # (5, 2, ny, nx)
+        XtX, XtY = (a, b) if XtX is None else (XtX + a, XtY + b)
+        n += 1
+    if XtX is None:
+        raise ValueError("modele de sites : aucun instant d'entrainement")
+    import torch
+
+    # ~125 000 systemes 5 x 5 : torch les resout en lot ~50 fois plus vite que numpy
+    A = np.ascontiguousarray(np.moveaxis(XtX, (0, 1), (2, 3)) + ridge * np.eye(N_CARAC_SITE))
+    B = np.ascontiguousarray(np.moveaxis(XtY, (0, 1), (2, 3)))
+    coef = torch.linalg.solve(torch.from_numpy(A), torch.from_numpy(B)).numpy()  # (ny,nx,5,2)
+    return ModeleSites(coef, rayon, {**(info or {}), "instants": n, "ridge": ridge})
+
+
+def ecart_voisins(S: np.ndarray, sensor: np.ndarray, rayon: int, min_voisins: int
+                   ) -> tuple[np.ndarray, np.ndarray]:
+    """(u, v) mesure - mediane des voisins, et cette mediane ; NaN si non evaluable."""
+    d = np.full((2,) + sensor.shape, np.nan)
+    med = np.full((2,) + sensor.shape, np.nan)
+    for c in (0, 1):
+        f = np.where(sensor & np.isfinite(S[c]), np.asarray(S[c], float), np.nan)
+        pile = voisins(f, rayon)
+        n = np.isfinite(pile).sum(axis=0)
+        m = mediane_pile(pile)
+        ok = np.isfinite(f) & (n >= int(min_voisins))
+        med[c] = np.where(n >= int(min_voisins), m, np.nan)
+        d[c] = np.where(ok, f - m, np.nan)
+    return d, med
+
+
+def ecarts_spatiaux(S: np.ndarray, sensor: np.ndarray, rayon: int = 2,
+                    rayon_echelle: int = 2, plancher: float = 0.05,
+                    min_voisins: int = 3, sites: ModeleSites | None = None,
+                    heure: float | None = None,
+                    base: tuple[np.ndarray, np.ndarray] | None = None) -> Ecarts:
+    """Coherence spatiale (v2) : chaque maille-capteur comparee a ses voisines, SANS passe
+    du modele.
+
+        d = (u, v) mesure - mediane des (u, v) des capteurs voisins dans un carre de
+            (2 rayon + 1) mailles, centre exclu (au moins `min_voisins`)
+            [- ecart de site attendu, si un `ModeleSites` appris sur l'entrainement]
+        s = mediane des |d| des voisines (carre de rayon `rayon_echelle`) / 1,1774,
+            plancher `plancher` : ecart-type local par composante (|d| d'un bruit
+            gaussien 2D d'ecart-type 1 a pour mediane 1,1774)
+        z = |d| / s
+
+    La mediane resiste a un voisin en derive ; l'echelle locale suit le relief (les
+    mailles de crete ou de vallee s'ecartent naturellement plus de leurs voisines).
+    `base` : (ecart, mediane) deja calcules par `ecart_voisins` pour ce rayon (simulation
+    AN1 : une seule mediane pour plusieurs echelles et corrections).
+    """
+    sensor = np.asarray(sensor, bool)
+    d, med = base if base is not None else ecart_voisins(S, sensor, rayon, min_voisins)
+    if sites is not None:
+        if sites.rayon != int(rayon):
+            raise ValueError(f"modele de sites de rayon {sites.rayon}, detecteur {rayon}")
+        if heure is None:
+            raise ValueError("correction de site : l'heure de l'instant est requise")
+        d = d - sites.predire(med[0], med[1], heure)
+    a = np.hypot(d[0], d[1])
+    ok = np.isfinite(a)
+    nan = np.full(sensor.shape, np.nan)
+    if not ok.any():
+        return Ecarts(d, nan, nan.copy(), float("nan"), (0.0, 0.0), nan.copy())
+    s = mediane_pile(voisins(np.where(ok, a, np.nan), rayon_echelle)) / RAYLEIGH_MEDIANE
+    globale = max(float(np.median(a[ok])) / RAYLEIGH_MEDIANE, plancher)
+    s = np.maximum(np.where(np.isfinite(s), s, globale), plancher)
+    z = np.where(ok, a / s, np.nan)
+    return Ecarts(d, np.where(ok, a, np.nan), z, float(np.median(s[ok])), (0.0, 0.0),
+                  np.where(ok, s, np.nan))
+
+
+def drapeaux_derive(st: dict, kappa: float, min_m_s: float, min_instants: int
+                    ) -> np.ndarray:
+    """Maille signalee : au moins `min_instants` observations, z >= kappa, ecart >= min_m_s."""
+    with np.errstate(invalid="ignore"):
+        return (st["n"] >= min_instants) & (st["z"] >= kappa) & (st["a"] >= min_m_s)
+
+
 class SuiviDerive:
     """Persistance : les `fenetre` derniers instants, par maille-capteur.
 
-    Statistique de decision : moyenne sur la fenetre de |ecart| / echelle (z moyen) ;
-    alerte si au moins `min_instants` observations, z moyen >= kappa ET ecart moyen >=
-    min_m_s. En memoire seulement (un redemarrage repart d'une fenetre vide).
+    mode « moyenne » (v1 : innovation, influence) : z = moyenne sur la fenetre de
+    |ecart| / echelle, a = moyenne de |ecart|.
+    mode « vecteur » (v2 : spatiale) : cumul vectoriel, a = |moyenne des ecarts (u, v)|,
+    z = a / moyenne de l'echelle locale. Un biais, un gain ou une girouette decalent la
+    mesure dans une direction qui persiste ; le bruit, lui, se compense en partie.
+
+    Alerte si au moins `min_instants` observations, z >= kappa ET a >= min_m_s. En memoire
+    seulement (un redemarrage repart d'une fenetre vide).
     """
 
-    def __init__(self, fenetre: int) -> None:
+    MODES = ("moyenne", "vecteur")
+
+    def __init__(self, fenetre: int, mode: str = "moyenne") -> None:
+        if mode not in self.MODES:
+            raise ValueError(f"mode de persistance inconnu : {mode!r}")
         self.fenetre = int(fenetre)
+        self.mode = mode
         self.z: deque = deque(maxlen=self.fenetre)
         self.a: deque = deque(maxlen=self.fenetre)
         self.s: deque = deque(maxlen=self.fenetre)
+        self.d: deque = deque(maxlen=self.fenetre)
+        self.sl: deque = deque(maxlen=self.fenetre)
         self.instants: deque = deque(maxlen=self.fenetre)
 
     @property
@@ -536,40 +756,83 @@ class SuiviDerive:
     def ajouter(self, instant: str, ec: Ecarts) -> None:
         self.instants.append(instant)
         self.z.append(np.asarray(ec.z, np.float32))
-        self.a.append(np.asarray(ec.a, np.float32))
         self.s.append(float(ec.echelle))
+        if self.mode == "vecteur":
+            if ec.echelle_locale is None:
+                raise ValueError("persistance vectorielle : echelle locale requise")
+            self.d.append(np.asarray(ec.d, np.float32))
+            self.sl.append(np.asarray(ec.echelle_locale, np.float32))
+        else:
+            self.a.append(np.asarray(ec.a, np.float32))
 
     def statistiques(self) -> dict:
-        Z, A = np.stack(self.z), np.stack(self.a)
-        ok = np.isfinite(Z)
-        n = ok.sum(axis=0)
-        with np.errstate(invalid="ignore", divide="ignore"):
-            zb = np.where(n > 0, np.where(ok, Z, 0).sum(0) / np.maximum(n, 1), np.nan)
-            ab = np.where(n > 0, np.where(ok, A, 0).sum(0) / np.maximum(n, 1), np.nan)
         s = np.asarray(self.s, float)
         s = s[np.isfinite(s)]
-        return {"z": zb, "a": ab, "n": n, "echelle": float(s.mean()) if s.size else np.nan}
+        echelle = float(s.mean()) if s.size else np.nan
+        with np.errstate(invalid="ignore", divide="ignore"):
+            if self.mode == "vecteur":
+                D, L = np.stack(self.d), np.stack(self.sl)
+                ok = np.isfinite(D[:, 0]) & np.isfinite(D[:, 1]) & np.isfinite(L)
+                n = ok.sum(axis=0)
+                m = np.maximum(n, 1)
+                du = np.where(ok, D[:, 0], 0).sum(0) / m
+                dv = np.where(ok, D[:, 1], 0).sum(0) / m
+                sm = np.where(n > 0, np.where(ok, L, 0).sum(0) / m, np.nan)
+                ab = np.where(n > 0, np.hypot(du, dv), np.nan)
+                return {"z": ab / sm, "a": ab, "n": n, "echelle": echelle,
+                        "echelle_locale": sm}
+            Z, A = np.stack(self.z), np.stack(self.a)
+            ok = np.isfinite(Z)
+            n = ok.sum(axis=0)
+            zb = np.where(n > 0, np.where(ok, Z, 0).sum(0) / np.maximum(n, 1), np.nan)
+            ab = np.where(n > 0, np.where(ok, A, 0).sum(0) / np.maximum(n, 1), np.nan)
+        return {"z": zb, "a": ab, "n": n, "echelle": echelle}
 
     def drapeaux(self, kappa: float, min_m_s: float, min_instants: int
                  ) -> tuple[np.ndarray, dict]:
         st = self.statistiques()
-        with np.errstate(invalid="ignore"):
-            flag = (st["n"] >= min_instants) & (st["z"] >= kappa) & (st["a"] >= min_m_s)
-        return flag, st
+        return drapeaux_derive(st, kappa, min_m_s, min_instants), st
+
+
+def combiner(st_spatiale: dict, st_passes: dict) -> dict:
+    """Statistique combinee : moyenne des deux z (ecarts robustes), observations communes ;
+    l'ecart en m/s et l'echelle locale sont ceux du detecteur spatial."""
+    with np.errstate(invalid="ignore"):
+        z = 0.5 * (st_spatiale["z"] + st_passes["z"])
+    return {**st_spatiale, "z": z, "n": np.minimum(st_spatiale["n"], st_passes["n"])}
+
+
+def composantes(statistique: str) -> tuple[str, ...]:
+    """Ecarts a suivre pour une statistique de decision (combinee : spatiale + innovation)."""
+    if statistique not in STATISTIQUES:
+        raise ValueError(f"statistique de derive inconnue : {statistique!r}")
+    return ("spatiale", "innovation") if statistique == "combinee" else (statistique,)
+
+
+def mode_suivi(composante: str) -> str:
+    """Persistance vectorielle pour le detecteur spatial, moyenne de z sinon (v1)."""
+    return "vecteur" if composante == "spatiale" else "moyenne"
 
 
 def alertes_derive(geom: Geometry, flag: np.ndarray, st: dict, kappa: float,
                    min_m_s: float, facteur_critique: float, statistique: str,
-                   max_par_type: int = 100) -> list[dict]:
+                   max_par_type: int = 100, rayon: int | None = None) -> list[dict]:
     """capteur_derive pour chaque maille-capteur signalee. Une maille du modele regroupe
-    stride x stride capteurs a 50 m : elle est designee par son capteur sud-ouest."""
-    seuil = max(kappa * st["echelle"], min_m_s) if np.isfinite(st["echelle"]) else min_m_s
-    quoi = ("la reconstruction avec et sans le capteur" if statistique == "influence"
-            else "la mesure et la reconstruction sans le capteur")
+    stride x stride capteurs a 50 m : elle est designee par son capteur sud-ouest.
+    Seuil publie : kappa x echelle (locale pour le detecteur spatial), plancher min_m_s."""
+    vois = f"ses voisins (rayon {rayon} mailles)"
+    quoi = {"influence": "la reconstruction avec et sans le capteur",
+            "innovation": "la mesure et la reconstruction sans le capteur",
+            "spatiale": f"la mesure et la mediane de {vois}",
+            "combinee": f"la mesure et {vois}, confirme par la reconstruction sans le "
+                        "capteur"}[statistique]
+    loc = st.get("echelle_locale")
     out = []
     for j, i in zip(*np.nonzero(flag)):
         sid = id_capteur(i * geom.stride, j * geom.stride)
         a, z, n = float(st["a"][j, i]), float(st["z"][j, i]), int(st["n"][j, i])
+        e = float(loc[j, i]) if loc is not None else float(st["echelle"])
+        seuil = max(kappa * e, min_m_s) if np.isfinite(e) else min_m_s
         level = "critique" if a >= facteur_critique * seuil else "important"
         out.append(alerte(
             "capteur_derive", sid, level, f"Capteur {sid} en derive",
@@ -774,9 +1037,16 @@ def charger_seuils(path: str | Path) -> dict:
     if data.get("jeu") != "validation":
         raise ValueError("seuils d'alerte : « jeu » doit valoir « validation » (les seuils "
                          f"ne se reglent jamais sur le test), recu {data.get('jeu')!r}")
-    if data.get("methode") != METHOD:
+    if data.get("methode") not in METHODES_SEUILS:
         raise ValueError(f"seuils d'alerte : methode inconnue {data.get('methode')!r}")
     return data
+
+
+# cles des seuils (JSON de validation) recopiees dans la section alerts du moteur
+CLES_SEUILS = ("derive_statistique", "derive_kappa", "derive_min_m_s", "derive_rayon",
+               "derive_rayon_echelle", "derive_min_voisins", "derive_fenetre",
+               "derive_min_instants", "derive_cote", "entrees_z_max",
+               "entrees_part_extreme", "entrees_ecart_extreme", "entrees_variables")
 
 
 # ---------------------------------------------------------------------- moteur
@@ -808,9 +1078,20 @@ class MoteurAlertes:
         self.acfg = copy.copy(cfg.alerts)          # les seuils figes ne touchent pas cfg
         self.seuils = charger_seuils(self.acfg.seuils) if self.acfg.seuils else None
         if self.seuils:
-            for k in ("derive_statistique", "derive_kappa", "derive_min_m_s"):
+            for k in CLES_SEUILS:
                 if k in self.seuils:
                     setattr(self.acfg, k, self.seuils[k])
+            if self.seuils.get("derive_sites"):
+                # modele de sites : chemin relatif au JSON des seuils (meme session)
+                self.acfg.derive_sites = Path(self.acfg.seuils).parent / \
+                    self.seuils["derive_sites"]
+            elif "derive_sites" in self.seuils:
+                self.acfg.derive_sites = None
+            self.acfg.__post_init__()               # memes controles que la config
+        self.sites = None
+        if self.acfg.derive_sites is not None and "spatiale" in composantes(
+                self.acfg.derive_statistique):
+            self.sites = ModeleSites.charger(self.acfg.derive_sites)
         if journal is True:
             j = self.acfg.journal
             path = None if str(j).lower() == "off" else \
@@ -818,7 +1099,8 @@ class MoteurAlertes:
         else:
             path = journal or None
         self.journal = JournalAlertes(path, self.acfg.retention_close_h)
-        self.suivi = SuiviDerive(self.acfg.derive_fenetre)
+        self.suivis = {c: SuiviDerive(self.acfg.derive_fenetre, mode_suivi(c))
+                       for c in composantes(self.acfg.derive_statistique)}
         self.dernier: ResultatAlertes | None = None
         self._resultats: OrderedDict[str, ResultatAlertes] = OrderedDict()
         self._lock = threading.RLock()
@@ -831,7 +1113,8 @@ class MoteurAlertes:
                 stations_disponibles: int | None = None) -> ResultatAlertes:
         """Toutes les alertes d'un instant. `served` = (u, v, w) de la passe servie (NaN
         sous le relief) ; `membre(masque)` refait une passe sans les capteurs retires
-        (None : pas de detection de derive). Ne modifie ni S ni la valeur servie."""
+        (innovation, influence, combinee ; None : pas de detection pour celles-ci, le
+        detecteur spatial n'en a pas besoin). Ne modifie ni S ni la valeur servie."""
         a = self.acfg
         if instant is None:
             raise ValueError("alertes : l'instant (horodatage du volume) est requis")
@@ -871,29 +1154,49 @@ class MoteurAlertes:
                                            a.masse_facteur_critique, a.sol_rms_max_m_s))
             # M4 : entrees
             ent = derive_entrees(S, sensor, surf_mu, surf_sd, a.entrees_z_max,
-                                 a.entrees_ecart_extreme, a.entrees_part_extreme)
-            listes.append(alertes_entrees(ent, a.entrees_z_max, a.entrees_part_extreme))
+                                 a.entrees_ecart_extreme, a.entrees_part_extreme,
+                                 a.entrees_variables)
+            listes.append(alertes_entrees(ent, a.entrees_z_max, a.entrees_part_extreme,
+                                          a.entrees_ecart_extreme))
             # M4 : capteurs en derive (persistance : instants chronologiques seulement)
             derive = {"evaluee": False, "statistique": a.derive_statistique,
                       "kappa": a.derive_kappa}
-            if membre is None:
+            comp = composantes(a.derive_statistique)
+            passes = [c for c in comp if c in STATISTIQUES_PASSES]
+            dernier = self.suivis[comp[0]].dernier
+            if passes and membre is None:
                 derive["raison"] = "pas de passe sans capteur (membre absent)"
-            elif not (self.suivi.dernier is None or t > self.suivi.dernier):
+            elif not (dernier is None or t > dernier):
                 derive["raison"] = "instant anterieur ou egal au dernier instant suivi"
             else:
-                ec = ecarts_capteurs(S, sensor, geom, (served[0], served[1]), membre,
-                                     a.derive_cote, (a.derive_statistique,),
-                                     a.derive_echelle_plancher_m_s)[a.derive_statistique]
-                self.suivi.ajouter(t, ec)
-                flag, st = self.suivi.drapeaux(a.derive_kappa, a.derive_min_m_s,
-                                               a.derive_min_instants)
+                ecs = {}
+                if "spatiale" in comp:
+                    ecs["spatiale"] = ecarts_spatiaux(
+                        S, sensor, a.derive_rayon, a.derive_rayon_echelle,
+                        a.derive_echelle_plancher_m_s, a.derive_min_voisins, self.sites,
+                        heure_utc(t))
+                if passes:
+                    ecs.update(ecarts_capteurs(S, sensor, geom, (served[0], served[1]),
+                                               membre, a.derive_cote, passes,
+                                               a.derive_echelle_plancher_m_s))
+                for c in comp:
+                    self.suivis[c].ajouter(t, ecs[c])
+                sts = {c: self.suivis[c].statistiques() for c in comp}
+                st = (combiner(sts["spatiale"], sts["innovation"])
+                      if a.derive_statistique == "combinee" else sts[comp[0]])
+                flag = drapeaux_derive(st, a.derive_kappa, a.derive_min_m_s,
+                                       a.derive_min_instants)
                 listes.append(alertes_derive(geom, flag, st, a.derive_kappa, a.derive_min_m_s,
                                              a.derive_facteur_critique, a.derive_statistique,
-                                             a.max_par_type))
-                derive.update({"evaluee": True, "passes": a.derive_cote ** 2,
+                                             a.max_par_type, a.derive_rayon))
+                ec = ecs[comp[0]]
+                derive.update({"evaluee": True, "passes": a.derive_cote ** 2 if passes else 0,
                                "echelle_m_s": _num(ec.echelle),
                                "capteurs_evalues": int(np.isfinite(ec.z).sum()),
                                "signales": int(flag.sum())})
+                if "spatiale" in comp:
+                    derive.update({"rayon_mailles": a.derive_rayon,
+                                   "correction_site": self.sites is not None})
             listes.append(alertes_externes(externes))
             items = self.journal.mettre_a_jour(agreger(*listes), t)
             res = ResultatAlertes(t, items, phys, ent, derive)

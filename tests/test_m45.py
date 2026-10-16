@@ -84,6 +84,8 @@ def test_passes_de_derive_non_capturees_par_le_parc(trained, parc, tmp_path):
     trained.wind_farm.turbines = parc
     trained.inference.reliability = "non_calibre"
     trained.reliability.members = 3
+    stat_avant = trained.alerts.derive_statistique
+    trained.alerts.derive_statistique = "innovation"    # v1 : cote^2 passes (spatiale : 0)
     try:
         wf = WindFieldModel(trained, device="cpu", verbose=False)
         appels = []
@@ -106,6 +108,7 @@ def test_passes_de_derive_non_capturees_par_le_parc(trained, parc, tmp_path):
         trained.wind_farm.turbines = None
         trained.inference.reliability = None
         trained.reliability.members = ReliabilityCfg().members
+        trained.alerts.derive_statistique = stat_avant
 
 
 # ------------------------------------------------------------------ service
