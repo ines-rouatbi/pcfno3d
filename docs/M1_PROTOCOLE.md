@@ -515,3 +515,35 @@ de cette décision, quelle qu'en soit l'issue. Le protocole est écrit avant la 
 instants d'épisodes du calendrier. On obtient 120 instants synoptiques, environ 4,4 Go. Avec les épisodes,
 il y aurait 320 instants et environ 13 Go, plus que les 12 Go libres sur ines-pc. Le jeu ne contient
 donc pas d'épisodes.
+
+## Avenant n° 3 (2026-10-16) — lancement de la session 10i, sans changement de règle
+
+Cet avenant décrit seulement comment la session est lancée. La règle de décision (C1, C2, C3), les
+avenants n° 1 et n° 2 et le code de la cellule 10i ne changent pas.
+
+- **Notebook** : `notebooks/current/m1_bloc10i_colab.ipynb`, autonome, lancé par « Tout exécuter ».
+  Il est généré par `scripts/make_m1_colab_nb.py` à partir de `fno3d_v7.ipynb` (BLOCS 0 à 8 et 10)
+  et de `cellule_10i.py` (fichier entier). Le code de ces cellules est **copié sans modification**,
+  sorties vidées (`--check` le vérifie, ainsi que le sha256 du code 10i,
+  `a1fcc878ed3c6c6047538e5b48df25c6633c972a413d6bd42f415926599fbd6f`).
+- **Substitution du BLOC 9** : il n'est pas exécuté. S'il ne trouve pas `last.pt` sur le Drive, il
+  réentraîne 140 époques et réécrit `best.pt`. À sa place, la cellule M1-b reprend à l'identique
+  les deux lignes du BLOC 9 dont le BLOC 10 et 10i ont besoin (`amp_dtype`, `use_amp`). Le BLOC 10
+  charge lui-même le checkpoint, comme dans la v7 : `best_dso_v7.pt`, dont le sha256 est vérifié.
+- **BLOCS 10c à 10h non exécutés.** Ils ne figurent pas dans `fno3d_v7.ipynb` du dépôt. Les
+  BLOCS 10f à 10h réajusteraient la correction et réécriraient les trois JSON figés. 10i n'a
+  besoin que des globales des BLOCS 0 à 10 et de `couche_limite_v7.json` (§ 4 : aucun ajustement).
+- **Écritures** :
+  - Le BLOC 10 écrit dans `RUN_DIR/eval_<modèle>/`, c'est-à-dire sur les résultats figés de la v7.
+    Pendant le BLOC 10 seulement, `RUN_DIR` pointe donc vers un dossier local qui contient une
+    copie vérifiée de `best_dso_v7.pt` (cellule M1-c).
+  - Avant 10i, `RUN_DIR` revient au Drive et `EVAL_DIR` pointe vers `eval_m1_bloc10i/` (cellule
+    M1-d) : 10i y écrit `decision_10i.json` et `decision_10i_par_niveau.csv`.
+  - M1-a contrôle les fichiers figés et imprime la règle avant tout calcul. Elle refuse de démarrer
+    si une mesure 10i complète existe déjà (§ 5.2).
+  - M1-e ajoute `sha256.txt`, `regle.txt` et les résultats rejoués du BLOC 10 (`bloc10_rejoue/`).
+    Elle vérifie aussi le sha256 du code 10i réellement exécuté, et que les fichiers figés n'ont
+    pas changé.
+- **Jeu vierge (avenant n° 2)** : la dernière cellule (M1-f) ne s'exécute que si le jeu complet est
+  sur le Drive, dans `aneo_dataset_3d_seed2027/` (15 jours). Ses résultats vont dans
+  `eval_m1_bloc10i/jeu_vierge_seed2027/`. Sinon, elle affiche un message et ne fait rien.
