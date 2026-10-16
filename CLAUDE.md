@@ -147,14 +147,20 @@ notebook's globals.
   silently break loading.
 - **`alerts.py` / `an1.py`** (lot M4, criterion AN1) — one alerts document per instant in the
   ATOM rev. 2 format (`alerts.schema.json`: id = sha8 of `kind|target`, 4 levels, cause and
-  recommendation), aggregating M3 (contract report), M2 (coverage), M4 (sensor drift by
-  grouped leave-out: `derive_cote`² extra passes, input drift, mass residual / D11 `physics`)
+  recommendation), aggregating M3 (contract report), M2 (coverage), M4 (sensor drift — v2
+  default `spatiale`: measurement vs median of its neighbours minus a per-cell site offset
+  learned on TRAIN days only (`ModeleSites`, `sites_R<r>.npz`), vector persistence, no model
+  pass; v1 `innovation`/`influence` by grouped leave-out, `derive_cote`² extra passes —
+  input drift on T/rho/RH/p only (wind excluded), mass residual / D11 `physics`)
   and M5 (`alertes_externes`, fed by `windfarm.farm_alerts` in `evaluer_modele` when a
   farm is declared; `/api/wind-farm` then shows the journal items). Lifecycle in a JSONL journal
   (`run_dir/logs/alertes.jsonl`, chronological instants only). **Opt-in**
   (`alerts.enabled: false`): never changes the served value; `/api/alerts` answers `409`
-  when disabled. `an1.py` simulates drifts/outages; thresholds are tuned on **validation**
-  only (`charger_seuils` refuses test) by `scripts/m4_an1_colab.py`. See `docs/ALERTES.md`.
+  when disabled. `an1.py` simulates drifts/outages; detector, κ and input rule are chosen on
+  **validation** only from fixed grids (`charger_seuils` refuses test) by
+  `scripts/m4_an1_colab.py`. AN1 v1 was measured NON-conforming on 2026-10-16 (test read
+  once); v2 was designed after that, so its run (`--deuxieme-lecture`) is a second reading,
+  not an independent measure. See `docs/ALERTES.md` (measurement history, never rewritten).
 - **`reconstruct.py` / `export.py`** — npz + ANEO-shaped CSV + figures; `export_web` writes raw
   Float32 binaries plus `manifest.json` for `web/index.html`.
 - **`windfarm.py`** (lot M5, `docs/EOLIEN.md`) — opt-in via `wind_farm.turbines` (declaration

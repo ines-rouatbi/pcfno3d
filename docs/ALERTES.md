@@ -6,11 +6,43 @@ AN1 ; contrat ATOM **révision 2** (`DECISIONS-rev2.md` : D8, D11, B5, m9 ;
 `alerts.schema.json`, `common.schema.json` : `alert_level`, `station_state` ;
 `snapshot.schema.json` : `physics`, `kpi.open_alerts`, `stations_summary`).*
 
-## Statut : prêt, **verdict AN1 en attente de la session GPU**
+## Statut : v1 mesurée **non conforme** ; v2 prête, **en attente d'une seconde lecture du test**
+
+La v1 (statistique « innovation ») a été mesurée sur GPU le 16/10/2026 : AN1 **non
+conforme** (voir l'historique ci-dessous). La v2 (détecteur de cohérence spatiale, règle des
+entrées sans le vent) a été conçue **après** cette première lecture du test. Son verdict
+sera donc une **seconde mesure sur le même test**, pas une mesure indépendante : le choix
+de la méthode a été influencé par ce que la première lecture a montré, même si aucun seuil
+n'est réglé sur le test.
 
 Les tests CPU vérifient le mécanisme sur le mini-jeu (modèle de 2 époques) : ils ne disent
 rien de la qualité de détection sur v7. Le chiffre AN1 vient de
 `scripts/m4_an1_colab.py`, à lancer sur GPU (voir plus bas).
+
+## Historique des mesures AN1
+
+Cette section n'est jamais supprimée ni réécrite : chaque mesure s'y ajoute, telle quelle.
+
+### 1. Première lecture — v1, Colab L4, modèle v7, 16/10/2026
+
+- **Protocole officiel** : 40 dérives et 10 pannes par jour, `e_ref` = 1 m/s.
+- **Réglage** : statistique « innovation », κ = 12,75, réglé sur la validation (FDR cible
+  2,5 %).
+- **Validation** : détection des dérives 5,9 % (393 dérives), 0 fausse alerte sur
+  1 874 250 capteurs sains.
+- **Test (verdict)** : dérives détectées 5,2 % (386), fausses alertes 0 %. Par type :
+  biais 2 m/s 6,7 %, biais 3 m/s ~19 %, gain et girouette ~0. Pannes (valeurs figées, hors
+  verdict) 100 %. Dérive des entrées (unités) : détection 100 %, mais fausses alertes
+  6,7 %.
+- **Verdict : AN1 NON CONFORME** (seuils : détection ≥ 90 %, fausses alertes < 5 %).
+- **Diagnostic** : avec 500 000 capteurs à 50 m (agrégés en mailles de 100 m), une station
+  en dérive ne déplace presque pas la reconstruction. L'innovation (mesure − reconstruction
+  sans le capteur) est noyée, et κ doit monter à 12,75 pour tenir le FDR.
+
+### 2. Seconde lecture — v2 : à venir
+
+Commande et protocole plus bas (« Session GPU »). Le résultat sera ajouté ici, marqué
+« seconde mesure sur le test, après une première lecture (16/10/2026, non conforme) ».
 
 ## Un document par instant
 
@@ -24,7 +56,7 @@ soit le lot qui les détecte :
 | `hors_plage` | M3 | règles du contrat ANEO (`PLAGES`, densité), réappliquées par `stations_hors_plage` au fichier reçu | capteur `c<i>_<j>` | avertissement |
 | `station_muette` | M3 | rapport du contrat (absences, valeurs figées) | capteur | avertissement |
 | `stations_insuffisantes` | M3 | rapport du contrat ; sans rapport : part de mailles disponibles (treillis) ou de stations **attendues** (stations réelles, voir plus bas) | `domaine` | important (< 70 %), critique (< 30 %) |
-| `capteur_derive` | M4 | capteur masqué comparé à la reconstruction faite sans lui | capteur | important ; critique si l'écart ≥ 2 × seuil |
+| `capteur_derive` | M4 | v2 : mesure comparée à la médiane de ses voisins, corrigée du site (aucune passe) ; v1 : capteur masqué comparé à la reconstruction faite sans lui | capteur | important ; critique si l'écart ≥ 2 × seuil |
 | `incoherence_physique` | M4 | résidu de continuité de l'instant > seuil DSO2 ; condition au sol (seuil à régler) | `domaine:masse`, `domaine:sol` | important ; critique si ≥ 10 × seuil ; sol : avertissement |
 | `derive_entrees` | M4 | statistiques des entrées vs entraînement (`norm_stats.json`) | `domaine:<variable>` | avertissement ; important si ≥ 2 × seuil |
 | `zone_mal_couverte` | M2 | indice de couverture moyen < 0,2 sur une maille de 2 km | maille `m<ix>_<iy>` | information |
@@ -41,6 +73,82 @@ fortes d'abord. Le rapport M3 tronque déjà ses listes d'identifiants à 100.
 
 ## Capteur en dérive (`capteur_derive`)
 
+Quatre statistiques de décision sont disponibles (`alerts.derive_statistique`). Le choix et
+les seuils se font sur la **validation** (`scripts/m4_an1_colab.py`) :
+
+| Statistique | Version | Compare | Passes du modèle |
+|---|---|---|---|
+| `spatiale` (défaut) | v2 | la mesure à la médiane de ses voisins, corrigée du site | **aucune** |
+| `innovation` | v1 | la mesure à la reconstruction faite sans le capteur | `derive_cote²` = 9 |
+| `influence` | v1 | la reconstruction servie à celle faite sans le capteur | 9 |
+| `combinee` | v2 | moyenne des z de `spatiale` et d'`innovation` | 9 |
+
+### v2 : cohérence spatiale (`ecarts_spatiaux`)
+
+**Pourquoi.** Un capteur à 50 m parmi 500 000 ne déplace presque pas la reconstruction :
+l'écart entre la mesure et la reconstruction faite sans lui est surtout fait de l'erreur du
+modèle, pas de la dérive (première lecture, ci-dessus). Les voisins immédiats d'un capteur,
+eux, mesurent presque le même vent : c'est contre eux qu'une dérive ressort.
+
+**Estimation par les voisins.** Pour chaque maille-capteur visible, sur les composantes u et
+v :
+
+    d = mesure − médiane des voisins          (carré de 2R + 1 mailles, centre exclu)
+        [− écart de site attendu]             (si un modèle de sites est chargé)
+
+Il faut au moins `derive_min_voisins` = 3 voisins disponibles ; sinon, la maille n'est pas
+évaluée (NaN), jamais inventée. La médiane résiste à un voisin lui-même en dérive.
+
+**Correction de site (`ModeleSites`).** L'écart naturel d'un capteur à ses voisins n'est
+pas un bruit. Il vient de son site (relief, rugosité, vents de pente qui s'inversent entre
+le jour et la nuit) et se répète d'un jour à l'autre. Par maille, une régression linéaire
+(ridge, λ = 1) de cet écart sur `[1, u voisins, v voisins, sin h, cos h]` l'apprend sur les
+**jours d'entraînement seulement** :
+
+- `ajuster_sites_entrainement` refuse un instant de validation ou de test ;
+- le fichier `sites_R<r>.npz` porte `jeu: "entrainement"`, et `ModeleSites.charger` refuse
+  tout autre jeu ou une grille différente.
+
+Le modèle fait partie du réglage, comme `norm_stats.json`.
+
+**Échelle locale.** `s` = médiane des `|d|` des voisines (carré de rayon
+`derive_rayon_echelle`) / 1,1774, avec un plancher de 0,05 m/s. Le facteur vient de la
+médiane de `|d|` pour un bruit gaussien 2D d'écart-type 1. Puis `z = |d| / s`. Le seuil suit
+ainsi la difficulté locale : une crête ou une vallée s'écarte naturellement plus de ses
+voisines qu'une plaine.
+
+**Persistance vectorielle.** `SuiviDerive(mode="vecteur")` cumule les écarts **en vecteur**
+sur les `derive_fenetre` derniers instants du jour :
+
+    a = |moyenne des d (u, v)|        z = a / moyenne de s
+
+Un biais, un gain ou une girouette décalent la mesure dans une direction qui persiste, alors
+que le bruit se compense en partie. On lève l'alerte si `n ≥ derive_min_instants`,
+`z ≥ κ` et `a ≥ derive_min_m_s` = 0,5 m/s. La valeur publiée est `a` (m/s) ; le seuil
+publié est `max(κ · s̄ locale, 0,5)`, ce qui garantit `value ≥ threshold`.
+
+**Coût.** Aucune passe du modèle : deux médianes de voisinage par instant (tri numpy
+vectorisé), environ 1 s par instant sur les 125 000 mailles de v7, sur le CPU d'ines-pc.
+
+**Exploration avant réglage (ines-pc, CPU).** Les choix de la grille viennent d'une
+exploration sur le cache local de v7 (jours 2 et 3 d'entraînement, jour 14 de validation),
+avant toute mesure GPU de la v2 :
+
+- l'écart à la médiane des voisins (R = 2) est fortement corrélé au relief relatif
+  (corrélation 0,77 un jour de vent fort) ;
+- un modèle de sites appris sur seulement deux jours d'entraînement divise par 2,4 le
+  quantile 99,99 % de l'écart sur le jour de validation (1,38 → 0,53 m/s) ;
+- avec 40 dérives injectées sur ce jour de validation (4 répétitions, 94 dérives d'au moins
+  1 m/s), la détection au seuil qui laisse une fausse alerte par jour passe d'environ 98 %
+  (R = 2, sans site) à 100 % (avec site).
+
+Ce ne sont pas des mesures AN1 (un seul jour, pas la chaîne complète). Pour être exact : la
+toute première exploration du bruit spatial a aussi affiché les quantiles du jour 17 (test),
+avant que l'exploration ne soit limitée à l'entraînement et à la validation. Aucun paramètre
+n'en a été tiré.
+
+### v1 : capteur masqué (`ecarts_capteurs`)
+
 **Principe (PLAN.md).** On masque le capteur, on reconstruit sans lui, puis on compare.
 
 **Groupes en treillis.** Un leave-one-out par capteur coûterait une passe par capteur, soit
@@ -53,16 +161,14 @@ que leurs voisins restent visibles. C'est dans la distribution d'entraînement
 
 **Statistique.** On compare à l'altitude du capteur (`interp_colonne` : interpolation
 linéaire entre niveaux valides ; sous le premier nœud valide, on prend la valeur de ce nœud,
-sans extrapolation). Deux statistiques sont disponibles :
+sans extrapolation) :
 
-- **innovation** (défaut) : `d = mesure − reconstruction sans le capteur` ;
+- **innovation** : `d = mesure − reconstruction sans le capteur` ;
 - **influence** : `d = reconstruction servie (avec) − reconstruction sans le capteur`.
 
 L'influence annule l'écart de représentativité, c'est-à-dire un capteur à ~25 m du sol
 alors que le premier nœud valide est parfois 100 m plus haut en relief. Mais elle suppose
-que le modèle suive assez ses entrées localement. Sur le mini-jeu, le petit modèle ne le
-fait pas : l'innovation détecte, l'influence presque pas (voir AN1). Les deux sont calculées
-avec **les mêmes passes**, et le script GPU choisit sur la **validation**.
+que le modèle suive assez ses entrées localement.
 
 **Normalisation robuste, par instant.**
 
@@ -70,20 +176,16 @@ avec **les mêmes passes**, et le script GPU choisit sur la **validation**.
     s   = max(1,4826 · MAD(d_c), 0,05 m/s)
     z   = |d_c| / s               (écarts robustes)      a = |d_c|  (m/s)
 
-Le seuil suit ainsi la difficulté du jour : un vent fort élargit tous les écarts.
+**Persistance (mode « moyenne »).** z moyen et écart moyen sur la fenêtre, mêmes conditions
+d'alerte que la v2.
 
-**Persistance.** `SuiviDerive` garde les `derive_fenetre` = 4 derniers instants. Une alerte
-est levée si les trois conditions suivantes sont réunies :
+### Commun aux quatre statistiques
 
-- au moins `derive_min_instants` = 3 observations ;
-- z moyen ≥ `derive_kappa` ;
-- écart moyen ≥ `derive_min_m_s` = 0,5 m/s (plancher : la tolérance OMM sur le vent).
-
-La valeur publiée (`value`) est l'écart moyen en m/s. Le seuil publié (`threshold`) vaut
-`max(kappa · s̄, 0,5)` m/s. La persistance n'est **mise à jour que pour un instant postérieur
-au dernier suivi**. Un instant antérieur est évalué sans dérive (`derive.evaluee: false`),
-pour qu'une consultation ne fausse pas la fenêtre. La fenêtre vit en mémoire : un
-redémarrage repart d'une fenêtre vide, alors que le journal, lui, est relu.
+La persistance n'est **mise à jour que pour un instant postérieur au dernier suivi**. Un
+instant antérieur est évalué sans dérive (`derive.evaluee: false`), pour qu'une consultation
+ne fausse pas la fenêtre. La fenêtre vit en mémoire : un redémarrage repart d'une fenêtre
+vide, alors que le journal, lui, est relu. Sans `membre` (pas de passe possible), les
+statistiques v1 ne sont pas évaluées ; la v2 n'en a pas besoin.
 
 **Granularité.** Le modèle voit la surface par mailles de 100 m (`pool_surface` : moyenne
 des 2 × 2 capteurs à 50 m). Le « capteur » détecté est donc la **maille-capteur**, désignée
@@ -97,12 +199,47 @@ d'**entraînement** (`norm_stats.json`, `surf_mu` / `surf_sd`) :
 
     z_moyen = (moyenne − mu) / sd          part_extreme = part des capteurs à plus de 5 sd
 
-Il y a dérive si `|z_moyen| ≥ 3` ou `part_extreme ≥ 2 %` (`entrees_*`). Cette règle vise
-les erreurs d'unité ou d'étalonnage d'un flux entier : températures en K, pressions en hPa,
+Toutes les variables sont décrites, mais seules celles de `entrees_variables` peuvent être
+en dérive : température, densité, humidité relative, pression. Il y a dérive si
+`|z_moyen| ≥ entrees_z_max` ou `part_extreme ≥ entrees_part_extreme`. Cette règle vise les
+erreurs d'unité ou d'étalonnage d'un flux entier : températures en K, pressions en hPa,
 humidité en fraction, densité en g/m³.
 
-Une erreur d'unité sur le vent (nœuds au lieu de m/s) n'est **pas** détectable ainsi sans
-fausses alertes les jours de vent fort. C'est une limite connue.
+**D'où venaient les 6,7 % de fausses alertes de la v1.** La règle v1 (`|z_moyen| ≥ 3` ou
+`part_extreme ≥ 2 %`) portait sur **les sept variables, vent compris**, et ses seuils
+n'avaient jamais été réglés sur la validation. Une fausse alerte était comptée par instant
+propre dès qu'**une** variable dépassait. Or le vent suit la météo du jour, pas les unités.
+Sur le cache local de v7 (jours d'entraînement 2 et 3, validation 14), un jour de vent fort
+(jour 2, 15 m/s de moyenne) donne déjà :
+
+- `wind_w_m_s` : 1,1 à 1,9 % des capteurs à plus de 5 sd (w de surface à queue lourde en
+  relief), pour un seuil de 2 % ;
+- `wind_u_m_s` : `z_moyen` de 1,8 à 2,7, pour un seuil de 3.
+
+Aux mêmes instants, température, densité, humidité et pression restent sous 2,1 sd, sans
+aucune valeur extrême. 6,7 % des 120 instants de test, c'est 8 instants, autant qu'un
+jour entier (8 instants synoptiques). L'hypothèse la plus probable est donc un jour de
+météo, pas une erreur d'unité ; le diagnostic par variable de la session GPU le dira. La
+v2 :
+
+- **exclut le vent** de la décision. Une erreur d'unité du vent n'était de toute façon pas
+  détectable ainsi (limite déjà connue), et une dérive d'anémomètre relève de
+  `capteur_derive` ;
+- **règle les seuils sur la validation** (`an1.choisir_regle_entrees`), par une grille
+  fixée d'avance (`z_max` ∈ {3, 4, 5, 6, 8}, `part_extreme` ∈ {2, 5, 10, 25, 50 %}). On garde
+  les règles dont les fausses alertes restent ≤ 2,5 %, puis la meilleure détection des
+  quatre erreurs connues ; à égalité, les seuils les plus hauts, c'est-à-dire la plus
+  grande marge contre la météo.
+
+La détection ne se perd pas. Les quatre erreurs déplacent tous les capteurs bien au-delà de
+5 sd avec les statistiques de v7 : K → +45 sd, hPa → −82 sd, g/m³ → +44 000 sd, et
+fraction → −5,7 sd pour **chaque** capteur, donc `part_extreme` = 100 %. Le script rejoue
+aussi la règle v1 sur la validation et sur le test (`entrees_regle_v1_diagnostic`, avec les
+fausses alertes **par variable**) : ce diagnostic sera confirmé ou infirmé par les données
+de la session GPU.
+
+Défauts de la config, en attendant ce réglage : `entrees_z_max` = 5, `entrees_part_extreme`
+= 25 %.
 
 ## Cohérence physique (D11, `physics`)
 
@@ -211,7 +348,8 @@ Les alertes sont strictement **opt-in** :
 ```yaml
 alerts:
   enabled: true
-  seuils: <run_dir>/alertes_pcfno3d/<modele>/session_.../seuils_validation.json
+  seuils: <run_dir>/alertes_pcfno3d/<modele>/session_v2_.../seuils_validation.json
+  # le modele de sites retenu (sites_R<r>.npz) est relu a cote du JSON
 ```
 
 Quand `enabled` vaut `false` (défaut), rien ne change, ce qui est testé :
@@ -231,9 +369,11 @@ Quand `enabled` vaut `false` (défaut), rien ne change, ce qui est testé :
 | `pcfno3d alertes --split test [--limit N] [--out f.json]` | instants du cache dans l'ordre, journal, document du dernier instant (jamais écrasé) |
 | `MoteurAlertes.evaluer_modele(...)` | appel direct, pour la publication M6 (`document()`, `physics`, `ouvertes()`) |
 
-**Coût.** On compte 9 passes par instant (`derive_cote²`), et seulement pour
-`/api/alerts` : `predict` et DSO4 ne sont pas touchés. Sur CPU (15 à 25 s par passe pour
-v7), une évaluation de dérive prend plusieurs minutes ; c'est un usage GPU.
+**Coût.** Le détecteur `spatiale` (v2, défaut) ne fait **aucune passe** : ~1 s par
+instant sur CPU pour les 125 000 mailles de v7. Les statistiques v1 et `combinee` comptent
+9 passes par instant (`derive_cote²`), et seulement pour `/api/alerts` : `predict` et DSO4
+ne sont pas touchés. Sur CPU (15 à 25 s par passe pour v7), une évaluation v1 prend
+plusieurs minutes ; c'est un usage GPU.
 
 Le calcul ne bloque pas le service :
 
@@ -262,7 +402,9 @@ Elles sont tirées à graine fixe et espacées d'au moins `cote + 1` mailles :
 - **pannes** : valeur figée (u, v, T constants dès le premier instant), détectée par la
   **règle M3** (`contract.valeurs_figees`).
 
-On déroule ensuite la chaîne complète : passe servie, 9 passes et persistance.
+On déroule ensuite la chaîne complète : passe servie, détecteurs (les 9 passes sans capteur
+seulement pour les statistiques v1 et `combinee`) et persistance. Le protocole (nombres,
+espacement de `cote + 1` mailles, graines) est **inchangé** depuis la v1.
 
 **Comptage.** L'unité est le couple (scénario, maille-capteur). Une maille est **signalée**
 si elle reçoit au moins une alerte `capteur_derive` dans la journée.
@@ -297,50 +439,104 @@ avec une erreur d'unité connue (K, hPa, fraction, g/m³), sert à mesurer la d�
 **Verdict.** AN1 est vert si les deux familles, dérives de capteurs et entrées, passent
 toutes les deux, et seulement sous le protocole fixé.
 
-**Seuils : validation seulement.** `choisir_kappa` prend le plus petit κ (donc la meilleure
-détection) dont la part de fausses alertes reste sous `--fdr-cible` = 2,5 % **sur la
-validation**, ce qui laisse une marge sous 5 %. On le fait pour chaque statistique, et l'on
-retient celle qui détecte le mieux. Le JSON porte `jeu: "validation"`, et `charger_seuils`
-refuse tout autre jeu. Le test ne sert qu'au verdict.
+**Réglage : validation seulement (v2).** Tout ce qui se règle l'est sur la validation, par
+des grilles **fixées d'avance** (`an1.GRILLE_DETECTEURS`, `GRILLE_KAPPA`,
+`GRILLE_ENTREES`, écrites le 16/10/2026 avant toute mesure GPU de la v2) :
+
+- **détecteurs candidats** (`an1.detecteurs`) :
+  - `spatiale` : rayon R ∈ {1, 2, 3} mailles (100 à 300 m), échelle locale L ∈ {2, 4},
+    fenêtre W ∈ {3, 4, 8} instants, avec ou sans correction de site ;
+  - `innovation`, `influence` : W ∈ {3, 4, 8} ;
+  - `combinee` : la même grille que `spatiale`.
+
+  Au total 78 candidats. Les passes du modèle sont communes à tous, et la médiane des
+  voisins est calculée une fois par rayon et par instant ;
+- **κ** : de 2 à 30 par pas de 0,25. Pour chaque détecteur, le plus petit κ dont la part de
+  fausses alertes reste ≤ `--fdr-cible` = 2,5 % sur la validation ;
+- **choix** (`an1.choisir_detecteur`) : la meilleure détection ; à égalité, la plus faible
+  part de fausses alertes, puis l'ordre de la grille (spatiale d'abord, correction de site
+  d'abord, fenêtre courte d'abord) ;
+- **persistance** : `derive_min_instants` = W (fenêtre complète) ;
+- **entrées** : `an1.choisir_regle_entrees` (voir plus haut).
+
+Le JSON porte `jeu: "validation"` et `methode: "alertes-m4-v2"`, et `charger_seuils` refuse
+tout autre jeu (les JSON v1 restent relisibles). Les modèles de sites viennent des jours
+d'entraînement. Le test ne sert qu'au verdict.
+
+Choisir parmi 78 candidats sur ~400 dérives de validation laisse un optimisme de sélection.
+La marge (2,5 % visés pour 5 % permis) et le test le mesurent ; rien n'est réajusté après.
 
 **Mesure CPU (mini-jeu, mécanisme seulement, exploratoire).** Les conditions sont un modèle
-de 2 époques, un jour de validation et un jour de test, 8 dérives et 2 pannes par jour.
+de 2 époques, 4 jours d'entraînement (modèles de sites), 1 jour de validation et 1 jour de
+test, 8 dérives et 2 pannes par jour, toute la grille (`--derives-par-jour 8
+--pannes-par-jour 2 --deuxieme-lecture`, 18 s sur ines-pc).
 
-| Statistique | κ retenu | Détection des dérives (validation) | Fausses alertes (validation) |
+| Détecteur (validation) | κ retenu | Détection | Fausses alertes |
 |---|---|---|---|
-| innovation | 3,5 | 1,00 | 0,00 |
-| influence | 13,75 | 0,00 | 0,00 |
+| `spatiale:R1:L2:W3:site` (**retenu**) | 2,0 | 1,00 | 0,00 |
+| `spatiale:R2:L2:W4` (sans site) | 2,0 | 1,00 | 0,00 |
+| `innovation:W3` | 3,5 | 1,00 | 0,00 |
+| `influence:W3` | 14,5 | 0,00 | 0,00 |
+| `*:W8` | — | 0,00 | 0,00 (jour de 4 instants : jamais 8 observations) |
 
-Sur le test, avec l'innovation :
+Sur le test, avec `spatiale:R1:L2:W3:site` :
 
-- détection des dérives 1,00 ;
-- part de fausses alertes 0,10 ;
-- sains signalés / sains 0,005, soit 0,5 fausse alerte par instant ;
+- détection des dérives 1,00 (biais 0,5 m/s : 0, hors verdict car sous `e_ref`) ;
+- fausses alertes 0,00, aucune par instant ;
 - pannes (hors verdict) 1,00 ;
-- entrées : détection 1,00, aucune fausse alerte.
+- entrées : règle retenue `z_max` 8, `part_extreme` 50 % ; détection 1,00, aucune fausse
+  alerte.
 
-Hors protocole, il n'y a pas de verdict. Les tests vérifient le mécanisme, pas ces
-chiffres.
+Le champ du mini-jeu est lisse : tout y est facile, et κ tombe au bas de la grille. Ces
+chiffres vérifient la chaîne, pas la v2 sur v7. Les tests vérifient le mécanisme :
 
-**Session GPU (`scripts/m4_an1_colab.py`).**
+- dérives injectées connues → signalées ;
+- capteurs sains → aucune alerte ;
+- crête apprise par le modèle de sites → plus suspecte ;
+- déterminisme à graine égale ;
+- refus du test pour le réglage, du JSON comme du modèle de sites.
+
+**Session GPU (`scripts/m4_an1_colab.py`, v2).**
 
 ```bash
-!python scripts/m4_an1_colab.py -c colab            # protocole : 40 dérives, 10 pannes par jour
+!python scripts/m4_an1_colab.py -c colab --deuxieme-lecture   # protocole : 40 dérives, 10 pannes par jour
 ```
 
-Tout s'écrit dans un dossier **neuf**, `run_dir/alertes_pcfno3d/<modèle>/session_<horodatage>/`,
-sans rien écraser :
+`--deuxieme-lecture` marque `an1_test.json` et `resume.json` : `lecture: "deuxieme"`, et la
+note « seconde mesure sur le test, après une première lecture (16/10/2026, non conforme) ».
+Le résultat ne doit **pas** être présenté comme une mesure indépendante : la v2 a été
+conçue après avoir vu la première. Sans l'option, le script avertit, et le fichier porte
+`lecture: "non declaree"`.
 
-- `seuils_validation.json` : κ, statistique, courbe κ → détection et fausses alertes ;
-- `an1_test.json` : verdict, ou `exploratoire` hors protocole ;
+Tout s'écrit dans un dossier **neuf**,
+`run_dir/alertes_pcfno3d/<modèle>/session_v2_<horodatage>/`, sans rien écraser :
+
+- `sites_R1.npz`, `sites_R2.npz`, `sites_R3.npz` : modèles de sites (entraînement) ;
+- `seuils_validation.json` : détecteur retenu, κ, règle des entrées, courbe κ → détection
+  et fausses alertes, tous les candidats (`alternatives`) ;
+- `an1_test.json` : verdict (ou `exploratoire` hors protocole), détection par type et par
+  amplitude, fausses alertes par variable des entrées, règle v1 rejouée (diagnostic) ;
 - `resume.json` : avec la distribution du résidu de masse et de la condition au sol sur la
   validation.
 
-Le coût est d'environ 10 passes par instant, soit ~1 s sur GPU. Il faut compter ~4 min pour
-les 120 instants de validation et ~2 min pour le test. Le seuil retenu se sert ensuite par
-`alerts.seuils`.
+**Coût estimé.** Les modèles de sites demandent ~1 s par instant d'entraînement et par
+rayon (~560 instants ; `--jours-entrainement N` pour en prendre moins). Chaque jour de
+validation coûte ~2 min de CPU pour les détecteurs spatiaux, plus les 10 passes GPU par
+instant de la v1. Il faut compter **environ 1 h à 1 h 30** en tout. `--statistiques
+spatiale` saute les passes sans capteur. Le seuil retenu se sert ensuite par
+`alerts.seuils` : le modèle de sites retenu est relu à côté du JSON.
 
 ## Écarts au contrat (rév. 2) et limites
+
+- **Détecteur spatial et réseau clairsemé.** La cohérence spatiale suppose des voisins à
+  100–300 m : c'est le cas du treillis (un capteur par maille). Avec quelques dizaines de
+  stations réelles (`stations_aneo`), presque aucune n'a 3 voisins dans le rayon : elles
+  ne sont pas évaluées (jamais une alerte inventée). Il faut alors revenir à `innovation`
+  (`alerts.derive_statistique`), ou régler un rayon adapté sur des données réelles.
+- **Modèle de sites.** Il est appris sur les jours d'entraînement d'un réseau donné. Un
+  capteur déplacé, ou un site nouveau, garde l'ancien écart attendu tant que le modèle
+  n'est pas réappris ; sans modèle (`derive_sites: null`), le détecteur reste valable,
+  sans la correction.
 
 - **Cibles « domaine ».** Les alertes qui portent sur tout l'instant prennent pour cible
   `domaine`, `domaine:masse`, `domaine:sol` ou `domaine:<variable>`. Le schéma accepte
