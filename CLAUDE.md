@@ -45,6 +45,15 @@ level) fails, at 650–1000 m. On Colab (2026-10-12) the package reproduced v7's
 1000 m u 0.649 / v 0.529 vs v7 0.665 / 0.508, global v worse — v8 is not better than v7, which
 stays the served model. Remaining lever: a spatially varying geostrophic input (full retrain).
 
+**State of the project (2026-10-16):** closure lots M0, M3, M7 are merged on `main`; M2, M4,
+M5, M6, M8 are done and reviewed, on `agent/ines/*` branches, integrated on
+`agent/ines/finalisation` — their merge to `main` waits for a PR (`gh` not logged in).
+Deployment is **local only** (ines-pc: dashboard Worker under `wrangler dev` with a local R2,
+v7 service on CPU, 8 test instants published). A Colab GPU session is running for DSO6 (M2),
+AN1 (M4), EOL1 (M5, demonstration farm only) and the M6 replay — **no verdict yet**; M1
+(cell 10i) waits for its GPU session; DSO1 is still not met at 650–1000 m. Details:
+`tukhnanutha.md` § 5 "Delivery state".
+
 `notebooks/archive/` holds the architectures explored and then dropped (FNO2D variants, U-Net/FNO,
 GNN, DeepONet, ResNet, ViT). They are history, not alternatives to maintain — do not "fix" them.
 
