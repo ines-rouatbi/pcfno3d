@@ -57,26 +57,37 @@ Les poids (1,81 Go) ne vont pas dans git.
 | `best_dso_v7.pt` | `v7/best_dso_v7.pt` | `AppData/Local/pcfno3d/runs/v7/best_dso_v7.pt` (sha256 vérifié le 2026-10-16) |
 | `norm_stats.json` | `v7/norm_stats.json` | `AppData/Local/pcfno3d/runs/v7/norm_stats.json` (sha256 vérifié le 2026-10-16) |
 | Résultats du notebook v7 (BLOC 10) | `v7/eval_best_dso_v7/` (voir l'anomalie ci-dessous) | `AppData/Local/pcfno3d/runs/v7/eval_best_dso_v7/` |
-| Résultats de M1 (10i) | `v7/eval_m1_bloc10i/decision_10i.json`, `decision_10i_par_niveau.csv` | — |
-| JSON de la correction (non retenue) | `v7/couche_limite_v7.json` (sha256 `c50928ae2a93dfb3...`), `v7/correction_moyenne_v7.json`, `v7/geostrophique_v2_v7.json` | — |
+| Résultats de M1 (10i) | `v7/eval_m1_bloc10i/decision_10i.json`, `decision_10i_par_niveau.csv` | copie ici : `eval_m1_bloc10i/` (sha256 vérifiés contre le `sha256.txt` de la session) |
+| JSON de la correction (non retenue) | `v7/couche_limite_v7.json` (sha256 `c50928ae2a93dfb3363f5e8c307726bfa7c8321ab03ee30b6fa6aeef31487b10`), `v7/correction_moyenne_v7.json`, `v7/geostrophique_v2_v7.json` | — |
 
-## Anomalie à investiguer (contrôle M1-a)
+## Écart de sha256 de `test_summary.json` (contrôle M1-a) — expliqué, sans effet
 
-- Sur le Drive, `v7/eval_best_dso_v7/test_summary.json` a pour sha256
-  `28a5bbb8fb87b2c61f3c948760b899bb9c81590dd725c13b0550e6475c123894`, différent de la valeur
-  publiée au § 8 du protocole (`7944ba0aa0311a08cd1e1555c1a225239b3deabc5c9c2b55dcf4406b5da17425`).
-- La session M1 ne l'a pas réécrit (`RUN_DIR` redirigé pendant le BLOC 10) : il a été modifié
-  avant. La copie locale a bien la valeur publiée ; c'est elle que retient `SHA256SUMS`.
-- Sans effet sur le verdict : 10i recalcule tout à partir des poids vérifiés.
+- **Sur le Drive :** `v7/eval_best_dso_v7/test_summary.json` a pour sha256
+  `28a5bbb8fb87b2c61f3c948760b899bb9c81590dd725c13b0550e6475c123894` (8 254 octets, 13/10 11:47).
+- **Valeur publiée :** `7944ba0aa0311a08cd1e1555c1a225239b3deabc5c9c2b55dcf4406b5da17425`, celle de la
+  copie **locale** (5 429 octets, 12/10).
+- **Explication**, après comparaison des deux fichiers (16/10) :
+  - La copie locale est la version **importée par le paquet** (`scripts/import_notebook_eval.py`) :
+    valeurs arrondies au millième, plus des clés ajoutées (`produit_par`, `source`, `epoque`,
+    verdicts `dso*_conforme`, `critere_omm`).
+  - La copie du Drive est la sortie **brute** du BLOC 10 du notebook, ré-exécuté le 13/10 pendant
+    les essais 10e à 10h, à pleine précision.
+  - Les deux donnent les **mêmes métriques** aux arrondis près (u global 0,542 contre 0,5421558 ;
+    DSO3 0,951 contre 0,9507193). Seul le temps DSO4 diffère (0,091 s contre 0,099 s).
+  - La session M1 du 16/10 (A100) reproduit le fichier du Drive à l'identique, temps DSO4 excepté
+    (`eval_m1_bloc10i/bloc10_rejoue/test_summary.json`).
+- **Conclusion :** aucune valeur n'a été altérée, l'écart vient du format. `SHA256SUMS` retient la
+  copie locale publiée et ajoute la copie brute du Drive.
 
 ## Ce que le § 8 demande encore (non faisable sans Drive ni GPU)
 
-- [ ] Copier ici `decision_10i.json` (le « `summary.json` de 10i ») depuis
-      `v7/eval_m1_bloc10i/` sur le Drive, puis l'ajouter à `SHA256SUMS`.
-- [ ] Ajouter à `SHA256SUMS` le sha256 complet de `couche_limite_v7.json` (seul le préfixe
-      `c50928ae2a93dfb3` est consigné).
+- [x] Copier ici `decision_10i.json` depuis `v7/eval_m1_bloc10i/` et l'ajouter à `SHA256SUMS`
+      (fait le 16/10 : dossier `eval_m1_bloc10i/`, avec le CSV par niveau, la règle, le
+      `sha256.txt` de la session et le rejeu du BLOC 10).
+- [x] Ajouter à `SHA256SUMS` le sha256 complet de `couche_limite_v7.json` (lu dans le
+      `sha256.txt` de la session).
 - [ ] Archiver le notebook **exécuté** (avec ses sorties), tel que la session l'a laissé ; le
       dépôt n'en contient que la version aux sorties vidées.
 - [ ] Constituer sur le Drive `aneo_fno3d_runs/fige/modele_fige_2026-10.zip` : poids,
       `norm_stats.json`, configuration, `decision_10i.json` et `SHA256SUMS`.
-- [ ] Investiguer l'écart de sha256 de `test_summary.json` sur le Drive (ci-dessus).
+- [x] Investiguer l'écart de sha256 de `test_summary.json` sur le Drive : expliqué ci-dessus.
