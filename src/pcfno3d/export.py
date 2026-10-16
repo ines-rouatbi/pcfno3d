@@ -68,7 +68,9 @@ def export_split(wf, split: str = "test", stride: int = 2, synoptic_only: bool =
 
 def export_web(volume: Volume, out_dir: str | Path, stride: int = 1,
                fields: tuple[str, ...] = ("u", "v", "w", "speed")) -> Path:
-    """Ecrit les binaires + le manifeste. `stride` decime horizontalement (2 = 4x plus leger)."""
+    """Ecrit les binaires + le manifeste. `stride` decime horizontalement (2 = 4x plus leger).
+    Fiabilite differee : attendue (ou calculee ici) avant d'ecrire, jamais un export partiel."""
+    volume.wait_reliability()
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     geom = volume.geom

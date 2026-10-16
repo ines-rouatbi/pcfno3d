@@ -920,6 +920,10 @@ class MoteurAlertes:
         vent_fort_moyeu / cisaillement du volume y sont ajoutees (`windfarm.farm_alerts`) :
         elles passent par le journal (raised_at, ouverte / close) et par kpi.open_alerts.
         API, upload, MCP et CLI passent tous par ici."""
+        # fiabilite differee (M2) : couverture, sigma et membres du parc doivent etre PRETS
+        # (attendus, ou calcules ici) ; jamais un etat partiel dans les alertes
+        if hasattr(volume, "wait_reliability"):
+            volume.wait_reliability()
         if "externes" not in kw and getattr(wf, "farm", None) is not None:
             from .windfarm import farm_alerts
             kw["externes"] = farm_alerts(volume, wf)

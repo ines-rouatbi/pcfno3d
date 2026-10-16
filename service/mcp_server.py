@@ -22,6 +22,11 @@ Outils :
 
 Les outils de lecture n'ecrivent rien. `export_instant` ecrit sur le disque du serveur et
 exige donc la portee `admin` lorsque l'authentification est active.
+
+Fiabilite differee (lot M2, `inference.reliability`) : comme l'API, la valeur est servie
+d'abord et la fiabilite se calcule en arriere-plan. `instant_summary` et `wind_profile`
+disent son etat (`fiabilite` : en_cours / prete / echec) ; `production_eolienne`,
+`alertes_actives` et `export_instant` l'attendent. Desactivee : aucune cle ajoutee.
 """
 
 from __future__ import annotations
@@ -35,7 +40,7 @@ import numpy as np
 from mcp.server.mcpserver import MCPServer
 
 from pcfno3d.config import Config
-from pcfno3d.inference import WindFieldModel
+from pcfno3d.inference import FIABILITE_DESACTIVEE, WindFieldModel, noeud_fiabilite_nul
 from pcfno3d.windfarm import round_direction
 
 INSTRUCTIONS = """\
@@ -116,17 +121,29 @@ def _volume(stem: str | None):
     stem = stem or _default_stem(wf)
     volume = _VOLUMES.get(stem)
     if volume is not None:
+        wf.assess_reliability_async(volume)      # sans effet si deja lancee ou prete
         return stem, volume
     # meme double verification que l'API : deux outils appeles ensemble sur un nouvel
     # instant ne doivent pas lancer deux passes avant
     with _VOLUME_LOCK:
         volume = _VOLUMES.get(stem)
         if volume is None:
-            volume = wf.predict_stem(stem)
+            # fiabilite active : differee, calculee en arriere-plan (un thread par volume)
+            kw = {"defer": True} if wf.reliability is not None else {}
+            volume = wf.predict_stem(stem, **kw)
             _VOLUMES[stem] = volume
             if len(_VOLUMES) > MAX_CACHED_VOLUMES:
                 _VOLUMES.pop(next(iter(_VOLUMES)))
+    wf.assess_reliability_async(volume)
     return stem, volume
+
+
+def _etat_fiabilite(volume) -> dict:
+    """Etat de la fiabilite differee ({} si elle est desactivee : reponse inchangee)."""
+    if volume.reliability_state == FIABILITE_DESACTIVEE:
+        return {}
+    st = volume.reliability_status()
+    return {"fiabilite": st["fiabilite"], "fiabilite_s": st["fiabilite_s"]}
 
 
 def _clean(x: float) -> float | None:
@@ -202,7 +219,9 @@ def wind_profile(x_m: float, y_m: float, stem: str | None = None) -> dict:
     """Profil vertical complet en un point : une ligne par niveau du modele.
 
     Utile pour un calcul de production eolienne : le vent a la hauteur de moyeu se lit
-    directement, et le cisaillement se voit d'un niveau a l'autre.
+    directement, et le cisaillement se voit d'un niveau a l'autre. Avec la fiabilite active,
+    chaque niveau porte aussi sigma, intervalle p10/p50/p90, statut, couverture et classe,
+    a null tant que `fiabilite` vaut en_cours (rappeler l'outil plus tard).
 
     Args:
         x_m: distance en metres vers l'est depuis le coin sud-ouest.
@@ -213,6 +232,10 @@ def wind_profile(x_m: float, y_m: float, stem: str | None = None) -> dict:
     g = volume.geom
     i = int(np.clip(round(x_m / g.dx), 0, g.nx - 1))
     j = int(np.clip(round(y_m / g.dy), 0, g.ny - 1))
+    # etat lu une fois : un profil ne melange pas deux etats de la fiabilite
+    etat = volume.reliability_state
+    active = etat != FIABILITE_DESACTIVEE
+    prete = active and etat == "prete" and volume.reliability is not None
     niveaux = []
     for k, z in enumerate(g.z_levels):
         u, v, w = volume.u[k, j, i], volume.v[k, j, i], volume.w[k, j, i]
@@ -226,9 +249,16 @@ def wind_profile(x_m: float, y_m: float, stem: str | None = None) -> dict:
             "wind_direction_deg": _clean(float(round_direction(
                 270.0 - np.degrees(np.arctan2(v, u)), 3))),
         })
-    return {"stem": stem, "timestamp_utc": volume.timestamp,
-            "x_m": i * g.dx, "y_m": j * g.dy, "z_terrain_m": float(g.zt[j, i]),
-            "niveaux": niveaux}
+        if active:
+            niveaux[-1].update(volume.node_reliability(k, j, i) if prete
+                               else noeud_fiabilite_nul())
+    out = {"stem": stem, "timestamp_utc": volume.timestamp,
+           "x_m": i * g.dx, "y_m": j * g.dy, "z_terrain_m": float(g.zt[j, i]),
+           "niveaux": niveaux}
+    if active:
+        out["uncertainty"] = volume.reliability.uncertainty if prete else None
+        out["fiabilite"] = "prete" if prete else ("echec" if etat == "echec" else "en_cours")
+    return out
 
 
 @mcp.tool()
@@ -268,6 +298,9 @@ def wind_field_at_altitude(z_asl_m: float, stem: str | None = None, variable: st
 def instant_summary(stem: str | None = None) -> dict:
     """Resume chiffre d'un instant : vitesses par niveau, secteur dominant, temps d'inference.
 
+    Avec la fiabilite active : `fiabilite` (en_cours, prete, echec) et `fiabilite_s` (delai
+    de la fiabilite, null tant qu'elle n'est pas prete) ; inference_s = la valeur seule.
+
     Args:
         stem: instant (JJJ_HHMMSS) ; None = premier instant de test.
     """
@@ -296,6 +329,7 @@ def instant_summary(stem: str | None = None) -> dict:
         "vitesse_max_m_s": _clean(float(volume.speed[valid].max())),
         "secteur_dominant_deg": labels[int(secteurs.argmax())],
         "par_niveau": niveaux,
+        **_etat_fiabilite(volume),
     }
 
 
@@ -318,6 +352,7 @@ def production_eolienne(stem: str | None = None) -> dict:
     if wf.farm is None:
         raise ValueError("aucun parc eolien declare (configuration wind_farm.turbines)")
     stem, volume = _volume(stem)
+    volume.wait_reliability()        # quantiles du parc : fiabilite prete, jamais partielle
     out = farm_report(volume, wf)
     out["stem"] = stem
     moteur = get_alertes()
@@ -390,6 +425,7 @@ def alertes_actives(stem: str | None = None) -> dict:
         res = moteur.dernier
     else:
         stem, volume = _volume(stem)
+        volume.wait_reliability()    # couverture et sigma : fiabilite prete
         wf = get_model()
         S, hour, doy, _ = wf.surface_from_cache(stem)
         res = moteur.evaluer_modele(wf, S, hour, doy, volume, Y=moteur.verite(wf, stem),

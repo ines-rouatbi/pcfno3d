@@ -5,10 +5,14 @@ nœud virtuel (§ 8.4) et contrat ATOM **révision 2** (`DECISIONS-rev2.md` : D6
 B5 ; `common.schema.json` : `sigma_ms`, `status_node`, `interval`, `uncertainty_method`,
 `reliability_class` ; `quality.schema.json`).*
 
-## Statut : version 2, **seconde lecture du test en attente de la session GPU**
+## Statut : version 2, DSO6 **conforme en seconde lecture** ; fiabilité **différée**
 
 Première mesure GPU (15-16/10/2026) : DSO6 **non conforme** (couverture u et w sous 0,80) et
-DSO4 **non conforme** avec la fiabilité (4,563 s pour 8 membres). Chiffres complets dans
+DSO4 **non conforme** avec la fiabilité (4,563 s pour 8 membres). Seconde lecture du test
+(16/10/2026, version 2) : DSO6 **conforme** — mesure **non indépendante** du test, la
+première, non conforme, reste publiée —, mais DSO4 toujours **non conforme** avec la
+fiabilité synchrone (4,2 à 4,7 s). D'où la **fiabilité différée** (section du même nom) :
+DSO4 juge la valeur seule, la fiabilité est un produit à part. Chiffres complets dans
 « Historique des mesures DSO6 » ci-dessous. La version 2 change deux choses :
 
 - **A. Ensemble par lots** (DSO4) : les N passes masquées passent par lots de
@@ -193,7 +197,7 @@ inference:
 |---|---|
 | `pcfno3d calibrate-reliability` | calibration sur la validation ; n'écrase jamais un JSON existant |
 | `pcfno3d dso6 --calibration <json>` | verdict sur le test → `eval_pcfno3d/<modele>/dso6_<sha8>_keep<k>_n<instants>.json`, jamais écrasé ; `--deuxieme-lecture` ajoute le champ `mesure` |
-| `scripts/m2_calibration_colab.py` | les deux (règle auto, ensemble par lots), plus DSO4 sans et avec la fiabilité, et avec des lots de 1, 4 et 8 pour information, dans un dossier de session neuf ; `--deuxieme-lecture` |
+| `scripts/m2_calibration_colab.py` | les deux (règle auto, ensemble par lots), plus DSO4 sur la valeur seule et, pour information, le délai de la fiabilité (lot configuré, puis lots de 1, 4 et 8), dans un dossier de session neuf ; `--deuxieme-lecture` ; `--dso4-seulement --calibration <json>` : DSO4 seul |
 
 Une fois la fiabilité activée, elle apparaît partout :
 
@@ -206,9 +210,92 @@ Une fois la fiabilité activée, elle apparaît partout :
   `uncertainty` ;
 - `/api/meta`.
 
-Le temps de l'ensemble est **compris** dans `inference_s`, donc dans DSO4.
-`reliability_s` en donne la part, et l'évaluation publie DSO4 avec et sans
-(`dso4_inference_s_sans_fiabilite`).
+Depuis la fiabilité différée (section suivante), `inference_s` est le temps de la **valeur
+seule** et DSO4 ne juge que lui ; `reliability_s` est le **délai** de la fiabilité (de la
+valeur servie à la fiabilité prête), publié à côté par l'évaluation
+(`dso4_delai_fiabilite_s`, `dso4_delai_fiabilite_p95_s`), sans verdict DSO4.
+
+## Fiabilité différée
+
+**Décision (16/10/2026, l'utilisatrice, propriétaire de l'application).** La fiabilité
+devient un **produit différé** de la reconstruction : la valeur est servie d'abord, la
+fiabilité (ensemble de passes masquées, calibration, statut, couverture, classe) ensuite.
+
+**Raison : deux mesures DSO4 sur Colab L4, v7, 16/10/2026.**
+
+| Mesure | Temps moyen par instant | DSO4 (< 1 s) |
+|---|---|---|
+| Valeur seule (passe servie) | **0,447 s** | conforme |
+| Valeur + fiabilité **synchrone**, 8 membres, lot 1 | 4,531 s | non conforme |
+| idem, lot 4 | 4,207 s | non conforme |
+| idem, lot 8 | 4,744 s | non conforme |
+
+Une passe v7 sature déjà le GPU : regrouper les passes masquées par lots (version 2, A) ne
+gagne presque rien (−7 % au mieux, et le lot 8 est plus lent que le lot 1). Aucun réglage
+de l'ensemble ne ramène 8 passes sous 1 s ; réduire `reliability.members` dégraderait σ, et
+donc DSO6. La valeur, elle, tient DSO4 avec une marge de 2 ×. Le temps que voit
+l'utilisateur pour **la valeur** ne doit donc pas attendre la fiabilité.
+
+**Ce que DSO4 mesure désormais.** Le temps de la valeur (passe servie seule,
+`Volume.inference_s`), avec verdict. Le délai de la fiabilité (`Volume.reliability_s`) est
+mesuré sur les mêmes appels et publié à côté, **sans verdict DSO4** :
+`dso4_delai_fiabilite_s` dans `test_summary.json`, `delai_fiabilite` (et par taille de lot)
+dans le résumé de `scripts/m2_calibration_colab.py`. Pour remesurer DSO4 seul avec la
+calibration retenue, sans refaire la calibration ni DSO6 :
+
+    !python scripts/m2_calibration_colab.py -c colab --dso4-seulement \
+        --calibration <run_dir>/fiabilite_pcfno3d/<modele>/session_.../calibration_validation.json
+
+**Mécanisme** (`src/pcfno3d/inference.py`).
+
+- `WindFieldModel.predict` calcule la valeur et la renvoie. Fiabilité active : le volume
+  porte un état explicite, `Volume.reliability_state` ∈ {`desactivee`, `en_cours`,
+  `prete`, `echec`}, et garde les entrées du calcul (surface, capteurs, passe brute).
+  `predict(defer=False)` (défaut : scripts, évaluation, publication) enchaîne la fiabilité
+  avant de rendre la main ; `predict(defer=True)` (service) rend la main dès la valeur.
+- `assess_reliability(volume)` calcule la fiabilité en **synchrone** (ou l'attend si un
+  thread s'en charge) ; `assess_reliability(volume, S, hour, doy, sensor)` la calcule pour
+  un volume fait sans elle. `assess_reliability_async(volume)` la lance dans un **thread
+  d'arrière-plan** — un seul par volume.
+- `Volume.wait_reliability()` attend la fiabilité, ou la calcule dans le thread appelant si
+  personne ne l'a lancée ; en échec, `ReliabilityError` avec la cause.
+- **Équivalence numérique exacte** : différée ou synchrone, la fiabilité est le même calcul
+  (`reliability.assess` sur la passe brute, ensemble par `_members`), bit à bit — testé
+  contre le calcul synchrone d'avant (`test_differee_identique_au_calcul_synchrone`). Les
+  verdicts DSO6 mesurés en synchrone valent donc pour la fiabilité différée.
+- **Verrou du modèle prioritaire** (`ModelLock`) : la passe servie passe avant les lots de
+  l'ensemble. Une nouvelle reconstruction attend au plus la fin du lot en cours, jamais tout
+  l'ensemble d'un autre volume ; un verrou simple n'était pas équitable. Dans le service,
+  `reliability.batch: 1` borne cette attente à une passe.
+
+**Qui attend la fiabilité.** Tout ce qui la lit ne voit jamais un état partiel :
+
+- **M4** (`MoteurAlertes.evaluer_modele`) : la `zone_mal_couverte` utilise la couverture et
+  σ de la fiabilité quand elle est active ; l'alerte attend donc la fiabilité prête (et
+  donne exactement les alertes du calcul synchrone, testé).
+- **M5** (`windfarm.compute_farm`) : les quantiles p10/p90 du parc viennent des membres de
+  l'ensemble capturés aux colonnes des éoliennes (`Volume.farm_context.members_uv`), qui
+  n'arrivent qu'avec la fiabilité ; le calcul du parc l'attend (testé, identique au
+  synchrone).
+- **M6** (`publish.construire_instantane`) : un instantané est **immuable** ; il ne se
+  construit qu'avec la fiabilité prête quand elle est active (attendue, ou calculée), et une
+  fiabilité en échec ne publie rien. `snapshot.kpi.reconstruction_ms` est le temps de la
+  valeur ; le contrat rév. 2 (`additionalProperties: false`) n'a pas de place pour le délai
+  de la fiabilité, qui va dans le rapport local (`Instantane.info["fiabilite_s"]`, imprimé
+  par `pcfno3d publish` et par le rejeu M6) ; `validate.mjs` n'est pas touché.
+- `save_npz`, `export_web` (manifeste `fiabilite`) l'attendent aussi.
+
+**Service et MCP.** `/api/reconstruct`, l'upload et `/reconstruct/stations` répondent sans
+attendre, avec `fiabilite: "en_cours"` ; la fiabilité part dans un thread d'arrière-plan et
+se range dans le même volume du cache. `/api/profile` donne les champs de fiabilité à
+`null` avec `fiabilite: "en_cours"` tant qu'elle n'est pas prête, puis les valeurs avec
+`fiabilite: "prete"`. `GET /api/reliability/{stem}` (portée `read`) donne l'état et les
+temps sans rien calculer. `/api/health` répond pendant le calcul (testé). Les routes
+`/api/alerts`, `/api/wind-farm` et l'export attendent ; `503` en échec. MCP : même règle.
+Contrat complet : `docs/INTEGRATION.md`, « Fiabilité différée ».
+
+**Fiabilité désactivée** : rien ne change — aucune clé ajoutée, sortie bit à bit, aucun
+thread (testé : `test_service_desactivee_inchange`, `test_desactivee_rien_ne_change`).
 
 ## DSO6
 
@@ -243,7 +330,7 @@ Verdict DSO6 : **NON CONFORME** (couverture de u et de w sous 0,80 ; la corréla
 positive partout). DSO4 : 0,448 s sans fiabilité (conforme) ; **4,563 s** avec 8 membres
 (**non conforme**, seuil 1 s).
 
-### Seconde mesure — à venir (version 2)
+### Seconde mesure — Colab L4, v7, 16/10/2026 (version 2, seconde lecture)
 
 Après cette première lecture, l'utilisatrice (propriétaire de l'application) a décidé la
 version 2 : ensemble par lots (A) et marge de calibration par une règle fixée d'avance sur la
@@ -253,7 +340,21 @@ verdict n'est donc **pas une mesure indépendante** du test. Il se lance avec
 
     "mesure": "seconde mesure sur le test, apres une premiere lecture (15/10/2026, non conforme)"
 
-Les chiffres de la seconde mesure seront ajoutés ici, à la suite de la première.
+Calibration de la version 2 : règle « auto » fixée d'avance → **q retenu = 0,90**,
+8 membres, `keep` 0,7, capteurs visibles `mask.keep_eval`.
+
+| | u | v | w | speed |
+|---|---|---|---|---|
+| Couverture 80 % sur le test | 0,871 | 0,912 | 0,896 | 0,904 |
+| Spearman(\|erreur\|, σ) sur le test | 0,295 | 0,311 | 0,231 | 0,291 |
+
+Verdict DSO6 : **CONFORME** (couverture ≥ 0,80 pour u, v et w ; corrélation positive
+partout) — **seconde lecture, non indépendante** du test ; la première lecture, non
+conforme, reste publiée ci-dessus. DSO4 : 0,447 s sans fiabilité (conforme) ; avec la
+fiabilité **synchrone**, 8 membres : lot 1 4,531 s, lot 4 4,207 s, lot 8 4,744 s
+(**non conforme**). Une passe v7 sature déjà le GPU : le regroupement par lots ne gagne
+presque rien. Conséquence : la **fiabilité différée** (section du même nom), décidée le
+16/10/2026 ; DSO4 se remesure alors sur la valeur seule (`--dso4-seulement`).
 
 ## Choix tranchés (relecture stage-b5, contrat rév. 2)
 
@@ -286,8 +387,10 @@ Les chiffres de la seconde mesure seront ajoutés ici, à la suite de la premiè
    ANEO et le cache passent `False`, sans effet sur `status`.
 6. **Coût.** N passes supplémentaires par instant. Première mesure sur L4 : 0,448 s sans
    fiabilité, 4,563 s avec 8 membres passés un par un (DSO4 non conforme, seuil 1 s). La v2
-   les passe par lots (`reliability.batch`) ; le script Colab mesure DSO4 sans, avec, et par
-   taille de lot (1, 4, 8). Si cela ne suffit pas, on peut réduire `reliability.members`.
+   les passe par lots (`reliability.batch`) : 4,207 à 4,744 s, presque aucun gain (une
+   passe v7 sature déjà le GPU). Tranché le 16/10/2026 : **fiabilité différée** — DSO4 juge
+   la valeur seule, le délai de la fiabilité est publié à côté sans verdict ; on ne réduit
+   pas `reliability.members` (σ, donc DSO6, en dépend).
 
 ## Écarts restants avec les schémas rév. 2 (hors M2)
 

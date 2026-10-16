@@ -56,7 +56,8 @@ from pydantic import BaseModel, Field
 
 from pcfno3d.config import Config
 from pcfno3d.export import export_web
-from pcfno3d.inference import Volume, WindFieldModel
+from pcfno3d.inference import (FIABILITE_DESACTIVEE, ReliabilityError, Volume, WindFieldModel,
+                               noeud_fiabilite_nul)
 from pcfno3d.windfarm import round_direction
 
 from . import mcp_server
@@ -363,8 +364,56 @@ def _stem_par_defaut(wf: WindFieldModel) -> str:
     return str(rows["stem"].iloc[0])
 
 
+def _differee(wf: WindFieldModel) -> bool:
+    """Fiabilite configuree : le service la DIFFERE (valeur servie d'abord, fiabilite dans
+    un thread d'arriere-plan, rangee dans le meme volume du cache)."""
+    return wf.reliability is not None
+
+
+def _kw_differee(wf: WindFieldModel) -> dict:
+    """Argument `defer` des appels a predict : present seulement si la fiabilite est active
+    (desactivee, les appels restent exactement ceux d'avant)."""
+    return {"defer": True} if _differee(wf) else {}
+
+
+def _memoriser(cache_key: str, volume: Volume) -> None:
+    """Range un volume dans le cache des volumes (le plus ancien sort au-dela de 4)."""
+    with _VOLUME_LOCK:
+        cache = STATE.setdefault("volumes", {})
+        cache[cache_key] = volume
+        if len(cache) > MAX_CACHED_VOLUMES:
+            cache.pop(next(iter(cache)))
+
+
+def _fiabilite_prete(volume: Volume) -> Volume:
+    """Attend la fiabilite differee (alertes M4, parc M5, export) : jamais un etat partiel.
+    Fiabilite en echec : 503 avec la cause."""
+    try:
+        volume.wait_reliability()
+    except ReliabilityError as exc:
+        raise HTTPException(503, str(exc)) from exc
+    return volume
+
+
+def _etat_fiabilite(wf: WindFieldModel, volume: Volume, stem: str | None,
+                    keep: float = 1.0) -> dict:
+    """Cles de fiabilite d'une reponse de reconstruction ; {} si elle est desactivee (la
+    reponse garde alors exactement ses cles d'avant)."""
+    if not _differee(wf) or volume.reliability_state == FIABILITE_DESACTIVEE:
+        return {}
+    st = volume.reliability_status()
+    out = {"fiabilite": st["fiabilite"], "fiabilite_s": st["fiabilite_s"]}
+    if stem is not None:
+        out["fiabilite_route"] = f"/api/reliability/{stem}" + (
+            f"?keep={keep:.3f}" if abs(keep - 1.0) > 1e-9 else "")
+    return out
+
+
 def _volume_for(stem: str | None, keep: float = 1.0) -> Volume:
-    """Volume d'un instant, memorise (un instant complet pese ~18 Mo en memoire)."""
+    """Volume d'un instant, memorise (un instant complet pese ~18 Mo en memoire).
+
+    Fiabilite active : la valeur est servie sans l'attendre ; la fiabilite part dans un
+    thread d'arriere-plan (un seul par volume) et se range dans ce meme volume du cache."""
     wf = model()
     if stem is None:
         stem = _stem_par_defaut(wf)
@@ -372,6 +421,7 @@ def _volume_for(stem: str | None, keep: float = 1.0) -> Volume:
     cache_key = f"{stem}:{keep:.3f}"
     volume = cache.get(cache_key)
     if volume is not None:
+        wf.assess_reliability_async(volume)      # sans effet si deja lancee ou prete
         return volume
     # double verification sous verrou : l'application web demande la carte, le resume et
     # les fleches EN MEME TEMPS pour un nouvel instant. La premiere requete calcule, les
@@ -381,12 +431,13 @@ def _volume_for(stem: str | None, keep: float = 1.0) -> Volume:
         volume = cache.get(cache_key)
         if volume is None:
             try:
-                volume = wf.predict_stem(stem, keep=keep)
+                volume = wf.predict_stem(stem, keep=keep, **_kw_differee(wf))
             except KeyError as exc:
                 raise HTTPException(404, f"instant inconnu : {stem}") from exc
             cache[cache_key] = volume
             if len(cache) > MAX_CACHED_VOLUMES:
                 cache.pop(next(iter(cache)))
+    wf.assess_reliability_async(volume)
     return volume
 
 
@@ -464,6 +515,8 @@ def reconstruct(req: ReconstructRequest,
     if req.export and not (keys().open_mode or scope_allows(record, "admin")):
         raise HTTPException(403, "l'export sur disque demande la portee admin")
     volume = _volume_for(req.stem, keep=req.keep)
+    # fiabilite differee : DSO4 juge la valeur seule (inference_s) ; la reponse n'attend
+    # pas la fiabilite, elle dit son etat (en_cours / prete) et ou le suivre
     valid = wf.geom.valid
     out: dict = {
         "stem": req.stem, "timestamp_utc": volume.timestamp,
@@ -475,10 +528,10 @@ def reconstruct(req: ReconstructRequest,
         "vitesse_max_m_s": round(float(volume.speed[valid].max()), 3),
         "vitesse_moyenne_m_s": round(float(volume.speed[valid].mean()), 3),
     }
-    if volume.reliability is not None:
-        # part de l'ensemble de fiabilite (lot M2) dans inference_s ; cle absente sinon
-        out["fiabilite_s"] = round(volume.reliability_s, 4)
+    if _differee(wf):
+        out.update(_etat_fiabilite(wf, volume, req.stem or _stem_par_defaut(wf), req.keep))
     if req.export:
+        _fiabilite_prete(volume)          # un export sur disque porte la fiabilite complete
         name = f"recon_{req.stem or 'latest'}"
         out["export"] = str(export_web(volume, wf.cfg.paths.web_root / name,
                                        stride=req.stride))
@@ -530,15 +583,25 @@ def _upload_calcul(wf: WindFieldModel, data: bytes, filename: str | None, keep: 
                           + " ; ".join(rapport["motifs"]),
                 "qualite": rapport})
         moteur = STATE.get("alertes")
+        differee = _differee(wf)
         if moteur is None:
-            volume = wf.predict_csv(tmp_path, keep=keep, exclure=masque)
+            volume = wf.predict_csv(tmp_path, keep=keep, exclure=masque, **_kw_differee(wf))
         else:
             # meme passe que predict_csv, en gardant S pour les alertes (lot M4)
             S, hour, doy, stamp = wf.surface_from_csv(tmp_path, masque)
-            volume = wf.predict(S, hour, doy, timestamp=stamp, keep=keep)
+            volume = wf.predict(S, hour, doy, timestamp=stamp, keep=keep, **_kw_differee(wf))
+        if differee:
+            # fiabilite en arriere-plan, volume range dans le cache (lisible ensuite par
+            # /profile, /reliability... sous `stem`)
+            stem = _stem_upload(volume.timestamp, keep)
+            _memoriser(f"{stem}:1.000", volume)
+            wf.assess_reliability_async(volume)
+        if moteur is not None:
             from pcfno3d.alerts import stations_hors_plage
             hp = stations_hors_plage(tmp_path, grille.n_stations, grille.node_id_start,
                                      rapport["seuils"]["tol_densite_rel"])
+            # les alertes ATTENDENT la fiabilite (couverture, sigma, membres du parc)
+            _fiabilite_prete(volume)
             alertes = moteur.evaluer_modele(wf, S, hour, doy, volume, rapport=rapport,
                                             hors_plage=hp)
     except (ValueError, KeyError) as exc:
@@ -552,11 +615,23 @@ def _upload_calcul(wf: WindFieldModel, data: bytes, filename: str | None, keep: 
            "statut_qualite": rapport["verdict"],
            "avertissements": rapport["motifs"] + rapport["avertissements"],
            "qualite": rapport}
+    if differee:
+        out["stem"] = stem
+        out.update(_etat_fiabilite(wf, volume, stem))
     if moteur is not None:
         # alertes activees seulement : sinon la reponse garde exactement ses cles
         out["alertes"] = alertes.document()
         out["physique"] = alertes.physics
     return out
+
+
+def _stem_upload(timestamp: str | None, keep: float) -> str:
+    """Cle de cache d'un volume televerse (fiabilite active seulement)."""
+    import pandas as pd
+
+    t = pd.Timestamp(timestamp) if timestamp else pd.Timestamp.now(tz="UTC")
+    suffixe = "" if abs(keep - 1.0) < 1e-9 else f"_keep{keep:.2f}"
+    return f"upload_{t.strftime('%Y%m%d_%H%M%S')}{suffixe}"
 
 
 class StationObs(BaseModel):
@@ -611,19 +686,18 @@ def reconstruct_stations(req: StationsRequest,
         if pd.Timestamp(req.timestamp_utc).tzinfo else pd.Timestamp(req.timestamp_utc)
     hour = ts.hour + ts.minute / 60 + ts.second / 3600
     # mesures de stations REELLES (information de fiabilite ; le statut n'en depend pas)
-    volume = wf.predict(S, hour, int(ts.dayofyear), timestamp=str(ts), real_sensors=True)
+    volume = wf.predict(S, hour, int(ts.dayofyear), timestamp=str(ts), real_sensors=True,
+                        **_kw_differee(wf))
     stem = f"live_{ts.strftime('%Y%m%d_%H%M%S')}"
-    with _VOLUME_LOCK:
-        cache = STATE.setdefault("volumes", {})
-        cache[f"{stem}:1.000"] = volume
-        if len(cache) > MAX_CACHED_VOLUMES:
-            cache.pop(next(iter(cache)))
+    _memoriser(f"{stem}:1.000", volume)
+    wf.assess_reliability_async(volume)          # fiabilite en arriere-plan, si active
     valid = wf.geom.valid
     return {"stem": stem, "timestamp_utc": str(ts), "stations": info, "controle": rapport,
             "georeferencement": "suppose (domaine synthetique, position choisie)"
             if wf.cfg.real.origin_assumed else "mesure",
             "inference_s": round(volume.inference_s, 4),
-            "vitesse_max_m_s": round(float(volume.speed[valid].max()), 3)}
+            "vitesse_max_m_s": round(float(volume.speed[valid].max()), 3),
+            **_etat_fiabilite(wf, volume, stem)}
 
 
 @router.get("/field", tags=["donnees"])
@@ -679,12 +753,20 @@ def profile(x: float = Query(...), y: float = Query(...), stem: str | None = Non
     Avec la fiabilite active (`inference.reliability`, lot M2), chaque niveau porte aussi
     sigma_speed, sigma_u, sigma_v, sigma_w, speed_interval (p10, p50, p90), status,
     coverage, reliability, reliability_class — noms du contrat ATOM rev. 2 — et la reponse
-    le bloc `uncertainty` (methode, membres, calibration).
+    le bloc `uncertainty` (methode, membres, calibration) et `fiabilite`, l'etat de la
+    fiabilite differee : tant qu'elle vaut `en_cours` (ou `echec`), ces champs sont null ;
+    `prete` : les valeurs. Desactivee : aucune de ces cles.
     """
     volume = _volume_for(stem)
     g = volume.geom
     i = int(np.clip(round(x / g.dx), 0, g.nx - 1))
     j = int(np.clip(round(y / g.dy), 0, g.ny - 1))
+    # etat lu UNE fois : un profil ne melange pas deux etats de la fiabilite
+    etat = volume.reliability_state
+    active = etat != FIABILITE_DESACTIVEE
+    prete = active and volume.reliability is not None and etat == "prete"
+    if active and not prete:
+        etat = "echec" if etat == "echec" else "en_cours"
     niveaux = []
     for k, zl in enumerate(g.z_levels):
         u, v, w = volume.u[k, j, i], volume.v[k, j, i], volume.w[k, j, i]
@@ -698,13 +780,30 @@ def profile(x: float = Query(...), y: float = Query(...), stem: str | None = Non
             if ok else None,
             "wind_w_m_s": round(float(w), 4) if ok else None,
         })
-        if volume.reliability is not None:
-            niveaux[-1].update(volume.node_reliability(k, j, i))
+        if active:
+            niveaux[-1].update(volume.node_reliability(k, j, i) if prete
+                               else noeud_fiabilite_nul())
     out = {"timestamp_utc": volume.timestamp, "x_m": i * g.dx, "y_m": j * g.dy,
            "z_terrain_m": float(g.zt[j, i]), "niveaux": niveaux}
-    if volume.reliability is not None:
-        out["uncertainty"] = volume.reliability.uncertainty
+    if active:
+        out["uncertainty"] = volume.reliability.uncertainty if prete else None
+        out["fiabilite"] = etat
     return out
+
+
+@router.get("/reliability/{stem}", tags=["qualite"])
+def reliability_state(stem: str, keep: float = Query(1.0, ge=0.0, le=1.0),
+                      _: ApiKeyRecord | None = Depends(require_read)) -> dict:
+    """Etat de la fiabilite differee d'un volume deja reconstruit : `fiabilite`
+    (desactivee, en_cours, prete, echec), `inference_s` (la valeur, DSO4), `fiabilite_s`
+    (delai de la fiabilite, null tant qu'elle n'est pas prete), `erreur`. Route legere :
+    ne lance aucun calcul ; 404 si l'instant n'est pas dans le cache des volumes."""
+    model()
+    volume = STATE.get("volumes", {}).get(f"{stem}:{keep:.3f}")
+    if volume is None:
+        raise HTTPException(404, f"aucun volume en cache pour {stem} (keep {keep:.3f}) : "
+                                 "POST /api/reconstruct d'abord")
+    return {"stem": stem, **volume.reliability_status()}
 
 
 def _alertes_stem(stem: str | None):
@@ -715,7 +814,7 @@ def _alertes_stem(stem: str | None):
                                  "configuration du service")
     wf = model()
     stem = stem or _stem_par_defaut(wf)
-    volume = _volume_for(stem)
+    volume = _fiabilite_prete(_volume_for(stem))     # couverture, sigma : fiabilite prete
     try:
         S, hour, doy, _ = wf.surface_from_cache(stem)
     except KeyError as exc:
@@ -756,7 +855,8 @@ def wind_farm(stem: str | None = None,
         raise HTTPException(404, "aucun parc eolien declare (configuration "
                                  "wind_farm.turbines, voir docs/EOLIEN.md)")
     stem = stem or _stem_par_defaut(wf)
-    out = farm_report(_volume_for(stem), wf)
+    # quantiles du parc sur les membres de l'ensemble : fiabilite prete, jamais partielle
+    out = farm_report(_fiabilite_prete(_volume_for(stem)), wf)
     if STATE.get("alertes") is not None:
         # alertes actives : les items du journal M4 (premiere levee, ouverte / close) ;
         # sinon, alertes brutes de M5 (raised_at = l'instant)

@@ -119,12 +119,10 @@ class Evaluator:
         res_all = pd.concat([res, res_ep], ignore_index=True)
         res_all.to_csv(self.out_dir / "test_par_instant.csv", index=False)
 
-        # DSO4 : temps d'inference sur un instant reel
+        # DSO4 : temps de la VALEUR sur un instant reel (fiabilite differee) ; fiabilite
+        # active : son delai est mesure sur les memes appels, publie a cote, sans verdict
         S, hour, doy, _ = self.wf.surface_from_cache(te_s[0])
         timing = self.wf.benchmark(S, hour, doy, n=20)
-        if self.wf.reliability is not None:
-            # DSO4 mesure AVEC la fiabilite (le temps reel de livraison) et SANS
-            timing["sans_fiabilite"] = self.wf.benchmark(S, hour, doy, n=20, reliability=False)
 
         # DSO5 : robustesse a un reseau de capteurs degrade
         sub = syn_idx[np.unique(np.linspace(0, len(syn_idx) - 1,
@@ -366,11 +364,12 @@ class Evaluator:
             "dso3_conforme": dso3_conforme(rough_mean, dso.roughness_range),
             "dso4_inference_s": timing["mean_s"],
             "dso4_conforme": bool(timing["conforme"]),
-            # fiabilite active : DSO4 la compte, et le temps sans elle est publie a cote ;
-            # desactivee, aucune cle en plus (test_summary.json identique a main)
-            **({"dso4_fiabilite_incluse": True,
-                "dso4_inference_s_sans_fiabilite": timing["sans_fiabilite"]["mean_s"]}
-               if "sans_fiabilite" in timing else {}),
+            # fiabilite active : DSO4 juge la valeur seule (fiabilite differee) ; le delai de
+            # la fiabilite est publie a cote, pour information, sans verdict DSO4.
+            # Desactivee : aucune cle en plus (test_summary.json identique a main)
+            **({"dso4_delai_fiabilite_s": timing["fiabilite"]["mean_s"],
+                "dso4_delai_fiabilite_p95_s": timing["fiabilite"]["p95_s"]}
+               if "fiabilite" in timing else {}),
             "dso5_rmse_25pct": rmse25,
             "dso5_conforme": bool(rmse25 <= dso.rmse_25pct),
             "mae_direction_deg": float(res_all["mae_dir_deg"].mean()),
@@ -515,7 +514,10 @@ def format_report(s: dict, levels: pd.DataFrame, levels_ep: pd.DataFrame,
           f"(dans [{dso.roughness_range[0]} ; {dso.roughness_range[1]}]) "
           f"-> {ok(s['dso3_conforme'])}",
           f"DSO4  inference = {s['dso4_inference_s'] * 1000:.0f} ms (seuil {dso.time_s} s)"
-          f"      -> {ok(s['dso4_conforme'])}",
+          f"      -> {ok(s['dso4_conforme'])}"
+          + ("\n      (info) delai de la fiabilite differee = "
+             f"{s['dso4_delai_fiabilite_s']:.2f} s, sans verdict DSO4"
+             if "dso4_delai_fiabilite_s" in s else ""),
           f"DSO5  RMSE max a 25 % de capteurs = {s['dso5_rmse_25pct']:.3f} m/s "
           f"(seuil {dso.rmse_25pct}) -> {ok(s['dso5_conforme'])}",
           f"Direction : MAE = {s['mae_direction_deg']:.2f} deg (vents >= 1 m/s)",

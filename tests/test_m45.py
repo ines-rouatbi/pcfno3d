@@ -77,6 +77,46 @@ def _jour(cfg, split: str = "test") -> list[str]:
 
 
 # ------------------------------------------------------------------ ensemble M2
+def test_m4_m5_attendent_la_fiabilite_differee(trained, parc, tmp_path):
+    """Fiabilite differee : le parc (quantiles sur les membres captures) et les alertes
+    (zone_mal_couverte : couverture et sigma) d'un volume en_cours attendent la fiabilite
+    (ou la calculent) et donnent EXACTEMENT le resultat du calcul synchrone ; jamais un
+    etat partiel (membres absents, couverture sans sigma)."""
+    from pcfno3d.inference import WindFieldModel
+    from pcfno3d.windfarm import compute_farm
+    trained.wind_farm.turbines = parc
+    trained.inference.reliability = "non_calibre"
+    trained.reliability.members = 3
+    try:
+        wf = WindFieldModel(trained, device="cpu", verbose=False)
+        stem = _jour(trained)[0]
+        S, hour, doy, stamp = wf.surface_from_cache(stem)
+        sync = wf.predict(S, hour, doy, timestamp=stamp)
+        wcfg = trained.wind_farm
+        ref = compute_farm(sync, wf.farm, wcfg, calibration=wf.reliability).to_json(wcfg)
+        assert ref["membres"] == 3 and ref["wind_farm"]["farm"]["power_kw"]["p90"] is not None
+
+        dif = wf.predict(S, hour, doy, timestamp=stamp, defer=True)
+        assert dif.reliability_state == "en_cours" and dif.farm_context.members_uv is None
+        out = compute_farm(dif, wf.farm, wcfg, calibration=wf.reliability).to_json(wcfg)
+        assert dif.reliability_state == "prete" and out == ref
+        np.testing.assert_array_equal(dif.farm_context.members_uv,
+                                      sync.farm_context.members_uv)
+
+        def doc(vol, nom):
+            m = MoteurAlertes(trained, journal=tmp_path / nom)
+            return m.evaluer_modele(wf, S, hour, doy, vol).document()
+
+        dif2 = wf.predict(S, hour, doy, timestamp=stamp, defer=True)
+        d_dif = doc(dif2, "b.jsonl")
+        assert dif2.reliability_state == "prete"
+        assert d_dif == doc(sync, "a.jsonl")
+    finally:
+        trained.wind_farm.turbines = None
+        trained.inference.reliability = None
+        trained.reliability.members = ReliabilityCfg().members
+
+
 def test_passes_de_derive_non_capturees_par_le_parc(trained, parc, tmp_path):
     """Les cote^2 passes de derive M4 (wf._member) n'entrent PAS dans les membres de
     l'ensemble M2 captures pour le parc (Volume.farm_context.members_uv)."""

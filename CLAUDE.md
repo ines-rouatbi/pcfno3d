@@ -145,6 +145,8 @@ notebook's globals.
   geometry, stats and weights once; `Volume` exposes `at_altitude`, `at_point`, `to_nodes_frame`,
   `save_npz`. The checkpoint's stored architecture overrides the YAML, so an edited config can't
   silently break loading.
+- **Deferred reliability (M2, 2026-10-16):** DSO4 times the served value only; the ensemble
+  runs apart (`assess_reliability[_async]`, `Volume.reliability_state`) — `docs/FIABILITE.md`.
 - **`alerts.py` / `an1.py`** (lot M4, criterion AN1) — one alerts document per instant in the
   ATOM rev. 2 format (`alerts.schema.json`: id = sha8 of `kind|target`, 4 levels, cause and
   recommendation), aggregating M3 (contract report), M2 (coverage), M4 (sensor drift by

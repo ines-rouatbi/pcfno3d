@@ -229,6 +229,10 @@ def main(argv: list[str] | None = None) -> int:
                 return 1
             depot.ecrire(inst)
             etat.append(f"{inst.data_status}, alertes ouvertes {inst.open_alerts}")
+            # temps : journal local (le delai de fiabilite n'a pas de place dans le contrat)
+            etat.append(f"valeur {inst.info['inference_s'] * 1000:.0f} ms"
+                        + (f", fiabilite {inst.info['fiabilite_s']:.2f} s"
+                           if inst.info.get("fiabilite_s") is not None else ""))
         # exports DE3 manquants, toujours depuis le dossier publie
         if args.exports and depot.existe(sid):
             faits = exporter_dossier(dossier, wf.geom, racine / "exports", rc.class_high,

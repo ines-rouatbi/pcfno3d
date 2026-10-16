@@ -292,6 +292,65 @@ def test_validate_mjs_detecte_un_defaut(depot_complet, validate_mjs, tmp_path):
     assert "sha256" in sortie and "NaN" in sortie
 
 
+def test_publication_attend_la_fiabilite_differee(complet, trained, tmp_path, schemas):
+    """Un instantane est immuable : avec la fiabilite active, il ne se construit qu'une fois
+    la fiabilite PRETE. Un volume en_cours fait attendre la publication ; le resultat est
+    celui du calcul synchrone (seul kpi.reconstruction_ms, un temps mesure, differe) ; le
+    delai de la fiabilite va dans le rapport local (info), pas dans le contrat ; une
+    fiabilite en echec ne publie rien."""
+    import threading
+
+    from pcfno3d.publish import DepotLocal, construire_instantane
+    wf = complet
+    stem = _instants(trained, 1)[0]
+    S, hour, doy, stamp = wf.surface_from_cache(stem)
+    kw = dict(stem=stem, data_kind="test", generated_at=GEN)
+    ref = construire_instantane(wf, wf.predict(S, hour, doy, timestamp=stamp), S, **kw)
+    feu = threading.Event()
+    vrai = wf._members
+    wf._members = lambda *a, **k: (feu.wait(60), vrai(*a, **k))[1]
+    res: dict = {}
+    try:
+        vol = wf.predict(S, hour, doy, timestamp=stamp, defer=True)
+        assert vol.reliability_state == "en_cours"
+        wf.assess_reliability_async(vol)                   # le service l'a lancee
+        t = threading.Thread(target=lambda: res.update(
+            inst=construire_instantane(wf, vol, S, **kw)))
+        t.start()
+        t.join(0.5)
+        assert t.is_alive() and "inst" not in res          # la publication attend
+    finally:
+        feu.set()
+        del wf._members
+    t.join(120)
+    inst = res["inst"]
+    assert vol.reliability_state == "prete"
+    assert inst.info["fiabilite"] and inst.info["fiabilite_s"] > 0
+    assert inst.info["inference_s"] == round(vol.inference_s, 4)
+    assert set(inst.fichiers) == set(ref.fichiers)
+    for nom, b in ref.fichiers.items():
+        if nom != "snapshot.json":
+            assert inst.fichiers[nom] == b, nom
+    a, b = (json.loads(x.fichiers["snapshot.json"]) for x in (ref, inst))
+    for d in (a, b):
+        assert d["kpi"].pop("reconstruction_ms") > 0
+    assert a == b
+    depot = DepotLocal(tmp_path / "pub")
+    depot.ecrire(inst)
+    assert not valider_python(schemas, depot.dossier(inst.snapshot_id))
+
+    def casse(*a, **k):
+        raise MemoryError("lot trop gros")
+
+    wf._members = casse
+    try:
+        bad = wf.predict(S, hour, doy, timestamp=stamp, defer=True)
+        with pytest.raises(ValueError, match="instantane non publie.*lot trop gros"):
+            construire_instantane(wf, bad, S, **kw)
+    finally:
+        del wf._members
+
+
 def test_sans_lots_optionnels(nu, trained, tmp_path, schemas, validate_mjs):
     """M2, M4, M5 inactifs : uncertainty « aucune », blocs null (B5), seuls u, v, w, speed,
     pas de profil ; toujours conforme (schemas + validate.mjs)."""

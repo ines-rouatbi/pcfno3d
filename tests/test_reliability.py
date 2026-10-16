@@ -495,8 +495,9 @@ def test_activee_deterministe_et_valeur_servie_inchangee(wf_fiable, instant, tmp
     assert set(np.unique(rel.reliability_class[g.valid])) <= {0, 1, 2}
     assert rel.uncertainty == {"method": METHOD, "members": 4, "calibrated": False,
                                "scale_factor": None, "coverage_80_validation": None}
-    # le temps de l'ensemble compte dans le temps de livraison (DSO4)
-    assert a.reliability_s > 0 and a.inference_s >= a.reliability_s
+    # fiabilite differee : inference_s = la valeur seule (DSO4), reliability_s = son delai
+    assert a.reliability_state == "prete" and sans.reliability_state == "desactivee"
+    assert a.reliability_s > 0 and a.inference_s > 0
     assert wf.meta()["fiabilite"]["uncertainty"]["members"] == 4
 
     # exposition : npz et manifeste web
@@ -681,15 +682,32 @@ def test_script_colab_ecrit_dans_un_dossier_neuf(trained, monkeypatch):
     assert resume["mesure"].startswith("seconde mesure sur le test")
     assert resume["calibration"]["calibration_q"] == "auto"
     assert resume["calibration"]["regle_quantile"]["q_retenu"] == resume["calibration"]["quantile"]
+    # fiabilite differee : DSO4 juge la valeur seule ; le delai de la fiabilite est a cote,
+    # sans verdict (aucune cle `conforme` dans le delai)
     dso4 = resume["dso4"]
-    assert dso4["avec_fiabilite"]["mean_s"] > 0 and dso4["sans_fiabilite"]["mean_s"] > 0
+    assert dso4["valeur"]["mean_s"] > 0 and "conforme" in dso4["valeur"]
+    assert dso4["mesure"] == "valeur seule (fiabilite differee)"
+    assert dso4["delai_fiabilite"]["mean_s"] > 0 and "conforme" not in dso4["delai_fiabilite"]
+    assert dso4["delai_fiabilite"]["membres"] == 2
     assert dso4["lot"] == ReliabilityCfg().batch
-    assert set(dso4["avec_fiabilite_par_lot"]) == {"1", "4", "8"}
-    assert all(b["mean_s"] > 0 for b in dso4["avec_fiabilite_par_lot"].values())
+    assert set(dso4["delai_fiabilite_par_lot"]) == {"1", "4", "8"}
+    assert all(b["mean_s"] > 0 and b["lot"] == int(k)
+               for k, b in dso4["delai_fiabilite_par_lot"].items())
     verdict = json.loads((sessions[-1] / "dso6.json").read_text(encoding="utf-8"))
     assert verdict["mesure"] == resume["mesure"]
     for name in ("calibration_validation.json", "dso6.json"):
         assert (sessions[-1] / name).exists()
+
+    # DSO4 seul, avec la calibration retenue : ni calibration ni DSO6, session neuve
+    cal = sessions[-1] / "calibration_validation.json"
+    assert mod.main(["-c", "test", "--device", "cpu", "--dso4-seulement"]) == 1
+    assert mod.main(["-c", "test", "--device", "cpu", "--dso4-seulement", "--calibration",
+                     str(cal), "--membres", "2", "--benchmark", "1"]) == 0
+    seul = sorted((trained.paths.run_dir / "fiabilite_pcfno3d").glob("*/session_*"))[-1]
+    assert seul != sessions[-1]
+    assert sorted(p.name for p in seul.iterdir()) == ["resume_dso4.json"]
+    d4 = json.loads((seul / "resume_dso4.json").read_text(encoding="utf-8"))["dso4"]
+    assert d4["valeur"]["mean_s"] > 0 and d4["delai_fiabilite"]["mean_s"] > 0
 
 
 def test_avec_correction_m1_chaque_passe_est_corrigee(trained, instant, tmp_path):
