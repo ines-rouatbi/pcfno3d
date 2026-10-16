@@ -1,0 +1,266 @@
+@startuml classes
+' Diagramme de classes — paquet pcfno3d et couche service (lot M8, tache 14, p. 44).
+' Seules des classes qui EXISTENT dans le code sont representees (verifie le 2026-10-15
+' sur la branche agent/ines/m8-preuves, paquet M6 ajoute le 2026-10-16 sur
+' agent/ines/finalisation) ; attributs et methodes : une selection.
+skinparam classAttributeIconSize 0
+skinparam shadowing false
+hide empty members
+
+package "pcfno3d.config" {
+  class Config {
+    paths : Paths
+    model : ModelCfg
+    train : TrainCfg
+    loss : LossCfg
+    mask : MaskCfg
+    inference : InferenceCfg
+    reliability : ReliabilityCfg
+    alerts : AlertsCfg
+    wind_farm : WindFarmCfg
+    dso : DSOCfg
+    real : RealCfg
+    +load(source) : Config
+    +apply_overrides(overrides)
+  }
+  class Paths
+  class ModelCfg
+  class DSOCfg
+  class ReliabilityCfg
+  Config *-- Paths
+  Config *-- ModelCfg
+  Config *-- DSOCfg
+  Config *-- ReliabilityCfg
+}
+
+package "pcfno3d.geometry" {
+  class Meta {
+    nx_s, ny_s, stride
+    z_levels
+    +load(data_dir) : Meta
+  }
+  class Geometry {
+    nz, ny, nx, dx, dy
+    valid, mass_mask, first_valid
+    zt, z0, z_sensor
+    +mass_residual(rho, u, v, w)
+    +eval_levels()
+    +pool_surface(S)
+  }
+  Geometry *-- Meta
+}
+
+package "pcfno3d (donnees et modele)" {
+  class Normalizer {
+    +from_file(path, geom, w_level_max)
+    +normalize_surface(s_raw, sensor)
+    +denorm(pred)
+  }
+  class ANEO3D <<Dataset>> {
+    keep_eval, spacing_m, reseau
+    +__getitem__(i)
+  }
+  class Splits {
+    train, val, test
+    val_selection
+  }
+  class PCFNO3D <<nn.Module>>
+  class SpectralConv3d <<nn.Module>>
+  class PhysicsLoss {
+    +__call__(pred, y, phys_w)
+    +roughness_ratio(u, v, y)
+  }
+  class Trainer {
+    +fit()
+    +validate()
+  }
+  class Evaluator {
+    out_dir
+    +run() : dict
+    +evaluate_loader(loader, stems)
+    +predire(s_raw, sensor, tfeat, y, j, stem)
+    +calibrate_reliability()
+    +dso6()
+  }
+  class LevelMetrics
+  PCFNO3D *-- "n_layers" SpectralConv3d
+  Trainer --> PCFNO3D
+  Trainer --> PhysicsLoss
+  Trainer --> ANEO3D
+  Evaluator --> ANEO3D
+  Evaluator --> PhysicsLoss
+}
+
+package "pcfno3d.inference" {
+  class WindFieldModel {
+    model : PCFNO3D
+    geom : Geometry
+    norm : Normalizer
+    reliability : Calibration
+    farm : Farm
+    +predict(S, hour, doy, keep, seed) : Volume
+    +predict_stem(stem) : Volume
+    +predict_csv(path, exclure) : Volume
+    +benchmark(S, hour, doy)
+  }
+  class Volume {
+    u, v, w : ndarray(nz, ny, nx)
+    timestamp, inference_s
+    reliability : Reliability
+    farm_context : FarmContext
+    +at_altitude(z)
+    +at_point(x, y, z)
+    +node_reliability(k, j, i)
+    +to_nodes_frame()
+    +save_npz(path)
+  }
+  WindFieldModel *-- PCFNO3D
+  WindFieldModel *-- Geometry
+  WindFieldModel *-- Normalizer
+  WindFieldModel ..> Volume : cree
+  Evaluator *-- WindFieldModel
+}
+
+package "pcfno3d.reliability (M2)" {
+  class Calibration {
+    sha256
+    +load(source) : Calibration
+    +factor(comp, level)
+  }
+  class Reliability {
+    sigma_u, sigma_v, sigma_w, sigma_speed
+    status, coverage
+    reliability, reliability_class
+  }
+  class RatioHistogram
+  class DSO6Accumulator
+  WindFieldModel o-- Calibration
+  Volume o-- Reliability
+}
+
+package "pcfno3d.alerts / an1 (M4)" {
+  class MoteurAlertes {
+    journal : JournalAlertes
+    suivi : SuiviDerive
+    dernier : ResultatAlertes
+    +evaluer(...)
+    +evaluer_modele(wf, S, hour, doy, volume)
+    +verite(wf, stem)
+  }
+  class JournalAlertes {
+    +mettre_a_jour(alertes, instant)
+  }
+  class SuiviDerive
+  class ResultatAlertes {
+    instant, items
+    +document()
+  }
+  class Ecarts
+  MoteurAlertes *-- JournalAlertes
+  MoteurAlertes *-- SuiviDerive
+  MoteurAlertes ..> ResultatAlertes : cree
+  SuiviDerive ..> Ecarts
+}
+
+package "pcfno3d.windfarm (M5)" {
+  class Farm {
+    turbines : list[Turbine]
+    curves : dict[str, PowerCurve]
+  }
+  class Turbine {
+    x_m, y_m, hub_agl_m, rotor_d_m
+  }
+  class PowerCurve
+  class FarmContext
+  class TurbineCalc
+  class FarmCalc {
+    +document()
+    +alerts(wcfg)
+  }
+  Farm *-- Turbine
+  Farm *-- PowerCurve
+  FarmCalc *-- TurbineCalc
+  WindFieldModel o-- Farm
+  Volume o-- FarmContext
+}
+
+package "pcfno3d.contract (M3) / realdata" {
+  class Seuils
+  class Grille
+  class GeoRef
+}
+
+package "pcfno3d.publish / export_noeuds (M6)" {
+  class ChampsPublies {
+    terrain, valide, min_agl_m
+    f32, u8
+  }
+  class Instantane {
+    snapshot_id, sha8, valid_time
+    data_status, versions
+    fichiers, manifeste
+  }
+  class DepotLocal {
+    +ecrire(inst)
+    +latest()
+    +times()
+    +reparer()
+  }
+  class ClientPublication {
+    +publier(dossier)
+    +est_publie(sid, valid_time)
+    +battement()
+  }
+  class PublicationRefusee <<exception>>
+  class PublicationIncomplete <<exception>>
+  Instantane o-- ChampsPublies
+  DepotLocal ..> Instantane : ecrit
+  ClientPublication ..> DepotLocal : publie un dossier
+  PublicationIncomplete --|> PublicationRefusee
+  Volume ..> ChampsPublies : champs_publies()
+  note "construire_instantane(wf, volume, S, ...) ;\nexports NetCDF / CSV (DE3) relus depuis\nle dossier PUBLIE : export_noeuds.exporter_dossier()" as N_M6
+}
+
+package "pcfno3d.baselines / preuves / sobriete (M8)" {
+  class IDW {
+    +poids(src, dst)
+  }
+  class Krigeage {
+    +poids(src, dst)
+  }
+  class Variogramme {
+    pepite, palier, portee_m
+    +gamma(h)
+  }
+  class Reference {
+    nom, loi, alpha
+  }
+  class CalculReferences {
+    +champs(S, sensor)
+  }
+  class Banc {
+    +predicteurs()
+  }
+  class Sobriete <<context manager>>
+  Krigeage *-- Variogramme
+  Reference o-- IDW
+  Reference o-- Krigeage
+  CalculReferences o-- Reference
+  Banc *-- CalculReferences
+  Banc o-- Evaluator
+}
+
+package "service" {
+  class ApiKeyStore {
+    +verify(key)
+    +register_hash(...)
+  }
+  class ApiKeyRecord
+  class Quotas
+  class JournalAcces
+  class Upstream
+  class Tunnel
+  ApiKeyStore ..> ApiKeyRecord
+  note "app.py : create_app() (fabrique FastAPI), STATE['model'] = WindFieldModel,\nSTATE['alertes'] = MoteurAlertes ; mcp_server.py : 10 outils MCP\nsur le meme WindFieldModel ; link.py : relais vers Upstream" as N1
+}
+@enduml

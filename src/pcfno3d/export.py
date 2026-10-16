@@ -9,6 +9,13 @@ Format :
     manifest.json   grille, niveaux, bornes, liste des champs, valeur de remplacement
     terrain.bin     (ny, nx)        float32, altitude du relief en m
     u.bin v.bin w.bin speed.bin     (nz, ny, nx) float32, NaN remplace par `nodata`
+
+Avec la fiabilite (lot M2, `inference.reliability`), une section `fiabilite` du manifeste
+decrit en plus :
+    sigma_u.bin sigma_v.bin sigma_w.bin sigma_speed.bin coverage.bin reliability.bin
+                                    (nz, ny, nx) float32, `nodata` sous le relief
+    status.bin                      (nz, ny, nx) uint8 : 1 mesure, 0 estime, 255 sous le relief
+    reliability_class.bin           (nz, ny, nx) uint8 : 2 elevee, 1 moyenne, 0 faible, 255
 """
 
 from __future__ import annotations
@@ -19,6 +26,8 @@ from pathlib import Path
 import numpy as np
 
 from .inference import Volume
+from .reliability import CLASSES, NODATA_U8
+from .windfarm import round_direction
 
 NODATA = -9999.0
 
@@ -59,7 +68,9 @@ def export_split(wf, split: str = "test", stride: int = 2, synoptic_only: bool =
 
 def export_web(volume: Volume, out_dir: str | Path, stride: int = 1,
                fields: tuple[str, ...] = ("u", "v", "w", "speed")) -> Path:
-    """Ecrit les binaires + le manifeste. `stride` decime horizontalement (2 = 4x plus leger)."""
+    """Ecrit les binaires + le manifeste. `stride` decime horizontalement (2 = 4x plus leger).
+    Fiabilite differee : attendue (ou calculee ici) avant d'ecrire, jamais un export partiel."""
+    volume.wait_reliability()
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     geom = volume.geom
@@ -102,9 +113,35 @@ def export_web(volume: Volume, out_dir: str | Path, stride: int = 1,
         "inference_s": volume.inference_s,
         "capteurs_utilises": volume.n_sensors,
     }
+    if volume.reliability is not None:
+        manifest["fiabilite"] = _export_reliability(volume, out_dir, s)
     (out_dir / "manifest.json").write_text(json.dumps(manifest, indent=2, ensure_ascii=False),
                                            encoding="utf-8")
     return out_dir
+
+
+def _export_reliability(volume: Volume, out_dir: Path, s: int) -> dict:
+    """Binaires de la fiabilite (memes grille et decimation que les champs du vent)."""
+    rel = volume.reliability
+    champs = {}
+    for name in ("sigma_u", "sigma_v", "sigma_w", "sigma_speed", "coverage", "reliability"):
+        a = np.ascontiguousarray(getattr(rel, name)[:, ::s, ::s], dtype=np.float32)
+        a = np.nan_to_num(a, nan=NODATA, posinf=NODATA, neginf=NODATA)
+        (out_dir / f"{name}.bin").write_bytes(a.tobytes())
+        finite = a[a != NODATA]
+        champs[name] = {"file": f"{name}.bin", "dtype": "float32",
+                        "min": float(finite.min()) if finite.size else None,
+                        "max": float(finite.max()) if finite.size else None}
+    for name, codes in (("status", {"0": "estime", "1": "mesure"}),
+                        ("reliability_class", {str(i): c for i, c in enumerate(CLASSES)})):
+        a = np.ascontiguousarray(getattr(rel, name)[:, ::s, ::s], dtype=np.uint8)
+        (out_dir / f"{name}.bin").write_bytes(a.tobytes())
+        champs[name] = {"file": f"{name}.bin", "dtype": "uint8", "codes": codes,
+                        "nodata": NODATA_U8}
+    return {"uncertainty": rel.uncertainty, "info": rel.info,
+            "intervalle_vitesse": "p50 = speed ; p10, p90 = speed -/+ 1,2816 x sigma_speed "
+                                  "(p10 >= 0)",
+            "champs": champs}
 
 
 def export_levels_csv(volume: Volume, out_dir: str | Path,
@@ -128,8 +165,9 @@ def export_levels_csv(volume: Volume, out_dir: str | Path,
             "x_m": x[ii], "y_m": y[jj], "z_asl_m": z,
             "wind_u_m_s": np.round(u[jj, ii], 3), "wind_v_m_s": np.round(v[jj, ii], 3),
             "wind_speed_m_s": np.round(speed[jj, ii], 3),
-            "wind_direction_deg": np.round((270.0 - np.degrees(
-                np.arctan2(v[jj, ii], u[jj, ii]))) % 360.0, 1),
+            # arrondi AVANT le modulo (regle m4) : jamais 360,0
+            "wind_direction_deg": round_direction(270.0 - np.degrees(
+                np.arctan2(v[jj, ii], u[jj, ii])), 1),
         })
         path = out_dir / f"carte_{int(z):04d}m.csv"
         df.to_csv(path, index=False)

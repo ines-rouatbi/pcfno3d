@@ -1,0 +1,84 @@
+{
+  "items": [
+    {
+      "id": "708e69b3",
+      "station_id": "c880_420",
+      "turbine_id": null,
+      "location": {
+        "x_m": 44000,
+        "y_m": 21000
+      },
+      "value": 140,
+      "threshold": 30,
+      "unit": "min",
+      "level": "avertissement",
+      "kind": "station_muette",
+      "target": "c880_420",
+      "title": "Capteur c880_420 muet",
+      "cause": "Aucune mesure depuis 2 h 20",
+      "recommendation": "Planifier une intervention sur le capteur",
+      "raised_at": "2025-01-12T10:10:00Z",
+      "status": "ouverte"
+    },
+    {
+      "id": "b4a95d28",
+      "station_id": "c340_200",
+      "turbine_id": null,
+      "location": {
+        "x_m": 17000,
+        "y_m": 10000
+      },
+      "value": 1.85,
+      "threshold": 1,
+      "unit": "m/s",
+      "level": "important",
+      "kind": "capteur_derive",
+      "target": "c340_200",
+      "title": "Capteur c340_200 en dérive",
+      "cause": "Écart persistant de +1,85 m/s entre la mesure et la reconstruction sans le capteur (6 instants)",
+      "recommendation": "Planifier un étalonnage ; réduire le poids du capteur dans l'intervalle",
+      "raised_at": "2025-01-12T11:00:00Z",
+      "status": "ouverte"
+    },
+    {
+      "id": "a7ed4c51",
+      "station_id": null,
+      "turbine_id": null,
+      "location": {
+        "x_m": 44000,
+        "y_m": 21000
+      },
+      "value": 0.17,
+      "threshold": 0.2,
+      "unit": null,
+      "level": "information",
+      "kind": "zone_mal_couverte",
+      "target": "m22_10",
+      "title": "Zone mal couverte au nord-est",
+      "cause": "Indice de couverture < 0,2 et incertitude élevée",
+      "recommendation": "Emplacement prioritaire pour un nouveau capteur",
+      "raised_at": "2025-01-12T08:00:00Z",
+      "status": "ouverte"
+    },
+    {
+      "id": "bdec1bd1",
+      "station_id": null,
+      "turbine_id": "T-03",
+      "location": {
+        "x_m": 30000,
+        "y_m": 15000
+      },
+      "value": 0.34,
+      "threshold": 0.3,
+      "unit": null,
+      "level": "information",
+      "kind": "cisaillement",
+      "target": "T-03",
+      "title": "Cisaillement marqué sur T-03 (résorbé)",
+      "cause": "Exposant de cisaillement > 0,3 sur le rotor",
+      "recommendation": "Aucune action : alerte close",
+      "raised_at": "2025-01-12T06:00:00Z",
+      "status": "close"
+    }
+  ]
+}

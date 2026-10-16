@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://atom.zelqane.com/contract/v1/model-manifest.schema.json",
+  "title": "POST /v1/publish/model/{sha8}/commit — manifeste de publication des fichiers par modèle (une seule fois par modèle)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "model_sha8",
+    "versions",
+    "files"
+  ],
+  "properties": {
+    "model_sha8": {
+      "$ref": "common.schema.json#/$defs/sha8"
+    },
+    "versions": {
+      "$ref": "common.schema.json#/$defs/versions"
+    },
+    "files": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "path",
+          "sha256",
+          "bytes"
+        ],
+        "properties": {
+          "path": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*(/[A-Za-z0-9][A-Za-z0-9_.-]*)*$",
+            "description": "Relatif ; chaque segment commence par une lettre ou un chiffre (ni « .. » ni « _commit »)"
+          },
+          "sha256": {
+            "$ref": "common.schema.json#/$defs/sha256"
+          },
+          "bytes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 8388608
+          }
+        }
+      },
+      "description": "Chemins relatifs à models/{sha8}/ : meta.json et terrain.f32 au moins"
+    }
+  }
+}

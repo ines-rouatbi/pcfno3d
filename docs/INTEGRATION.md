@@ -194,11 +194,13 @@ Pour un client local en *stdio* (sans HTTP ni clé) : `pcfno3d mcp`.
 | `grid_meta` | grille, altitudes disponibles, domaine, modèle chargé — **à appeler en premier** |
 | `list_instants` | instants reconstructibles (`split` : train / val / test) |
 | `wind_at_point` | u, v, w, vitesse, direction en un point (x, y, altitude) |
-| `wind_profile` | profil vertical complet en un point, un niveau par ligne |
+| `wind_profile` | profil vertical complet en un point, un niveau par ligne ; fiabilité active : champs du contrat par niveau (à `null` tant que `fiabilite` ≠ `prete`) |
 | `wind_field_at_altitude` | carte décimée d'une variable à une altitude |
-| `instant_summary` | vitesses par niveau, secteur dominant, temps d'inférence |
+| `instant_summary` | vitesses par niveau, secteur dominant, temps d'inférence ; fiabilité active : `fiabilite` (`en_cours` / `prete` / `echec`) et `fiabilite_s` |
 | `dso_report` | dernier verdict DSO1–DSO5 archivé |
+| `production_eolienne` | parc éolien déclaré (lot M5) : vent au moyeu, REWS, puissance, alertes ; erreur sans parc déclaré — voir `docs/EOLIEN.md` |
 | `export_instant` | écrit un volume sur le disque du serveur — **portée `admin`** |
+| `alertes_actives` | alertes **ouvertes** d'un instant (lot M4), par niveau, avec cause et recommandation, et le bloc `physique` ; `disponible: false` si `alerts.enabled` est faux (`docs/ALERTES.md`) |
 
 Appel direct, sans SDK :
 
@@ -224,11 +226,14 @@ Les résultats arrivent dans `result.content[0].text`, en JSON à parser.
 | `GET /api/meta` | grille, niveaux ASL, conventions, domaine en mètres, `georef` |
 | `GET /api/instants?split=test&limit=100` | instants disponibles |
 | `POST /api/reconstruct` | `{stem, keep, export, stride}` → résumé de l'instant |
-| `POST /api/reconstruct/upload` | CSV de mesures de surface → reconstruction ; le CSV passe d'abord le contrat de données ANEO (`docs/CONTRAT_ANEO.md`, profil upload : stations absentes, en `mask_i_obs = 0` ou sans u/v/T = panne connue ; stations fausses masquées avant l'inférence) : rejet → `422` avec le rapport sous `qualite` ; conforme ou quarantaine → reconstruction + `statut_qualite`, `avertissements`, `qualite` |
+| `POST /api/reconstruct/upload` | CSV de mesures de surface → reconstruction ; le CSV passe d'abord le contrat de données ANEO (`docs/CONTRAT_ANEO.md`, profil upload : stations absentes, en `mask_i_obs = 0` ou sans u/v/T = panne connue ; stations fausses masquées avant l'inférence) : rejet → `422` avec le rapport sous `qualite` ; conforme ou quarantaine → reconstruction + `statut_qualite`, `avertissements`, `qualite` ; avec les alertes activées, aussi `alertes` et `physique` |
 | `GET /api/field?z=120&variable=speed&stride=4` | carte à une altitude |
 | `GET /api/point?x=5000&y=5000&z=120` | vent en un point |
-| `GET /api/profile?x=5000&y=5000` | profil vertical |
+| `GET /api/profile?x=5000&y=5000` | profil vertical ; fiabilité active : champs du contrat par niveau et `fiabilite` (voir « Fiabilité différée ») |
+| `GET /api/reliability/{stem}?keep=1` | état de la fiabilité différée d'un volume déjà reconstruit (`fiabilite`, `inference_s`, `fiabilite_s`, `erreur`) — route légère, ne lance aucun calcul ; `404` si l'instant n'est pas en cache |
 | `GET /api/dso` | dernier verdict DSO archivé |
+| `GET /api/alerts?stem=…` | alertes de l'instant (lot M4), au format `alerts.schema.json` du contrat ATOM rév. 2 : `{"items": [...]}` ; sans `stem`, les dernières calculées ; `409` si `alerts.enabled` est faux (`docs/ALERTES.md`) |
+| `GET /api/wind-farm?stem=…` | parc éolien déclaré (lot M5, opt-in `wind_farm.turbines`) : `wind_farm` (wind-farm.schema.json), `alerts` (items du journal M4 si les alertes sont activées, alertes brutes avec `raised_at` = l'instant sinon), `kpi` hub_wind_* ; `404` sans parc — voir `docs/EOLIEN.md` |
 | `GET /api/export/{stem}/manifest.json` | manifeste d'un export |
 | `GET /api/export/{stem}/{u,v,w,speed,terrain}.bin` | binaires Float32 |
 | `POST /api/reconstruct/stations` | mesures **réelles** de stations (JSON, lat/lon) → volume 3D, mémorisé sous `stem` = `live_…` ; exige un domaine géoréférencé (`409` sinon), voir `docs/REAL_DATA.md` |
@@ -254,6 +259,56 @@ la configuration n'en a pas.
  "wind_w_m_s": -0.174, "wind_speed_m_s": 9.016, "wind_direction_deg": 42.27,
  "timestamp_utc": "2025-01-06 00:00:00"}
 ```
+
+## Fiabilité différée (lot M2, `inference.reliability`)
+
+Quand la fiabilité par nœud est configurée, elle est un **produit différé** de la
+reconstruction (décision du 16/10/2026, `docs/FIABILITE.md`) : la valeur est servie tout de
+suite, la fiabilité (ensemble de passes masquées, calibration, statut, couverture, classe)
+se calcule ensuite dans un thread d'arrière-plan, une seule fois par volume, et se range
+dans le même volume du cache. Raison : sur GPU L4, la valeur prend 0,45 s et la fiabilité
+synchrone portait le temps de livraison à 4,2–4,7 s, au-delà du DSO4 (1 s).
+
+Contrat de l'API quand la fiabilité est active :
+
+- `POST /api/reconstruct`, `POST /api/reconstruct/upload` et `POST /api/reconstruct/stations`
+  répondent **sans attendre** la fiabilité. `inference_s` est le temps de la **valeur
+  seule** (c'est lui que juge DSO4, `dso4_conforme`). La réponse ajoute `fiabilite`
+  (`en_cours` au premier appel), `fiabilite_s` (`null` tant qu'elle n'est pas prête) et
+  `fiabilite_route` (la route d'état). L'upload ajoute `stem` (`upload_AAAAMMJJ_HHMMSS`) :
+  le volume téléversé est mis en cache et lisible ensuite par `/api/profile?stem=…`.
+- `GET /api/reliability/{stem}` donne l'état et les temps :
+
+  ```json
+  {"stem": "004_120000", "timestamp_utc": "2025-01-04 12:00:00", "fiabilite": "en_cours",
+   "inference_s": 0.447, "fiabilite_s": null, "erreur": null}
+  ```
+
+  `fiabilite` vaut `en_cours`, puis `prete` (avec `fiabilite_s`, délai entre la valeur
+  servie et la fiabilité prête), ou `echec` (avec `erreur`).
+- `GET /api/profile` : tant que `fiabilite` vaut `en_cours` (ou `echec`), chaque niveau
+  porte les champs de fiabilité (`sigma_speed`, `sigma_u/v/w`, `speed_interval`, `status`,
+  `coverage`, `reliability`, `reliability_class`) **à `null`**, et `uncertainty` vaut
+  `null` ; quand elle vaut `prete`, les valeurs. Un profil ne mélange jamais les deux
+  états. Le client rappelle la route (ou suit `/api/reliability/{stem}`) jusqu'à `prete`.
+- `GET /api/alerts`, `GET /api/wind-farm` et l'export (`export: true`) **attendent** la
+  fiabilité : la zone mal couverte (M4) et les quantiles du parc (M5) en dépendent, ils
+  ne sont jamais calculés sur un état partiel ; `503` si elle est en échec. Avec les
+  alertes activées, l'upload attend aussi la fiabilité avant de répondre (ses alertes en
+  dépendent).
+- `/api/health` ne dépend jamais du calcul : elle répond pendant la fiabilité. Une nouvelle
+  reconstruction passe avant les lots de l'ensemble d'un autre volume (elle attend au plus
+  la fin du lot en cours).
+- MCP : même règle (`instant_summary`, `wind_profile` disent l'état ;
+  `production_eolienne`, `alertes_actives`, `export_instant` attendent).
+
+**Fiabilité désactivée** (`inference.reliability: null`, défaut) : rien ne change, aucune
+de ces clés n'apparaît ; `/api/reliability/{stem}` répond `desactivee`.
+
+Les instantanés publiés (M6) ne sont écrits qu'une fois la fiabilité prête : ils sont
+immuables. `snapshot.kpi.reconstruction_ms` y est le temps de la valeur ; le délai de la
+fiabilité, que le contrat rév. 2 n'accepte pas, reste dans le journal local de
+`pcfno3d publish` et du rejeu.
 
 ## Export binaire (volume complet)
 
@@ -283,6 +338,15 @@ const at = (k, j, i) => {
   return v === m.nodata ? null : v;      // null = sous le relief
 };
 ```
+
+## Instantanés du contrat ATOM (tableau de bord)
+
+Le tableau de bord ne lit pas cette API : il lit des **instantanés publiés** au format du
+contrat ATOM v1 rév. 2 (un fichier Float32 / uint8 par variable, tous niveaux, **NaN /
+255** sous `min_agl_m` — pas −9999 —, JSON `null` pour l'inconnu), déposés par
+`pcfno3d publish` ou `scripts/m6_rejeu_colab.py` puis servis par le Worker
+(`/v1/latest`, `/v1/times`, `/v1/fields/{id}/{level}/{var}`...). Format, protocole,
+atomicité et exports NetCDF / CSV des nœuds virtuels : `docs/PUBLICATION.md`.
 
 ## Conventions à ne pas se tromper
 

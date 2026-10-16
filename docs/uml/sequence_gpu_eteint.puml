@@ -1,0 +1,51 @@
+@startuml sequence_gpu_eteint
+' Sequence « GPU eteint -> dernier etat publie » (lot M8, tache 14, p. 44 ; exigence
+' 7.6 p. 17 et section 17.1 p. 36 du cahier v9).
+' Verifie contre le code : src/pcfno3d/publish.py (ClientPublication, protocole de
+' tools/publish.mjs du contrat ATOM rev. 2), docs/PUBLICATION.md, et le Worker F1
+' (depot atom-dashboard, branche agent/rayen-audit-atom/f1-r2, src/v1.js : latest(),
+' lecture des champs, HEARTBEAT_TTL_MS = 5 min).
+' Le tableau de bord ne lit QUE des fichiers publies et commites dans R2, jamais le GPU :
+' quand le calculateur est arrete, il sert le dernier instantane publie, horodate.
+' Etat du deploiement : voir docs/PUBLICATION.md (publication reelle vers le R2 de
+' production en attente du jeton ; essais sur un R2 local via wrangler dev).
+skinparam shadowing false
+autonumber
+
+actor "Navigateur\n(tableau de bord)" as B
+participant "Worker F1\natom.zelqane.com (/v1)" as W
+participant "Service PC-FNO3D\n(GPU, publish.py)" as S
+database "R2 SNAPSHOTS\n(instantanes commites)" as R2
+
+== 1. Pendant que le GPU tourne : publication (ClientPublication.publier) ==
+S -> W : PUT /v1/publish/model/{sha8}/files/...\npuis POST .../commit (une fois par modele,\njeton ATOM_PUBLISH_TOKEN)
+W -> R2 : models/{sha8}/meta.json, terrain.f32, _commit.json
+S -> W : PUT /v1/publish/{id}/files/{path}\n(X-Content-SHA256, 8 Mo max)
+W -> R2 : snapshots/{id}/... (champs, qualite, alertes, profils)
+S -> W : POST /v1/publish/{id}/commit (manifeste)
+W -> R2 : verifier taille + sha256 de chaque fichier\nPUIS _commit.json, index/times.json,\nlatest.json en dernier (latest ne recule jamais)
+S -> W : relecture GET /v1/times et GET /v1/latest\n(commit compte seulement s'il y figure,\nsinon PublicationIncomplete)
+S -> W : POST /v1/heartbeat
+W -> R2 : heartbeat.json {at}
+
+== 2. GPU eteint : le Worker sert le dernier instantane publie ==
+S -[#gray]x W : plus de battement (Colab arrete)
+B -> W : GET /v1/latest
+W -> R2 : lire latest.json et heartbeat.json
+R2 --> W : {snapshot_id, valid_time, ...} + {at}
+W --> B : 200 {..., heartbeat_at, compute_status}\n(offline si dernier battement > 5 min,\nunknown si aucun)
+B -> W : GET /v1/fields/{id}/{niveau}/{var}
+W -> R2 : lecture partielle du fichier tous niveaux
+W --> B : 200 (NaN -> null, uint8 x scale, 255 -> null)
+B -> B : affiche le dernier etat reel connu\navec son horodatage et compute_status
+
+note over W, R2
+  Aucun calcul scientifique dans le Worker : il ne fait que lire R2
+  et appliquer les conversions du contrat. Aucune donnee inventee
+  quand le calculateur est arrete.
+end note
+note over B, S
+  Les appels /api/... en direct (proxy() du Worker vers le tunnel) restent
+  indisponibles GPU eteint : 503 "service_asleep" ; seul /v1 sert l'historique.
+end note
+@enduml

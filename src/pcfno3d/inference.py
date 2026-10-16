@@ -7,9 +7,13 @@ C'est l'objet que le service HTTP garde en memoire.
 
 from __future__ import annotations
 
+import json
+import logging
 import threading
 import time
+from contextlib import contextmanager
 from pathlib import Path
+from typing import Callable
 
 import numpy as np
 import pandas as pd
@@ -21,19 +25,127 @@ from .features import time_geo_features
 from .geometry import N_SURF, SURF_VARS, Geometry
 from .model import build_model, model_cfg_from_checkpoint
 from .normalize import Normalizer
+from .reliability import (CLASSES, NODATA_U8, STATUT_MESURE, Calibration, Reliability,
+                          assess, speed_interval)
+from .windfarm import FarmContext, load_farm, round_direction
+
+LOG = logging.getLogger("pcfno3d.inference")
+
+# etats de la fiabilite d'un volume (fiabilite differee, docs/FIABILITE.md)
+FIABILITE_DESACTIVEE = "desactivee"     # inference.reliability absent, ou reliability=False
+FIABILITE_EN_COURS = "en_cours"         # valeur servie, fiabilite pas encore prete
+FIABILITE_PRETE = "prete"
+FIABILITE_ECHEC = "echec"
+ETATS_FIABILITE = (FIABILITE_DESACTIVEE, FIABILITE_EN_COURS, FIABILITE_PRETE, FIABILITE_ECHEC)
+
+
+class ReliabilityError(RuntimeError):
+    """Le calcul differe de la fiabilite d'un volume a echoue."""
+
+
+def noeud_fiabilite_nul() -> dict:
+    """Bloc fiabilite d'un noeud sans valeur (sous le relief, ou fiabilite pas encore prete) :
+    memes cles que Volume.node_reliability, toutes a null."""
+    return {"sigma_speed": None, "sigma_u": None, "sigma_v": None, "sigma_w": None,
+            "speed_interval": {"p10": None, "p50": None, "p90": None},
+            "status": None, "coverage": None, "reliability": None,
+            "reliability_class": None}
 
 
 class Volume:
-    """Resultat d'une reconstruction : u, v, w (nz, ny, nx), NaN sous le relief."""
+    """Resultat d'une reconstruction : u, v, w (nz, ny, nx), NaN sous le relief.
+
+    Fiabilite differee : la valeur est servie d'abord ; la fiabilite (lot M2) est un produit
+    a part, dont l'etat est `reliability_state` (desactivee, en_cours, prete, echec).
+    `wait_reliability()` l'attend, ou la calcule dans le thread appelant si personne ne l'a
+    lancee : un lecteur de la fiabilite (alertes, parc, publication, exports) ne voit jamais
+    un etat partiel.
+    """
 
     def __init__(self, u: np.ndarray, v: np.ndarray, w: np.ndarray, geom: Geometry,
                  timestamp: str | None = None, n_sensors: int = 0,
-                 inference_s: float = 0.0) -> None:
+                 inference_s: float = 0.0, reliability: Reliability | None = None,
+                 reliability_s: float = 0.0, farm_context: FarmContext | None = None) -> None:
         self.u, self.v, self.w = u, v, w
         self.geom = geom
         self.timestamp = timestamp
         self.n_sensors = n_sensors
+        # temps de la VALEUR seule (passe servie) : c'est lui que DSO4 juge
         self.inference_s = inference_s
+        # fiabilite par noeud (lot M2), None tant qu'elle n'est pas prete ou si desactivee ;
+        # reliability_s : delai de la fiabilite (de la valeur servie a la fiabilite prete)
+        self.reliability = reliability
+        self.reliability_s = reliability_s
+        # entrees du calcul eolien (lot M5) : None sans parc declare (wind_farm.turbines)
+        self.farm_context = farm_context
+        self.reliability_state = (FIABILITE_PRETE if reliability is not None
+                                  else FIABILITE_DESACTIVEE)
+        self.reliability_error: str | None = None
+        self._rel_exc: BaseException | None = None
+        self._rel_job: Callable[[], None] | None = None
+        self._rel_claimed = False
+        self._rel_lock = threading.Lock()
+        self._rel_done = threading.Event()
+        self._rel_done.set()
+
+    # ------------------------------------------------------------ fiabilite differee
+    def _defer_reliability(self, job: Callable[[], None]) -> None:
+        """Etat en_cours : `job()` calculera la fiabilite (WindFieldModel.predict)."""
+        with self._rel_lock:
+            self._rel_job = job
+            self._rel_claimed = False
+            self._rel_exc = None
+            self.reliability_error = None
+            self.reliability_state = FIABILITE_EN_COURS
+            self._rel_done.clear()
+
+    def _claim_reliability(self) -> bool:
+        """Reserve le calcul : un seul calcul par volume, quel que soit le nombre d'appelants."""
+        with self._rel_lock:
+            if self.reliability_state != FIABILITE_EN_COURS or self._rel_claimed:
+                return False
+            self._rel_claimed = True
+            return True
+
+    def _run_reliability(self) -> None:
+        """Execute le calcul reserve ; une erreur met l'etat a echec (jamais un etat partiel)."""
+        job = self._rel_job
+        try:
+            job()
+            self.reliability_state = FIABILITE_PRETE
+        except BaseException as exc:          # noqa: BLE001 - rangee, relevee par wait
+            self._rel_exc = exc
+            self.reliability_error = f"{type(exc).__name__}: {exc}"
+            self.reliability_state = FIABILITE_ECHEC
+            LOG.warning("fiabilite en echec pour %s : %s", self.timestamp,
+                        self.reliability_error)
+        finally:
+            self._rel_job = None
+            self._rel_done.set()
+
+    def wait_reliability(self, timeout: float | None = None, raise_on_error: bool = True
+                         ) -> str:
+        """Attend que la fiabilite soit prete (ou desactivee) et renvoie l'etat.
+
+        Si personne n'a lance le calcul, il est fait ICI, dans le thread appelant. En echec,
+        leve ReliabilityError (sauf raise_on_error=False). timeout : attente maximale en s,
+        l'etat renvoye peut alors rester en_cours."""
+        if self._claim_reliability():
+            self._run_reliability()
+        self._rel_done.wait(timeout)
+        if raise_on_error and self.reliability_state == FIABILITE_ECHEC:
+            raise ReliabilityError(f"fiabilite en echec : {self.reliability_error}") from (
+                self._rel_exc)
+        return self.reliability_state
+
+    def reliability_status(self) -> dict:
+        """Etat et temps de la fiabilite, pour l'API (route /api/reliability) et le MCP."""
+        st = self.reliability_state
+        return {"timestamp_utc": self.timestamp, "fiabilite": st,
+                "inference_s": round(self.inference_s, 4),
+                "fiabilite_s": round(self.reliability_s, 4) if st == FIABILITE_PRETE
+                else None,
+                "erreur": self.reliability_error if st == FIABILITE_ECHEC else None}
 
     @property
     def speed(self) -> np.ndarray:
@@ -88,6 +200,31 @@ class Volume:
             "timestamp_utc": self.timestamp,
         }
 
+    def node_reliability(self, k: int, j: int, i: int) -> dict:
+        """Bloc fiabilite d'un noeud, avec les noms du contrat rev. 2 (sigma_speed,
+        sigma_u, sigma_v, sigma_w, speed_interval, status, coverage, reliability,
+        reliability_class). Valeurs None sous le relief."""
+        rel = self.reliability
+        if rel is None:
+            raise ValueError("fiabilite non calculee pour ce volume (inference.reliability)")
+
+        def r(x: float, nd: int = 3) -> float | None:
+            return round(float(x), nd) if np.isfinite(x) else None
+
+        st = int(rel.status[k, j, i])
+        if st == NODATA_U8:
+            return noeud_fiabilite_nul()
+        speed = float(np.hypot(self.u[k, j, i], self.v[k, j, i]))
+        p10, p90 = speed_interval(np.float64(speed), rel.sigma_speed[k, j, i])
+        return {"sigma_speed": r(rel.sigma_speed[k, j, i]),
+                "sigma_u": r(rel.sigma_u[k, j, i]), "sigma_v": r(rel.sigma_v[k, j, i]),
+                "sigma_w": r(rel.sigma_w[k, j, i], 4),
+                "speed_interval": {"p10": r(p10), "p50": r(speed), "p90": r(p90)},
+                "status": "mesure" if st == STATUT_MESURE else "estime",
+                "coverage": r(rel.coverage[k, j, i]),
+                "reliability": r(rel.reliability[k, j, i]),
+                "reliability_class": CLASSES[int(rel.reliability_class[k, j, i])]}
+
     def to_nodes_frame(self) -> pd.DataFrame:
         """Un noeud 3D du dataset par ligne (format attendu par la base ANEO)."""
         g = self.geom
@@ -103,10 +240,12 @@ class Volume:
             "wind_v_m_s": np.round(self.v[k, j, i], 3),
             "wind_w_m_s": np.round(self.w[k, j, i], 4),
             "wind_speed_m_s": np.round(speed[k, j, i], 3),
-            "wind_direction_deg": np.round(direction[k, j, i], 1),
+            # arrondi AVANT le modulo (contrat, regle m4) : jamais 360,0
+            "wind_direction_deg": round_direction(direction[k, j, i], 1),
         })
 
     def save_npz(self, path: str | Path) -> Path:
+        self.wait_reliability()             # jamais un fichier sans la fiabilite attendue
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
         g = self.geom
@@ -115,8 +254,69 @@ class Volume:
             w=self.w.astype(np.float32), speed=self.speed.astype(np.float32),
             direction=self.direction.astype(np.float32), z_levels=g.z_levels,
             x_m=np.arange(g.nx) * g.dx, y_m=np.arange(g.ny) * g.dy,
-            z_terrain=g.zt.astype(np.float32), timestamp=str(self.timestamp))
+            z_terrain=g.zt.astype(np.float32), timestamp=str(self.timestamp),
+            **self._reliability_arrays())
         return path
+
+    def _reliability_arrays(self) -> dict:
+        """Champs de fiabilite pour le .npz ; aucun quand elle est desactivee (le fichier
+        garde alors exactement les champs d'avant le lot M2)."""
+        rel = self.reliability
+        if rel is None:
+            return {}
+        p10, p90 = rel.speed_interval(self.speed)
+        return {"sigma_u": rel.sigma_u, "sigma_v": rel.sigma_v, "sigma_w": rel.sigma_w,
+                "sigma_speed": rel.sigma_speed, "speed_p10": p10, "speed_p90": p90,
+                "status": rel.status, "coverage": rel.coverage,
+                "reliability": rel.reliability, "reliability_class": rel.reliability_class,
+                "uncertainty": json.dumps(rel.uncertainty),
+                "reliability_info": json.dumps(rel.info)}
+
+
+class ModelLock:
+    """Verrou du modele : une seule passe avant a la fois, et la passe SERVIE passe avant les
+    lots de l'ensemble de fiabilite.
+
+    `with lock:` (passe servie) est prioritaire ; `with lock.secondaire():` (un lot de
+    l'ensemble) attend qu'aucune passe servie n'attende. Avec la fiabilite differee, une
+    nouvelle reconstruction attend donc au plus la fin du lot en cours, jamais tout
+    l'ensemble d'un autre volume. Un verrou simple (threading.Lock) n'est pas equitable :
+    le thread de la fiabilite pourrait le reprendre lot apres lot."""
+
+    def __init__(self) -> None:
+        self._cond = threading.Condition(threading.Lock())
+        self._pris = False
+        self._servies = 0                   # passes servies en attente du verrou
+
+    def __enter__(self) -> "ModelLock":
+        with self._cond:
+            self._servies += 1
+            try:
+                while self._pris:
+                    self._cond.wait()
+            finally:
+                self._servies -= 1
+            self._pris = True
+        return self
+
+    def __exit__(self, *exc) -> None:
+        with self._cond:
+            self._pris = False
+            self._cond.notify_all()
+
+    @contextmanager
+    def secondaire(self):
+        with self._cond:
+            while self._pris or self._servies:
+                self._cond.wait()
+            self._pris = True
+        try:
+            yield self
+        finally:
+            self.__exit__()
+
+    def locked(self) -> bool:
+        return self._pris
 
 
 @torch.no_grad()
@@ -204,8 +404,15 @@ class WindFieldModel:
         self.use_amp = self.device.type == "cuda"
         # une seule passe avant a la fois : sur CPU, la v7 prend ~5 Go par passe, et
         # l'application web lance 3-4 requetes en parallele a chaque instant. Sans verrou,
-        # chacune lancerait sa propre passe et la machine saturerait sa memoire.
-        self._lock = threading.Lock()
+        # chacune lancerait sa propre passe et la machine saturerait sa memoire. La passe
+        # servie y passe avant les lots de la fiabilite differee (ModelLock).
+        self._lock = ModelLock()
+        # fiabilite par noeud (lot M2) : strictement opt-in, None = rien ne change
+        src = cfg.inference.reliability
+        self.reliability = Calibration.load(src) if src is not None else None
+        # parc eolien (lot M5) : strictement opt-in, None = rien ne change
+        parc = cfg.wind_farm.turbines
+        self.farm = load_farm(parc, self.geom, cfg) if parc is not None else None
         self.epoch = ck.get("epoch")
         self.val_score = ck.get("val_score")
         if verbose:
@@ -213,7 +420,8 @@ class WindFieldModel:
                   f"| {self.device} | {self.geom.summary()}")
 
     # ------------------------------------------------------------------ entrees
-    def surface_from_csv(self, path: str | Path, exclure: dict | None = None
+    def surface_from_csv(self, path: str | Path, exclure: dict | None = None,
+                         comptage: dict | None = None
                          ) -> tuple[np.ndarray, float, int, str]:
         """Mesures de surface d'un instant -> (S (8, ny, nx), heure, jour de l'annee, date).
 
@@ -239,6 +447,12 @@ class WindFieldModel:
         dispo &= np.isfinite(vals).all(axis=0)
         if exclure:
             dispo &= ~np.isin(df["point_id"].to_numpy(), exclure.get(stamp, []))
+        if comptage is not None:
+            # capteurs a 50 m de l'instant, AVANT l'agregation par maille (lot M6, B4) :
+            # presents dans le fichier, utilises (dispo), interpoles (mask_i_obs = 0)
+            obs = pd.to_numeric(df["mask_i_obs"], errors="coerce").fillna(0).to_numpy() > 0.5
+            comptage.update({"presents": int(len(df)), "utilises": int(dispo.sum()),
+                             "interpoles": int((~obs).sum()), "estime": False})
         vals = np.where(np.isfinite(vals), vals, 0.0)
         S = np.zeros((8, self.geom.ny_s * self.geom.nx_s), dtype=np.float32)
         flat = self.geom.pid_to_surf[df["point_id"].values]
@@ -264,13 +478,29 @@ class WindFieldModel:
     @torch.no_grad()
     def predict(self, S: np.ndarray, hour: float, doy: int, timestamp: str | None = None,
                 keep: float = 1.0, seed: int = 0, mask_nan: bool = True,
-                tta: int | None = None, tta_keep: float | None = None) -> Volume:
+                tta: int | None = None, tta_keep: float | None = None,
+                reliability: bool | None = None, real_sensors: bool = False,
+                defer: bool = False) -> Volume:
         """Reconstruit le volume a partir de la surface agregee S (8, ny, nx).
 
         tta / tta_keep : moyenne de plusieurs passes (voir `ensemble_forward`). Par defaut,
         la valeur de la configuration (`inference.tta`, 1 = une seule passe).
+        reliability : calculer la fiabilite par noeud (pcfno3d.reliability). None = oui si
+        `inference.reliability` est configure. La valeur servie n'en depend pas.
+        real_sensors : information seulement (donnees reelles ou non), recopiee dans
+        `reliability.info` ; le statut « mesure » n'en depend pas (contrat rev. 2, D7).
+        defer : fiabilite DIFFEREE. False (defaut : scripts, evaluation, publication) : la
+        fiabilite est calculee avant le retour (synchrone). True (service) : retour des la
+        valeur, etat `en_cours` ; la fiabilite se calcule ensuite par
+        `assess_reliability_async(volume)`, `assess_reliability(volume)` ou au premier
+        `volume.wait_reliability()`. Dans tous les cas, `inference_s` est le temps de la
+        VALEUR seule (DSO4) et `reliability_s` le delai de la fiabilite.
         """
         geom = self.geom
+        actif = (self.reliability is not None) if reliability is None else bool(reliability)
+        if actif and self.reliability is None:
+            raise ValueError("fiabilite demandee mais inference.reliability n'est pas "
+                             "configure (JSON de calibration ou 'non_calibre')")
         k = self.cfg.inference.tta if tta is None else int(tta)
         k_keep = self.cfg.inference.tta_keep if tta_keep is None else float(tta_keep)
         rng = np.random.default_rng(seed)
@@ -292,36 +522,199 @@ class WindFieldModel:
             elapsed = time.perf_counter() - t0
             del pred
 
+        served = (u, v, w)                       # passe servie SANS masque NaN (ensemble)
         if mask_nan:
             u = np.where(geom.valid, u, np.nan)
             v = np.where(geom.valid, v, np.nan)
             w = np.where(geom.valid, w, np.nan)
-        return Volume(u, v, w, geom, timestamp=timestamp, n_sensors=int(sensor.sum()),
-                      inference_s=elapsed)
+        ctx = None
+        if self.farm is not None:
+            # membres de l'ensemble M2 : ajoutes quand la fiabilite est prete
+            ctx = FarmContext(self.farm.columns, None, np.asarray(S[4], np.float32), sensor)
+        vol = Volume(u, v, w, geom, timestamp=timestamp, n_sensors=int(sensor.sum()),
+                     inference_s=elapsed, farm_context=ctx)
+        if actif:
+            self._defer(vol, S, hour, doy, sensor, served, real_sensors)
+            if not defer:
+                # synchrone : l'erreur d'origine remonte telle quelle (ex. memoire GPU)
+                vol.wait_reliability(raise_on_error=False)
+                if vol._rel_exc is not None:
+                    raise vol._rel_exc
+        return vol
 
-    def predict_stem(self, stem: str, keep: float = 1.0, seed: int = 0) -> Volume:
+    def _defer(self, vol: Volume, S: np.ndarray, hour: float, doy: int, sensor: np.ndarray,
+               served: tuple, real_sensors: bool) -> None:
+        """Met le volume en etat en_cours avec le calcul de sa fiabilite (ensemble,
+        calibration, statut, couverture, classe, et membres captures pour le parc M5), fait
+        plus tard, une seule fois. Le calcul garde ses entrees jusqu'a ce qu'il ait tourne."""
+        t_valeur = time.perf_counter()
+        calibration = self.reliability
+
+        def job() -> None:
+            captured: list = []                  # passes de l'ensemble aux colonnes du parc
+            rel = assess(served,
+                         lambda masks: [self._capture(m, captured)
+                                        for m in self._members(S, masks, hour, doy,
+                                                               secondaire=True)],
+                         sensor, self.geom, self.cfg.reliability, calibration, real_sensors)
+            if vol.farm_context is not None:
+                ctx = vol.farm_context
+                vol.farm_context = FarmContext(ctx.columns,
+                                               np.stack(captured) if captured else None,
+                                               ctx.rho_surface, ctx.sensor)
+            vol.reliability = rel
+            vol.reliability_s = time.perf_counter() - t_valeur
+
+        vol._defer_reliability(job)
+
+    def assess_reliability(self, volume: Volume, S: np.ndarray | None = None,
+                           hour: float | None = None, doy: int | None = None,
+                           sensor: np.ndarray | None = None, real_sensors: bool = False
+                           ) -> Volume:
+        """Fiabilite d'un volume, en SYNCHRONE (scripts, publication, evaluation).
+
+        Volume de `predict(defer=True)` : calcule sa fiabilite avec les entrees gardees par
+        predict, ou l'attend si un thread s'en charge deja. Volume calcule sans fiabilite
+        (`reliability=False`) : la calcule depuis S, hour, doy et `sensor` (defaut : les
+        capteurs visibles de S[7]), comme predict l'aurait fait. Leve ReliabilityError en
+        echec."""
+        if self.reliability is None:
+            raise ValueError("fiabilite demandee mais inference.reliability n'est pas "
+                             "configure (JSON de calibration ou 'non_calibre')")
+        if volume.reliability_state == FIABILITE_DESACTIVEE:
+            if S is None or hour is None or doy is None:
+                raise ValueError("volume sans fiabilite : S, hour et doy sont requis")
+            sens = (np.asarray(S[7]) > 0.5) if sensor is None else np.asarray(sensor, bool)
+            # aux noeuds valides, la valeur servie est la passe brute ; sous le relief, sigma
+            # et indice valent NaN quelle que soit la valeur (reliability.assess)
+            served = tuple(np.where(self.geom.valid, a, 0.0).astype(a.dtype)
+                           for a in (volume.u, volume.v, volume.w))
+            self._defer(volume, S, hour, doy, sens, served, real_sensors)
+        volume.wait_reliability()
+        return volume
+
+    def assess_reliability_async(self, volume: Volume) -> threading.Thread | None:
+        """Lance la fiabilite d'un volume en_cours dans un thread d'arriere-plan (service).
+        Un seul calcul par volume : None si elle est deja lancee, prete ou desactivee. Les
+        lots de l'ensemble prennent le verrou du modele un par un, APRES toute passe servie
+        en attente (ModelLock) ; /api/health n'attend rien."""
+        if not volume._claim_reliability():
+            return None
+        t = threading.Thread(target=volume._run_reliability, daemon=True,
+                             name=f"fiabilite-{volume.timestamp}")
+        t.start()
+        return t
+
+    def _capture(self, uvw: tuple, captured: list) -> tuple:
+        """Garde u et v d'une passe de l'ensemble aux seules colonnes du parc (lot M5) :
+        (2, nz, ncol), quelques Ko au lieu du volume entier."""
+        if self.farm is not None:
+            jj, ii = self.farm.columns
+            captured.append(np.stack([uvw[0][:, jj, ii], uvw[1][:, jj, ii]]))
+        return uvw
+
+    def _member(self, S: np.ndarray, kept: np.ndarray, hour: float,
+                doy: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Une passe de l'ensemble de fiabilite : capteurs `kept`, caracteristiques
+        geostrophiques / thermiques RECALCULEES sur eux. Sortie (u, v, w) en m/s, sans
+        masque NaN, post-traitement compris (`_post_member`). Lot de 1 : meme calcul,
+        bit a bit, que la passe unique d'avant les lots."""
+        return self._members(S, [kept], hour, doy, batch=1)[0]
+
+    @torch.no_grad()
+    def _members(self, S: np.ndarray, masks: list[np.ndarray], hour: float, doy: int,
+                 batch: int | None = None, secondaire: bool = False
+                 ) -> list[tuple[np.ndarray, np.ndarray, np.ndarray]]:
+        """Les passes de l'ensemble de fiabilite, une par masque et dans l'ordre, faites par
+        LOTS : un seul passage avant du reseau pour `batch` passes (defaut
+        `reliability.batch` ; 1 = une passe a la fois). Chaque passe garde SES
+        caracteristiques temps / physique, recalculees sur ses capteurs (comme
+        ensemble_forward). Sorties identiques au calcul passe par passe, a la precision
+        flottante pres (test_ensemble_par_lots_identique_passe_par_passe).
+
+        Sur GPU, un lot qui ne tient pas en memoire est recoupe en deux (meme resultat).
+        secondaire : chaque lot cede le verrou du modele aux passes servies en attente
+        (fiabilite differee, ModelLock.secondaire)."""
+        geom = self.geom
+        lot = max(1, int(self.cfg.reliability.batch if batch is None else batch))
+        s_t = torch.from_numpy(np.ascontiguousarray(S[:N_SURF]))[None].to(self.device)
+        s_feat = s_t[0].float().cpu().numpy()        # memes entrees que ensemble_forward
+        out: list = []
+        i0 = 0
+        while i0 < len(masks):
+            part = masks[i0:i0 + lot]
+            tfeat = np.stack([time_geo_features(s_feat, m, hour, doy, geom) for m in part])
+            m_t = torch.from_numpy(np.stack(part).astype(np.float32)).to(self.device)
+            t_t = torch.from_numpy(tfeat).to(self.device)
+            verrou = self._lock.secondaire() if secondaire else self._lock
+            try:
+                with verrou:
+                    with torch.autocast(device_type=self.device.type, dtype=self.amp_dtype,
+                                        enabled=self.use_amp):
+                        pred = self.model(assemble_input(s_t.expand(len(part), -1, -1, -1),
+                                                         m_t, t_t, geom, self.norm)).float()
+                    uvw = [a.float().cpu().numpy() for a in self.norm.denorm(pred.float())]
+                    del pred
+            except torch.cuda.OutOfMemoryError:
+                if lot == 1:
+                    raise
+                torch.cuda.empty_cache()
+                lot = max(1, lot // 2)
+                continue
+            for b, kept in enumerate(part):
+                out.append(self._post_member(S, kept, hour, doy,
+                                             (uvw[0][b], uvw[1][b], uvw[2][b])))
+            i0 += len(part)
+        return out
+
+    def _post_member(self, S: np.ndarray, kept: np.ndarray, hour: float, doy: int,
+                     uvw: tuple[np.ndarray, np.ndarray, np.ndarray]
+                     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Post-traitement d'UNE passe de l'ensemble, identique a celui de la passe servie.
+        Point d'accroche de la correction M1 (inference.correction) : quand elle est active,
+        elle s'applique ici, a chaque passe, lot ou pas. Sans M1 : identite."""
+        return uvw
+
+    def predict_stem(self, stem: str, keep: float = 1.0, seed: int = 0,
+                     defer: bool = False) -> Volume:
         S, hour, doy, stamp = self.surface_from_cache(stem)
-        return self.predict(S, hour, doy, timestamp=stamp, keep=keep, seed=seed)
+        return self.predict(S, hour, doy, timestamp=stamp, keep=keep, seed=seed, defer=defer)
 
     def predict_csv(self, path: str | Path, keep: float = 1.0, seed: int = 0,
-                    exclure: dict | None = None) -> Volume:
+                    exclure: dict | None = None, defer: bool = False) -> Volume:
         S, hour, doy, stamp = self.surface_from_csv(path, exclure)
-        return self.predict(S, hour, doy, timestamp=stamp, keep=keep, seed=seed)
+        return self.predict(S, hour, doy, timestamp=stamp, keep=keep, seed=seed, defer=defer)
 
     def benchmark(self, S: np.ndarray, hour: float, doy: int, n: int = 20,
-                  warmup: int = 3) -> dict:
-        """DSO4 — temps d'inference par instant."""
+                  warmup: int = 3, reliability: bool | None = None) -> dict:
+        """DSO4 — temps de la VALEUR par instant (passe servie seule : fiabilite differee).
+
+        Fiabilite active : son delai est mesure a cote, sur les memes appels (`fiabilite` :
+        moyenne, p95, max), pour information et SANS verdict DSO4."""
         for _ in range(warmup):
-            self.predict(S, hour, doy, mask_nan=False)
-        times = [self.predict(S, hour, doy, mask_nan=False).inference_s for _ in range(n)]
-        return {"n": n, "mean_s": float(np.mean(times)), "p95_s": float(np.quantile(times, 0.95)),
-                "max_s": float(np.max(times)),
-                "conforme": bool(np.mean(times) < self.cfg.dso.time_s)}
+            self.predict(S, hour, doy, mask_nan=False, reliability=reliability)
+        times, rel = [], []
+        for _ in range(n):
+            vol = self.predict(S, hour, doy, mask_nan=False, reliability=reliability)
+            times.append(vol.inference_s)
+            if vol.reliability_state == FIABILITE_PRETE:
+                rel.append(vol.reliability_s)
+            del vol
+        out = {"n": n, "mean_s": float(np.mean(times)),
+               "p95_s": float(np.quantile(times, 0.95)), "max_s": float(np.max(times)),
+               "conforme": bool(np.mean(times) < self.cfg.dso.time_s)}
+        if rel:
+            out["fiabilite"] = {"n": len(rel), "mean_s": float(np.mean(rel)),
+                                "p95_s": float(np.quantile(rel, 0.95)),
+                                "max_s": float(np.max(rel)),
+                                "membres": self.cfg.reliability.members,
+                                "lot": int(self.cfg.reliability.batch)}
+        return out
 
     def meta(self) -> dict:
         """Description de la sortie, pour l'API et le visualiseur."""
         g = self.geom
-        return {
+        out = {
             "modele": self.checkpoint_path.name,
             "epoque": (self.epoch + 1) if self.epoch is not None else None,
             "device": str(self.device),
@@ -333,3 +726,17 @@ class WindFieldModel:
                           "wind_direction_deg"],
             "conventions": g.meta.raw.get("conventions", {}),
         }
+        # cle presente SEULEMENT si la fiabilite est active : desactivee, /api/meta reste
+        # exactement celui de main
+        if self.reliability is not None:
+            out["fiabilite"] = self.reliability_info()
+        return out
+
+    def reliability_info(self) -> dict | None:
+        """Configuration de la fiabilite (lot M2), None si desactivee."""
+        if self.reliability is None:
+            return None
+        rc, cal = self.cfg.reliability, self.reliability
+        return {"uncertainty": cal.uncertainty_method(rc.members), "keep": rc.keep,
+                "graine": rc.seed, "calibration_fichier": cal.path.name if cal.path else None,
+                "calibration_sha256": cal.sha256}

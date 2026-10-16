@@ -17,9 +17,16 @@ Outils :
     wind_field_at_altitude    carte decimee a une altitude
     instant_summary           statistiques d'un instant (vitesse, direction, temps d'inference)
     dso_report                dernier verdict DSO1-DSO5 archive
+    alertes_actives           alertes ouvertes d'un instant (lot M4), si alerts.enabled
+    production_eolienne       parc eolien declare : moyeu, REWS, puissance, alertes (M5)
 
 Les outils de lecture n'ecrivent rien. `export_instant` ecrit sur le disque du serveur et
 exige donc la portee `admin` lorsque l'authentification est active.
+
+Fiabilite differee (lot M2, `inference.reliability`) : comme l'API, la valeur est servie
+d'abord et la fiabilite se calcule en arriere-plan. `instant_summary` et `wind_profile`
+disent son etat (`fiabilite` : en_cours / prete / echec) ; `production_eolienne`,
+`alertes_actives` et `export_instant` l'attendent. Desactivee : aucune cle ajoutee.
 """
 
 from __future__ import annotations
@@ -33,7 +40,8 @@ import numpy as np
 from mcp.server.mcpserver import MCPServer
 
 from pcfno3d.config import Config
-from pcfno3d.inference import WindFieldModel
+from pcfno3d.inference import FIABILITE_DESACTIVEE, WindFieldModel, noeud_fiabilite_nul
+from pcfno3d.windfarm import round_direction
 
 INSTRUCTIONS = """\
 Champ de vent 3D reconstruit sur la Tunisie (reseau de capteurs ANEO, modele PC-FNO3D).
@@ -75,6 +83,27 @@ def set_model(model: WindFieldModel) -> None:
     _VOLUMES.clear()
 
 
+_ALERTES: Any = None
+_ALERTES_FIXE = False
+
+
+def set_alertes(moteur) -> None:
+    """Partage le moteur d'alertes de l'API HTTP (un seul journal), ou None (desactive)."""
+    global _ALERTES, _ALERTES_FIXE
+    _ALERTES, _ALERTES_FIXE = moteur, True
+
+
+def get_alertes():
+    """Moteur d'alertes (lot M4) ; en stdio, construit au premier appel si alerts.enabled."""
+    global _ALERTES
+    if _ALERTES is None and not _ALERTES_FIXE:
+        cfg = get_model().cfg
+        if cfg.alerts.enabled:
+            from pcfno3d.alerts import MoteurAlertes
+            _ALERTES = MoteurAlertes(cfg)
+    return _ALERTES
+
+
 def _default_stem(wf: WindFieldModel) -> str:
     from pcfno3d.cache import load_index
 
@@ -92,17 +121,29 @@ def _volume(stem: str | None):
     stem = stem or _default_stem(wf)
     volume = _VOLUMES.get(stem)
     if volume is not None:
+        wf.assess_reliability_async(volume)      # sans effet si deja lancee ou prete
         return stem, volume
     # meme double verification que l'API : deux outils appeles ensemble sur un nouvel
     # instant ne doivent pas lancer deux passes avant
     with _VOLUME_LOCK:
         volume = _VOLUMES.get(stem)
         if volume is None:
-            volume = wf.predict_stem(stem)
+            # fiabilite active : differee, calculee en arriere-plan (un thread par volume)
+            kw = {"defer": True} if wf.reliability is not None else {}
+            volume = wf.predict_stem(stem, **kw)
             _VOLUMES[stem] = volume
             if len(_VOLUMES) > MAX_CACHED_VOLUMES:
                 _VOLUMES.pop(next(iter(_VOLUMES)))
+    wf.assess_reliability_async(volume)
     return stem, volume
+
+
+def _etat_fiabilite(volume) -> dict:
+    """Etat de la fiabilite differee ({} si elle est desactivee : reponse inchangee)."""
+    if volume.reliability_state == FIABILITE_DESACTIVEE:
+        return {}
+    st = volume.reliability_status()
+    return {"fiabilite": st["fiabilite"], "fiabilite_s": st["fiabilite_s"]}
 
 
 def _clean(x: float) -> float | None:
@@ -178,7 +219,9 @@ def wind_profile(x_m: float, y_m: float, stem: str | None = None) -> dict:
     """Profil vertical complet en un point : une ligne par niveau du modele.
 
     Utile pour un calcul de production eolienne : le vent a la hauteur de moyeu se lit
-    directement, et le cisaillement se voit d'un niveau a l'autre.
+    directement, et le cisaillement se voit d'un niveau a l'autre. Avec la fiabilite active,
+    chaque niveau porte aussi sigma, intervalle p10/p50/p90, statut, couverture et classe,
+    a null tant que `fiabilite` vaut en_cours (rappeler l'outil plus tard).
 
     Args:
         x_m: distance en metres vers l'est depuis le coin sud-ouest.
@@ -189,6 +232,10 @@ def wind_profile(x_m: float, y_m: float, stem: str | None = None) -> dict:
     g = volume.geom
     i = int(np.clip(round(x_m / g.dx), 0, g.nx - 1))
     j = int(np.clip(round(y_m / g.dy), 0, g.ny - 1))
+    # etat lu une fois : un profil ne melange pas deux etats de la fiabilite
+    etat = volume.reliability_state
+    active = etat != FIABILITE_DESACTIVEE
+    prete = active and etat == "prete" and volume.reliability is not None
     niveaux = []
     for k, z in enumerate(g.z_levels):
         u, v, w = volume.u[k, j, i], volume.v[k, j, i], volume.w[k, j, i]
@@ -198,11 +245,20 @@ def wind_profile(x_m: float, y_m: float, stem: str | None = None) -> dict:
             "sous_le_relief": not bool(np.isfinite(u)),
             "wind_u_m_s": _clean(u), "wind_v_m_s": _clean(v), "wind_w_m_s": _clean(w),
             "wind_speed_m_s": _clean(float(np.hypot(u, v))),
-            "wind_direction_deg": _clean(float((270.0 - np.degrees(np.arctan2(v, u))) % 360.0)),
+            # arrondi AVANT le modulo (regle m4) : jamais 360,0
+            "wind_direction_deg": _clean(float(round_direction(
+                270.0 - np.degrees(np.arctan2(v, u)), 3))),
         })
-    return {"stem": stem, "timestamp_utc": volume.timestamp,
-            "x_m": i * g.dx, "y_m": j * g.dy, "z_terrain_m": float(g.zt[j, i]),
-            "niveaux": niveaux}
+        if active:
+            niveaux[-1].update(volume.node_reliability(k, j, i) if prete
+                               else noeud_fiabilite_nul())
+    out = {"stem": stem, "timestamp_utc": volume.timestamp,
+           "x_m": i * g.dx, "y_m": j * g.dy, "z_terrain_m": float(g.zt[j, i]),
+           "niveaux": niveaux}
+    if active:
+        out["uncertainty"] = volume.reliability.uncertainty if prete else None
+        out["fiabilite"] = "prete" if prete else ("echec" if etat == "echec" else "en_cours")
+    return out
 
 
 @mcp.tool()
@@ -242,6 +298,9 @@ def wind_field_at_altitude(z_asl_m: float, stem: str | None = None, variable: st
 def instant_summary(stem: str | None = None) -> dict:
     """Resume chiffre d'un instant : vitesses par niveau, secteur dominant, temps d'inference.
 
+    Avec la fiabilite active : `fiabilite` (en_cours, prete, echec) et `fiabilite_s` (delai
+    de la fiabilite, null tant qu'elle n'est pas prete) ; inference_s = la valeur seule.
+
     Args:
         stem: instant (JJJ_HHMMSS) ; None = premier instant de test.
     """
@@ -270,7 +329,41 @@ def instant_summary(stem: str | None = None) -> dict:
         "vitesse_max_m_s": _clean(float(volume.speed[valid].max())),
         "secteur_dominant_deg": labels[int(secteurs.argmax())],
         "par_niveau": niveaux,
+        **_etat_fiabilite(volume),
     }
+
+
+@mcp.tool()
+def production_eolienne(stem: str | None = None) -> dict:
+    """Production du parc eolien declare a un instant (lot M5).
+
+    Par eolienne : vent au moyeu et vent equivalent rotor (REWS) avec intervalle p10/p50/p90,
+    cisaillement (exposant shear_alpha), rotation de direction (veer_deg), densite de l'air,
+    puissance et etat (production / arret_vent_faible / arret_vent_fort / indisponible) ;
+    puissance du parc ; alertes vent_fort_moyeu et cisaillement ; KPI hub_wind_* du domaine.
+    Hauteurs de moyeu AU-DESSUS DU SOL. Erreur si aucun parc n'est declare.
+
+    Args:
+        stem: instant (JJJ_HHMMSS) ; None = premier instant de test.
+    """
+    from pcfno3d.windfarm import farm_report
+
+    wf = get_model()
+    if wf.farm is None:
+        raise ValueError("aucun parc eolien declare (configuration wind_farm.turbines)")
+    stem, volume = _volume(stem)
+    volume.wait_reliability()        # quantiles du parc : fiabilite prete, jamais partielle
+    out = farm_report(volume, wf)
+    out["stem"] = stem
+    moteur = get_alertes()
+    if moteur is not None:
+        # alertes actives : items du journal M4 (premiere levee, ouverte / close)
+        from pcfno3d.alerts import items_externes
+        S, hour, doy, _ = wf.surface_from_cache(stem)
+        res = moteur.evaluer_modele(wf, S, hour, doy, volume, Y=moteur.verite(wf, stem),
+                                    cle=f"stem:{stem}")
+        out["alerts"]["items"] = items_externes(res.items)
+    return out
 
 
 @mcp.tool()
@@ -307,6 +400,41 @@ def dso_report() -> dict:
     # la table de robustesse (4 lignes) est gardee : c'est elle qui montre qu'un modele
     # fait mieux avec moins de capteurs, le defaut que corrige mask.p_full
     return {"disponible": True, "fichier": str(out), "resume": summary}
+
+
+@mcp.tool()
+def alertes_actives(stem: str | None = None) -> dict:
+    """Alertes OUVERTES d'un instant (lot M4) : capteurs en derive ou muets, stations
+    insuffisantes, incoherence physique, derive des entrees, zones mal couvertes.
+
+    Chaque alerte porte un niveau (information, avertissement, important, critique), une
+    cause et une recommandation ; format du contrat ATOM rev. 2 (alerts.schema.json).
+    Renvoie aussi le nombre d'alertes ouvertes par niveau et le bloc `physique` (residu
+    de masse de l'instant). Si les alertes sont desactivees (alerts.enabled = false), le
+    dit au lieu d'inventer une liste vide.
+
+    Args:
+        stem: instant (JJJ_HHMMSS) ; None = dernieres alertes calculees, sinon le premier
+              instant de test.
+    """
+    moteur = get_alertes()
+    if moteur is None:
+        return {"disponible": False,
+                "message": "alertes desactivees (alerts.enabled = false dans la configuration)"}
+    if stem is None and moteur.dernier is not None:
+        res = moteur.dernier
+    else:
+        stem, volume = _volume(stem)
+        volume.wait_reliability()    # couverture et sigma : fiabilite prete
+        wf = get_model()
+        S, hour, doy, _ = wf.surface_from_cache(stem)
+        res = moteur.evaluer_modele(wf, S, hour, doy, volume, Y=moteur.verite(wf, stem),
+                                    cle=f"stem:{stem}")
+    ouvertes = [a for a in res.items if a["status"] == "ouverte"]
+    return {"disponible": True, "stem": stem, "instant": res.instant,
+            "ouvertes_par_niveau": res.ouvertes(), "items": ouvertes,
+            "closes_recentes": len(res.items) - len(ouvertes),
+            "physique": res.physics, "derive_capteurs": res.derive}
 
 
 @mcp.tool()

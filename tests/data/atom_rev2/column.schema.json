@@ -1,0 +1,105 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://atom.zelqane.com/contract/v1/column.schema.json",
+  "title": "GET /v1/column/{id}?i&j — valeurs brutes de la colonne (i, j), lues par le Worker dans les fichiers publiés",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "i",
+    "j",
+    "x_m",
+    "y_m",
+    "z_terrain_m",
+    "levels"
+  ],
+  "properties": {
+    "i": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "j": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "x_m": {
+      "type": "number"
+    },
+    "y_m": {
+      "type": "number"
+    },
+    "z_terrain_m": {
+      "type": "number"
+    },
+    "levels": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Aucun calcul au-delà des conversions du contrat : NaN → null, uint8 × scale, 255 → null. Une clé par variable de meta.fields",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "z_asl_m",
+          "z_agl_m",
+          "below_terrain",
+          "u",
+          "v",
+          "w",
+          "speed",
+          "sigma_speed",
+          "coverage",
+          "reliability",
+          "status"
+        ],
+        "properties": {
+          "z_asl_m": {
+            "type": "number"
+          },
+          "z_agl_m": {
+            "type": "number"
+          },
+          "below_terrain": {
+            "type": "boolean"
+          },
+          "u": {
+            "$ref": "common.schema.json#/$defs/component_ms"
+          },
+          "v": {
+            "$ref": "common.schema.json#/$defs/component_ms"
+          },
+          "w": {
+            "$ref": "common.schema.json#/$defs/component_ms"
+          },
+          "speed": {
+            "$ref": "common.schema.json#/$defs/speed_ms"
+          },
+          "sigma_speed": {
+            "$ref": "common.schema.json#/$defs/sigma_ms"
+          },
+          "sigma_u": {
+            "$ref": "common.schema.json#/$defs/sigma_ms"
+          },
+          "sigma_v": {
+            "$ref": "common.schema.json#/$defs/sigma_ms"
+          },
+          "sigma_w": {
+            "$ref": "common.schema.json#/$defs/sigma_ms"
+          },
+          "coverage": {
+            "$ref": "common.schema.json#/$defs/unit_interval"
+          },
+          "reliability": {
+            "$ref": "common.schema.json#/$defs/unit_interval"
+          },
+          "status": {
+            "enum": [
+              0,
+              1,
+              null
+            ],
+            "description": "1 = mesuré, 0 = estimé"
+          }
+        }
+      }
+    }
+  }
+}

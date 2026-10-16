@@ -47,6 +47,7 @@ from pathlib import Path
 import numpy as np
 from fastapi import (APIRouter, Depends, FastAPI, File, HTTPException, Query, Request,
                      UploadFile)
+from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -55,7 +56,9 @@ from pydantic import BaseModel, Field
 
 from pcfno3d.config import Config
 from pcfno3d.export import export_web
-from pcfno3d.inference import Volume, WindFieldModel
+from pcfno3d.inference import (FIABILITE_DESACTIVEE, ReliabilityError, Volume, WindFieldModel,
+                               noeud_fiabilite_nul)
+from pcfno3d.windfarm import round_direction
 
 from . import mcp_server
 from .auth import (NO_KEY_MESSAGE, OPEN_WARNING, ApiKeyRecord, ApiKeyStore, default_store_path,
@@ -350,21 +353,75 @@ def _securite(cfg: Config) -> dict:
 
 
 # ---------------------------------------------------------------------------- helpers
+def _stem_par_defaut(wf: WindFieldModel) -> str:
+    """Premier instant de test du cache (sinon le premier instant)."""
+    from pcfno3d.cache import load_index
+    index = load_index(wf.cfg)
+    test = index[index["split"] == "test"]
+    rows = test if len(test) else index
+    if rows.empty:
+        raise HTTPException(400, "aucun instant en cache : precise 'stem'")
+    return str(rows["stem"].iloc[0])
+
+
+def _differee(wf: WindFieldModel) -> bool:
+    """Fiabilite configuree : le service la DIFFERE (valeur servie d'abord, fiabilite dans
+    un thread d'arriere-plan, rangee dans le meme volume du cache)."""
+    return wf.reliability is not None
+
+
+def _kw_differee(wf: WindFieldModel) -> dict:
+    """Argument `defer` des appels a predict : present seulement si la fiabilite est active
+    (desactivee, les appels restent exactement ceux d'avant)."""
+    return {"defer": True} if _differee(wf) else {}
+
+
+def _memoriser(cache_key: str, volume: Volume) -> None:
+    """Range un volume dans le cache des volumes (le plus ancien sort au-dela de 4)."""
+    with _VOLUME_LOCK:
+        cache = STATE.setdefault("volumes", {})
+        cache[cache_key] = volume
+        if len(cache) > MAX_CACHED_VOLUMES:
+            cache.pop(next(iter(cache)))
+
+
+def _fiabilite_prete(volume: Volume) -> Volume:
+    """Attend la fiabilite differee (alertes M4, parc M5, export) : jamais un etat partiel.
+    Fiabilite en echec : 503 avec la cause."""
+    try:
+        volume.wait_reliability()
+    except ReliabilityError as exc:
+        raise HTTPException(503, str(exc)) from exc
+    return volume
+
+
+def _etat_fiabilite(wf: WindFieldModel, volume: Volume, stem: str | None,
+                    keep: float = 1.0) -> dict:
+    """Cles de fiabilite d'une reponse de reconstruction ; {} si elle est desactivee (la
+    reponse garde alors exactement ses cles d'avant)."""
+    if not _differee(wf) or volume.reliability_state == FIABILITE_DESACTIVEE:
+        return {}
+    st = volume.reliability_status()
+    out = {"fiabilite": st["fiabilite"], "fiabilite_s": st["fiabilite_s"]}
+    if stem is not None:
+        out["fiabilite_route"] = f"/api/reliability/{stem}" + (
+            f"?keep={keep:.3f}" if abs(keep - 1.0) > 1e-9 else "")
+    return out
+
+
 def _volume_for(stem: str | None, keep: float = 1.0) -> Volume:
-    """Volume d'un instant, memorise (un instant complet pese ~18 Mo en memoire)."""
+    """Volume d'un instant, memorise (un instant complet pese ~18 Mo en memoire).
+
+    Fiabilite active : la valeur est servie sans l'attendre ; la fiabilite part dans un
+    thread d'arriere-plan (un seul par volume) et se range dans ce meme volume du cache."""
     wf = model()
     if stem is None:
-        from pcfno3d.cache import load_index
-        index = load_index(wf.cfg)
-        test = index[index["split"] == "test"]
-        rows = test if len(test) else index
-        if rows.empty:
-            raise HTTPException(400, "aucun instant en cache : precise 'stem'")
-        stem = str(rows["stem"].iloc[0])
+        stem = _stem_par_defaut(wf)
     cache = STATE.setdefault("volumes", {})
     cache_key = f"{stem}:{keep:.3f}"
     volume = cache.get(cache_key)
     if volume is not None:
+        wf.assess_reliability_async(volume)      # sans effet si deja lancee ou prete
         return volume
     # double verification sous verrou : l'application web demande la carte, le resume et
     # les fleches EN MEME TEMPS pour un nouvel instant. La premiere requete calcule, les
@@ -374,12 +431,13 @@ def _volume_for(stem: str | None, keep: float = 1.0) -> Volume:
         volume = cache.get(cache_key)
         if volume is None:
             try:
-                volume = wf.predict_stem(stem, keep=keep)
+                volume = wf.predict_stem(stem, keep=keep, **_kw_differee(wf))
             except KeyError as exc:
                 raise HTTPException(404, f"instant inconnu : {stem}") from exc
             cache[cache_key] = volume
             if len(cache) > MAX_CACHED_VOLUMES:
                 cache.pop(next(iter(cache)))
+    wf.assess_reliability_async(volume)
     return volume
 
 
@@ -457,6 +515,8 @@ def reconstruct(req: ReconstructRequest,
     if req.export and not (keys().open_mode or scope_allows(record, "admin")):
         raise HTTPException(403, "l'export sur disque demande la portee admin")
     volume = _volume_for(req.stem, keep=req.keep)
+    # fiabilite differee : DSO4 juge la valeur seule (inference_s) ; la reponse n'attend
+    # pas la fiabilite, elle dit son etat (en_cours / prete) et ou le suivre
     valid = wf.geom.valid
     out: dict = {
         "stem": req.stem, "timestamp_utc": volume.timestamp,
@@ -468,7 +528,10 @@ def reconstruct(req: ReconstructRequest,
         "vitesse_max_m_s": round(float(volume.speed[valid].max()), 3),
         "vitesse_moyenne_m_s": round(float(volume.speed[valid].mean()), 3),
     }
+    if _differee(wf):
+        out.update(_etat_fiabilite(wf, volume, req.stem or _stem_par_defaut(wf), req.keep))
     if req.export:
+        _fiabilite_prete(volume)          # un export sur disque porte la fiabilite complete
         name = f"recon_{req.stem or 'latest'}"
         out["export"] = str(export_web(volume, wf.cfg.paths.web_root / name,
                                        stride=req.stride))
@@ -490,12 +553,19 @@ async def reconstruct_upload(file: UploadFile = File(...), keep: float = 1.0,
     contrat juge fausses (hors plage, densite, figees, sans u/v/T) sont MASQUEES avant
     l'inference : le modele ne recoit jamais une valeur que le rapport signale.
     """
-    from pcfno3d.contract import Grille, Seuils, valider_fichier
-
     wf = model()
     data = await file.read()
     if len(data) > MAX_UPLOAD_MB * 1024 * 1024:
         raise HTTPException(413, f"fichier trop gros (> {MAX_UPLOAD_MB} Mo)")
+    # contrat, inference et alertes : des secondes (minutes sur CPU avec les alertes) de
+    # calcul bloquant, hors de la boucle d'evenements (sinon /api/health attend aussi)
+    return await run_in_threadpool(_upload_calcul, wf, data, file.filename, keep)
+
+
+def _upload_calcul(wf: WindFieldModel, data: bytes, filename: str | None, keep: float):
+    """Partie bloquante de l'upload, executee dans un thread du pool."""
+    from pcfno3d.contract import Grille, Seuils, valider_fichier
+
     # gzip reconnu a ses octets magiques : lecteurs (pyarrow, pandas) decompressent
     # d'apres l'extension, quel que soit le nom envoye par le client
     suffix = ".csv.gz" if data[:2] == b"\x1f\x8b" else ".csv"
@@ -504,26 +574,64 @@ async def reconstruct_upload(file: UploadFile = File(...), keep: float = 1.0,
         tmp_path = Path(tmp.name)
     try:
         masque: dict = {}
-        rapport = valider_fichier(tmp_path, Grille.depuis_meta(wf.geom.meta.raw),
-                                  Seuils.upload(), nom=file.filename or tmp_path.name,
-                                  masque=masque)
+        grille = Grille.depuis_meta(wf.geom.meta.raw)
+        rapport = valider_fichier(tmp_path, grille, Seuils.upload(),
+                                  nom=filename or tmp_path.name, masque=masque)
         if rapport["verdict"] == "rejet":
             return JSONResponse(status_code=422, content={
                 "detail": f"CSV non conforme au contrat ANEO ({rapport['verdict']}) : "
                           + " ; ".join(rapport["motifs"]),
                 "qualite": rapport})
-        volume = wf.predict_csv(tmp_path, keep=keep, exclure=masque)
+        moteur = STATE.get("alertes")
+        differee = _differee(wf)
+        if moteur is None:
+            volume = wf.predict_csv(tmp_path, keep=keep, exclure=masque, **_kw_differee(wf))
+        else:
+            # meme passe que predict_csv, en gardant S pour les alertes (lot M4)
+            S, hour, doy, stamp = wf.surface_from_csv(tmp_path, masque)
+            volume = wf.predict(S, hour, doy, timestamp=stamp, keep=keep, **_kw_differee(wf))
+        if differee:
+            # fiabilite en arriere-plan, volume range dans le cache (lisible ensuite par
+            # /profile, /reliability... sous `stem`)
+            stem = _stem_upload(volume.timestamp, keep)
+            _memoriser(f"{stem}:1.000", volume)
+            wf.assess_reliability_async(volume)
+        if moteur is not None:
+            from pcfno3d.alerts import stations_hors_plage
+            hp = stations_hors_plage(tmp_path, grille.n_stations, grille.node_id_start,
+                                     rapport["seuils"]["tol_densite_rel"])
+            # les alertes ATTENDENT la fiabilite (couverture, sigma, membres du parc)
+            _fiabilite_prete(volume)
+            alertes = moteur.evaluer_modele(wf, S, hour, doy, volume, rapport=rapport,
+                                            hors_plage=hp)
     except (ValueError, KeyError) as exc:
         raise HTTPException(400, f"CSV invalide : {exc}") from exc
     finally:
         tmp_path.unlink(missing_ok=True)
     valid = wf.geom.valid
-    return {"timestamp_utc": volume.timestamp, "capteurs_utilises": volume.n_sensors,
-            "inference_s": round(volume.inference_s, 4),
-            "vitesse_max_m_s": round(float(volume.speed[valid].max()), 3),
-            "statut_qualite": rapport["verdict"],
-            "avertissements": rapport["motifs"] + rapport["avertissements"],
-            "qualite": rapport}
+    out = {"timestamp_utc": volume.timestamp, "capteurs_utilises": volume.n_sensors,
+           "inference_s": round(volume.inference_s, 4),
+           "vitesse_max_m_s": round(float(volume.speed[valid].max()), 3),
+           "statut_qualite": rapport["verdict"],
+           "avertissements": rapport["motifs"] + rapport["avertissements"],
+           "qualite": rapport}
+    if differee:
+        out["stem"] = stem
+        out.update(_etat_fiabilite(wf, volume, stem))
+    if moteur is not None:
+        # alertes activees seulement : sinon la reponse garde exactement ses cles
+        out["alertes"] = alertes.document()
+        out["physique"] = alertes.physics
+    return out
+
+
+def _stem_upload(timestamp: str | None, keep: float) -> str:
+    """Cle de cache d'un volume televerse (fiabilite active seulement)."""
+    import pandas as pd
+
+    t = pd.Timestamp(timestamp) if timestamp else pd.Timestamp.now(tz="UTC")
+    suffixe = "" if abs(keep - 1.0) < 1e-9 else f"_keep{keep:.2f}"
+    return f"upload_{t.strftime('%Y%m%d_%H%M%S')}{suffixe}"
 
 
 class StationObs(BaseModel):
@@ -577,19 +685,19 @@ def reconstruct_stations(req: StationsRequest,
     ts = pd.Timestamp(req.timestamp_utc).tz_localize(None) \
         if pd.Timestamp(req.timestamp_utc).tzinfo else pd.Timestamp(req.timestamp_utc)
     hour = ts.hour + ts.minute / 60 + ts.second / 3600
-    volume = wf.predict(S, hour, int(ts.dayofyear), timestamp=str(ts))
+    # mesures de stations REELLES (information de fiabilite ; le statut n'en depend pas)
+    volume = wf.predict(S, hour, int(ts.dayofyear), timestamp=str(ts), real_sensors=True,
+                        **_kw_differee(wf))
     stem = f"live_{ts.strftime('%Y%m%d_%H%M%S')}"
-    with _VOLUME_LOCK:
-        cache = STATE.setdefault("volumes", {})
-        cache[f"{stem}:1.000"] = volume
-        if len(cache) > MAX_CACHED_VOLUMES:
-            cache.pop(next(iter(cache)))
+    _memoriser(f"{stem}:1.000", volume)
+    wf.assess_reliability_async(volume)          # fiabilite en arriere-plan, si active
     valid = wf.geom.valid
     return {"stem": stem, "timestamp_utc": str(ts), "stations": info, "controle": rapport,
             "georeferencement": "suppose (domaine synthetique, position choisie)"
             if wf.cfg.real.origin_assumed else "mesure",
             "inference_s": round(volume.inference_s, 4),
-            "vitesse_max_m_s": round(float(volume.speed[valid].max()), 3)}
+            "vitesse_max_m_s": round(float(volume.speed[valid].max()), 3),
+            **_etat_fiabilite(wf, volume, stem)}
 
 
 @router.get("/field", tags=["donnees"])
@@ -640,11 +748,25 @@ def point(x: float = Query(..., description="x en m depuis le coin sud-ouest"),
 @router.get("/profile", tags=["donnees"])
 def profile(x: float = Query(...), y: float = Query(...), stem: str | None = None,
             _: ApiKeyRecord | None = Depends(require_read)) -> dict:
-    """Profil vertical complet en un point : une entree par niveau du modele."""
+    """Profil vertical complet en un point : une entree par niveau du modele.
+
+    Avec la fiabilite active (`inference.reliability`, lot M2), chaque niveau porte aussi
+    sigma_speed, sigma_u, sigma_v, sigma_w, speed_interval (p10, p50, p90), status,
+    coverage, reliability, reliability_class — noms du contrat ATOM rev. 2 — et la reponse
+    le bloc `uncertainty` (methode, membres, calibration) et `fiabilite`, l'etat de la
+    fiabilite differee : tant qu'elle vaut `en_cours` (ou `echec`), ces champs sont null ;
+    `prete` : les valeurs. Desactivee : aucune de ces cles.
+    """
     volume = _volume_for(stem)
     g = volume.geom
     i = int(np.clip(round(x / g.dx), 0, g.nx - 1))
     j = int(np.clip(round(y / g.dy), 0, g.ny - 1))
+    # etat lu UNE fois : un profil ne melange pas deux etats de la fiabilite
+    etat = volume.reliability_state
+    active = etat != FIABILITE_DESACTIVEE
+    prete = active and volume.reliability is not None and etat == "prete"
+    if active and not prete:
+        etat = "echec" if etat == "echec" else "en_cours"
     niveaux = []
     for k, zl in enumerate(g.z_levels):
         u, v, w = volume.u[k, j, i], volume.v[k, j, i], volume.w[k, j, i]
@@ -653,12 +775,94 @@ def profile(x: float = Query(...), y: float = Query(...), stem: str | None = Non
             "z_asl_m": float(zl), "z_agl_m": round(float(zl - g.zt[j, i]), 2),
             "sous_le_relief": not ok,
             "wind_speed_m_s": round(float(np.hypot(u, v)), 3) if ok else None,
-            "wind_direction_deg": round(float((270.0 - np.degrees(np.arctan2(v, u))) % 360.0), 1)
+            # arrondi AVANT le modulo (regle m4 du contrat) : jamais 360,0
+            "wind_direction_deg": float(round_direction(270.0 - np.degrees(np.arctan2(v, u))))
             if ok else None,
             "wind_w_m_s": round(float(w), 4) if ok else None,
         })
-    return {"timestamp_utc": volume.timestamp, "x_m": i * g.dx, "y_m": j * g.dy,
-            "z_terrain_m": float(g.zt[j, i]), "niveaux": niveaux}
+        if active:
+            niveaux[-1].update(volume.node_reliability(k, j, i) if prete
+                               else noeud_fiabilite_nul())
+    out = {"timestamp_utc": volume.timestamp, "x_m": i * g.dx, "y_m": j * g.dy,
+           "z_terrain_m": float(g.zt[j, i]), "niveaux": niveaux}
+    if active:
+        out["uncertainty"] = volume.reliability.uncertainty if prete else None
+        out["fiabilite"] = etat
+    return out
+
+
+@router.get("/reliability/{stem}", tags=["qualite"])
+def reliability_state(stem: str, keep: float = Query(1.0, ge=0.0, le=1.0),
+                      _: ApiKeyRecord | None = Depends(require_read)) -> dict:
+    """Etat de la fiabilite differee d'un volume deja reconstruit : `fiabilite`
+    (desactivee, en_cours, prete, echec), `inference_s` (la valeur, DSO4), `fiabilite_s`
+    (delai de la fiabilite, null tant qu'elle n'est pas prete), `erreur`. Route legere :
+    ne lance aucun calcul ; 404 si l'instant n'est pas dans le cache des volumes."""
+    model()
+    volume = STATE.get("volumes", {}).get(f"{stem}:{keep:.3f}")
+    if volume is None:
+        raise HTTPException(404, f"aucun volume en cache pour {stem} (keep {keep:.3f}) : "
+                                 "POST /api/reconstruct d'abord")
+    return {"stem": stem, **volume.reliability_status()}
+
+
+def _alertes_stem(stem: str | None):
+    """Alertes d'un instant du cache (lot M4), memorisees par instant dans le moteur."""
+    moteur = STATE.get("alertes")
+    if moteur is None:
+        raise HTTPException(409, "alertes desactivees : alerts.enabled = false dans la "
+                                 "configuration du service")
+    wf = model()
+    stem = stem or _stem_par_defaut(wf)
+    volume = _fiabilite_prete(_volume_for(stem))     # couverture, sigma : fiabilite prete
+    try:
+        S, hour, doy, _ = wf.surface_from_cache(stem)
+    except KeyError as exc:
+        raise HTTPException(404, f"instant inconnu : {stem}") from exc
+    return moteur.evaluer_modele(wf, S, hour, doy, volume, Y=moteur.verite(wf, stem),
+                                 cle=f"stem:{stem}")
+
+
+@router.get("/alerts", tags=["qualite"])
+def alerts(stem: str | None = Query(None, description='instant en cache, ex. "004_120000" ; '
+                                                       "absent : dernieres alertes calculees"),
+           _: ApiKeyRecord | None = Depends(require_read)) -> dict:
+    """Alertes de l'instant (lot M4, AN1), au format `alerts.schema.json` du contrat ATOM
+    rev. 2 : `{"items": [...]}`, ouvertes et closes recentes, avec niveau, cause et
+    recommandation. Sans `stem` : les dernieres alertes calculees (upload compris), sinon
+    le premier instant de test. 409 si les alertes sont desactivees (`alerts.enabled`)."""
+    moteur = STATE.get("alertes")
+    if moteur is not None and stem is None and moteur.dernier is not None:
+        return moteur.dernier.document()
+    return _alertes_stem(stem).document()
+
+
+@router.get("/wind-farm", tags=["eolien"])
+def wind_farm(stem: str | None = None,
+              _: ApiKeyRecord | None = Depends(require_read)) -> dict:
+    """Parc eolien a un instant (lot M5) : vent au moyeu et REWS (p10/p50/p90), cisaillement
+    (shear_alpha), veer, densite, puissance et etat par eolienne, production du parc,
+    alertes vent_fort_moyeu / cisaillement et KPI hub_wind_* du domaine.
+
+    `wind_farm` suit wind-farm.schema.json et `alerts` alerts.schema.json (contrat ATOM
+    rev. 2). Les hauteurs sont au-dessus du SOL. 404 si aucun parc n'est declare
+    (`wind_farm.turbines`, opt-in). Les intervalles demandent la fiabilite M2 active.
+    """
+    from pcfno3d.windfarm import farm_report
+
+    wf = model()
+    if wf.farm is None:
+        raise HTTPException(404, "aucun parc eolien declare (configuration "
+                                 "wind_farm.turbines, voir docs/EOLIEN.md)")
+    stem = stem or _stem_par_defaut(wf)
+    # quantiles du parc sur les membres de l'ensemble : fiabilite prete, jamais partielle
+    out = farm_report(_fiabilite_prete(_volume_for(stem)), wf)
+    if STATE.get("alertes") is not None:
+        # alertes actives : les items du journal M4 (premiere levee, ouverte / close) ;
+        # sinon, alertes brutes de M5 (raised_at = l'instant)
+        from pcfno3d.alerts import items_externes
+        out["alerts"]["items"] = items_externes(_alertes_stem(stem).items)
+    return out
 
 
 @router.get("/dso", tags=["qualite"])
@@ -725,6 +929,12 @@ def create_app() -> FastAPI:
                             device=os.environ.get("PCFNO3D_DEVICE") or None)
         STATE.update({"model": wf, "cfg": cfg, "volumes": {}, **_securite(cfg)})
         mcp_server.set_model(wf)          # le MCP reutilise le modele deja charge
+        # alertes (lot M4) : strictement opt-in ; un seul moteur (un seul journal) pour
+        # l'API et le MCP
+        if cfg.alerts.enabled:
+            from pcfno3d.alerts import MoteurAlertes
+            STATE["alertes"] = MoteurAlertes(cfg)
+        mcp_server.set_alertes(STATE.get("alertes"))
         async with mcp_app.router.lifespan_context(mcp_app):
             yield
         STATE.clear()

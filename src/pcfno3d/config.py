@@ -237,10 +237,15 @@ class InferenceCfg:
           thermiques RECALCULEES sur les capteurs gardes — sans quoi la passe sort de la
           distribution d'entrainement. 1 = une seule passe, comme la v7.
     tta_keep : fraction des capteurs gardee a chaque passe supplementaire.
+    reliability : fiabilite par noeud (lot M2, pcfno3d.reliability, section `reliability`).
+          None = desactivee : sortie et temps d'inference inchanges. Sinon, le chemin du JSON
+          de calibration ecrit par `pcfno3d calibrate-reliability` (sur la VALIDATION), ou
+          "non_calibre" pour des sigma bruts (calibrated: false dans la sortie).
     """
 
     tta: int = 1
     tta_keep: float = 0.7
+    reliability: Path | str | None = None
 
     def __post_init__(self) -> None:
         self.tta = int(self.tta)
@@ -249,6 +254,184 @@ class InferenceCfg:
         if not 0.0 < float(self.tta_keep) <= 1.0:
             raise ValueError("inference.tta_keep doit etre dans ]0, 1]")
         self.tta_keep = float(self.tta_keep)
+        if self.reliability is not None and str(self.reliability) != "non_calibre":
+            self.reliability = _resolve(self.reliability)
+
+
+@dataclass
+class ReliabilityCfg:
+    """Fiabilite par noeud (lot M2, DSO6). Justification des valeurs : docs/FIABILITE.md."""
+
+    members: int = 8                  # passes masquees de l'ensemble (sigma)
+    keep: float = 0.7                 # fraction des capteurs gardee par passe (comme le TTA)
+    seed: int = 2026                  # graine des masques : sortie deterministe
+    sigma_floor_m_s: float = 0.01     # sigma plancher dans la calibration (division)
+    per_level: bool = True            # k par niveau (sinon un k global par composante)
+    dz_status_m: float = 15.0         # « mesure » : capteur visible a moins de dz (rev. 2, D7)
+    coverage_length_m: float = 1000.0  # L : portee horizontale d'un capteur
+    coverage_height_m: float = 500.0   # H : decroissance de la couverture avec la hauteur
+    coverage_density_ref: float = 2.0  # D0 : densite de capteurs pour ~63 % de couverture
+    sigma_ref_m_s: float = 1.0        # echelle de sigma_vitesse dans l'indice de fiabilite
+    # seuils de classe = ceux du tableau de bord et des fixtures du contrat (0,75 / 0,5) :
+    # le front reclasse depuis le champ `reliability` publie (docs/FIABILITE.md)
+    class_high: float = 0.75          # fiabilite >= : « elevee »
+    class_mid: float = 0.5            # fiabilite >= : « moyenne » (sinon « faible »)
+    coverage_target: float = 0.8      # DSO6 : part des valeurs vraies dans l'intervalle 80 %
+    # quantile de |erreur| / sigma vise par la calibration (validation). "auto" (defaut) : la
+    # marge est choisie par une REGLE fixee d'avance, sur la validation seule (validation
+    # croisee en 2 plis de jours, plus petit q de la grille 0,80..0,90 dont la couverture
+    # hors-pli minimale sur u, v, w atteint coverage_target ; reliability.choose_q). Un
+    # nombre impose q tel quel (ancien comportement ; 0,8 = intervalle a 80 % exactement).
+    calibration_q: float | str = "auto"
+    # passes masquees de l'ensemble faites en UN passage avant du reseau par lot (DSO4) ;
+    # 1 = une passe a la fois (comportement d'avant). Memoire du passage x batch.
+    batch: int = 4
+
+    def __post_init__(self) -> None:
+        self.members = int(self.members)
+        if self.members < 2:
+            raise ValueError("reliability.members doit etre >= 2")
+        if not 0.0 < float(self.keep) < 1.0:
+            raise ValueError("reliability.keep doit etre dans ]0, 1[")
+        self.keep = float(self.keep)
+        if not 0.0 <= self.class_mid < self.class_high <= 1.0:
+            raise ValueError("reliability : 0 <= class_mid < class_high <= 1")
+        q = self.calibration_q
+        if isinstance(q, str) and q.strip().lower() == "auto":
+            self.calibration_q = "auto"
+        else:
+            self.calibration_q = float(q)
+            if not 0.5 <= self.calibration_q < 1.0:
+                raise ValueError("reliability.calibration_q : \"auto\" ou un nombre de "
+                                 "[0,5 ; 1[")
+        self.batch = int(self.batch)
+        if self.batch < 1:
+            raise ValueError("reliability.batch doit etre >= 1")
+
+
+@dataclass
+class AlertsCfg:
+    """Alertes (lot M4, critere AN1). Justification des valeurs : docs/ALERTES.md.
+
+    Strictement opt-in : `enabled: false` par defaut, et rien ne change alors (ni la sortie
+    du modele, ni les reponses de l'API ; /api/alerts repond 409).
+    """
+
+    enabled: bool = False
+    journal: Path | str | None = None      # JSONL ; None = run_dir/logs/alertes.jsonl
+    seuils: Path | str | None = None       # JSON regle sur la VALIDATION (m4_an1_colab.py)
+    retention_close_h: float = 24.0        # une alerte close reste publiee 24 h
+    max_par_type: int = 100                # au plus 100 alertes d'un meme type par instant
+    # capteur en derive. v2 (defaut) : « spatiale », mesure comparee a la mediane de ses
+    # voisins (aucune passe du modele) ; v1 : « innovation » / « influence », capteur masque
+    # compare a la reconstruction faite sans lui ; « combinee » : spatiale + innovation.
+    # Le choix et les seuils se reglent sur la validation (scripts/m4_an1_colab.py).
+    derive_statistique: str = "spatiale"
+    derive_rayon: int = 2                  # voisinage : carre de 2 r + 1 mailles (spatiale)
+    derive_rayon_echelle: int = 2          # echelle locale : carre de 2 r + 1 mailles
+    derive_min_voisins: int = 3            # voisins disponibles exiges (sinon non evalue)
+    derive_sites: Path | str | None = None  # correction de site apprise sur l'ENTRAINEMENT
+    derive_cote: int = 3                   # groupes en treillis cote x cote : cote^2 passes
+    derive_fenetre: int = 4                # instants retenus pour la persistance
+    derive_min_instants: int = 3           # instants observes exiges dans la fenetre
+    derive_kappa: float = 6.0              # seuil en ecarts robustes (regle sur validation)
+    derive_min_m_s: float = 0.5            # plancher de l'ecart moyen (tolerance OMM)
+    derive_echelle_plancher_m_s: float = 0.05
+    derive_facteur_critique: float = 2.0   # critique si ecart >= 2 x seuil
+    # derive des entrees (statistiques de l'instant vs entrainement, norm_stats.json).
+    # v2 : vent exclu (sa meteo faisait les fausses alertes de la v1), seuils regles sur
+    # la validation par une grille fixee d'avance (an1.GRILLE_ENTREES).
+    entrees_z_max: float = 5.0             # |moyenne - mu| / sd au-dela : derive
+    entrees_ecart_extreme: float = 5.0     # valeur a plus de 5 sd : extreme
+    entrees_part_extreme: float = 0.25     # derive si plus de 25 % des capteurs extremes
+    entrees_variables: tuple[str, ...] = ("temperature_c", "air_density_kg_m3",
+                                          "relative_humidity_pct", "pressure_pa")
+    # coherence physique (contrat rev. 2, D11)
+    rho_source: str = "extrapolation_surface"
+    sol_rms_max_m_s: float | None = None   # condition au sol : pas d'alerte sans seuil regle
+    masse_facteur_critique: float = 10.0
+    # couverture (M2) : maille de 2 km
+    couverture_maille_m: float = 2000.0
+    couverture_min: float = 0.2
+    # part de capteurs disponibles, sans rapport du contrat (instants du cache)
+    capteurs_part_min: float = 0.70
+    capteurs_part_critique: float = 0.30
+    # reseau d'entree (snapshot.network.kind) : "treillis_synthetique" = un capteur par
+    # maille ; "stations_aneo" = stations reelles, part rapportee aux stations ATTENDUES
+    # (`stations_attendues` ; None = inconnu, pas d'alerte stations_insuffisantes)
+    reseau: str = "treillis_synthetique"
+    stations_attendues: int | None = None
+
+    def __post_init__(self) -> None:
+        self.enabled = bool(self.enabled)
+        if self.journal is not None and str(self.journal).lower() != "off":
+            self.journal = _resolve(self.journal)
+        if self.seuils is not None:
+            self.seuils = _resolve(self.seuils)
+        if self.derive_statistique not in ("influence", "innovation", "spatiale", "combinee"):
+            raise ValueError("alerts.derive_statistique : 'spatiale', 'innovation', "
+                             "'influence' ou 'combinee'")
+        if self.derive_sites is not None:
+            self.derive_sites = _resolve(self.derive_sites)
+        self.entrees_variables = tuple(str(v) for v in self.entrees_variables)
+        self.derive_rayon = int(self.derive_rayon)
+        self.derive_rayon_echelle = int(self.derive_rayon_echelle)
+        self.derive_min_voisins = int(self.derive_min_voisins)
+        if self.derive_rayon < 1 or self.derive_rayon_echelle < 1:
+            raise ValueError("alerts.derive_rayon et derive_rayon_echelle doivent etre >= 1")
+        if self.reseau not in ("treillis_synthetique", "stations_aneo"):
+            raise ValueError("alerts.reseau : treillis_synthetique ou stations_aneo")
+        if self.rho_source not in ("atmosphere_standard", "extrapolation_surface",
+                                   "verite_synthetique"):
+            raise ValueError("alerts.rho_source : atmosphere_standard, "
+                             "extrapolation_surface ou verite_synthetique")
+        self.derive_cote = int(self.derive_cote)
+        self.derive_fenetre = int(self.derive_fenetre)
+        self.derive_min_instants = int(self.derive_min_instants)
+        if self.derive_cote < 2:
+            raise ValueError("alerts.derive_cote doit etre >= 2")
+        if not 1 <= self.derive_min_instants <= self.derive_fenetre:
+            raise ValueError("alerts : 1 <= derive_min_instants <= derive_fenetre")
+
+
+@dataclass
+class WindFarmCfg:
+    """Eolien (lot M5, pcfno3d.windfarm, critere EOL1). Formules et sources : docs/EOLIEN.md.
+
+    turbines : fichier YAML/JSON de declaration du parc (eoliennes + courbes de puissance).
+          None = desactive : rien ne change (ni la sortie, ni le temps d'inference).
+    Les seuils d'alerte sont des choix d'ingenierie documentes, a regler avec l'exploitant.
+    """
+
+    turbines: Path | str | None = None
+    hub_height_agl_m: float = 100.0      # D10 : hauteur des KPI hub_wind_* (au-dessus du SOL)
+    rews_segments: int = 20              # tranches horizontales du disque rotor (REWS)
+    rho_radius_m: float = 2000.0         # capteur visible le plus proche pour la densite
+    calm_ms: float = 0.2                 # direction indefinie en dessous (contrat dir_from_deg)
+    shear_info: float = 0.3              # alerte cisaillement : alpha > seuil -> information
+    shear_warn: float = 0.45             # -> avertissement
+    shear_important: float = 0.6         # -> important
+    high_wind_warn_frac: float = 0.9     # vent_fort_moyeu : p90 >= frac x cut-out -> avert.
+    high_wind_critical_ms: float = 35.0  # vent_fort_moyeu : p50 >= -> critique
+    sectors: int = 12                    # rose des vents : secteurs de largeur egale
+    speed_bin_edges_ms: tuple[float, ...] = (0.0, 3.0, 6.0, 9.0, 12.0, 15.0, 25.0)
+    eol1_max_rel: float = 0.05           # EOL1 : ecart relatif d'energie du parc < 5 %
+
+    def __post_init__(self) -> None:
+        if self.turbines is not None:
+            self.turbines = _resolve(self.turbines)
+        self.rews_segments = int(self.rews_segments)
+        if self.rews_segments < 3:
+            raise ValueError("wind_farm.rews_segments doit etre >= 3 (IEC 61400-12-1)")
+        self.sectors = int(self.sectors)
+        if not 1 <= self.sectors <= 72:
+            raise ValueError("wind_farm.sectors doit etre dans [1, 72]")
+        edges = tuple(float(e) for e in self.speed_bin_edges_ms)
+        if len(edges) < 2 or edges[0] != 0.0 or any(b <= a for a, b in zip(edges, edges[1:])):
+            raise ValueError("wind_farm.speed_bin_edges_ms : croissantes, la premiere a 0")
+        self.speed_bin_edges_ms = edges
+        if self.hub_height_agl_m <= 0:
+            raise ValueError("wind_farm.hub_height_agl_m doit etre > 0 (au-dessus du sol)")
 
 
 @dataclass
@@ -304,7 +487,8 @@ class RealCfg:
 SECTIONS: dict[str, type] = {
     "paths": Paths, "model": ModelCfg, "train": TrainCfg,
     "loss": LossCfg, "mask": MaskCfg, "dso": DSOCfg, "inference": InferenceCfg,
-    "real": RealCfg,
+    "real": RealCfg, "reliability": ReliabilityCfg, "alerts": AlertsCfg,
+    "wind_farm": WindFarmCfg,
 }
 
 
@@ -322,6 +506,9 @@ class Config:
     dso: DSOCfg = field(default_factory=DSOCfg)
     inference: InferenceCfg = field(default_factory=InferenceCfg)
     real: RealCfg = field(default_factory=RealCfg)
+    reliability: ReliabilityCfg = field(default_factory=ReliabilityCfg)
+    alerts: AlertsCfg = field(default_factory=AlertsCfg)
+    wind_farm: WindFarmCfg = field(default_factory=WindFarmCfg)
     terrain_smooth_m: float = 300.0   # meme lissage du relief que le generateur
     f_coriolis: float = 8.57e-5       # s-1, latitude ~36 N (vent geostrophique)
 

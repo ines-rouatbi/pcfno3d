@@ -5,9 +5,13 @@
     check         controle de la verite terrain et de la geometrie    (BLOC 2/4)
     train         entrainement, reprise automatique                   (BLOC 9)
     evaluate      metriques de test et verdict DSO1-DSO5 (--tta N)    (BLOC 10)
+    baselines     methodes de reference (log, puissance, krigeage) sur le test (M8, L6)
     dso-weights   poids u, v par niveau, mesures sur la VALIDATION    (v8)
     reconstruct   reconstruction 3D d'un instant (npz, csv, figures)  (BLOC 12)
     export-web    volume -> binaires + manifeste pour le visualiseur
+    wind-farm     parc eolien declare a un instant : moyeu, REWS, puissance, alertes (M5)
+    windrose      roses des vents + Weibull + AEP des eoliennes sur une serie d'instants (M5)
+    publish       instantane du contrat ATOM rev. 2 : local, ou Worker avec --remote (M6)
     import-real   donnees REELLES (stations + radiosondes / champ maille) -> cache
     validate      contrat de donnees ANEO : verdict, rapport qualite, quarantaine
     serve         application web + API JSON + serveur MCP (fastapi + uvicorn)
@@ -120,6 +124,127 @@ def cmd_evaluate(args) -> int:
     return 0
 
 
+def cmd_calibrate_reliability(args) -> int:
+    """Fiabilite (M2) : facteurs k sur la VALIDATION -> JSON gele (jamais ecrase)."""
+    from .evaluate import Evaluator
+
+    cfg = _load_cfg(args)
+    ev = Evaluator(cfg, checkpoint=args.checkpoint, device=args.device, tta=args.tta)
+    try:
+        ev.calibrate_reliability(out=args.out, n_instants=args.instants, keep=args.keep)
+    except FileExistsError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    return 0
+
+
+def cmd_dso6(args) -> int:
+    """Verdict DSO6 sur le TEST avec une calibration faite sur la validation."""
+    from .evaluate import Evaluator
+
+    cfg = _load_cfg(args)
+    ev = Evaluator(cfg, checkpoint=args.checkpoint, device=args.device, tta=args.tta)
+    try:
+        summary = ev.dso6(calibration=args.calibration, n_instants=args.instants,
+                          keep=args.keep, out=args.out,
+                          deuxieme_lecture=args.deuxieme_lecture)
+    except FileExistsError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    return 0 if summary["dso6_conforme"] else 3
+
+
+def cmd_baselines(args) -> int:
+    """Lot M8 : methodes de reference sur le TEST synoptique, memes instants, capteurs et
+    noeuds que DSO1 ; parametres (variogramme, alpha) ajustes sur la VALIDATION."""
+    from datetime import datetime, timezone
+
+    from .baselines import ajuster_sur_validation, charger_ajustement, ecrire_ajustement
+    from .preuves import Banc, comparer
+
+    cfg = _load_cfg(args)
+    ev = None
+    if args.avec_modele:
+        from .evaluate import Evaluator
+        ev = Evaluator(cfg, checkpoint=args.checkpoint, device=args.device, verbose=False)
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    dossier = cfg.paths.run_dir / "preuves_pcfno3d" / "baselines"
+    try:
+        ajust = None
+        if args.ajustement:
+            ajust = charger_ajustement(args.ajustement)
+        elif args.ajuster:
+            banc0 = Banc(cfg, ev, None)
+            ajust = ajuster_sur_validation(cfg, banc0.geom, banc0.splits, verbose=True)
+            print(f"ajustement -> {ecrire_ajustement(ajust, dossier / f'ajustement_{stamp}.json')}")
+        noms = [x for x in args.references.split(",") if x] if args.references else None
+        comp = comparer(Banc(cfg, ev, ajust, noms), args.instants, keep=args.keep,
+                        spacing_m=args.espacement)
+    except (ValueError, FileExistsError) as exc:
+        print(f"ERREUR : {exc}", file=sys.stderr)
+        return 1
+    out = Path(args.out) if args.out else dossier / f"comparaison_{stamp}.json"
+    if out.exists():
+        print(f"ERREUR : {out} existe deja (jamais ecrase)", file=sys.stderr)
+        return 1
+    out.parent.mkdir(parents=True, exist_ok=True)
+    with open(out, "w", encoding="utf-8", newline="\n") as f:
+        f.write(json.dumps(comp, indent=2, ensure_ascii=False) + "\n")
+    print(f"{comp['instants']} instants de test | reseau {comp['reseau']}")
+    for nom, r in comp["methodes"].items():
+        rm = r["rmse_max_uv"]
+        print(f"  {nom:20s} RMSE max u,v {rm if rm is not None else float('nan'):.3f} m/s "
+              f"({r['niveau_rmse_max_m']} m) | global u {r['dso1_rmse_global_u']:.3f} "
+              f"v {r['dso1_rmse_global_v']:.3f} | DSO1 "
+              f"{'conforme' if r['dso1_rmse'] else 'non conforme'}")
+    print(f"resultats -> {out}")
+    return 0
+
+
+def cmd_alertes(args) -> int:
+    """Alertes (lot M4) sur des instants du cache, dans l'ordre chronologique.
+
+    Ecrit le journal JSONL (alerts.journal, defaut run_dir/logs/alertes.jsonl, ou --journal)
+    et, avec --out, le document du dernier instant (format alerts.schema.json rev. 2).
+    """
+    from .alerts import MoteurAlertes
+    from .cache import load_index
+    from .inference import WindFieldModel
+
+    cfg = _load_cfg(args)
+    out = Path(args.out) if args.out else None
+    if out is not None and out.exists():
+        print(f"{out} existe deja : il n'est jamais ecrase", file=sys.stderr)
+        return 1
+    index = load_index(cfg)
+    rows = index[index["stem"].isin(args.stem.split(","))] if args.stem \
+        else index[index["split"] == args.split]
+    rows = rows.sort_values("timestamp").head(args.limit) if args.limit else \
+        rows.sort_values("timestamp")
+    if rows.empty:
+        print("aucun instant a evaluer", file=sys.stderr)
+        return 1
+    wf = WindFieldModel(cfg, checkpoint=args.checkpoint, device=args.device)
+    moteur = MoteurAlertes(cfg, journal=Path(args.journal) if args.journal else True)
+    res = None
+    for stem in rows["stem"]:
+        S, hour, doy, stamp = wf.surface_from_cache(stem)
+        volume = wf.predict(S, hour, doy, timestamp=stamp)
+        res = moteur.evaluer_modele(wf, S, hour, doy, volume, Y=moteur.verite(wf, stem),
+                                    cle=f"stem:{stem}")
+        n = res.ouvertes()
+        print(f"{stem} {res.instant} | ouvertes : " + ", ".join(f"{k} {v}" for k, v in n.items())
+              + f" | masse {res.physics['mass_residual_rms']:.2e} "
+              f"({'ok' if res.physics['mass_residual_ok'] else 'HORS SEUIL'})")
+    if out is not None:
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_bytes((json.dumps(res.document(), indent=2, ensure_ascii=False) + "\n")
+                        .encode("utf-8"))
+        print(f"alertes -> {out}")
+    print(f"journal -> {moteur.journal.path}")
+    return 0
+
+
 def cmd_dso_weights(args) -> int:
     """Poids de u, v par niveau, mesures sur la VALIDATION d'un modele existant."""
     from . import dso
@@ -180,6 +305,164 @@ def cmd_reconstruct(args) -> int:
                 keep=args.keep, altitude=args.altitude, section_row=args.section_row,
                 figures=not args.no_figures, web=args.web, device=args.device)
     return 0
+
+
+def _farm_cfg(args) -> Config:
+    cfg = _load_cfg(args)
+    if args.parc:
+        cfg.apply_overrides({"wind_farm.turbines": args.parc})
+    if cfg.wind_farm.turbines is None:
+        raise SystemExit("aucun parc declare : --parc FICHIER ou wind_farm.turbines "
+                         "(exemple : configs/eolien/parc_demo.yaml)")
+    return cfg
+
+
+def cmd_wind_farm(args) -> int:
+    from .inference import WindFieldModel
+    from .windfarm import farm_report
+
+    cfg = _farm_cfg(args)
+    wf = WindFieldModel(cfg, checkpoint=args.checkpoint, device=args.device, verbose=False)
+    stem = args.stem
+    if stem is None:
+        from .windfarm import eol1_instants
+        stem = eol1_instants(cfg)[0]
+    out = farm_report(wf.predict_stem(stem), wf)
+    out["stem"] = stem
+    text = json.dumps(out, indent=2, ensure_ascii=False)
+    if args.out:
+        path = Path(args.out)
+        if path.exists():
+            raise SystemExit(f"{path} existe deja : rien n'est ecrase")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(text.encode("utf-8"))
+        print(f"-> {path}")
+    else:
+        print(text)
+    return 0
+
+
+def cmd_windrose(args) -> int:
+    from datetime import datetime, timezone
+
+    from .cache import load_index
+    from .inference import WindFieldModel
+    from .windfarm import farm_windroses
+
+    cfg = _farm_cfg(args)
+    wf = WindFieldModel(cfg, checkpoint=args.checkpoint, device=args.device, verbose=False)
+    idx = load_index(cfg)
+    stems = [str(x) for x in idx[idx["split"] == args.split]["stem"]]
+    if args.instants and len(stems) > args.instants:
+        stems = [stems[i] for i in np.unique(np.linspace(0, len(stems) - 1,
+                                                         args.instants).astype(int))]
+    if not stems:
+        raise SystemExit(f"aucun instant {args.split} en cache")
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    out = cfg.paths.run_dir / "eolien_pcfno3d" / wf.checkpoint_path.stem / f"rose_{stamp}"
+    out.mkdir(parents=True, exist_ok=False)          # dossier neuf : rien n'est ecrase
+    docs, ecartees = farm_windroses(wf, wf.farm, stems, keep=args.keep)
+    for site, raison in ecartees.items():
+        print(f"{site} : pas de fichier - {raison}")
+    for site, doc in docs.items():
+        (out / f"{site}.json").write_bytes(
+            json.dumps(doc, indent=2, ensure_ascii=False).encode("utf-8"))
+        w = doc["weibull"]
+        print(f"{site} : {doc['n_valid']} instants | Weibull "
+              + (f"k={w['k']} c={w['c_ms']} m/s AEP={w['aep_mwh']} MWh" if w else "indisponible"))
+    print(f"-> {out}")
+    return 0
+
+
+def cmd_publish(args) -> int:
+    """Instantane au format du contrat ATOM rev. 2 (lot M6), ecrit en local ; avec --remote,
+    publie ensuite vers le Worker (jeton : variable d'environnement ATOM_PUBLISH_TOKEN).
+
+    Un instantane deja ecrit n'est jamais recalcule ni melange a un nouveau calcul : s'il
+    existe, la commande verifie que la configuration est la meme (sinon refus, code 1),
+    exporte DEPUIS CE dossier les fichiers DE3 manquants et le publie tel quel.
+    Codes : 0 ok ; 1 refus ou erreur ; 2 jeton absent ; 3 publication incomplete (Worker)."""
+    from .export_noeuds import exporter_dossier
+    from .inference import WindFieldModel
+    from .publish import (TOKEN_ENV, ClientPublication, DepotLocal, PublicationIncomplete,
+                          PublicationRefusee, champs_attendus, differences_configuration,
+                          instantane_du_cache, instantane_du_csv, jeton_publication,
+                          snapshot_id, versions_modele)
+
+    cfg = _load_cfg(args)
+    client = None
+    if args.remote:
+        # jeton verifie AVANT le calcul ; jamais lu sur la ligne de commande
+        if jeton_publication() is None:
+            print(f"jeton absent : definir {TOKEN_ENV} dans l'environnement", file=sys.stderr)
+            return 2
+        client = ClientPublication(args.remote)
+    racine = Path(args.sortie) if args.sortie else cfg.paths.run_dir / "publication"
+    depot = DepotLocal(racine)
+    wf = WindFieldModel(cfg, checkpoint=args.checkpoint, device=args.device, verbose=False)
+    moteur = None
+    if cfg.alerts.enabled:
+        from .alerts import MoteurAlertes
+        moteur = MoteurAlertes(cfg)
+    dso6 = json.loads(Path(args.dso6).read_bytes().decode("utf-8")) if args.dso6 else None
+    kw = dict(data_kind=args.data_kind, depot=depot, moteur=moteur, dso6=dso6)
+    try:
+        versions = versions_modele(wf, args.data_kind)
+        inst = None
+        if args.csv:
+            inst = instantane_du_csv(wf, args.csv, **kw)
+            sid = inst.snapshot_id
+        else:
+            stem = args.stem
+            if stem is None:
+                from .windfarm import eol1_instants
+                stem = eol1_instants(cfg)[0]
+            sid = snapshot_id(stem, versions["model_sha256"][:8])
+        if depot.existe(sid):
+            diff = differences_configuration(depot.dossier(sid), versions,
+                                             champs_attendus(wf))
+            if diff:
+                print(f"{sid} existe deja avec une autre configuration : refus (un instantane "
+                      "est immuable) -> " + " ; ".join(diff), file=sys.stderr)
+                return 1
+            print(f"{sid} deja ecrit dans {depot.dossier(sid)} (immuable) : reutilise tel quel")
+        else:
+            if inst is None:
+                inst = instantane_du_cache(wf, stem, **kw)
+            depot.ecrire(inst)
+            print(f"instantane {sid} ({inst.data_status}) -> {depot.dossier(sid)}")
+            print(_temps_instantane(inst))
+    except ValueError as exc:
+        print(f"ERREUR : {exc}", file=sys.stderr)
+        return 1
+    dossier = depot.dossier(sid)
+    if args.exports:
+        rc = cfg.reliability
+        for nom, p in exporter_dossier(dossier, wf.geom, racine / "exports", rc.class_high,
+                                       rc.class_mid).items():
+            print(f"export {nom} -> {p}")
+    if client is not None:
+        try:
+            rep = client.publier(dossier)
+        except PublicationIncomplete as exc:
+            print(f"PUBLICATION INCOMPLETE : {exc}", file=sys.stderr)
+            return 3
+        except PublicationRefusee as exc:
+            print(f"publication refusee : {exc}", file=sys.stderr)
+            return 1
+        print(f"publie : {rep.get('snapshot_id')} "
+              f"{'(deja publie)' if rep.get('unchanged') else ''}".rstrip())
+    return 0
+
+
+def _temps_instantane(inst) -> str:
+    """Temps d'un instantane, pour le journal local : la valeur (DSO4) et le delai de la
+    fiabilite differee, que le contrat rev. 2 ne publie pas (snapshot.kpi)."""
+    i = inst.info
+    out = f"  valeur {i['inference_s'] * 1000:.0f} ms"
+    if i.get("fiabilite_s") is not None:
+        out += f" | fiabilite prete en {i['fiabilite_s']:.2f} s (attendue avant publication)"
+    return out
 
 
 def _read_table(path: str):
@@ -553,6 +836,52 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--tta-keep", type=float, help="capteurs gardes par passe (defaut 0.7)")
     s.set_defaults(func=cmd_evaluate)
 
+    s = sub.add_parser("calibrate-reliability",
+                       help="fiabilite : facteurs k sur la VALIDATION (M2, DSO6)")
+    s.add_argument("--checkpoint"), s.add_argument("--device")
+    s.add_argument("--tta", type=int, help="passe servie : moyenne de N passes")
+    s.add_argument("--instants", type=int, help="nombre d'instants (defaut : tous)")
+    s.add_argument("--keep", type=float, help="capteurs visibles (defaut : mask.keep_eval)")
+    s.add_argument("--out", help="JSON (defaut : run_dir/fiabilite_pcfno3d/<modele>/"
+                                 "calibration_validation.json) ; jamais ecrase")
+    s.set_defaults(func=cmd_calibrate_reliability)
+
+    s = sub.add_parser("dso6", help="verdict DSO6 de la fiabilite sur le TEST")
+    s.add_argument("--checkpoint"), s.add_argument("--device")
+    s.add_argument("--tta", type=int, help="passe servie : moyenne de N passes")
+    s.add_argument("--calibration", help="JSON de calibration (defaut : inference.reliability)")
+    s.add_argument("--out", help="JSON du verdict (defaut : eval_pcfno3d/<modele>/dso6_<sha8>_"
+                                 "keep<k>_n<instants>.json) ; jamais ecrase")
+    s.add_argument("--instants", type=int, help="nombre d'instants (defaut : tous)")
+    s.add_argument("--keep", type=float, help="capteurs visibles (defaut : mask.keep_eval)")
+    s.add_argument("--deuxieme-lecture", action="store_true",
+                   help="le test a deja ete lu (15/10/2026) : le verdict porte le champ "
+                        "`mesure` qui le dit (pas une mesure independante)")
+    s.set_defaults(func=cmd_dso6)
+
+    s = sub.add_parser("baselines", help="methodes de reference sur le TEST (lot M8, L6)")
+    s.add_argument("--ajustement", help="ajustement de VALIDATION existant (JSON)")
+    s.add_argument("--ajuster", action="store_true",
+                   help="ajuster variogramme et alpha sur la validation (sinon : log_idw seule)")
+    s.add_argument("--references", help="noms separes par des virgules (defaut : disponibles)")
+    s.add_argument("--avec-modele", action="store_true", help="evaluer aussi PC-FNO3D")
+    s.add_argument("--instants", type=int, help="nombre d'instants (defaut : tous)")
+    s.add_argument("--keep", type=float, help="capteurs visibles (defaut : mask.keep_eval)")
+    s.add_argument("--espacement", type=float, help="reseau regulier : un capteur tous les N m")
+    s.add_argument("--out", help="JSON (defaut : run_dir/preuves_pcfno3d/baselines/) ; "
+                                 "jamais ecrase")
+    s.add_argument("--checkpoint"), s.add_argument("--device")
+    s.set_defaults(func=cmd_baselines)
+
+    s = sub.add_parser("alertes", help="alertes (M4) sur des instants du cache, dans l'ordre")
+    s.add_argument("--stem", help="instants, ex. 006_000000,006_030000 (defaut : --split)")
+    s.add_argument("--split", default="test", choices=["train", "val", "test"])
+    s.add_argument("--limit", type=int, help="nombre maximal d'instants")
+    s.add_argument("--journal", help="journal JSONL (defaut : alerts.journal)")
+    s.add_argument("--out", help="document JSON du dernier instant (jamais ecrase)")
+    s.add_argument("--checkpoint"), s.add_argument("--device")
+    s.set_defaults(func=cmd_alertes)
+
     s = sub.add_parser("dso-weights",
                        help="poids u, v par niveau mesures sur la validation (v8)")
     s.add_argument("--checkpoint"), s.add_argument("--device")
@@ -572,6 +901,34 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--no-figures", action="store_true")
     s.add_argument("--web", action="store_true", help="exporte aussi pour le visualiseur")
     s.set_defaults(func=cmd_reconstruct)
+
+    s = sub.add_parser("wind-farm", help="parc eolien a un instant (lot M5)")
+    s.add_argument("--stem", help="instant en cache (defaut : premier instant de test)")
+    s.add_argument("--parc", help="declaration du parc (defaut : wind_farm.turbines)")
+    s.add_argument("--out", help="fichier JSON a ecrire (jamais ecrase)")
+    s.add_argument("--checkpoint"), s.add_argument("--device")
+    s.set_defaults(func=cmd_wind_farm)
+
+    s = sub.add_parser("windrose", help="roses des vents, Weibull et AEP du parc (lot M5)")
+    s.add_argument("--parc", help="declaration du parc (defaut : wind_farm.turbines)")
+    s.add_argument("--split", default="test", choices=("train", "val", "test"))
+    s.add_argument("--instants", type=int, help="nombre d'instants (defaut : tous)")
+    s.add_argument("--keep", type=float, default=1.0, help="fraction de capteurs utilises")
+    s.add_argument("--checkpoint"), s.add_argument("--device")
+    s.set_defaults(func=cmd_windrose)
+
+    s = sub.add_parser("publish", help="instantane du contrat ATOM rev. 2, local ou Worker (M6)")
+    src = s.add_mutually_exclusive_group()
+    src.add_argument("--stem", help="instant en cache (defaut : premier instant de test)")
+    src.add_argument("--csv", help="fichier de mesures ANEO (direct, contrat M3)")
+    s.add_argument("--sortie", help="dossier du depot local (defaut : run_dir/publication)")
+    s.add_argument("--data-kind", default="synthetique", choices=("synthetique", "reel", "test"),
+                   help="nature des donnees (versions.data_kind, D15)")
+    s.add_argument("--dso6", help="resume DSO6 (JSON de `pcfno3d dso6`) pour quality.calibration")
+    s.add_argument("--exports", action="store_true", help="NetCDF + CSV des noeuds (DE3)")
+    s.add_argument("--remote", help="URL du Worker ; jeton dans ATOM_PUBLISH_TOKEN, jamais ici")
+    s.add_argument("--checkpoint"), s.add_argument("--device")
+    s.set_defaults(func=cmd_publish)
 
     s = sub.add_parser("import-real", help="donnees reelles -> cache du pipeline")
     s.add_argument("--stations", required=True,

@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://atom.zelqane.com/contract/v1/latest.schema.json",
+  "title": "GET /v1/latest — manifeste du dernier instantané publié (écrit par le Worker au /commit)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "snapshot_id",
+    "valid_time",
+    "generated_at",
+    "published_at",
+    "last_observation_at",
+    "compute_status",
+    "heartbeat_at",
+    "data_status",
+    "versions",
+    "href"
+  ],
+  "properties": {
+    "snapshot_id": {
+      "$ref": "common.schema.json#/$defs/snapshot_id"
+    },
+    "valid_time": {
+      "$ref": "common.schema.json#/$defs/iso_utc"
+    },
+    "generated_at": {
+      "$ref": "common.schema.json#/$defs/iso_utc"
+    },
+    "published_at": {
+      "$ref": "common.schema.json#/$defs/iso_utc"
+    },
+    "last_observation_at": {
+      "anyOf": [
+        {
+          "$ref": "common.schema.json#/$defs/iso_utc"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "compute_status": {
+      "enum": [
+        "online",
+        "offline",
+        "unknown"
+      ],
+      "description": "online seulement si le battement de cœur du service GPU a moins de 5 min"
+    },
+    "heartbeat_at": {
+      "anyOf": [
+        {
+          "$ref": "common.schema.json#/$defs/iso_utc"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "data_status": {
+      "$ref": "common.schema.json#/$defs/data_status"
+    },
+    "versions": {
+      "$ref": "common.schema.json#/$defs/versions"
+    },
+    "href": {
+      "type": "string"
+    }
+  }
+}

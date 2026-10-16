@@ -87,7 +87,30 @@ a terrain correction.
 | T8 | Visualization & interpretation | Juillet–Août |
 | T9 | Deployment & tests (→ web app integration) | Août |
 
-## 5. Current state (snapshot as of 2026-10-11)
+## 5. Current state (snapshot as of 2026-10-16; model results as of 2026-10-13)
+
+### Delivery state (2026-10-16) — closure lots M0–M8
+
+- **Merged on `main`** (4dcf48c, through PRs): **M0** (DSO3 checked on both bounds
+  [0.9, 1.1], DE2 reproducibility), **M3** (ANEO data contract, DE1), **M7** (API closed by
+  default, revocation, quotas, access log).
+- **Done and reviewed, on branches, merge to `main` waiting for a PR** (the `gh` CLI is not
+  logged in on ines-pc): **M2** (reliability per node, criterion DSO6), **M4** (alerts, AN1),
+  **M5** (wind farm, EOL1), **M6** (publication in the ATOM contract rev. 2 format, R2 /
+  `latest` / history, HIS1, NetCDF/CSV exports DE3), **M8** (reference methods L6, network
+  studies E1–E3, energy E5, data card, model card, UML). All five are integrated on
+  `agent/ines/finalisation`. On that branch the reliability class thresholds were aligned on
+  the dashboard's (0.75 / 0.5 instead of 0.6 / 0.3, `docs/FIABILITE.md`), and the model card
+  carries the full v7 fingerprints (`docs/MODEL_CARD.md`).
+- **Deployment is LOCAL, on ines-pc only**: the dashboard Worker runs locally (`wrangler dev`)
+  with a local R2, next to the v7 model service on CPU. **8 test instants** (day 017,
+  valid times 2025-02-28 00:00–21:00 UTC, every 3 h) are published in that local R2, with
+  M2 and M4 inactive (their blocks are `null`, B5). Nothing is hosted on Cloudflare.
+- **Colab GPU session in progress** for the DSO6 verdict (M2), AN1 (M4), EOL1 (M5, on the
+  demonstration farm only) and the M6 replay of the test instants. **No verdict yet**: the
+  model card lists these criteria as "en attente du GPU" until the session's outputs are read.
+- **M1** (last bounded DSO1 attempt, cell 10i) is waiting for its own GPU session.
+- **DSO1 is still not met at 650–1000 m**; v7 remains the served model (numbers below).
 
 **The drift flagged in July is resolved.** The project converged on a single architecture, the
 dataset was regenerated with true 3D targets, and the work has moved into T6–T9.
@@ -267,8 +290,9 @@ sensor coordinates (requested from Tukhnanutha) would replace the lattice.
 
 - **Whether a spatially varying geostrophic input can reach DSO1** — untested; needs a full
   retraining (~140 epochs x ~145 s ≈ 5–6 h of A100).
-- T9 is **scaffolded, not deployed**: API, MCP, Docker and the Colab tunnel exist and are tested,
-  and v7 runs locally, but nothing is hosted, and there is no CI or monitoring.
+- T9 is **deployed locally only** (2026-10-16, see "Delivery state" above): API, MCP, Docker,
+  the Colab tunnel and the M6 publication exist and are tested, the dashboard Worker and the v7
+  service run on ines-pc, but nothing is hosted, and there is no CI or monitoring.
 
 Next concrete steps, in order: (1) decide with Tukhnanutha between reporting v7 against the OMM
 criterion (met) and funding an input-architecture change for DSO1; (2) serve that configuration via the Colab notebook
