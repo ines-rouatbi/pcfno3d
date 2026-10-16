@@ -538,7 +538,7 @@ def build() -> tuple[dict, list[tuple[str, str]]]:
     cells.insert(0, md_cell("m1-intro", intro, "ajoutee"))
     out = {"cells": cells,
            "metadata": {"accelerator": "GPU",
-                        "colab": {"gpuType": "L4", "machine_shape": "hm", "provenance": []},
+                        "colab": {"gpuType": "A100", "machine_shape": "hm", "provenance": []},
                         "kernelspec": {"display_name": "Python 3", "name": "python3"},
                         "language_info": {"name": "python"}},
            "nbformat": 4, "nbformat_minor": 5}
