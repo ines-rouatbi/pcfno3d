@@ -16,7 +16,7 @@ Synthèse : `docs/BILAN_FINAL.md`.*
 | Taille du checkpoint | 1,81 Go | `CLAUDE.md` |
 | Empreinte sha256 des poids | `b2529442ee6fcdb18d3f35fe176663022604395743c161a25541ccd4e365e7de` (sha256 des octets de `best_dso_v7.pt`, 1 813 028 515 octets ; D1) | `versions.model_sha256` du `latest.json` et des `models/b2529442/meta.json` publiés par M6 dans le dépôt local `AppData/Local/pcfno3d/runs/v7/publication/` (8 instantanés du 2025-02-28, générés le 2026-10-15), calculé par `publish.versions_modele` sur le fichier servi ; préfixe identique à `docs/REPRODUCTIBILITE.md` |
 | `norm_stats.json` | fait partie du modèle (dénormalisation) ; sha256 `7bae6748f270fa5e3f08a69a7f8e919f01d641d29b125981168cc15a03ee25f7` (1 038 octets) | `versions.norm` publié = `7bae6748` (sha8, même dépôt local) ; empreinte complète calculée le 2026-10-16 sur `AppData/Local/pcfno3d/runs/v7/norm_stats.json`, préfixe identique au sha8 publié |
-| Statut | v7 reste le modèle servi : la v8 (affinage) n'est pas meilleure | `tukhnanutha.md` § 5 ; `docs/rapport_dso1.md` § 3 |
+| Statut | **v7 figée** après M1 (2026-10-16, tag `v7-fige`), seule, sans correction post-modèle ; elle reste le modèle servi (la v8, affinage, n'est pas meilleure) | `docs/resultats/modele_fige/README.md` ; `docs/M1_PROTOCOLE.md` ; `docs/rapport_dso1.md` § 3 |
 
 ## Architecture
 
@@ -58,7 +58,7 @@ Source : `docs/rapport_dso1.md` § 2 (table du BLOC 10, retrouvée par le paquet
 
 | Critère | Seuil (cahier p. 21–22) | Mesure v7 | État |
 |---|---|---|---|
-| DSO1 RMSE u, v par niveau | ≤ 0,5 m/s | max u **0,665** m/s (1 000 m) ; u 0,564 à 650 m, 0,632 à 800 m ; v 0,508 à 1 000 m | **non conforme** (650–1 000 m) |
+| DSO1 RMSE u, v par niveau | ≤ 0,5 m/s | max u **0,665** m/s (1 000 m) ; u 0,564 à 650 m, 0,632 à 800 m ; v 0,508 à 1 000 m | **non conforme** (650–1 000 m) ; la correction M1 n'est pas retenue (ci-dessous) |
 | DSO1 RMSE global | ≤ 0,5 m/s | u 0,542, v 0,437 | **non conforme** (u) |
 | DSO1 R² u, v par niveau | ≥ 0,95 | min 0,9911 | conforme |
 | DSO2 résidu de continuité | ≤ 1·10⁻⁴ | 2,58·10⁻⁵ | conforme |
@@ -84,6 +84,23 @@ moyenne de 8 passes (pire à tous les niveaux : 1 000 m u 0,672 ; DSO4 930 ms), 
 la plus compatible : limite d'information (un seul plan géostrophique relie les capteurs à
 25–30 m à l'atmosphère libre) ; non démontrée.
 
+**M1, dernière tentative bornée (mesure décisive 10i, 2026-10-16, A100-SXM4-80GB)** :
+correction post-modèle du vent moyen par niveau (estimateur géostrophique v2 + ridge par
+niveau, alpha 0,01), jugée par une règle pré-enregistrée, C1 ET C2 ET C3
+(`docs/M1_PROTOCOLE.md`, section « Résultat de la mesure décisive ») :
+
+- C1, test synoptique : pire niveau u 0,665 → 0,419, v 0,508 → 0,382 ; R² min 0,9933 →
+  **conforme** ;
+- C2, 46 instants d'épisodes jamais utilisés : la correction dégrade v à 150, 200 et 1000 m
+  et u à 650 m au-delà des seuils de la règle (pire niveau u 1,148 → 1,056, v 1,068 →
+  1,104) → **non conforme** ;
+- C3 : DSO2 2,58e-5, DSO3 0,951, DSO5 0,508, DSO4 121 ms (modèle seul 92 ms) → **conforme**.
+
+**Correction non retenue : la v7 est gelée seule** (`docs/resultats/modele_fige/README.md`). Le
+DSO1 reste non atteint à 650–1 000 m et se rapporte avec le critère OMM. Réserve imprimée par
+10i : les coefficients sont appris sur synthétique ; sur réel, l'erreur des baromètres
+(±10 à 50 Pa) est du même ordre que le signal géostrophique (26 Pa pour 10 m/s).
+
 Robustesse (BLOC 10) : RMSE max u 0,828 / 0,646 / 0,593 / 0,705 m/s à 10 / 25 /
 50 / 100 % des capteurs — anomalie : pire avec tous les capteurs qu'avec la moitié
 (`tukhnanutha.md` § 5 ; sortie du BLOC 10 de `fno3d_v7.ipynb`).
@@ -100,7 +117,8 @@ un capteur en panne que PC-FNO3D.
 
 - **Entraîné et évalué uniquement sur des données synthétiques** ; transférabilité au réel
   non démontrée (cahier p. 41, § 18 ; `docs/REAL_DATA.md`).
-- **DSO1 non atteint** au-dessus de 500 m (voir ci-dessus).
+- **DSO1 non atteint** au-dessus de 500 m (voir ci-dessus) ; la dernière tentative (M1) n'a
+  pas été retenue et le modèle est figé.
 - **Densité réaliste** : premier test indicatif (8 instants d'un jour, CPU) — à un capteur
   par km, l'erreur des niveaux bas est multipliée par 2 à 3 ; u à 1 000 m ≈ 0,87–0,91 m/s
   quelle que soit la densité (`tukhnanutha.md` § 5). À confirmer sur 120 instants (E1).
