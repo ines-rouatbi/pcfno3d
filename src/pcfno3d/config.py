@@ -277,11 +277,15 @@ class ReliabilityCfg:
     class_high: float = 0.75          # fiabilite >= : « elevee »
     class_mid: float = 0.5            # fiabilite >= : « moyenne » (sinon « faible »)
     coverage_target: float = 0.8      # DSO6 : part des valeurs vraies dans l'intervalle 80 %
-    # quantile de |erreur| / sigma vise par la calibration (validation). 0,8 = intervalle a
-    # 80 % exactement : sur le test, la couverture oscille alors AUTOUR de 0,80 et le verdict
-    # strict (>= 0,80) se joue a l'echantillonnage. Une marge (ex. 0,82) se decide sur la
-    # validation, jamais apres avoir vu le test.
-    calibration_q: float = 0.8
+    # quantile de |erreur| / sigma vise par la calibration (validation). "auto" (defaut) : la
+    # marge est choisie par une REGLE fixee d'avance, sur la validation seule (validation
+    # croisee en 2 plis de jours, plus petit q de la grille 0,80..0,90 dont la couverture
+    # hors-pli minimale sur u, v, w atteint coverage_target ; reliability.choose_q). Un
+    # nombre impose q tel quel (ancien comportement ; 0,8 = intervalle a 80 % exactement).
+    calibration_q: float | str = "auto"
+    # passes masquees de l'ensemble faites en UN passage avant du reseau par lot (DSO4) ;
+    # 1 = une passe a la fois (comportement d'avant). Memoire du passage x batch.
+    batch: int = 4
 
     def __post_init__(self) -> None:
         self.members = int(self.members)
@@ -292,6 +296,17 @@ class ReliabilityCfg:
         self.keep = float(self.keep)
         if not 0.0 <= self.class_mid < self.class_high <= 1.0:
             raise ValueError("reliability : 0 <= class_mid < class_high <= 1")
+        q = self.calibration_q
+        if isinstance(q, str) and q.strip().lower() == "auto":
+            self.calibration_q = "auto"
+        else:
+            self.calibration_q = float(q)
+            if not 0.5 <= self.calibration_q < 1.0:
+                raise ValueError("reliability.calibration_q : \"auto\" ou un nombre de "
+                                 "[0,5 ; 1[")
+        self.batch = int(self.batch)
+        if self.batch < 1:
+            raise ValueError("reliability.batch doit etre >= 1")
 
 
 @dataclass

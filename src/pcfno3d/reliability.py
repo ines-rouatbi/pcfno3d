@@ -15,7 +15,9 @@ formules sont justifies dans docs/FIABILITE.md ; resume :
                       sur les capteurs gardes (comme le TTA), correction M1 appliquee a chaque
                       passe si elle est active.
     sigma calibre   : k * sigma brut, k par composante et par niveau, ajuste sur la VALIDATION
-                      pour que |erreur| <= 1,2816 * k * sigma dans 80 % des cas.
+                      pour que |erreur| <= 1,2816 * k * sigma dans une part q des cas ; q
+                      choisi par une regle fixee d'avance (validation croisee en 2 plis de
+                      jours de validation, `choose_q`) ou impose (calibration_q).
     intervalle      : p50 = vitesse servie ; p10 = max(0, vitesse - 1,2816 * sigma_speed),
                       p90 = vitesse + 1,2816 * sigma_speed, sigma_speed = ecart-type CALIBRE de
                       la norme horizontale (contrat rev. 2, D6) — pas de quantiles empiriques.
@@ -52,6 +54,18 @@ CHAMPS_CONTRAT = {"sigma_speed": "float32", "sigma_u": "float32", "sigma_v": "fl
                   "sigma_w": "float32", "coverage": "uint8", "reliability": "uint8",
                   "status": "uint8"}
 U8_SCALE = 1.0 / 254.0                     # uint8 quantifie : 0..254 -> 0..1, 255 = absent
+
+# regle de choix de la marge de calibration (calibration_q: "auto"), fixee d'avance et
+# appliquee sur la VALIDATION seule (docs/FIABILITE.md)
+Q_GRILLE = tuple(round(0.80 + 0.01 * i, 2) for i in range(11))     # 0,80 ; 0,81 ; ... ; 0,90
+REGLE_Q = ("validation croisee en 2 plis de jours de validation (rang pair / impair des "
+           "jours, ordre croissant) ; pour chaque q de la grille, k ajuste sur un pli et "
+           "couverture de l'intervalle 80 % mesuree sur l'autre, dans les deux sens ; q retenu "
+           "= plus petit q dont la couverture hors-pli minimale (u, v, w, deux plis) atteint "
+           "la cible ; aucun : 0,90, signale ; k finaux ajustes sur toute la validation")
+# champ `mesure` du verdict DSO6 quand le test a deja ete lu une premiere fois
+MESURE_SECONDE_LECTURE = ("seconde mesure sur le test, apres une premiere lecture "
+                          "(15/10/2026, non conforme)")
 
 # histogrammes de |erreur| / sigma pour la calibration : log10 dans [-4, 4], 4000 classes
 # (largeur 0,002 decade, soit ~0,5 % sur k) — la memoire ne depend pas du nombre de noeuds
@@ -141,6 +155,18 @@ class RatioHistogram:
         self.nz = nz
         self.h = {c: np.zeros((nz, _H_N + 2), dtype=np.int64) for c in COMPOSANTES}
 
+    @classmethod
+    def total(cls, hists: list["RatioHistogram"]) -> "RatioHistogram":
+        """Somme de plusieurs histogrammes (ex. les plis) : celui de toute la validation."""
+        out = cls(hists[0].nz)
+        for h in hists:
+            for c in COMPOSANTES:
+                out.h[c] += h.h[c]
+        return out
+
+    def count(self, comp: str = "u") -> int:
+        return int(self.h[comp].sum())
+
     def add(self, comp: str, k: int, err_abs: np.ndarray, sigma: np.ndarray,
             floor: float) -> None:
         r = np.log10(np.maximum(err_abs, 1e-12) / np.maximum(sigma, floor))
@@ -169,27 +195,17 @@ class RatioHistogram:
         return int(counts[:b + 1].sum()), int(counts.sum())
 
 
-def fit_calibration(hist: RatioHistogram, geom: Geometry, jeu: str, rcfg, n_instants: int,
-                    extra: dict | None = None) -> dict:
-    """k par composante et par niveau, et k global par composante. Refuse le TEST."""
-    if jeu != "validation":
-        raise ValueError(f"calibration de la fiabilite sur « {jeu} » refusee : elle se fait sur "
-                         "la VALIDATION uniquement (le test ne sert qu'au verdict DSO6)")
-    levels = list(geom.eval_levels())
-    q = float(getattr(rcfg, "calibration_q", 0.8))
-    k_niv = {c: [hist.k(c, lv, q) if lv in levels else None for lv in range(geom.nz)]
+def _k_tables(hist: RatioHistogram, levels: list[int], nz: int, q: float
+              ) -> tuple[dict, dict]:
+    """k par composante et par niveau (None hors niveaux evalues), et k global."""
+    k_niv = {c: [hist.k(c, lv, q) if lv in levels else None for lv in range(nz)]
              for c in COMPOSANTES}
-    k_glob = {c: hist.k(c, None, q) for c in COMPOSANTES}
-    data = {"method": METHOD, "jeu": "validation", "instants": int(n_instants),
-            "members": rcfg.members, "keep": rcfg.keep, "seed": rcfg.seed,
-            "sigma_floor_m_s": rcfg.sigma_floor_m_s, "z_levels_asl_m": geom.z_levels.tolist(),
-            "par_niveau": rcfg.per_level, "quantile": q, "k": k_niv, "k_global": k_glob,
-            # le contrat n'a qu'UN facteur : celui de la vitesse, toutes altitudes (les k par
-            # composante et par niveau, ceux qui s'appliquent, sont dans `k`)
-            "scale_factor": k_glob["speed"], **(extra or {})}
-    # couverture OBTENUE sur la validation avec les k retenus (>= 0,8 par construction, a la
-    # largeur d'une classe d'histogramme pres) — mesuree, pas recopiee de la cible
-    cal = Calibration(data)
+    return k_niv, {c: hist.k(c, None, q) for c in COMPOSANTES}
+
+
+def _couverture(hist: RatioHistogram, cal: "Calibration", levels: list[int]) -> dict:
+    """Couverture de l'intervalle 80 % (k de `cal`) mesuree sur `hist`, par composante,
+    tous niveaux evalues confondus (comptage par classe d'histogramme)."""
     cov = {}
     for c in COMPOSANTES:
         ins = tot = 0
@@ -197,6 +213,81 @@ def fit_calibration(hist: RatioHistogram, geom: Geometry, jeu: str, rcfg, n_inst
             a, b = hist.inside(c, lv, cal.factor(c, lv))
             ins, tot = ins + a, tot + b
         cov[c] = ins / tot if tot else float("nan")
+    return cov
+
+
+def _cal_data(hist: RatioHistogram, levels: list[int], nz: int, q: float,
+              per_level: bool) -> dict:
+    k_niv, k_glob = _k_tables(hist, levels, nz, q)
+    return {"method": METHOD, "jeu": "validation", "par_niveau": per_level,
+            "k": k_niv, "k_global": k_glob}
+
+
+def choose_q(plis: tuple[RatioHistogram, RatioHistogram], levels: list[int], nz: int,
+             rcfg, grille: tuple[float, ...] = Q_GRILLE) -> dict:
+    """Regle « auto » de la marge de calibration, sur la VALIDATION seule.
+
+    Pour chaque q de la grille : k ajustes sur un pli, couverture de l'intervalle 80 %
+    mesuree sur l'autre pli, et inversement. q retenu = le PLUS PETIT q dont la couverture
+    hors-pli minimale (u, v, w, deux sens) atteint `rcfg.coverage_target` ; si aucun q n'y
+    arrive, le plus grand de la grille, avec `atteint: false`."""
+    cible = float(rcfg.coverage_target)
+    a, b = plis
+    if a.count() == 0 or b.count() == 0:
+        raise ValueError("regle auto de calibration_q : un pli de validation est vide")
+    detail, retenu = {}, None
+    for q in grille:
+        sens = {}
+        for nom, (fit, autre) in (("a_vers_b", (a, b)), ("b_vers_a", (b, a))):
+            cal = Calibration(_cal_data(fit, levels, nz, q, rcfg.per_level))
+            sens[nom] = _couverture(autre, cal, levels)
+        mini = min(sens[s][c] for s in sens for c in ("u", "v", "w"))
+        detail[f"{q:.2f}"] = {**sens, "min_uvw": mini}
+        if retenu is None and mini >= cible:
+            retenu = q
+    atteint = retenu is not None
+    return {"regle": REGLE_Q, "grille": list(grille), "cible": cible,
+            "couverture_hors_pli": detail, "q_retenu": retenu if atteint else grille[-1],
+            "atteint": atteint}
+
+
+def fit_calibration(hist: RatioHistogram, geom: Geometry, jeu: str, rcfg, n_instants: int,
+                    extra: dict | None = None,
+                    plis: tuple[RatioHistogram, RatioHistogram] | None = None,
+                    plis_info: dict | None = None) -> dict:
+    """k par composante et par niveau, et k global par composante. Refuse le TEST.
+
+    `rcfg.calibration_q` : un nombre = quantile impose ; "auto" = regle `choose_q` sur les
+    deux plis de jours `plis` (histogrammes de la validation), puis k finaux sur `hist`
+    (toute la validation) avec le q retenu."""
+    if jeu != "validation":
+        raise ValueError(f"calibration de la fiabilite sur « {jeu} » refusee : elle se fait sur "
+                         "la VALIDATION uniquement (le test ne sert qu'au verdict DSO6)")
+    levels = list(geom.eval_levels())
+    q_cfg = getattr(rcfg, "calibration_q", 0.8)
+    regle = None
+    if q_cfg == "auto":
+        if plis is None:
+            raise ValueError("calibration_q « auto » demande les deux plis de jours de "
+                             "validation (histogrammes par pli)")
+        regle = {**choose_q(plis, levels, geom.nz, rcfg), **(plis_info or {})}
+        q = float(regle["q_retenu"])
+    else:
+        q = float(q_cfg)
+    k_niv, k_glob = _k_tables(hist, levels, geom.nz, q)
+    data = {"method": METHOD, "jeu": "validation", "instants": int(n_instants),
+            "members": rcfg.members, "keep": rcfg.keep, "seed": rcfg.seed,
+            "sigma_floor_m_s": rcfg.sigma_floor_m_s, "z_levels_asl_m": geom.z_levels.tolist(),
+            "par_niveau": rcfg.per_level, "calibration_q": q_cfg, "quantile": q,
+            "k": k_niv, "k_global": k_glob,
+            # le contrat n'a qu'UN facteur : celui de la vitesse, toutes altitudes (les k par
+            # composante et par niveau, ceux qui s'appliquent, sont dans `k`)
+            "scale_factor": k_glob["speed"], **(extra or {})}
+    if regle is not None:
+        data["regle_quantile"] = regle
+    # couverture OBTENUE sur la validation avec les k retenus (>= q par construction, a la
+    # largeur d'une classe d'histogramme pres) — mesuree, pas recopiee de la cible
+    cov = _couverture(hist, Calibration(data), levels)
     data["couverture80_validation"] = cov
     data["coverage_80_validation"] = cov["speed"]
     return data
@@ -304,13 +395,15 @@ class Reliability:
 
 
 def assess(served: tuple[np.ndarray, np.ndarray, np.ndarray],
-           predict: Callable[[np.ndarray], tuple[np.ndarray, np.ndarray, np.ndarray]],
+           predict_many: Callable[[list[np.ndarray]],
+                                  list[tuple[np.ndarray, np.ndarray, np.ndarray]]],
            sensor: np.ndarray, geom: Geometry, rcfg, calibration: Calibration,
            real_sensors: bool = False) -> Reliability:
-    """Fiabilite d'un volume servi. `predict(masque)` refait une passe (u, v, w) avec ce
-    masque de capteurs (caracteristiques recalculees, correction M1 comprise si active).
+    """Fiabilite d'un volume servi. `predict_many(masques)` refait une passe (u, v, w) par
+    masque de capteurs, dans l'ordre (caracteristiques recalculees, correction M1 comprise
+    si active ; par lots de `reliability.batch` dans WindFieldModel._members).
     `real_sensors` est une INFORMATION (donnees reelles ou non) : le statut n'en depend pas."""
-    members = [predict(m) for m in member_masks(sensor, rcfg.members, rcfg.keep, rcfg.seed)]
+    members = predict_many(member_masks(sensor, rcfg.members, rcfg.keep, rcfg.seed))
     # meme plancher que la calibration (RatioHistogram.add) : un noeud ou tous les membres
     # coincident n'a pas un intervalle de largeur nulle
     raw = ensemble_sigma(served, members)
@@ -323,6 +416,7 @@ def assess(served: tuple[np.ndarray, np.ndarray, np.ndarray],
     r = reliability_index(sig["speed"], cov, rcfg.sigma_ref_m_s)
     r[~geom.valid] = np.nan
     info = {"methode": METHOD, "membres": rcfg.members, "keep": rcfg.keep, "graine": rcfg.seed,
+            "lot": int(getattr(rcfg, "batch", 1)),
             "calibration_sha256": calibration.sha256,
             "calibration_fichier": calibration.path.name if calibration.path else None,
             "donnees_reelles": bool(real_sensors), "dz_statut_m": rcfg.dz_status_m}

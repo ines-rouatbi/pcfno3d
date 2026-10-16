@@ -373,9 +373,10 @@ class WindFieldModel:
                                  "configure (JSON de calibration ou 'non_calibre')")
             # l'ensemble compte dans le temps de livraison du volume (DSO4)
             t1 = time.perf_counter()
-            rel = assess((u, v, w), lambda kept: self._capture(self._member(S, kept, hour, doy),
-                                                               captured), sensor,
-                         geom, self.cfg.reliability, self.reliability, real_sensors)
+            rel = assess((u, v, w),
+                         lambda masks: [self._capture(m, captured)
+                                        for m in self._members(S, masks, hour, doy)],
+                         sensor, geom, self.cfg.reliability, self.reliability, real_sensors)
             rel_s = time.perf_counter() - t1
         if mask_nan:
             u = np.where(geom.valid, u, np.nan)
@@ -397,20 +398,63 @@ class WindFieldModel:
             captured.append(np.stack([uvw[0][:, jj, ii], uvw[1][:, jj, ii]]))
         return uvw
 
-    @torch.no_grad()
     def _member(self, S: np.ndarray, kept: np.ndarray, hour: float,
                 doy: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Une passe de l'ensemble de fiabilite : capteurs `kept`, caracteristiques
-        geostrophiques / thermiques RECALCULEES sur eux (ensemble_forward, tfeat=None).
-        Sortie (u, v, w) en m/s, sans masque NaN. Post-traitement identique a la passe
-        servie : quand la correction M1 est active, elle s'applique ici aussi."""
+        geostrophiques / thermiques RECALCULEES sur eux. Sortie (u, v, w) en m/s, sans
+        masque NaN, post-traitement compris (`_post_member`). Lot de 1 : meme calcul,
+        bit a bit, que la passe unique d'avant les lots."""
+        return self._members(S, [kept], hour, doy, batch=1)[0]
+
+    @torch.no_grad()
+    def _members(self, S: np.ndarray, masks: list[np.ndarray], hour: float, doy: int,
+                 batch: int | None = None) -> list[tuple[np.ndarray, np.ndarray, np.ndarray]]:
+        """Les passes de l'ensemble de fiabilite, une par masque et dans l'ordre, faites par
+        LOTS : un seul passage avant du reseau pour `batch` passes (defaut
+        `reliability.batch` ; 1 = une passe a la fois). Chaque passe garde SES
+        caracteristiques temps / physique, recalculees sur ses capteurs (comme
+        ensemble_forward). Sorties identiques au calcul passe par passe, a la precision
+        flottante pres (test_ensemble_par_lots_identique_passe_par_passe).
+
+        Sur GPU, un lot qui ne tient pas en memoire est recoupe en deux (meme resultat)."""
+        geom = self.geom
+        lot = max(1, int(self.cfg.reliability.batch if batch is None else batch))
         s_t = torch.from_numpy(np.ascontiguousarray(S[:N_SURF]))[None].to(self.device)
-        m_t = torch.from_numpy(kept.astype(np.float32))[None].to(self.device)
-        with self._lock:
-            pred = ensemble_forward(self.model, self.geom, self.norm, s_t, m_t, hour, doy,
-                                    k=1, amp_dtype=self.amp_dtype, use_amp=self.use_amp)
-            u, v, w = (a[0].float().cpu().numpy() for a in self.norm.denorm(pred.float()))
-        return u, v, w
+        s_feat = s_t[0].float().cpu().numpy()        # memes entrees que ensemble_forward
+        out: list = []
+        i0 = 0
+        while i0 < len(masks):
+            part = masks[i0:i0 + lot]
+            tfeat = np.stack([time_geo_features(s_feat, m, hour, doy, geom) for m in part])
+            m_t = torch.from_numpy(np.stack(part).astype(np.float32)).to(self.device)
+            t_t = torch.from_numpy(tfeat).to(self.device)
+            try:
+                with self._lock:
+                    with torch.autocast(device_type=self.device.type, dtype=self.amp_dtype,
+                                        enabled=self.use_amp):
+                        pred = self.model(assemble_input(s_t.expand(len(part), -1, -1, -1),
+                                                         m_t, t_t, geom, self.norm)).float()
+                    uvw = [a.float().cpu().numpy() for a in self.norm.denorm(pred.float())]
+                    del pred
+            except torch.cuda.OutOfMemoryError:
+                if lot == 1:
+                    raise
+                torch.cuda.empty_cache()
+                lot = max(1, lot // 2)
+                continue
+            for b, kept in enumerate(part):
+                out.append(self._post_member(S, kept, hour, doy,
+                                             (uvw[0][b], uvw[1][b], uvw[2][b])))
+            i0 += len(part)
+        return out
+
+    def _post_member(self, S: np.ndarray, kept: np.ndarray, hour: float, doy: int,
+                     uvw: tuple[np.ndarray, np.ndarray, np.ndarray]
+                     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Post-traitement d'UNE passe de l'ensemble, identique a celui de la passe servie.
+        Point d'accroche de la correction M1 (inference.correction) : quand elle est active,
+        elle s'applique ici, a chaque passe, lot ou pas. Sans M1 : identite."""
+        return uvw
 
     def predict_stem(self, stem: str, keep: float = 1.0, seed: int = 0) -> Volume:
         S, hour, doy, stamp = self.surface_from_cache(stem)

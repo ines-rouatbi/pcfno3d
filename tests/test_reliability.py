@@ -140,7 +140,8 @@ def test_calibration_atteint_80_pourcent_sur_bruit_connu(geom):
     for c in COMPOSANTES:
         for k in levels:
             hist.add(c, k, *_bruit_connu(20000, c_vrai[c], seed=k), floor=0.01)
-    data = fit_calibration(hist, geom, "validation", _rcfg(), n_instants=1)
+    data = fit_calibration(hist, geom, "validation", _rcfg(calibration_q=0.8), n_instants=1)
+    assert "regle_quantile" not in data and data["quantile"] == 0.8
     for c in COMPOSANTES:
         assert data["k_global"][c] == pytest.approx(c_vrai[c], rel=0.03)
         assert data["couverture80_validation"][c] == pytest.approx(0.8, abs=0.01)
@@ -210,6 +211,79 @@ def test_sigma_non_calibre_et_sous_dispersion_detectee(geom):
     assert not s["dso6_couverture_ok"] and not s["dso6_conforme"]
 
 
+def _plis_connus(geom, c_a, c_b, n=20000):
+    """Deux plis de jours : bruit d'echelle c_a (pli a) et c_b (pli b), meme pour u, v, w,
+    speed. Renvoie (pli a, pli b, somme)."""
+    plis = (RatioHistogram(geom.nz), RatioHistogram(geom.nz))
+    for h, cc, s0 in ((plis[0], c_a, 0), (plis[1], c_b, 500)):
+        for c in COMPOSANTES:
+            for k in geom.eval_levels():
+                h.add(c, k, *_bruit_connu(n, cc, seed=s0 + k), floor=0.01)
+    return plis[0], plis[1], RatioHistogram.total(list(plis))
+
+
+def test_regle_auto_plus_petit_q_de_la_grille(geom):
+    """Regle B : k sur un pli, couverture sur l'autre (deux sens) ; q retenu = plus petit q de
+    la grille dont la couverture hors-pli minimale u, v, w atteint 0,80 ; k finaux sur le
+    total avec ce q ; tout est ecrit dans le JSON."""
+    from pcfno3d.reliability import Q_GRILLE, REGLE_Q, choose_q
+    assert Q_GRILLE == (0.8, 0.81, 0.82, 0.83, 0.84, 0.85, 0.86, 0.87, 0.88, 0.89, 0.9)
+    levels = list(geom.eval_levels())
+    # pli b plus disperse que le pli a : q = 0,80 ne couvre pas b depuis a
+    a, b, tot = _plis_connus(geom, 1.0, 1.12)
+    r = choose_q((a, b), levels, geom.nz, _rcfg())
+    assert r["regle"] == REGLE_Q and r["grille"] == list(Q_GRILLE) and r["atteint"]
+    hp = r["couverture_hors_pli"]
+    assert list(hp) == [f"{q:.2f}" for q in Q_GRILLE]
+    for d in hp.values():
+        assert d["min_uvw"] == min(d[s][c] for s in ("a_vers_b", "b_vers_a")
+                                   for c in ("u", "v", "w"))
+    q = r["q_retenu"]
+    assert 0.8 < q <= 0.9
+    assert hp[f"{q:.2f}"]["min_uvw"] >= 0.8
+    assert all(hp[f"{x:.2f}"]["min_uvw"] < 0.8 for x in Q_GRILLE if x < q)
+    # plis identiques en loi : la marge reste petite
+    a2, b2, _ = _plis_connus(geom, 1.0, 1.0)
+    assert choose_q((a2, b2), levels, geom.nz, _rcfg())["q_retenu"] <= 0.82
+
+    # fit_calibration « auto » : le q retenu, les k finaux sur TOUTE la validation
+    info = {"plis": "jours", "jours_a": [1], "jours_b": [2]}
+    data = fit_calibration(tot, geom, "validation", _rcfg(), 3, plis=(a, b), plis_info=info)
+    assert data["calibration_q"] == "auto" and data["quantile"] == q
+    regle = data["regle_quantile"]
+    assert regle["q_retenu"] == q and regle["plis"] == "jours" and "couverture_hors_pli" in regle
+    for c in COMPOSANTES:
+        assert data["k_global"][c] == tot.k(c, None, q)
+        assert data["couverture80_validation"][c] >= q - 0.01
+    json.dumps(data, allow_nan=False)
+
+    # aucun q de la grille ne suffit : 0,90, signale
+    a3, b3, _ = _plis_connus(geom, 1.0, 3.0)
+    r3 = choose_q((a3, b3), levels, geom.nz, _rcfg())
+    assert r3["q_retenu"] == 0.9 and r3["atteint"] is False
+
+
+def test_regle_auto_exige_les_plis_et_refuse_le_test(geom):
+    a, b, tot = _plis_connus(geom, 1.0, 1.0, n=500)
+    with pytest.raises(ValueError, match="plis"):
+        fit_calibration(tot, geom, "validation", _rcfg(), 1)
+    with pytest.raises(ValueError, match="VALIDATION"):
+        fit_calibration(tot, geom, "test", _rcfg(), 1, plis=(a, b))
+    with pytest.raises(ValueError, match="vide"):
+        fit_calibration(tot, geom, "validation", _rcfg(), 1,
+                        plis=(a, RatioHistogram(geom.nz)))
+
+
+def test_config_calibration_q_et_lot():
+    assert ReliabilityCfg().calibration_q == "auto" and ReliabilityCfg().batch == 4
+    assert ReliabilityCfg(calibration_q="0.82").calibration_q == 0.82
+    assert ReliabilityCfg(calibration_q=" AUTO ").calibration_q == "auto"
+    with pytest.raises(ValueError):
+        ReliabilityCfg(calibration_q=1.2)
+    with pytest.raises(ValueError):
+        ReliabilityCfg(batch=0)
+
+
 def test_calibration_refusee_sur_le_test(geom, tmp_path):
     hist = RatioHistogram(geom.nz)
     with pytest.raises(ValueError, match="VALIDATION"):
@@ -230,7 +304,8 @@ def test_bloc_uncertainty_cles_du_contrat(geom, tmp_path):
         for c in COMPOSANTES:
             hist.add(c, k, *_bruit_connu(2000, 1.3, seed=k), floor=0.01)
     path = tmp_path / "cal.json"
-    path.write_text(json.dumps(fit_calibration(hist, geom, "validation", _rcfg(), 1)),
+    path.write_text(json.dumps(fit_calibration(hist, geom, "validation",
+                                               _rcfg(calibration_q=0.8), 1)),
                     encoding="utf-8")
     cal = Calibration.load(path)
     um = cal.uncertainty_method(8)
@@ -504,8 +579,79 @@ def test_calibration_puis_dso6_sur_le_mini_jeu(trained, tmp_path):
                 "corr_error_sigma", "par_niveau"} <= set(s)
         written = json.loads(open(s["fichier"], encoding="utf-8").read())
         assert written["calibration_sha256"] == Calibration.load(tmp_path / "cal.json").sha256
+        # regle auto (defaut) : regle, grille, couverture hors-pli de chaque q, q retenu ;
+        # un seul jour de validation dans le mini-jeu -> repli par instants, SIGNALE
+        regle = cal["regle_quantile"]
+        assert cal["calibration_q"] == "auto" and cal["quantile"] == regle["q_retenu"]
+        assert regle["q_retenu"] in regle["grille"] and len(regle["couverture_hors_pli"]) == 11
+        assert regle["plis"].startswith("instants (repli")
+        assert regle["instants_a"] == 1 and regle["instants_b"] == 1
+        assert "mesure" not in s and s["calibration_quantile"] == cal["quantile"]
+        # seconde lecture du test : le verdict le dit
+        s2 = ev.dso6(calibration=tmp_path / "cal.json", n_instants=1,
+                     out=tmp_path / "dso6_2.json", deuxieme_lecture=True)
+        assert s2["mesure"] == ("seconde mesure sur le test, apres une premiere lecture "
+                                "(15/10/2026, non conforme)")
+        # plis par JOURS des qu'il y en a deux : rang pair / impair des jours presents
+        tr = [str(x) for x in ev.splits.train[0]]
+        pli, info = ev._plis_jours(SimpleNamespace(stems=tr))
+        jours = sorted({int(ev._day_of[x]) for x in tr})
+        assert info["plis"] == "jours" and len(jours) >= 2
+        assert info["jours_a"] == jours[0::2] and info["jours_b"] == jours[1::2]
+        assert all(pli[x] == jours.index(int(ev._day_of[x])) % 2 for x in tr)
+        assert info["instants_a"] + info["instants_b"] == len(tr)
     finally:
         trained.reliability.members = ReliabilityCfg().members
+
+
+def test_ensemble_par_lots_identique_passe_par_passe(trained, instant):
+    """Ensemble par lots (reliability.batch) : memes sorties que passe par passe. Lot de 1 :
+    bit a bit le calcul d'avant (ensemble_forward k=1, caracteristiques recalculees)."""
+    import torch
+
+    from pcfno3d.geometry import N_SURF
+    from pcfno3d.inference import WindFieldModel, ensemble_forward
+    wf = WindFieldModel(trained, device="cpu", verbose=False)
+    S, hour, doy, _ = wf.surface_from_cache(instant)
+    masks = member_masks(S[7] > 0.5, 7, 0.7, seed=11)
+    ref = []
+    for m in masks:                                    # l'ancien _member, recopie
+        with torch.no_grad():
+            pred = ensemble_forward(wf.model, wf.geom, wf.norm,
+                                    torch.from_numpy(np.ascontiguousarray(S[:N_SURF]))[None],
+                                    torch.from_numpy(m.astype(np.float32))[None], hour, doy,
+                                    k=1)
+        ref.append(tuple(a[0].numpy() for a in wf.norm.denorm(pred.float())))
+    un = wf._members(S, masks, hour, doy, batch=1)
+    for a, b in zip(un, ref):
+        for x, y in zip(a, b):
+            np.testing.assert_array_equal(x, y)
+    for x, y in zip(wf._member(S, masks[2], hour, doy), ref[2]):
+        np.testing.assert_array_equal(x, y)
+    for lot in (3, 4, 8):                              # lot partiel, plein, plus grand que N
+        par_lots = wf._members(S, masks, hour, doy, batch=lot)
+        assert len(par_lots) == len(masks)
+        for a, b in zip(par_lots, ref):
+            for x, y in zip(a, b):
+                np.testing.assert_allclose(x, y, rtol=1e-5, atol=1e-5)
+
+    # predict avec fiabilite : sigma identiques quel que soit le lot
+    trained.inference.reliability = "non_calibre"
+    trained.reliability.members = 5
+    try:
+        wf2 = WindFieldModel(trained, device="cpu", verbose=False)
+        sig = {}
+        for lot in (1, 4):
+            trained.reliability.batch = lot
+            sig[lot] = wf2.predict(S, hour, doy).reliability
+        assert sig[4].info["lot"] == 4
+        for name in ("sigma_u", "sigma_v", "sigma_w", "sigma_speed"):
+            np.testing.assert_allclose(getattr(sig[1], name), getattr(sig[4], name),
+                                       rtol=1e-4, atol=1e-5)
+    finally:
+        trained.inference.reliability = None
+        trained.reliability.members = ReliabilityCfg().members
+        trained.reliability.batch = ReliabilityCfg().batch
 
 
 def test_script_colab_ecrit_dans_un_dossier_neuf(trained, monkeypatch):
@@ -521,8 +667,10 @@ def test_script_colab_ecrit_dans_un_dossier_neuf(trained, monkeypatch):
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     avant = {p: p.stat().st_mtime_ns for p in trained.paths.run_dir.rglob("*") if p.is_file()}
-    rc = mod.main(["-c", "test", "--device", "cpu", "--instants-validation", "1",
-                   "--instants-test", "1", "--membres", "2", "--benchmark", "1"])
+    # 2 instants de validation : la regle auto a besoin de deux plis non vides
+    rc = mod.main(["-c", "test", "--device", "cpu", "--instants-validation", "2",
+                   "--instants-test", "1", "--membres", "2", "--benchmark", "1",
+                   "--deuxieme-lecture"])
     assert rc == 0
     for p, t in avant.items():                       # aucun fichier existant reecrit
         assert p.stat().st_mtime_ns == t, p
@@ -530,8 +678,16 @@ def test_script_colab_ecrit_dans_un_dossier_neuf(trained, monkeypatch):
     assert sessions
     resume = json.loads((sessions[-1] / "resume.json").read_text(encoding="utf-8"))
     assert {"calibration", "dso6", "dso4"} <= set(resume)
+    assert resume["mesure"].startswith("seconde mesure sur le test")
+    assert resume["calibration"]["calibration_q"] == "auto"
+    assert resume["calibration"]["regle_quantile"]["q_retenu"] == resume["calibration"]["quantile"]
     dso4 = resume["dso4"]
     assert dso4["avec_fiabilite"]["mean_s"] > 0 and dso4["sans_fiabilite"]["mean_s"] > 0
+    assert dso4["lot"] == ReliabilityCfg().batch
+    assert set(dso4["avec_fiabilite_par_lot"]) == {"1", "4", "8"}
+    assert all(b["mean_s"] > 0 for b in dso4["avec_fiabilite_par_lot"].values())
+    verdict = json.loads((sessions[-1] / "dso6.json").read_text(encoding="utf-8"))
+    assert verdict["mesure"] == resume["mesure"]
     for name in ("calibration_validation.json", "dso6.json"):
         assert (sessions[-1] / name).exists()
 

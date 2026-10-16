@@ -146,7 +146,8 @@ def cmd_dso6(args) -> int:
     ev = Evaluator(cfg, checkpoint=args.checkpoint, device=args.device, tta=args.tta)
     try:
         summary = ev.dso6(calibration=args.calibration, n_instants=args.instants,
-                          keep=args.keep, out=args.out)
+                          keep=args.keep, out=args.out,
+                          deuxieme_lecture=args.deuxieme_lecture)
     except FileExistsError as exc:
         print(str(exc), file=sys.stderr)
         return 1
@@ -842,6 +843,9 @@ def build_parser() -> argparse.ArgumentParser:
                                  "keep<k>_n<instants>.json) ; jamais ecrase")
     s.add_argument("--instants", type=int, help="nombre d'instants (defaut : tous)")
     s.add_argument("--keep", type=float, help="capteurs visibles (defaut : mask.keep_eval)")
+    s.add_argument("--deuxieme-lecture", action="store_true",
+                   help="le test a deja ete lu (15/10/2026) : le verdict porte le champ "
+                        "`mesure` qui le dit (pas une mesure independante)")
     s.set_defaults(func=cmd_dso6)
 
     s = sub.add_parser("baselines", help="methodes de reference sur le TEST (lot M8, L6)")
