@@ -92,9 +92,17 @@ Comparaison avec les méthodes de référence, sur les mêmes instants, capteurs
 | profil log + IDW | 6,481 | 4,171 / 3,269 | 0,156 |
 | profil log + krigeage | 6,487 | 4,176 / 3,275 | 0,155 |
 
-Le variogramme et α sont ajustés sur la validation. Les autres études, E1 (densité du réseau),
-E2 (placement optimal), E3 (station de secours) et E5 (sobriété), sont **en attente**, mesure en
-cours. La data card, la model card et les diagrammes UML sont dans `docs/`.
+Le variogramme (exponentiel, pépite ≈ 0, palier 1,10, portée 7,7 km) et α (0,06) sont ajustés sur
+la validation. Session : `preuves_pcfno3d/best_dso_v7/session_20261016T125440Z`.
+
+| Étude | Résultat mesuré (test, 120 instants) | Lecture |
+|---|---|---|
+| E1 densité du réseau | PC-FNO3D tient DSO5 (≤ 0,7 m/s) jusqu'à **50 % des capteurs** ; aucun réseau régulier testé (un capteur tous les 300 m, 500 m ou 1 km) ne le tient ; aucune référence ne le tient, quelle que soit la densité | densité recommandée, au moins la moitié du treillis actuel |
+| E2 placement guidé par l'incertitude | RMSE max 2,39 m/s (placement « optimal ») contre 1,28 (hasard moyen, σ 0,02) : gain **négatif**, −1,11 m/s | **résultat négatif** : le σ M2 ne guide pas le placement |
+| E3 capteur virtuel de secours | erreur vectorielle RMS : krigeage 0,19, IDW 0,27, plus proche voisin 0,45, PC-FNO3D 1,50 m/s | sur ce treillis très dense, les voisins à 100 m valent mieux que la reconstruction 3D |
+| E5 sobriété | inférence : 9,3 µWh GPU par reconstruction (0,47 s, nvidia-smi, GPU seul) ; CO₂ non calculé (intensité carbone non fournie) ; entraînement non mesuré | à compléter : intensité carbone, mesure de l'entraînement, référence WRF à sourcer |
+
+La data card, la model card et les diagrammes UML sont dans `docs/`.
 
 ## 7. Données, API, tableau de bord
 
