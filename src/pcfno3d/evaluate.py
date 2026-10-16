@@ -28,8 +28,8 @@ from .dataset import ANEO3D, assemble_input, eval_loader, is_synoptic, make_spli
 from .dso import dso3_conforme
 from .inference import WindFieldModel, ensemble_forward
 from .losses import PhysicsLoss
-from .reliability import (COMPOSANTES, Calibration, DSO6Accumulator, RatioHistogram,
-                          ensemble_sigma, fit_calibration, member_masks)
+from .reliability import (COMPOSANTES, MESURE_SECONDE_LECTURE, Calibration, DSO6Accumulator,
+                          RatioHistogram, ensemble_sigma, fit_calibration, member_masks)
 
 ROBUSTNESS_KEEPS = (0.1, 0.25, 0.5, 1.0)
 ROBUSTNESS_INSTANTS = 40
@@ -59,6 +59,7 @@ class Evaluator:
             cfg.inference.tta, cfg.inference.tta_keep = self.tta, self.tta_keep
         self._time_of = dict(zip(self.index["stem"],
                                  zip(self.index["hour"], self.index["doy"])))
+        self._day_of = dict(zip(self.index["stem"], self.index["day"]))
         suffix = f"_tta{self.tta}" if self.tta > 1 else ""
         # sous-dossier propre au paquet : le notebook v7 ecrit deja run_dir/eval_<modele>,
         # et ces resultats sont la REFERENCE a laquelle on compare le paquet. Les ecraser
@@ -221,13 +222,15 @@ class Evaluator:
 
     @torch.no_grad()
     def _reliability_loop(self, jeu: str, n_instants: int | None, keep: float | None,
-                          on_instant) -> int:
-        """Pour chaque instant : passe servie, ensemble masque, sigma BRUT, erreurs.
-        `on_instant(k, comp, err_abs, sigma_brut)` recoit les noeuds valides et connus."""
+                          on_instant, ds: ANEO3D | None = None) -> int:
+        """Pour chaque instant : passe servie, ensemble masque (par lots, WindFieldModel.
+        _members), sigma BRUT, erreurs. `on_instant(k, comp, err_abs, sigma_brut, stem)`
+        recoit les noeuds valides et connus, et l'instant (pour les plis de jours)."""
         geom, wf, rc = self.geom, self.wf, self.cfg.reliability
         levels = geom.eval_levels()
-        ds = self._reliability_instants(jeu, n_instants, keep)
+        ds = self._reliability_instants(jeu, n_instants, keep) if ds is None else ds
         for n, (s_raw, sensor, _tfeat, y, j) in enumerate(ds):
+            stem = str(ds.stems[j])
             s_np, m_np = s_raw.numpy(), sensor.numpy() > 0.5
             hour, doy = float(ds.hours[j]), int(ds.doys[j])
             if self.tta > 1:
@@ -238,8 +241,8 @@ class Evaluator:
                 served = tuple(a[0].float().cpu().numpy() for a in self.norm.denorm(pred))
             else:
                 served = wf._member(s_np, m_np, hour, doy)
-            members = [wf._member(s_np, m, hour, doy)
-                       for m in member_masks(m_np, rc.members, rc.keep, rc.seed)]
+            members = wf._members(s_np, member_masks(m_np, rc.members, rc.keep, rc.seed),
+                                  hour, doy)
             sig = ensemble_sigma(served, members)
             y_np = y.numpy()
             truth = {"u": y_np[0], "v": y_np[1], "w": y_np[2],
@@ -251,7 +254,8 @@ class Evaluator:
                 for k in levels:
                     m = known[k]
                     if m.any():
-                        on_instant(k, c, np.abs(pred[c][k][m] - truth[c][k][m]), sig[c][k][m])
+                        on_instant(k, c, np.abs(pred[c][k][m] - truth[c][k][m]), sig[c][k][m],
+                                   stem)
             if self.verbose and (n + 1) % 10 == 0:
                 print(f"  fiabilite ({jeu}) : {n + 1}/{len(ds)} instants", flush=True)
         return len(ds)
@@ -273,28 +277,68 @@ class Evaluator:
             raise FileExistsError(f"{out} existe deja : choisis un autre --out (une "
                                   "calibration retenue n'est jamais ecrasee)")
         rc = self.cfg.reliability
-        hist = RatioHistogram(self.geom.nz)
+        ds = self._reliability_instants("validation", n_instants, keep)
+        pli, plis_info = self._plis_jours(ds)
+        # UNE seule boucle sur la validation : un histogramme par pli, leur somme = toute la
+        # validation (les k finaux) ; la regle auto n'a besoin d'aucune passe de plus
+        hists = (RatioHistogram(self.geom.nz), RatioHistogram(self.geom.nz))
         n = self._reliability_loop(
             "validation", n_instants, keep,
-            lambda k, c, e, sg: hist.add(c, k, e, sg, rc.sigma_floor_m_s))
+            lambda k, c, e, sg, stem: hists[pli[stem]].add(c, k, e, sg, rc.sigma_floor_m_s),
+            ds=ds)
         keep_eff = self.cfg.mask.keep_eval if keep is None else keep
-        data = fit_calibration(hist, self.geom, "validation", rc, n, extra={
-            "modele": self.wf.checkpoint_path.name, "capteurs_visibles": keep_eff,
-            "tta": self.tta})
+        data = fit_calibration(RatioHistogram.total(list(hists)), self.geom, "validation", rc,
+                               n, extra={"modele": self.wf.checkpoint_path.name,
+                                         "capteurs_visibles": keep_eff, "tta": self.tta},
+                               plis=hists, plis_info=plis_info)
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
         if self.verbose:
             cov = data["couverture80_validation"]
             kg = "  ".join(f"{c} {data['k_global'][c]:.3f}" for c in COMPOSANTES)
             cv = "  ".join(f"{c} {cov[c]:.3f}" for c in COMPOSANTES)
-            print(f"calibration ({n} instants de validation) -> {out}\n"
-                  f"  k global : {kg}\n  couverture 80 % obtenue : {cv}")
+            regle = data.get("regle_quantile")
+            if regle is not None:
+                hp = "  ".join(f"{q} {d['min_uvw']:.3f}"
+                               for q, d in regle["couverture_hors_pli"].items())
+                print(f"regle auto ({regle['plis']}) : couverture hors-pli minimale u, v, w "
+                      f"par q : {hp}\n  q retenu : {regle['q_retenu']:.2f}"
+                      + ("" if regle["atteint"] else
+                         f"  (AUCUN q de la grille n'atteint {regle['cible']:.2f} : "
+                         "q = 0,90 par defaut)"))
+            print(f"calibration ({n} instants de validation, q = {data['quantile']:.2f}) "
+                  f"-> {out}\n  k global : {kg}\n  couverture 80 % obtenue : {cv}")
         return {**data, "fichier": str(out)}
 
+    def _plis_jours(self, ds: ANEO3D) -> tuple[dict[str, int], dict]:
+        """Deux plis deterministes de la selection de validation, par JOURS : jours de rang
+        pair (pli a) et impair (pli b), dans l'ordre croissant des jours presents.
+
+        Un seul jour de validation (mini-jeu de test) : repli sur les instants de rang pair
+        / impair, SIGNALE dans le JSON (`plis`) ; jamais le cas sur le jeu reel."""
+        stems = [str(s) for s in ds.stems]
+        jours = sorted({int(self._day_of[s]) for s in stems})
+        if len(jours) >= 2:
+            rang = {d: i % 2 for i, d in enumerate(jours)}
+            pli = {s: rang[int(self._day_of[s])] for s in stems}
+            info = {"plis": "jours", "jours_a": jours[0::2], "jours_b": jours[1::2]}
+        else:
+            pli = {s: i % 2 for i, s in enumerate(stems)}
+            info = {"plis": "instants (repli : un seul jour de validation)",
+                    "jours_a": jours, "jours_b": jours}
+        info["instants_a"] = sum(1 for s in stems if pli[s] == 0)
+        info["instants_b"] = sum(1 for s in stems if pli[s] == 1)
+        return pli, info
+
     def dso6(self, calibration: str | Path | None = None, n_instants: int | None = None,
-             keep: float | None = None, out: str | Path | None = None) -> dict:
+             keep: float | None = None, out: str | Path | None = None,
+             deuxieme_lecture: bool = False) -> dict:
         """Verdict DSO6 sur le TEST : couverture de l'intervalle a 80 % et correlation
         (Spearman) entre |erreur| et sigma calibre. La calibration vient de la validation.
+
+        deuxieme_lecture : le test a deja ete lu une premiere fois (15/10/2026, non
+        conforme) et la regle de marge a ete fixee APRES cette lecture. Le verdict porte
+        alors le champ `mesure` qui le dit : ce n'est pas une mesure independante.
 
         N'ecrase jamais un verdict existant : le fichier par defaut porte la calibration, la
         fraction de capteurs et le nombre d'instants, et l'existence est verifiee AVANT le
@@ -316,10 +360,13 @@ class Evaluator:
         floor = np.float32(rc.sigma_floor_m_s)       # meme plancher que la calibration
         n = self._reliability_loop(
             "test", n_instants, keep,
-            lambda k, c, e, sg: acc.add(c, k, e, np.maximum(sg, floor)
-                                        * np.float32(cal.factor(c, k))))
+            lambda k, c, e, sg, _stem: acc.add(c, k, e, np.maximum(sg, floor)
+                                               * np.float32(cal.factor(c, k))))
+        quantile = (cal.data or {}).get("quantile")
         summary = {"produit_par": "pcfno3d", "modele": self.wf.checkpoint_path.name,
                    "jeu": "test", "instants_synoptiques": n,
+                   **({"mesure": MESURE_SECONDE_LECTURE} if deuxieme_lecture else {}),
+                   "calibration_quantile": quantile,
                    "capteurs_visibles": keep_eff,
                    "tta": self.tta, "uncertainty": cal.uncertainty_method(rc.members),
                    "calibration_sha256": cal.sha256, "keep_membres": rc.keep,
@@ -328,6 +375,8 @@ class Evaluator:
         path.write_text(json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8")
         if self.verbose:
             g = summary["global"]
+            if deuxieme_lecture:
+                print(f"mesure : {MESURE_SECONDE_LECTURE}")
             print(f"DSO6 ({n} instants de test, calibration {tag})\n  couverture 80 % : "
                   + "  ".join(f"{c} {g[f'couverture80_{c}']:.3f}" for c in COMPOSANTES)
                   + "\n  Spearman |erreur|, sigma : "

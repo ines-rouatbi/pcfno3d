@@ -5,10 +5,21 @@ nœud virtuel (§ 8.4) et contrat ATOM **révision 2** (`DECISIONS-rev2.md` : D6
 B5 ; `common.schema.json` : `sigma_ms`, `status_node`, `interval`, `uncertainty_method`,
 `reliability_class` ; `quality.schema.json`).*
 
-## Statut : prêt, **verdict DSO6 en attente de la session GPU**
+## Statut : version 2, **seconde lecture du test en attente de la session GPU**
 
-Les tests CPU vérifient le mécanisme, mais pas la qualité des σ sur v7. Le chiffre DSO6 vient
-de `scripts/m2_calibration_colab.py`, à lancer sur GPU.
+Première mesure GPU (15-16/10/2026) : DSO6 **non conforme** (couverture u et w sous 0,80) et
+DSO4 **non conforme** avec la fiabilité (4,563 s pour 8 membres). Chiffres complets dans
+« Historique des mesures DSO6 » ci-dessous. La version 2 change deux choses :
+
+- **A. Ensemble par lots** (DSO4) : les N passes masquées passent par lots de
+  `reliability.batch` (défaut 4) dans un seul passage avant du réseau ;
+- **B. Marge de calibration par une règle fixée d'avance**, sur la validation seule
+  (`reliability.calibration_q: "auto"`, nouveau défaut).
+
+La règle B a été fixée **après** la première lecture du test : le second verdict DSO6 n'est
+donc pas une mesure indépendante, et il le dit (champ `mesure`, option `--deuxieme-lecture`).
+Les tests CPU vérifient le mécanisme, pas la qualité des σ sur v7 : les chiffres viennent de
+`scripts/m2_calibration_colab.py`, sur GPU.
 
 ## Ce que chaque nœud reçoit
 
@@ -42,6 +53,25 @@ Si la correction M1 est active, chaque passe la reçoit aussi.
 
     σ = sqrt( (1/N) · Σ_i (x_i − x_0)² )     x_0 = passe servie, pour u, v, w et la vitesse
 
+**Ensemble par lots (v2).** Les N passes ne sont plus faites une par une : pour chaque lot
+de `reliability.batch` passes (défaut 4 ; 1 = comportement d'avant), on construit les entrées
+(`assemble_input`, avec pour chaque passe **ses** caractéristiques recalculées sur ses
+capteurs) et on fait **un seul** passage avant du réseau (`WindFieldModel._members`), sous
+le verrou du modèle. Les sorties sont identiques au calcul passe par passe à la précision
+flottante près (lot de 1 : bit à bit ; lots de 3, 4 et 8 : écart ≤ 1e-5, testé par
+`test_ensemble_par_lots_identique_passe_par_passe`). Chaque passe reçoit ensuite le même
+post-traitement que la passe servie dans `WindFieldModel._post_member`, **point d'accroche de
+la correction M1** (identité tant que M1 n'est pas fusionnée). La passe servie, elle, reste
+calculée seule : elle est inchangée bit à bit. La mémoire d'un passage est multipliée par la
+taille du lot ; sur GPU, un lot qui ne tient pas est recoupé en deux (même résultat). Sur
+CPU (service local, ~5 Go par passe pour v7), garder `batch: 1` si la mémoire est juste.
+
+Temps CPU mesuré sur le mini-jeu (grille 4 × 10 × 20, 8 membres, médiane de 30 appels,
+deux séries) : ensemble seul 47–52 ms en lot de 1, 22–28 ms en lot de 4, 17 ms en lot de 8.
+Le calcul des caractéristiques (`time_geo_features`, numpy) coûte 0,18 ms par passe, soit
+~1,4 ms pour 8 passes : il n'est pas le poste dominant et n'a pas été modifié. Le gain réel
+se mesure sur GPU avec v7 (DSO4 par taille de lot dans le script Colab).
+
 σ brut est ensuite borné en bas par `reliability.sigma_floor_m_s` (0,01 m/s), le même
 plancher en calibration, en production et en DSO6 : un nœud où tous les membres coïncident
 n'a pas un intervalle de largeur nulle.
@@ -54,9 +84,33 @@ niveau :
 avec q = `reliability.calibration_q`. Il est mesuré sur la sélection synoptique de
 validation (graine 1000), avec les capteurs visibles de DSO1 (`mask.keep_eval`). Les ratios
 passent par un histogramme log10 de 4 000 classes, ce qui garde une mémoire constante.
-`fit_calibration` et `Calibration.load` **refusent** le test. Le JSON gelé contient :
+`fit_calibration` et `Calibration.load` **refusent** le test.
 
-- les k et le quantile visé ;
+**Choix de q : règle fixée d'avance (v2, `calibration_q: "auto"`, défaut).** Sur la
+validation seulement :
+
+1. la sélection de validation est coupée en **2 plis de jours**, de façon déterministe :
+   jours de rang pair (pli a) et impair (pli b), dans l'ordre croissant des jours présents ;
+2. pour chaque q de la grille fixe 0,80 ; 0,81 ; … ; 0,90 (`Q_GRILLE`), les k sont ajustés
+   sur un pli et la couverture de l'intervalle à 80 % est mesurée sur l'autre, puis
+   inversement ;
+3. q retenu = le **plus petit** q dont la couverture hors-pli minimale (sur u, v, w et les
+   deux sens) atteint 0,80 (`coverage_target`) ; si aucun q de la grille n'y arrive, 0,90,
+   avec `atteint: false` dans le JSON et un message à l'écran ;
+4. les k finaux sont ajustés sur **toute** la validation avec ce q.
+
+Une seule boucle sur la validation : un histogramme par pli, leur somme donne celui de toute
+la validation ; la règle ne refait aucune passe. Le JSON contient, sous `regle_quantile` :
+la règle en clair, la grille, la cible, les plis (jours, instants par pli), la couverture
+hors-pli de chaque q (dans les deux sens, par composante, et le minimum u, v, w) et le q
+retenu. Un nombre dans `calibration_q` garde l'ancien comportement (q imposé, pas de
+`regle_quantile`). Seul cas de repli : une validation d'un seul jour (le mini-jeu des tests)
+est coupée par instants de rang pair / impair, ce que le JSON signale (`plis`) ; le jeu réel
+a plusieurs jours de validation. Un pli vide est une erreur.
+
+Le JSON gelé contient :
+
+- les k, le quantile retenu (`quantile`) et l'option (`calibration_q`) ;
 - la couverture **obtenue** sur la validation ;
 - le modèle, les graines et les membres.
 
@@ -118,8 +172,8 @@ inference:
 | Commande | Effet |
 |---|---|
 | `pcfno3d calibrate-reliability` | calibration sur la validation ; n'écrase jamais un JSON existant |
-| `pcfno3d dso6 --calibration <json>` | verdict sur le test → `eval_pcfno3d/<modele>/dso6_<sha8>_keep<k>_n<instants>.json`, jamais écrasé |
-| `scripts/m2_calibration_colab.py` | les deux, plus DSO4 avec et sans, dans un dossier de session neuf |
+| `pcfno3d dso6 --calibration <json>` | verdict sur le test → `eval_pcfno3d/<modele>/dso6_<sha8>_keep<k>_n<instants>.json`, jamais écrasé ; `--deuxieme-lecture` ajoute le champ `mesure` |
+| `scripts/m2_calibration_colab.py` | les deux (règle auto, ensemble par lots), plus DSO4 sans et avec la fiabilité, et avec des lots de 1, 4 et 8 pour information, dans un dossier de session neuf ; `--deuxieme-lecture` |
 
 Une fois la fiabilité activée, elle apparaît partout :
 
@@ -149,13 +203,47 @@ clé uniforme et on garde les plus petites. Tous les instants y sont donc repré
 égales. Un re-tirage parmi anciens + nouveaux couples ne gardait en pratique que les
 derniers instants (défaut trouvé à la vérification, corrigé et testé).
 
+## Historique des mesures DSO6
+
+Les mesures s'ajoutent ici, dans l'ordre ; aucune n'est retirée ni corrigée après coup.
+
+### Première mesure — Colab L4, v7, 15-16/10/2026 (version 1)
+
+Calibration de la version 1 : q = 0,80 imposé, 8 membres, `keep` 0,7, capteurs visibles
+`mask.keep_eval`.
+
+| | u | v | w | speed |
+|---|---|---|---|---|
+| k global (64 instants de validation) | 4,946 | 5,155 | 1,593 | 5,015 |
+| Couverture 80 % obtenue sur la validation | 0,801 | 0,801 | 0,801 | 0,801 |
+| Couverture 80 % sur le test (120 instants) | **0,751** | 0,811 | **0,794** | 0,796 |
+| Spearman(\|erreur\|, σ) sur le test | 0,289 | 0,307 | 0,229 | 0,290 |
+
+Verdict DSO6 : **NON CONFORME** (couverture de u et de w sous 0,80 ; la corrélation est
+positive partout). DSO4 : 0,448 s sans fiabilité (conforme) ; **4,563 s** avec 8 membres
+(**non conforme**, seuil 1 s).
+
+### Seconde mesure — à venir (version 2)
+
+Après cette première lecture, l'utilisatrice (propriétaire de l'application) a décidé la
+version 2 : ensemble par lots (A) et marge de calibration par une règle fixée d'avance sur la
+validation (B). **La règle B a été fixée APRÈS la première lecture du test** : le second
+verdict n'est donc **pas une mesure indépendante** du test. Il se lance avec
+`--deuxieme-lecture`, et le JSON du verdict comme le résumé du script portent alors :
+
+    "mesure": "seconde mesure sur le test, apres une premiere lecture (15/10/2026, non conforme)"
+
+Les chiffres de la seconde mesure seront ajoutés ici, à la suite de la première.
+
 ## Choix tranchés (relecture stage-b5, contrat rév. 2)
 
-1. **Marge de calibration.** `calibration_q` vaut **0,8** par défaut. Avec q = 0,8 pile, la
-   couverture sur le test oscille *autour* de 0,80, et le verdict strict ≥ 0,80 dépend alors
-   de l'échantillonnage (testé sur un bruit connu). Une marge éventuelle (q = 0,82 par
-   exemple) se décide **sur la validation, avant** de regarder le test, et elle est écrite
-   dans le JSON (`quantile`).
+1. **Marge de calibration.** Version 1 : `calibration_q` valait **0,8** par défaut. Avec
+   q = 0,8 pile, la couverture sur le test oscille *autour* de 0,80, et le verdict strict
+   ≥ 0,80 dépend alors de l'échantillonnage (testé sur un bruit connu). La première mesure
+   GPU l'a confirmé (u 0,751, w 0,794). Version 2 : la marge est choisie par la **règle
+   fixée d'avance** décrite dans « Méthode » (`calibration_q: "auto"`), sur la validation
+   seule, et tout son calcul est écrit dans le JSON (`regle_quantile`). Cette règle a été
+   écrite **après** la première lecture du test (voir l'historique ci-dessous).
 2. **`scale_factor`.** Le contrat n'a qu'un facteur. On y met le **k global de la vitesse**
    (celui de `sigma_speed`, qui donne l'intervalle) ; les k appliqués, par composante et par
    niveau, sont dans le JSON.
@@ -164,17 +252,22 @@ derniers instants (défaut trouvé à la vérification, corrigé et testé).
    petits. La mesure à keep 1,0 est **prévue en session GPU** (`--keep 1.0`), pour vérifier
    que k ne dépend pas de la densité ; sinon, la calibration servie sera celle à 1,0.
 4. **Correction M1.** Quand `inference.correction` est active, chaque passe de l'ensemble
-   reçoit la même correction que la passe servie (même post-traitement dans
-   `WindFieldModel._member`). La fusion avec M1 est essayée localement (branche
-   `essai/m2-plus-m1`, jamais poussée) et testée par
+   reçoit la même correction que la passe servie. Depuis l'ensemble par lots (v2), le
+   post-traitement d'une passe est dans `WindFieldModel._post_member`, appelé pour chaque
+   passe de chaque lot ; `_member` (une passe) passe par le même chemin. La fusion avec M1
+   est essayée localement (branche `essai/m2-plus-m1`, jamais poussée) et testée par
    `test_avec_correction_m1_chaque_passe_est_corrigee`, ignoré tant que M1 n'est pas sur
-   `main` et qui échoue si `_member` oublie la correction. La calibration est rangée dans le
-   même dossier que l'évaluation (`..._corr<sha8>`) : elle ne vaut que pour cette sortie.
+   `main` et qui échoue si `_member` oublie la correction : à la fusion, la correction va
+   dans `_post_member`, sinon les passes par lots en seraient privées. La calibration est
+   rangée dans le même dossier que l'évaluation (`..._corr<sha8>`) : elle ne vaut que pour
+   cette sortie.
 5. **Upload et stations réelles.** `real_sensors` **ne compte plus** pour le statut (D7). On
    le garde seulement comme information : `/api/reconstruct/stations` passe `True`, l'upload
    ANEO et le cache passent `False`, sans effet sur `status`.
-6. **Coût.** N passes supplémentaires par instant. DSO4 (< 1 s) sur v7 avec 8 membres est
-   à mesurer sur GPU ; on peut réduire `reliability.members` si besoin.
+6. **Coût.** N passes supplémentaires par instant. Première mesure sur L4 : 0,448 s sans
+   fiabilité, 4,563 s avec 8 membres passés un par un (DSO4 non conforme, seuil 1 s). La v2
+   les passe par lots (`reliability.batch`) ; le script Colab mesure DSO4 sans, avec, et par
+   taille de lot (1, 4, 8). Si cela ne suffit pas, on peut réduire `reliability.members`.
 
 ## Écarts restants avec les schémas rév. 2 (hors M2)
 
