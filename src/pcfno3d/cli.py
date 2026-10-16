@@ -5,6 +5,7 @@
     check         controle de la verite terrain et de la geometrie    (BLOC 2/4)
     train         entrainement, reprise automatique                   (BLOC 9)
     evaluate      metriques de test et verdict DSO1-DSO5 (--tta N)    (BLOC 10)
+    baselines     methodes de reference (log, puissance, krigeage) sur le test (M8, L6)
     dso-weights   poids u, v par niveau, mesures sur la VALIDATION    (v8)
     reconstruct   reconstruction 3D d'un instant (npz, csv, figures)  (BLOC 12)
     export-web    volume -> binaires + manifeste pour le visualiseur
@@ -150,6 +151,53 @@ def cmd_dso6(args) -> int:
         print(str(exc), file=sys.stderr)
         return 1
     return 0 if summary["dso6_conforme"] else 3
+
+
+def cmd_baselines(args) -> int:
+    """Lot M8 : methodes de reference sur le TEST synoptique, memes instants, capteurs et
+    noeuds que DSO1 ; parametres (variogramme, alpha) ajustes sur la VALIDATION."""
+    from datetime import datetime, timezone
+
+    from .baselines import ajuster_sur_validation, charger_ajustement, ecrire_ajustement
+    from .preuves import Banc, comparer
+
+    cfg = _load_cfg(args)
+    ev = None
+    if args.avec_modele:
+        from .evaluate import Evaluator
+        ev = Evaluator(cfg, checkpoint=args.checkpoint, device=args.device, verbose=False)
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    dossier = cfg.paths.run_dir / "preuves_pcfno3d" / "baselines"
+    try:
+        ajust = None
+        if args.ajustement:
+            ajust = charger_ajustement(args.ajustement)
+        elif args.ajuster:
+            banc0 = Banc(cfg, ev, None)
+            ajust = ajuster_sur_validation(cfg, banc0.geom, banc0.splits, verbose=True)
+            print(f"ajustement -> {ecrire_ajustement(ajust, dossier / f'ajustement_{stamp}.json')}")
+        noms = [x for x in args.references.split(",") if x] if args.references else None
+        comp = comparer(Banc(cfg, ev, ajust, noms), args.instants, keep=args.keep,
+                        spacing_m=args.espacement)
+    except (ValueError, FileExistsError) as exc:
+        print(f"ERREUR : {exc}", file=sys.stderr)
+        return 1
+    out = Path(args.out) if args.out else dossier / f"comparaison_{stamp}.json"
+    if out.exists():
+        print(f"ERREUR : {out} existe deja (jamais ecrase)", file=sys.stderr)
+        return 1
+    out.parent.mkdir(parents=True, exist_ok=True)
+    with open(out, "w", encoding="utf-8", newline="\n") as f:
+        f.write(json.dumps(comp, indent=2, ensure_ascii=False) + "\n")
+    print(f"{comp['instants']} instants de test | reseau {comp['reseau']}")
+    for nom, r in comp["methodes"].items():
+        rm = r["rmse_max_uv"]
+        print(f"  {nom:20s} RMSE max u,v {rm if rm is not None else float('nan'):.3f} m/s "
+              f"({r['niveau_rmse_max_m']} m) | global u {r['dso1_rmse_global_u']:.3f} "
+              f"v {r['dso1_rmse_global_v']:.3f} | DSO1 "
+              f"{'conforme' if r['dso1_rmse'] else 'non conforme'}")
+    print(f"resultats -> {out}")
+    return 0
 
 
 def cmd_alertes(args) -> int:
@@ -795,6 +843,20 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--instants", type=int, help="nombre d'instants (defaut : tous)")
     s.add_argument("--keep", type=float, help="capteurs visibles (defaut : mask.keep_eval)")
     s.set_defaults(func=cmd_dso6)
+
+    s = sub.add_parser("baselines", help="methodes de reference sur le TEST (lot M8, L6)")
+    s.add_argument("--ajustement", help="ajustement de VALIDATION existant (JSON)")
+    s.add_argument("--ajuster", action="store_true",
+                   help="ajuster variogramme et alpha sur la validation (sinon : log_idw seule)")
+    s.add_argument("--references", help="noms separes par des virgules (defaut : disponibles)")
+    s.add_argument("--avec-modele", action="store_true", help="evaluer aussi PC-FNO3D")
+    s.add_argument("--instants", type=int, help="nombre d'instants (defaut : tous)")
+    s.add_argument("--keep", type=float, help="capteurs visibles (defaut : mask.keep_eval)")
+    s.add_argument("--espacement", type=float, help="reseau regulier : un capteur tous les N m")
+    s.add_argument("--out", help="JSON (defaut : run_dir/preuves_pcfno3d/baselines/) ; "
+                                 "jamais ecrase")
+    s.add_argument("--checkpoint"), s.add_argument("--device")
+    s.set_defaults(func=cmd_baselines)
 
     s = sub.add_parser("alertes", help="alertes (M4) sur des instants du cache, dans l'ordre")
     s.add_argument("--stem", help="instants, ex. 006_000000,006_030000 (defaut : --split)")

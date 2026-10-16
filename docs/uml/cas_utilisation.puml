@@ -1,0 +1,73 @@
+@startuml cas_utilisation
+' Diagramme de cas d'utilisation — PC-FNO3D (lot M8, tache 14 du cahier v9, p. 44).
+' Noms verifies contre le code : commandes de src/pcfno3d/cli.py, routes /api de
+' service/app.py, outils MCP de service/mcp_server.py, Worker de atom.zelqane.com
+' (depot atom-dashboard, src/worker.js et src/v1.js de la branche f1-r2). Le cas <<M6>>
+' (publication R2, historique /v1/times) est implemente par src/pcfno3d/publish.py
+' (docs/PUBLICATION.md).
+left to right direction
+skinparam packageStyle rectangle
+skinparam shadowing false
+
+actor "Operateur ANEO\n(analyste ATOM-AI)" as Op
+actor "Ingenieur eolien" as Eol
+actor "Administrateur API" as Adm
+actor "Worker atom.zelqane.com\n/ tableau de bord" as Wk <<systeme>>
+actor "Assistant IA\n(client MCP)" as IA <<systeme>>
+actor "Reseau de stations ANEO" as Res <<systeme>>
+actor "Data scientist" as DS
+
+rectangle "Service PC-FNO3D (pcfno3d + service/)" {
+  usecase "Valider un fichier de mesures\n(contrat ANEO, DE1)\npcfno3d validate" as UC_val
+  usecase "Reconstruire un instant\nPOST /api/reconstruct,\n/reconstruct/upload, /reconstruct/stations" as UC_rec
+  usecase "Qualifier chaque noeud\n(statut, couverture, sigma, DSO6)" as UC_fia
+  usecase "Consulter carte, point, profil\nGET /api/field, /point, /profile" as UC_vue
+  usecase "Consulter les alertes\nGET /api/alerts (AN1)" as UC_al
+  usecase "Simuler une panne\n(capteurs masques, keep)" as UC_pan
+  usecase "Declarer un parc et suivre\nla production\nGET /api/wind-farm, pcfno3d wind-farm" as UC_parc
+  usecase "Rose des vents, Weibull, AEP\npcfno3d windrose" as UC_rose
+  usecase "Exporter (binaires + manifeste)\nGET /api/export/{stem}/..." as UC_exp
+  usecase "Consulter le dernier verdict DSO\nGET /api/dso" as UC_dso
+  usecase "Gerer les cles d'API\npcfno3d apikey create / revoke,\nGET /api/keys" as UC_cle
+  usecase "Verifier l'etat du service\nGET /api/health (public)" as UC_sante
+  usecase "Entrainer et evaluer le modele\npcfno3d train / evaluate" as UC_eval
+  usecase "Comparer aux methodes de reference\net etudier le reseau (E1, E2, E3)\npcfno3d baselines, m8_preuves_colab.py" as UC_preuve
+  usecase "Publier un instantane et l'historique\n(R2, latest, /v1/times) <<M6>>\npcfno3d publish, m6_rejeu_colab.py" as UC_pub
+}
+
+Res --> UC_val
+Op --> UC_val
+Op --> UC_rec
+Op --> UC_vue
+Op --> UC_al
+Op --> UC_pan
+Op --> UC_exp
+Eol --> UC_parc
+Eol --> UC_rose
+Eol --> UC_vue
+Wk --> UC_sante
+Wk --> UC_vue
+Wk --> UC_al
+Wk --> UC_parc
+Wk --> UC_dso
+Wk --> UC_pub
+IA --> UC_rec
+IA --> UC_vue
+IA --> UC_al
+IA --> UC_parc
+Adm --> UC_cle
+Adm --> UC_sante
+DS --> UC_eval
+DS --> UC_preuve
+
+UC_rec ..> UC_fia : <<include>>\n(si inference.reliability)
+UC_al ..> UC_rec : <<include>>
+UC_parc ..> UC_rec : <<include>>
+UC_pan ..> UC_rec : <<extend>>
+UC_val ..> UC_rec : <<extend>>\n(upload : rejet -> 422)
+
+note bottom of UC_cle
+  Ferme par defaut (lot M7) : sans cle, tout est 401
+  sauf /api/health. Portees read et admin.
+end note
+@enduml

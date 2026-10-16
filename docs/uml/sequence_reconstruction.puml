@@ -1,0 +1,77 @@
+@startuml sequence_reconstruction
+' Sequence « reconstruire un instant » : reconstruction + fiabilite + alertes + mise a
+' disposition (lot M8, tache 14, p. 44). Noms verifies contre service/app.py,
+' src/pcfno3d/inference.py, reliability.py, alerts.py, export.py.
+' La publication R2 (`latest`, lot M6) ne passe pas par la route HTTP : elle est faite
+' par `pcfno3d publish` / scripts/m6_rejeu_colab.py (src/pcfno3d/publish.py,
+' docs/PUBLICATION.md) et figure en fin de diagramme.
+skinparam shadowing false
+autonumber
+
+actor "Worker / tableau de bord" as W
+participant "make_guard\n(service/app.py)" as G
+participant "reconstruct()\nPOST /api/reconstruct" as R
+participant "_volume_for()" as VF
+participant "WindFieldModel" as WF
+participant "ensemble_forward()" as EF
+participant "assess()\n(reliability.py)" as AS
+participant "Volume" as V
+participant "alerts()\nGET /api/alerts" as AR
+participant "MoteurAlertes" as MA
+participant "JournalAlertes" as JA
+participant "export_web()" as EX
+
+W -> G : POST /api/reconstruct {stem, keep}\nX-API-Key (injectee par le Worker)
+G -> G : ApiKeyStore.verify(cle), Quotas, JournalAcces
+alt cle absente, invalide ou revoquee
+  G --> W : 401 / 403
+else quota depasse
+  G --> W : 429 + Retry-After
+end
+G -> R : requete autorisee (portee read)
+R -> VF : _volume_for(stem, keep)
+alt volume deja en cache (STATE["volumes"])
+  VF --> R : Volume memorise
+else premier appel (verrou _VOLUME_LOCK)
+  VF -> WF : predict_stem(stem, keep)
+  WF -> WF : surface_from_cache(stem) -> S (8, ny, nx)
+  WF -> WF : capteurs visibles, time_geo_features()\n(vent geostrophique + thermique)
+  WF -> EF : passe servie (bf16 sur GPU, ilots fp32)
+  EF --> WF : prediction normalisee
+  WF -> WF : Normalizer.denorm() -> u, v, w
+  opt inference.reliability configure (lot M2)
+    WF -> AS : assess(served, membre, sensor, geom, cfg, Calibration)
+    loop reliability.members passes masquees
+      AS -> WF : _member(S, kept, hour, doy)
+    end
+    AS --> WF : Reliability (sigma, status, coverage,\nreliability, reliability_class)
+  end
+  WF -> V : Volume(u, v, w, reliability, inference_s)
+  V --> VF
+  VF --> R : Volume (memorise)
+end
+R --> W : 200 {inference_s, dso4_conforme, grille, vitesses, fiabilite_s}
+
+W -> AR : GET /api/alerts?stem=...
+alt alerts.enabled = false
+  AR --> W : 409 (alertes desactivees)
+else
+  AR -> VF : _volume_for(stem) (meme Volume)
+  AR -> MA : evaluer_modele(wf, S, hour, doy, volume)
+  MA -> MA : contrat (M3), couverture (M2),\nderive par groupes (M4), physique (D11),\nalertes du parc (M5)
+  MA -> JA : mettre_a_jour(alertes, instant)\n(alertes.jsonl, ordre chronologique)
+  MA --> AR : ResultatAlertes
+  AR --> W : 200 {"items": [...]} (alerts.schema.json)
+end
+
+opt export (portee admin)
+  R -> EX : export_web(volume, web_root/recon_<stem>)
+  EX --> R : binaires Float32 + manifest.json
+  W -> G : GET /api/export/{stem}/manifest.json
+end
+
+group publication lot M6 (pcfno3d publish, m6_rejeu_colab.py ; hors route HTTP)
+  R -> R : construire_instantane() puis DepotLocal.ecrire()\n(dossier temporaire + renommage, latest.json en dernier)
+  R -> W : ClientPublication.publier() vers /v1/publish/... :\nfichiers, commit, relecture /v1/times + /v1/latest, battement
+end
+@enduml
