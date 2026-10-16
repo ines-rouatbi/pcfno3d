@@ -431,6 +431,7 @@ def cmd_publish(args) -> int:
                 inst = instantane_du_cache(wf, stem, **kw)
             depot.ecrire(inst)
             print(f"instantane {sid} ({inst.data_status}) -> {depot.dossier(sid)}")
+            print(_temps_instantane(inst))
     except ValueError as exc:
         print(f"ERREUR : {exc}", file=sys.stderr)
         return 1
@@ -452,6 +453,16 @@ def cmd_publish(args) -> int:
         print(f"publie : {rep.get('snapshot_id')} "
               f"{'(deja publie)' if rep.get('unchanged') else ''}".rstrip())
     return 0
+
+
+def _temps_instantane(inst) -> str:
+    """Temps d'un instantane, pour le journal local : la valeur (DSO4) et le delai de la
+    fiabilite differee, que le contrat rev. 2 ne publie pas (snapshot.kpi)."""
+    i = inst.info
+    out = f"  valeur {i['inference_s'] * 1000:.0f} ms"
+    if i.get("fiabilite_s") is not None:
+        out += f" | fiabilite prete en {i['fiabilite_s']:.2f} s (attendue avant publication)"
+    return out
 
 
 def _read_table(path: str):

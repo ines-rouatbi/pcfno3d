@@ -652,6 +652,10 @@ def compute_farm(volume, farm: Farm, wcfg, calibration=None,
                  context: FarmContext | None = None) -> FarmCalc:
     """Le parc sur un Volume. `context` : par defaut celui attache au volume par
     WindFieldModel.predict (densite de surface, capteurs, membres de l'ensemble)."""
+    # fiabilite differee (M2) : les membres captures n'arrivent qu'avec elle ; on l'attend
+    # (ou on la calcule ici) pour ne jamais rendre un parc sans ses quantiles par erreur
+    if hasattr(volume, "wait_reliability"):
+        volume.wait_reliability()
     ctx = context if context is not None else getattr(volume, "farm_context", None)
     calcs = [turbine_calc(volume, t, farm.curves[t.model], wcfg, ctx, col, calibration)
              for col, t in enumerate(farm.turbines)]

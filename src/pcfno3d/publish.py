@@ -564,6 +564,20 @@ def windrose_points(farm, wcfg, serie: dict, actuel: dict, valid_time: str) -> d
     return out
 
 
+def attendre_fiabilite(volume) -> None:
+    """Attend la fiabilite differee d'un volume (pcfno3d.inference.Volume) ; une fiabilite
+    en echec refuse la publication (ValueError)."""
+    from .inference import ReliabilityError
+
+    attendre = getattr(volume, "wait_reliability", None)
+    if attendre is None:
+        return
+    try:
+        attendre()
+    except ReliabilityError as exc:
+        raise ValueError(f"instantane non publie : {exc}") from exc
+
+
 def construire_instantane(wf, volume, S: np.ndarray, *, stem: str, data_kind: str,
                           alertes=None, rapport: dict | None = None, dso6: dict | None = None,
                           data: str | None = None, model: str | None = None,
@@ -587,6 +601,9 @@ def construire_instantane(wf, volume, S: np.ndarray, *, stem: str, data_kind: st
     geom, cfg = wf.geom, wf.cfg
     if volume.timestamp is None:
         raise ValueError("volume sans horodatage : valid_time est obligatoire")
+    # fiabilite differee : un instantane est IMMUABLE, il ne se construit qu'avec la
+    # fiabilite prete quand elle est active (attendue, ou calculee ici) ; en echec, rien
+    attendre_fiabilite(volume)
     valid_time = iso_utc(volume.timestamp)
     generated_at = generated_at or maintenant_utc()
     if last_observation_at == "valid_time":
@@ -734,7 +751,12 @@ def construire_instantane(wf, volume, S: np.ndarray, *, stem: str, data_kind: st
                  "files": [_entree(p, b) for p, b in fichiers.items()]}
     manifeste_modele = {"model_sha8": sha8, "versions": versions,
                         "files": [_entree(p, b) for p, b in modele.items()]}
+    # temps : rapport LOCAL seulement (snapshot.kpi n'admet que reconstruction_ms, le temps
+    # de la valeur ; le delai de la fiabilite n'a pas de place dans le contrat rev. 2)
     info = {"noeuds_retires_min_agl": ch.retires, "fiabilite": rel is not None,
+            "inference_s": round(float(volume.inference_s), 4),
+            "fiabilite_s": round(float(getattr(volume, "reliability_s", 0.0)), 4)
+            if rel is not None else None,
             "alertes": alertes is not None, "parc": wf.farm is not None,
             "historique": len(historique or []), "capteurs": capteurs}
     return Instantane(sid, sha8, valid_time, generated_at, last_observation_at, data_status,

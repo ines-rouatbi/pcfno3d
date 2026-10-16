@@ -6,6 +6,12 @@ AVEC --deuxieme-lecture, qui l'ecrit dans le verdict (champ `mesure`) :
 
     !python scripts/m2_calibration_colab.py -c colab --deuxieme-lecture
 
+DSO4 seul (fiabilite differee, sans refaire la calibration ni DSO6), avec la calibration
+deja retenue :
+
+    !python scripts/m2_calibration_colab.py -c colab --dso4-seulement \
+        --calibration <run_dir>/fiabilite_pcfno3d/<modele>/session_.../calibration_validation.json
+
 1. VALIDATION (selection synoptique fixe, graine 1000, `mask.keep_eval` des capteurs) :
    passe servie + N passes masquees par instant (par lots de `reliability.batch`), un
    histogramme de |erreur| / sigma brut par pli de jours (2 plis : jours de rang pair /
@@ -15,9 +21,12 @@ AVEC --deuxieme-lecture, qui l'ecrit dans le verdict (champ `mesure`) :
 2. TEST synoptique (graine 2000, memes capteurs visibles que DSO1) avec ces k : couverture
    de l'intervalle a 80 % et Spearman(|erreur|, sigma) par niveau et global. -> dso6.json
    Le test ne sert QU'AU verdict : rien n'y est ajuste.
-3. DSO4 sur un instant de test, sur `predict` comme en production : SANS fiabilite, AVEC
-   (lot configure), et pour information avec des lots de 1, 4 et 8 passes (un lot trop
-   gros pour la memoire est note, sans arreter la campagne).
+3. DSO4 sur un instant de test, sur `predict` comme en production. Fiabilite DIFFEREE
+   (decision du 16/10/2026) : DSO4 juge la VALEUR seule (passe servie) ; le delai de la
+   fiabilite (ensemble + calibration + statut + couverture + classe) est mesure sur les
+   memes appels et publie a cote, pour information, sans verdict DSO4 ; et par taille de
+   lot (1, 4, 8), pour information (un lot trop gros pour la memoire est note, sans arreter
+   la campagne).
 
 Tout s'ecrit dans un dossier NEUF, run_dir/fiabilite_pcfno3d/<modele>/session_<horodatage>/ :
 le script n'ouvre en ecriture aucun fichier existant (checkpoints, evaluations, JSON figes du
@@ -26,8 +35,9 @@ notebook, sessions precedentes). Pour servir la calibration retenue ensuite :
     inference:
       reliability: <run_dir>/fiabilite_pcfno3d/<modele>/session_.../calibration_validation.json
 
-Codes de retour : 0 campagne terminee (le verdict DSO6 est dans dso6.json et imprime, il ne
-change pas le code) ; 1 erreur (pas d'instant de validation ou de test en cache, pli vide...).
+Codes de retour : 0 campagne terminee (les verdicts sont dans les JSON et imprimes, ils ne
+changent pas le code) ; 1 erreur (pas d'instant de validation ou de test en cache, pli vide,
+--dso4-seulement sans --calibration...).
 """
 
 from __future__ import annotations
@@ -62,6 +72,55 @@ def _ms(b: dict) -> str:
     return f"{b['mean_s'] * 1000:.0f} ms ({'CONFORME' if b['conforme'] else 'NON CONFORME'})"
 
 
+def _delai(b: dict) -> dict:
+    """Delai de la fiabilite d'un benchmark (information, sans verdict DSO4)."""
+    if "erreur" in b:
+        return {"erreur": b["erreur"]}
+    return b.get("fiabilite") or {"erreur": "fiabilite non mesuree"}
+
+
+def _s(d: dict) -> str:
+    return d["erreur"] if "erreur" in d else f"{d['mean_s']:.3f} s"
+
+
+def mesurer_dso4(ev, cfg, calibration: str, n: int) -> dict:
+    """DSO4 sur predict (chemin de production, tous les capteurs), fiabilite differee :
+    verdict sur la VALEUR seule ; delai de la fiabilite a cote, par taille de lot aussi."""
+    from pcfno3d.reliability import Calibration
+
+    rc = cfg.reliability
+    stem = str(ev.splits.test[0][0])
+    S, hour, doy, _ = ev.wf.surface_from_cache(stem)
+    ev.wf.reliability = Calibration.load(calibration)
+    lot_cfg = rc.batch
+    try:
+        valeur = _bench(ev.wf, S, hour, doy, n, reliability=False)
+        avec = _bench(ev.wf, S, hour, doy, n, reliability=True)
+        par_lot = {}
+        for lot in LOTS_INFO:                 # pour information
+            rc.batch = lot
+            par_lot[str(lot)] = _delai(_bench(ev.wf, S, hour, doy, n, reliability=True))
+    finally:
+        rc.batch = lot_cfg
+        ev.wf.reliability = None
+    dso4 = {"instant": stem, "mesure": "valeur seule (fiabilite differee)",
+            "valeur": valeur,
+            # la valeur mesuree pendant que la fiabilite tourne apres chaque appel
+            "valeur_avec_fiabilite_active": {k: avec[k] for k in
+                                             ("n", "mean_s", "p95_s", "max_s", "conforme")
+                                             if k in avec} if "erreur" not in avec else avec,
+            "delai_fiabilite": _delai(avec), "lot": lot_cfg,
+            "delai_fiabilite_par_lot": par_lot,
+            "membres": rc.members, "seuil_s": cfg.dso.time_s,
+            "calibration": str(calibration), "device": str(ev.wf.device)}
+    print(f"DSO4 (valeur seule) : {_ms(valeur)} | seuil {cfg.dso.time_s} s"
+          + (f" | avec la fiabilite active : {_ms(avec)}" if "erreur" not in avec else ""))
+    print(f"  delai de la fiabilite (lot {lot_cfg}, information, sans verdict) : "
+          f"{_s(dso4['delai_fiabilite'])} | par taille de lot : "
+          + " | ".join(f"lot {k} : {_s(v)}" for k, v in par_lot.items()))
+    return dso4
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("-c", "--config", default="colab")
@@ -78,11 +137,19 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--deuxieme-lecture", action="store_true",
                     help="le test a deja ete lu (15/10/2026, non conforme) : le verdict et le "
                          "resume portent le champ `mesure` (pas une mesure independante)")
+    ap.add_argument("--dso4-seulement", action="store_true",
+                    help="DSO4 seul (valeur + delai de la fiabilite), sans calibration ni "
+                         "DSO6 ; exige --calibration")
+    ap.add_argument("--calibration", help="JSON de calibration deja retenu (--dso4-seulement)")
     args = ap.parse_args(argv)
+    if args.dso4_seulement and not (args.calibration and Path(args.calibration).is_file()):
+        print("ERREUR : --dso4-seulement exige --calibration <calibration_validation.json> "
+              "(fichier existant)", file=sys.stderr)
+        return 1
 
     from pcfno3d.config import Config
     from pcfno3d.evaluate import Evaluator
-    from pcfno3d.reliability import MESURE_SECONDE_LECTURE, Calibration
+    from pcfno3d.reliability import MESURE_SECONDE_LECTURE
 
     cfg = Config.load(args.config)
     if args.membres:
@@ -95,13 +162,30 @@ def main(argv: list[str] | None = None) -> int:
     ev = Evaluator(cfg, checkpoint=args.checkpoint, device=args.device)
 
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    # dossier NEUF : jamais un dossier existant (deux sessions dans la meme seconde : suffixe)
     out = ev.reliability_dir() / f"session_{stamp}"
-    out.mkdir(parents=True, exist_ok=False)   # dossier neuf, ou erreur : rien n'est ecrase
+    n = 1
+    while True:
+        try:
+            out.mkdir(parents=True, exist_ok=False)
+            break
+        except FileExistsError:
+            n += 1
+            out = ev.reliability_dir() / f"session_{stamp}_{n}"
     print(f"sortie -> {out}\n")
+    t0 = time.perf_counter()
+    if args.dso4_seulement:
+        dso4 = mesurer_dso4(ev, cfg, args.calibration, args.benchmark)
+        resume = {"modele": ev.wf.checkpoint_path.name, "dossier": str(out), "dso4": dso4,
+                  "duree_s": round(time.perf_counter() - t0, 1)}
+        (out / "resume_dso4.json").write_text(json.dumps(resume, indent=2,
+                                                         ensure_ascii=False),
+                                              encoding="utf-8")
+        print(f"\nresume -> {out / 'resume_dso4.json'}")
+        return 0
     if args.deuxieme_lecture:
         print(f"mesure : {MESURE_SECONDE_LECTURE}\n")
 
-    t0 = time.perf_counter()
     try:
         cal = ev.calibrate_reliability(out=out / "calibration_validation.json",
                                        n_instants=args.instants_validation, keep=args.keep)
@@ -115,28 +199,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"ERREUR : {exc}", file=sys.stderr)
         return 1
 
-    # DSO4 sans et avec la fiabilite, sur predict (chemin de production, tous les capteurs)
-    rc = cfg.reliability
-    stem = str(ev.splits.test[0][0])
-    S, hour, doy, _ = ev.wf.surface_from_cache(stem)
-    ev.wf.reliability = Calibration.load(cal["fichier"])
-    lot_cfg = rc.batch
-    sans = _bench(ev.wf, S, hour, doy, args.benchmark, reliability=False)
-    avec = _bench(ev.wf, S, hour, doy, args.benchmark, reliability=True)
-    par_lot = {}
-    for lot in LOTS_INFO:                     # pour information
-        rc.batch = lot
-        par_lot[str(lot)] = _bench(ev.wf, S, hour, doy, args.benchmark, reliability=True)
-    rc.batch = lot_cfg
-    ev.wf.reliability = None
-    dso4 = {"instant": stem, "sans_fiabilite": sans, "avec_fiabilite": avec,
-            "lot": lot_cfg, "avec_fiabilite_par_lot": par_lot,
-            "membres": rc.members, "seuil_s": cfg.dso.time_s,
-            "device": str(ev.wf.device)}
-    print(f"DSO4 : sans fiabilite {_ms(sans)} | avec (lot {lot_cfg}) {_ms(avec)} | "
-          f"seuil {cfg.dso.time_s} s")
-    print("  pour information, avec fiabilite par taille de lot : "
-          + " | ".join(f"lot {k} : {_ms(v)}" for k, v in par_lot.items()))
+    # DSO4 = la valeur seule (fiabilite differee) ; delai de la fiabilite a cote
+    dso4 = mesurer_dso4(ev, cfg, cal["fichier"], args.benchmark)
 
     resume = {"modele": ev.wf.checkpoint_path.name, "dossier": str(out),
               **({"mesure": MESURE_SECONDE_LECTURE} if args.deuxieme_lecture else {}),
