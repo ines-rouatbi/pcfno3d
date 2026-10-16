@@ -1,8 +1,10 @@
 # Model card — PC-FNO3D v7
 
 *Livrable L7 (cahier des charges v9, § 9.1 p. 21 ; tâche 13 p. 44). Chaque chiffre est
-suivi de sa source dans le dépôt. Les critères non encore mesurés sont marqués
-« en attente du GPU » : aucun n'est présenté comme atteint.*
+suivi de sa source (dans le dépôt, ou dossier de session sur le Drive
+`aneo_fno3d_runs/v7/…`). Les mesures GPU des 15-16/10/2026 (Colab L4) sont reportées ; un
+critère encore sans mesure est marqué « en attente » : aucun n'est présenté comme atteint.
+Synthèse : `docs/BILAN_FINAL.md`.*
 
 ## Identité
 
@@ -47,7 +49,7 @@ fp32 volontaires (FFT et tête), le reste en bf16 sur GPU. Source : `CLAUDE.md`
 | Normalisation | statistiques des jours d'entraînement seulement | `CLAUDE.md` |
 | Matériel | NVIDIA A100-SXM4-80GB (Colab) | sortie de `fno3d_v7.ipynb` (BLOC 0) |
 | Durée journalisée | époques 61 à 140 : 9 582 s (119,8 s par époque) ; époques 1 à 60 non journalisées | sortie du BLOC 9 de `fno3d_v7.ipynb`, lue par `sobriete.historique_entrainement` (`docs/PREUVES.md`, E5) |
-| Énergie, CO₂ | **à mesurer** (E5, `docs/PREUVES.md`) | — |
+| Énergie, CO₂ | entraînement **non mesuré** (puissance non journalisée) ; inférence : 9,3 µWh GPU par reconstruction (E5, L4, nvidia-smi, GPU seul) ; CO₂ non calculé (intensité carbone non fournie) | `docs/PREUVES.md` (E5) ; `aneo_fno3d_runs/v7/preuves_pcfno3d/best_dso_v7/session_20261016T125440Z` |
 | Diagnostic | pas de surapprentissage : pertes de données entraînement / validation 0,0050 / 0,0053 en fin d'entraînement | `tukhnanutha.md` § 5 |
 
 ## Résultats (test synoptique : 120 instants, 50 % des capteurs visibles, une passe)
@@ -61,12 +63,12 @@ Source : `docs/rapport_dso1.md` § 2 (table du BLOC 10, retrouvée par le paquet
 | DSO1 R² u, v par niveau | ≥ 0,95 | min 0,9911 | conforme |
 | DSO2 résidu de continuité | ≤ 1·10⁻⁴ | 2,58·10⁻⁵ | conforme |
 | DSO3 rugosité | dans [0,9 ; 1,1] | 0,951 | conforme |
-| DSO4 inférence (GPU) | < 1 s | 91 ms (notebook v7, `tukhnanutha.md` § 5) ; 104 ms (campagne v8, `docs/rapport_dso1.md`) | conforme |
+| DSO4 inférence (GPU) | < 1 s | 91 ms (A100, notebook v7, `tukhnanutha.md` § 5) ; 104 ms (campagne v8, `docs/rapport_dso1.md`) ; L4, valeur servie seule (fiabilité différée) : **0,440 s**, 0,444 s avec la fiabilité active ; délai de la fiabilité 3,834 s (lot 4), sans verdict (`aneo_fno3d_runs/v7/fiabilite_pcfno3d/best_dso_v7/session_20261016T134302Z/resume_dso4.json`) | conforme (valeur servie) ; la fiabilité synchrone (4,2–4,7 s) était non conforme (`docs/FIABILITE.md`) |
 | DSO5 RMSE avec 25 % des capteurs | ≤ 0,7 m/s | 0,646 m/s | conforme |
-| DSO6 fiabilité des indicateurs | couverture 80 % et corrélation > 0 | module prêt (lot M2) | **en attente du GPU** (`docs/FIABILITE.md`) |
-| AN1 alertes | ≥ 90 % de détection, < 5 % de fausses alertes | v1 (16/10/2026, test) : dérives détectées 5,2 %, 0 % de fausses alertes ; entrées : fausses alertes 6,7 % | **non conforme** (v1) ; v2 (détecteur spatial) en attente d'une **seconde lecture** du test, qui ne sera pas une mesure indépendante (`docs/ALERTES.md`) |
-| EOL1 production éolienne | écart < 5 % | module prêt (lot M5) | **en attente du GPU** (`docs/EOLIEN.md`) |
-| HIS1 historique | toute reconstruction passée retrouvée avec ses indicateurs et versions | publication et historique implémentés (lot M6 : `src/pcfno3d/publish.py`, R2, `latest`, `/v1/times`) ; atomicité testée sur CPU contre un Worker simulé | rejeu des 120 instants de test **en attente du GPU** (`docs/PUBLICATION.md`) |
+| DSO6 fiabilité des indicateurs | couverture 80 % et corrélation > 0 | 1re lecture (15/10, q 0,8) : couverture u 0,751, v 0,811, w 0,794, vitesse 0,796 ; Spearman 0,289 / 0,307 / 0,229 / 0,290 (`aneo_fno3d_runs/v7/fiabilite_pcfno3d/best_dso_v7/session_20261015T234810Z`). 2e lecture (16/10, q = 0,90 choisi sur la validation) : couverture 0,871 / 0,912 / 0,896 / 0,904 ; Spearman 0,295 / 0,311 / 0,231 / 0,291 (`aneo_fno3d_runs/v7/fiabilite_pcfno3d/best_dso_v7/session_20261016T115325Z`) | **non conforme** (1re lecture) ; **conforme en seconde lecture**, non indépendante du test (`docs/FIABILITE.md`) |
+| AN1 alertes | ≥ 90 % de détection, < 5 % de fausses alertes | v1 (16/10/2026, test) : dérives détectées 5,2 %, 0 % de fausses alertes ; entrées : fausses alertes 6,7 % | **non conforme** (v1, `aneo_fno3d_runs/v7/alertes_pcfno3d/best_dso_v7/session_20261016T121344Z`) ; v2 (16/10, test) : dérives détectées 100 %, fausses alertes 2,2 %, entrées : détection 100 %, fausses alertes 0 % → **conforme en seconde lecture**, non indépendante du test (`aneo_fno3d_runs/v7/alertes_pcfno3d/best_dso_v7/session_v2_20261016T142959Z`, `docs/ALERTES.md`) |
+| EOL1 production éolienne | écart < 5 % | parc **de démonstration** (3 éoliennes, 12 MW), 120 instants de test : écart relatif 1,71 % ; nMAE puissance 1,17 % (`aneo_fno3d_runs/v7/eolien_pcfno3d/…`) | **conforme sur le parc d'exemple** ; verdict officiel en attente du parc réel (`docs/EOLIEN.md`) |
+| HIS1 historique | toute reconstruction passée retrouvée avec ses indicateurs et versions | publication et historique implémentés (lot M6 : `src/pcfno3d/publish.py`, R2, `latest`, `/v1/times`) ; atomicité testée sur CPU contre un Worker simulé | rejeu des 120 instants de test fait (16/10, L4, 9,1 s par instant, historique 120) ; 8 instants republiés dans le déploiement local (`docs/PUBLICATION.md`) |
 | DE2 reproductibilité | même entrée et même version → même sortie | égalité bit à bit sur CPU (mini-modèle), test automatique | conforme sur le mini-modèle ; à rejouer sur v7 CPU (`docs/REPRODUCTIBILITE.md`) |
 
 **Cinq objectifs DSO sur six mesurés atteints (DSO2 à DSO5 et le volet R² du DSO1) ; DSO1
@@ -86,8 +88,13 @@ Robustesse (BLOC 10) : RMSE max u 0,828 / 0,646 / 0,593 / 0,705 m/s à 10 / 25 /
 50 / 100 % des capteurs — anomalie : pire avec tous les capteurs qu'avec la moitié
 (`tukhnanutha.md` § 5 ; sortie du BLOC 10 de `fno3d_v7.ipynb`).
 
-**Comparaison aux méthodes de référence (L6) et études du réseau (L9)** : en attente de la
-session GPU du lot M8 (`docs/PREUVES.md`).
+**Comparaison aux méthodes de référence (L6) et études du réseau (L9)** : mesurées le
+16/10/2026 sur L4 (`aneo_fno3d_runs/v7/preuves_pcfno3d/best_dso_v7/session_20261016T125440Z`, détail dans `docs/PREUVES.md`). Sur le test (120
+instants, 50 % des capteurs), RMSE max u, v : PC-FNO3D 0,665 m/s contre 5,027 à 6,487 m/s
+pour les quatre références (profil log ou loi de puissance × IDW ou krigeage). E1 :
+PC-FNO3D tient DSO5 jusqu'à 50 % des capteurs. E2 : **résultat négatif** (le placement guidé
+par σ fait pire que le hasard). E3 : sur ce treillis dense, krigeage et IDW remplacent mieux
+un capteur en panne que PC-FNO3D.
 
 ## Limites
 

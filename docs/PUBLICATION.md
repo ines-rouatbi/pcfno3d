@@ -8,7 +8,14 @@ Script GPU : `scripts/m6_rejeu_colab.py`. CLI : `pcfno3d publish`. Contrat ATOM 
 `agent/rayen-audit-atom/f1-r2` (`src/v1.js`). Copie des schémas et de `validate.mjs` :
 `tests/data/atom_rev2/` (branche `contrat-v1`, commit `b7b13b8`).*
 
-## Statut : prêt, **publication réelle en attente du jeton, de R2 et d'une session GPU**
+## Statut : rejeu GPU **fait** ; déploiement **local** ; publication hébergée en attente du jeton et de R2
+
+**Rejeu (Colab L4, modèle v7, 16/10/2026).** Les 120 instants de test sont publiés « comme
+en direct » au format du contrat rév. 2, avec fiabilité calibrée (M2), alertes M4 et parc
+M5 : 9,1 s par instant, `latest` = `097_210000_b2529442`, historique de 120 instants.
+**Déploiement local** : 8 instants (jour 017) republiés vers le Worker local
+(`wrangler dev` + R2 local) par le client M6, 23 fichiers par instantané.
+
 
 Les tests CPU (`tests/test_publication.py`) construisent des instantanés du mini-jeu, les
 valident avec les schémas Python **et** avec `validate.mjs` du contrat, puis les publient

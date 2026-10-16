@@ -5,11 +5,24 @@ D9, D10, B3, m8 ; `wind-farm.schema.json`, `windrose.schema.json`, `alerts.schem
 `snapshot.schema.json` pour `kpi.hub_wind_*`). Copie des schémas utilisés par les tests :
 `tests/data/atom_rev2/` (branche `agent/rayen-audit-atom/contrat-v1`, commit `b7b13b8`).*
 
-## Statut : prêt, **verdict EOL1 en attente de la session GPU**
+## Statut : EOL1 **conforme sur le parc de démonstration** ; verdict officiel en attente du parc réel
+
+Mesure Colab L4, modèle v7, 16/10/2026 (`scripts/m5_eol1_colab.py`, dossier
+`aneo_fno3d_runs/v7/eolien_pcfno3d/…`), sur le parc **de démonstration** (`configs/eolien/parc_demo.yaml` :
+3 éoliennes d'exemple, 12 MW), 120 instants de test :
+
+| Grandeur | Valeur |
+|---|---|
+| Écart relatif de production du parc (EOL1, seuil 5 %) | **1,71 %** |
+| nMAE de la puissance | 1,17 % |
+| RMSE du vent au moyeu | T-01 0,356 ; T-02 0,432 ; T-03 0,318 m/s |
+| Accord des états de fonctionnement | 98,9 % |
+
+EOL1 est **conforme sur ce parc d'exemple**. Le verdict officiel demande la déclaration du
+parc réel par Tukhnanutha : il reste en attente.
 
 Les tests CPU (`tests/test_windfarm.py`, mini-jeu) vérifient les formules sur des cas
-connus et le mécanisme EOL1 de bout en bout. Ils ne disent rien de la qualité de v7 pour
-la production : le chiffre EOL1 vient de `scripts/m5_eol1_colab.py`, à lancer sur GPU.
+connus et le mécanisme EOL1 de bout en bout.
 
 ## Activation
 
@@ -338,7 +351,7 @@ Tukhnanutha.
 - si la reconstruction est la vérité, l'écart est nul et le verdict conforme ;
 - le script écrit dans un dossier neuf sans toucher aucun fichier existant.
 
-### Session GPU (reste à faire)
+### Session GPU (faite le 16/10/2026 sur le parc de démonstration ; à refaire sur le parc réel)
 
 ```bash
 !python scripts/m5_eol1_colab.py -c colab --parc <declaration_du_parc.yaml>
