@@ -126,8 +126,24 @@ a terrain correction.
     DSO5 down to 50 % of the sensors; E2 **negative result** (σ-guided placement worse than
     random, −1.109 m/s); E3: kriging 0.192 m/s beats v7 1.495 m/s as backup sensor; E5:
     9.3 µWh GPU per reconstruction, CO₂ and training energy not measured.
-- **M1** (last bounded DSO1 attempt, cell 10i) is still waiting for its A100 session.
-- **DSO1 is still not met at 650–1000 m**; v7 remains the served model (numbers below).
+- **M1 delivered** (last bounded DSO1 attempt, cell 10i, Colab A100-SXM4-80GB, 2026-10-16;
+  pre-registered rule C1 AND C2 AND C3, `docs/M1_PROTOCOLE.md`):
+  - **C1** (120 synoptic test instants, 50 % sensors) **conforming**: worst level u
+    0.665 → 0.419 [95 % CI 0.320; 0.559], v 0.508 → 0.382 [0.290; 0.496]; min R² 0.9933.
+  - **C2** (46 episode instants never used) **non-conforming**: the paired block-bootstrap
+    CI of Δ is out of bounds for v at 150, 200 and 1000 m and for u at 650 m; worst level
+    u 1.148 → 1.056, v 1.068 → 1.104.
+  - **C3 conforming**: DSO2 2.58e-5, DSO3 0.951, DSO5 0.508, DSO4 121 ms (model alone 92 ms).
+  - **Decision: correction NOT retained; v7 is frozen alone** (annotated tag `v7-fige`,
+    `docs/resultats/modele_fige/README.md`). The correction stays, documented, on
+    `agent/ines/m1-correction-post-modele`. No v8 or retrain without Rayen's agreement.
+  - Reserve printed by 10i: coefficients learnt on synthetic data; on real data barometer
+    error (±10–50 Pa) is the same order as the geostrophic signal (26 Pa for 10 m/s).
+  - Open: the Drive copy of `eval_best_dso_v7/test_summary.json` no longer has its
+    published sha256 (modified before the session; no effect on the verdict); the
+    seed-2027 virgin set was not measured (not on the Drive).
+- **DSO1 is not met at 650–1000 m** and is reported honestly with the WMO criterion (revised
+  DSO1 proposed, conforming); frozen v7 remains the served model (numbers below).
 
 **The drift flagged in July is resolved.** The project converged on a single architecture, the
 dataset was regenerated with true 3D targets, and the work has moved into T6–T9.

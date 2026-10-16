@@ -547,3 +547,115 @@ avenants n° 1 et n° 2 et le code de la cellule 10i ne changent pas.
 - **Jeu vierge (avenant n° 2)** : la dernière cellule (M1-f) ne s'exécute que si le jeu complet est
   sur le Drive, dans `aneo_dataset_3d_seed2027/` (15 jours). Ses résultats vont dans
   `eval_m1_bloc10i/jeu_vierge_seed2027/`. Sinon, elle affiche un message et ne fait rien.
+
+---
+
+## Résultat de la mesure décisive (2026-10-16)
+
+*Section ajoutée après l'exécution de 10i. La règle pré-enregistrée et les avenants n° 1 à 3
+ci-dessus sont inchangés. Chiffres recopiés des sorties de la session, sans recalcul.*
+
+**Session.**
+
+- Colab, **A100-SXM4-80GB** ; notebook `notebooks/current/m1_bloc10i_colab.ipynb` (avenant n° 3),
+  « Tout exécuter ».
+- sha256 du code 10i : `a1fcc878ed3c6c6047538e5b48df25c6633c972a413d6bd42f415926599fbd6f`
+  (conforme à l'en-tête de `cellule_10i.py`).
+- Correction : `couche_limite_v7.json`, sha256 `c50928ae2a93dfb3...` (préfixe imprimé par la
+  session), alpha = 0,01, ρ_sl = 1,2.
+- Instants : validation 64 ; test synoptique 120 ; épisodes 46 (jour 4 : 18, jour 11 : 10,
+  jour 97 : 18) ; 100 % des capteurs 120 ; 25 % des capteurs 40.
+- Résultats archivés sur le Drive : `aneo_fno3d_runs/v7/eval_m1_bloc10i/decision_10i.json` et
+  `decision_10i_par_niveau.csv`.
+
+### C1 — test synoptique (120 instants, 50 % des capteurs) : CONFORME
+
+RMSE avant → après correction (m/s). Entre crochets : IC 95 % après correction, quand la
+session l'a imprimé.
+
+| Niveau | u avant → après | v avant → après |
+|---|---|---|
+| 100 m | 0,458 → 0,416 [0,261 ; 0,552] | 0,440 → 0,382 |
+| 150 m | 0,476 → 0,418 | 0,456 → 0,381 |
+| 200 m | 0,462 → 0,393 | 0,436 → 0,368 |
+| 300 m | 0,457 → 0,365 | 0,424 → 0,344 |
+| 400 m | 0,468 → 0,368 | 0,401 → 0,347 |
+| 500 m | 0,481 → 0,380 | 0,394 → 0,351 |
+| 650 m | 0,564 → 0,413 [0,305 ; 0,505] | 0,408 → 0,339 |
+| 800 m | 0,632 → 0,404 [0,292 ; 0,503] | 0,466 → 0,362 |
+| 1000 m | 0,665 → 0,419 [0,295 ; 0,521] | 0,508 → 0,355 |
+
+- **Pire niveau**, IC bootstrap par blocs (jours entiers, avenant n° 1) :
+  - u : 0,665 [0,482 ; 0,803] → **0,419** [0,320 ; 0,559] ;
+  - v : 0,508 [0,422 ; 0,606] → **0,382** [0,290 ; 0,496].
+- Pour information, IC du pire niveau après correction en mode « instants » : u [0,383 ; 0,495],
+  v [0,346 ; 0,430].
+- R² minimal après correction : 0,9933.
+- Les deux pires niveaux sont ≤ 0,5 m/s et le R² ≥ 0,95 partout : **C1 conforme**. La borne haute
+  de l'IC dépasse 0,5 pour u ; la règle la rapporte sans l'utiliser comme seuil, et le test a
+  servi à la conception de la correction (limite de la règle, § 5.3).
+
+### C2 — épisodes (46 instants jamais utilisés) : NON CONFORME
+
+IC 95 % de Δ = RMSE après − RMSE avant, bootstrap apparié par blocs (avenant n° 1). Seuils : borne
+haute ≤ +0,02 m/s de 100 à 500 m ; borne haute ≤ 0 (strict) à 650, 800 et 1000 m.
+
+| Niveau | IC 95 % de Δ u | IC 95 % de Δ v | Verdict du niveau |
+|---|---|---|---|
+| 100 m | [−0,035 ; −0,021] | [+0,011 ; +0,016] | conforme |
+| 150 m | [−0,120 ; −0,079] | [+0,031 ; +0,048] | **non conforme** (v) |
+| 200 m | [−0,130 ; −0,093] | [+0,010 ; +0,023] | **non conforme** (v) |
+| 300 m | — | — | conforme |
+| 400 m | — | — | conforme |
+| 500 m | — | — | conforme |
+| 650 m | [+0,013 ; +0,025] | [−0,048 ; −0,019] | **non conforme** (u, seuil strict 0) |
+| 800 m | — | — | conforme |
+| 1000 m | [−0,171 ; −0,148] | [+0,041 ; +0,047] | **non conforme** (v, seuil strict 0) |
+
+- Pire niveau sur les épisodes : u 1,148 → 1,056 ; v 1,068 → 1,104.
+- La règle n'est pas tenue à quatre niveaux : v à 150, 200 et 1000 m, u à 650 m.
+  **C2 non conforme**.
+
+### C3 — critères inchangés : CONFORME
+
+- DSO2 : 2,58e-5 (≤ 1e-4).
+- DSO3 : 0,951 (dans [0,9 ; 1,1]).
+- DSO5 : 0,508 (≤ 0,7 à 25 % des capteurs).
+- DSO4 : 121 ms pour la chaîne complète, dont 92 ms pour le modèle seul (< 1 s, A100).
+
+### Pour information, hors règle
+
+- 100 % des capteurs : u 0,786 → 0,508 ; v 0,556 → 0,426.
+- **Jeu vierge, graine 2027 (avenant n° 2)** : non mesuré, car le jeu n'est pas sur le Drive
+  (la cellule M1-f n'a rien fait). Hors règle, sans effet sur la décision.
+
+### Décision
+
+**Correction NON RETENUE** : C1 et C3 sont conformes, C2 ne l'est pas (C1 ET C2 ET C3 exigés).
+
+- **La v7 est gelée seule** (§ 8). Le DSO1 reste non atteint à 650–1000 m ; il est rapporté
+  honnêtement, avec le critère OMM (DSO1 révisé proposé, conforme ; `docs/rapport_dso1.md`).
+- La correction reste sur sa branche (`agent/ines/m1-correction-post-modele`), documentée,
+  non fusionnée. Pas de v8 ni de réentraînement sans accord de Rayen (§ 6).
+- **Réserve imprimée par 10i** : les coefficients sont appris sur du synthétique. Sur données
+  réelles, l'erreur des baromètres (±10 à 50 Pa) est du même ordre que le signal géostrophique
+  (26 Pa pour 10 m/s) : il faudrait recalibrer.
+- Les réserves des § 5.3 et de l'avenant n° 1 s'appliquent : environ 3 situations
+  indépendantes dans les épisodes, C2 de puissance limitée.
+
+### Point à signaler (contrôle M1-a)
+
+- Le sha256 de `eval_best_dso_v7/test_summary.json` **sur le Drive** vaut
+  `28a5bbb8fb87b2c61f3c948760b899bb9c81590dd725c13b0550e6475c123894`. Il **diffère** de la valeur
+  publiée au § 8 (`7944ba0a...`).
+- La session ne l'a pas réécrit : `RUN_DIR` était redirigé vers un dossier local pendant le
+  BLOC 10 (avenant n° 3). Le fichier a donc été modifié **avant** la session.
+- La copie locale installée sur ines-pc (`AppData/Local/pcfno3d/runs/v7/eval_best_dso_v7/test_summary.json`)
+  a bien le sha256 publié au § 8 (vérifié le 2026-10-16).
+- À investiguer. **Sans effet sur le verdict** : 10i recalcule tout à partir des poids, dont le
+  sha256 est vérifié.
+
+### Gel
+
+Le gel est consigné dans `docs/resultats/modele_fige/README.md`. Le tag annoté est **`v7-fige`**
+(nom retenu par l'utilisatrice à la place de `modele-fige-v7`, prévu au § 8).

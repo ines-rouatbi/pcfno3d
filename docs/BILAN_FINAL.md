@@ -3,7 +3,7 @@
 *État au 2026-10-16. Chaque chiffre vient d'une mesure archivée (fichier cité) ; « en attente »
 signifie qu'aucune mesure n'existe encore, jamais une valeur supposée.*
 
-## 1. Le modèle v7 (figé)
+## 1. Le modèle v7 (figé après M1, tag `v7-fige`)
 
 - **Poids :** `best_dso_v7.pt`, sha256
   `b2529442ee6fcdb18d3f35fe176663022604395743c161a25541ccd4e365e7de`.
@@ -24,8 +24,25 @@ signifie qu'aucune mesure n'existe encore, jamais une valeur supposée.*
 | DSO5 RMSE à 25 % des capteurs | ≤ 0,7 m/s | 0,646 | conforme | notebook v7 |
 
 **M1, dernière tentative bornée sur DSO1** (correction post-modèle du vent moyen par niveau,
-règle pré-enregistrée) : **en attente** de la mesure décisive 10i (session A100,
-`notebooks/current/m1_bloc10i_colab.ipynb`).
+règle pré-enregistrée C1 ET C2 ET C3) : mesure décisive 10i faite le 2026-10-16 (Colab
+A100-SXM4-80GB, `notebooks/current/m1_bloc10i_colab.ipynb`) ; détail dans `docs/M1_PROTOCOLE.md`,
+section « Résultat de la mesure décisive ».
+
+| Condition | Mesure | Verdict |
+|---|---|---|
+| C1 test synoptique (120 instants, 50 % des capteurs) | pire niveau u 0,665 → 0,419 [IC 95 % 0,320 ; 0,559], v 0,508 → 0,382 [0,290 ; 0,496] ; R² min 0,9933 | conforme |
+| C2 épisodes (46 instants jamais utilisés) | IC 95 % de Δ hors seuil : v à 150, 200 et 1000 m, u à 650 m ; pire niveau u 1,148 → 1,056, v 1,068 → 1,104 | **non conforme** |
+| C3 | DSO2 2,58e-5 ; DSO3 0,951 ; DSO5 0,508 ; DSO4 121 ms (modèle seul 92 ms) | conforme |
+
+- **Décision : correction NON RETENUE.** La v7 est **gelée seule** (tag `v7-fige`,
+  `docs/resultats/modele_fige/README.md`). Le DSO1 reste non atteint à 650–1 000 m ; il est
+  rapporté avec le critère OMM (DSO1 révisé proposé, conforme).
+- Réserve imprimée par 10i : coefficients appris sur synthétique ; sur réel, l'erreur des
+  baromètres (±10 à 50 Pa) est du même ordre que le signal géostrophique (26 Pa pour 10 m/s).
+- Pour information, hors règle : à 100 % des capteurs, u 0,786 → 0,508, v 0,556 → 0,426. Jeu
+  vierge (graine 2027) non mesuré (absent du Drive).
+- À investiguer, sans effet sur le verdict : le `test_summary.json` du notebook v7 sur le Drive
+  n'a plus le sha256 publié (modifié avant la session M1).
 
 ## 2. Fiabilité (M2, DSO6)
 
@@ -140,7 +157,12 @@ La CI est verte. Le déploiement est **local** sur ines-pc, par décision de l'u
 
 ## 8. Ce qui reste ouvert
 
-- **DSO1 à 650–1 000 m :** verdict de M1 en attente ; sinon, limite assumée et documentée.
+- **DSO1 à 650–1 000 m :** non atteint. M1 a rejeté la correction post-modèle (C2 non
+  conforme) ; la v7 est gelée seule et la limite est assumée et documentée, avec le critère
+  OMM. Pas de v8 ni de réentraînement sans accord de Rayen.
+- **Gel de la v7 :** restent à faire sur le Drive l'archive `fige/modele_fige_2026-10.zip`, la
+  copie de `decision_10i.json` dans le dépôt et l'enquête sur le sha256 de `test_summary.json`
+  (`docs/resultats/modele_fige/README.md`).
 - **EOL1 officiel :** il faut le parc réel.
 - **Données réelles :** aucun capteur ANEO réel n'est encore importé, et l'ancrage géographique
   du domaine reste supposé.

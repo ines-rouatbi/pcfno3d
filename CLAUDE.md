@@ -56,8 +56,14 @@ for the served value with deferred reliability (reliability ready 3.8 s later, n
 AN1 v1 non-conforming, **v2 conforming on a second reading** (drifts 100 %, false alerts
 2.2 %); EOL1 1.71 % on the **demonstration** farm only (official verdict needs the real
 farm); M6 replayed the 120 test instants; M8 measured (L6: max u, v RMSE v7 0.665 vs 5.027–6.487
-m/s; E2 is a negative result). M1 (cell 10i) still waits for its A100 session; DSO1 is
-still not met at 650–1000 m. Details: `tukhnanutha.md` § 5 "Delivery state".
+m/s; E2 is a negative result). **M1 delivered** (cell 10i, Colab A100, 2026-10-16,
+`docs/M1_PROTOCOLE.md`): the post-model correction passes C1 (worst level u 0.419, v 0.382)
+and C3, but **fails C2** on the 46 episode instants — **not retained**. **v7 is frozen
+alone** (annotated tag `v7-fige`, `docs/resultats/modele_fige/README.md`): the model no
+longer changes within the PFE; no v8 or retrain without Rayen's agreement. DSO1 is still
+not met at 650–1000 m and is reported with the WMO criterion. The correction stays on
+`agent/ines/m1-correction-post-modele`, unmerged. Details: `tukhnanutha.md` § 5 "Delivery
+state".
 
 `notebooks/archive/` holds the architectures explored and then dropped (FNO2D variants, U-Net/FNO,
 GNN, DeepONet, ResNet, ViT). They are history, not alternatives to maintain — do not "fix" them.
