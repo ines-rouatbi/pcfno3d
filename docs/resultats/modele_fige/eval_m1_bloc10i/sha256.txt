@@ -1,0 +1,12 @@
+# Session M1, BLOC 10i | debut 2026-10-16 15:07 UTC | GPU NVIDIA A100-SXM4-80GB
+# fichiers figes (Drive aneo_fno3d_runs/v7/), sha256 en debut de session :
+b2529442ee6fcdb18d3f35fe176663022604395743c161a25541ccd4e365e7de  best_dso_v7.pt
+7bae6748f270fa5e3f08a69a7f8e919f01d641d29b125981168cc15a03ee25f7  norm_stats.json
+94705a1ed9b8a141aadf49ef5aecac3d3db7549e1d03f64fe9a167c99bfe3d60  correction_moyenne_v7.json
+81c62bd846bdcabc18ebb9a73fcc345903228c8a8f0b26b102c2c9eccdbfcbde  geostrophique_v2_v7.json
+c50928ae2a93dfb3363f5e8c307726bfa7c8321ab03ee30b6fa6aeef31487b10  couche_limite_v7.json
+28a5bbb8fb87b2c61f3c948760b899bb9c81590dd725c13b0550e6475c123894  eval_best_dso_v7/test_summary.json
+# code de la cellule 10i : publie a1fcc878ed3c6c6047538e5b48df25c6633c972a413d6bd42f415926599fbd6f | execute a1fcc878ed3c6c6047538e5b48df25c6633c972a413d6bd42f415926599fbd6f
+# fichiers figes modifies pendant la session : aucun
+9b2470021d912cd36b4e719ecb73361676be9e8be891c08c2d2ec07fae30b770  eval_m1_bloc10i/decision_10i.json
+1a5e11b6b37c8d1fedf4469856591120b94b4950c8c7d746e8e7b5a60e220c6d  eval_m1_bloc10i/decision_10i_par_niveau.csv
