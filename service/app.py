@@ -45,11 +45,12 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 import numpy as np
-from fastapi import (APIRouter, Depends, FastAPI, File, HTTPException, Query, Request,
+from fastapi import (APIRouter, Depends, FastAPI, File, HTTPException, Query, Request, Security,
                      UploadFile)
 from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
+from fastapi.security import APIKeyHeader
 from fastapi.staticfiles import StaticFiles
 from mcp.server.transport_security import TransportSecuritySettings
 from pydantic import BaseModel, Field
@@ -149,11 +150,17 @@ def _check(request: Request, required: str) -> ApiKeyRecord | None:
     return record
 
 
-def require_read(request: Request) -> ApiKeyRecord | None:
+# Declaration seulement, pour la documentation OpenAPI (bouton « Authorize » de Swagger) :
+# la verification reste celle de `_check` / `make_guard` (X-API-Key, Bearer ou ?api_key=).
+CLE_API = APIKeyHeader(name="X-API-Key", auto_error=False, scheme_name="cle_api",
+                       description="Cle d'API du service (pcf_...), creee par `pcfno3d apikey create`.")
+
+
+def require_read(request: Request, _cle: str | None = Security(CLE_API)) -> ApiKeyRecord | None:
     return _check(request, "read")
 
 
-def require_admin(request: Request) -> ApiKeyRecord | None:
+def require_admin(request: Request, _cle: str | None = Security(CLE_API)) -> ApiKeyRecord | None:
     return _check(request, "admin")
 
 
