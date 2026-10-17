@@ -17,7 +17,11 @@ from .geometry import Geometry
 G = 9.80665          # m/s2
 R_AIR = 287.05       # J/(kg.K)
 LAPSE = 0.0065       # K/m, gradient standard
-MIN_SENSORS = 100    # en dessous, l'ajustement du plan n'est pas fiable
+MIN_SENSORS = 100    # defaut (v7) ; voir Config.capteurs_min_plan
+
+
+def _min_capteurs(geom: Geometry) -> int:
+    return int(getattr(geom.cfg, "capteurs_min_plan", MIN_SENSORS))
 
 
 def geostrophic_from_surface(S: np.ndarray, sensor: np.ndarray,
@@ -28,7 +32,7 @@ def geostrophic_from_surface(S: np.ndarray, sensor: np.ndarray,
     """
     m = sensor
     n = int(m.sum())
-    if n < MIN_SENSORS:
+    if n < _min_capteurs(geom):
         return 0.0, 0.0
     p = S[6][m].astype(np.float64)
     t_k = S[3][m].astype(np.float64) + 273.15
@@ -50,7 +54,7 @@ def thermal_wind_from_surface(S: np.ndarray, sensor: np.ndarray,
     """
     m = sensor
     n = int(m.sum())
-    if n < MIN_SENSORS:
+    if n < _min_capteurs(geom):
         return 0.0, 0.0
     t_red = S[3][m].astype(np.float64) + LAPSE * geom.z_sensor[m]
     A = np.stack([np.ones(n), geom.xc[m], geom.yc[m]], axis=1)

@@ -511,6 +511,11 @@ class Config:
     wind_farm: WindFarmCfg = field(default_factory=WindFarmCfg)
     terrain_smooth_m: float = 300.0   # meme lissage du relief que le generateur
     f_coriolis: float = 8.57e-5       # s-1, latitude ~36 N (vent geostrophique)
+    # capteurs visibles exiges pour ajuster le plan de pression / temperature (vent
+    # geostrophique et thermique) ; en dessous ces 4 canaux valent 0. 100 = v7 (couche de
+    # capteurs quasi continue) ; quelques-uns suffisent pour un plan a 3 parametres quand
+    # les capteurs couvrent tout le domaine (Tunisie : 12 aeroports)
+    capteurs_min_plan: int = 100
 
     # ---------------------------------------------------------------- chargement
     @classmethod

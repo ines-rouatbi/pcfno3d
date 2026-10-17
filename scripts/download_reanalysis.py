@@ -42,6 +42,9 @@ PLH_VARS = ["u_component_of_wind", "v_component_of_wind", "geopotential"]
 # produit « plx » : 1000 -> 700 hPa en UNE requete (u, v, geopotentiel), deux fois moins de
 # requetes que pl + plh quand la file d'attente du CDS limite le nombre de requetes
 ALL_LEVELS = HIGH_LEVELS + PRESSURE_LEVELS
+# produit « plw » : vitesse verticale (omega, Pa/s) 1000 -> 700 hPa, seule : une variable,
+# donc des blocs de plusieurs mois par requete (cible w de PC-FNO3D Tunisie)
+PLW_VARS = ["vertical_velocity"]
 PL_VARS = ["u_component_of_wind", "v_component_of_wind", "vertical_velocity",
            "temperature", "geopotential"]
 SL_VARS = ["10m_u_component_of_wind", "10m_v_component_of_wind",
@@ -83,6 +86,7 @@ def by_months(client, out: Path, days, hours, area, products, n_months: int) -> 
     specs = {"pl": ("reanalysis-era5-pressure-levels", PL_VARS, PRESSURE_LEVELS),
              "plh": ("reanalysis-era5-pressure-levels", PLH_VARS, HIGH_LEVELS),
              "plx": ("reanalysis-era5-pressure-levels", PLH_VARS, ALL_LEVELS),
+             "plw": ("reanalysis-era5-pressure-levels", PLW_VARS, ALL_LEVELS),
              "sl": ("reanalysis-era5-single-levels", SL_VARS, None)}
     for year in sorted(set(days.year)):
         dy = days[days.year == year]
@@ -128,7 +132,7 @@ def main() -> int:
     ap.add_argument("--start", help="AAAA-MM-JJ")
     ap.add_argument("--end", help="AAAA-MM-JJ (inclus)")
     ap.add_argument("--hours", default="0-23", help="ex. 0-23, ou 0,3,6,9,12,15,18,21")
-    ap.add_argument("--products", default="pl,sl", help="pl (1000-850 hPa), plh (800-700 hPa), plx (1000-700 hPa, u v z), sl ; separes par des virgules")
+    ap.add_argument("--products", default="pl,sl", help="pl (1000-850 hPa), plh (800-700 hPa), plx (1000-700 hPa, u v z), plw (1000-700 hPa, omega), sl ; separes par des virgules")
     ap.add_argument("--out", default=str(REPO / "artifacts" / "reanalysis"))
     ap.add_argument("--chunk-days", type=int, default=4,
                     help="jours par requete (le CDS refuse les trop grosses)")
@@ -202,6 +206,9 @@ def main() -> int:
                     name = "reanalysis-era5-pressure-levels"
                 elif prod == "plx":
                     req = request("plx", PLH_VARS, year, month, block, hours, area, ALL_LEVELS)
+                    name = "reanalysis-era5-pressure-levels"
+                elif prod == "plw":
+                    req = request("plw", PLW_VARS, year, month, block, hours, area, ALL_LEVELS)
                     name = "reanalysis-era5-pressure-levels"
                 else:
                     req = request("sl", SL_VARS, year, month, block, hours, area)
