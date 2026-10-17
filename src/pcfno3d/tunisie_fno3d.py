@@ -28,6 +28,13 @@ index.csv), pour que `Geometry`, `ANEO3D`, `Trainer` et `Evaluator` servent sans
               geopotentielle entre niveaux (hypsometrie) ; au sol sp / (R T2m). w = -omega /
               (rho g), et au sol la condition cinematique u.dzt/dx + v.dzt/dy (celle de L_bc).
     decoupage : 2021-2023 entrainement, 2024 validation, 2025 test (par jour).
+
+Variante ERA5-Land (`grille="land"`, configs/tunisie_fno3d_land.yaml) : la grille, le relief
+et la surface viennent d'ERA5-Land (0,1 deg, ~9 x 11 km). Vent 10 m, T 2 m et pression de
+surface ERA5-Land sur les terres, ERA5 interpole sur la mer (ERA5-Land n'y a pas de valeurs).
+Le vent 100 m, les niveaux de pression et omega restent ERA5 (0,25 deg), interpoles en
+bilineaire sur la grille fine ; leurs hauteurs au-dessus du sol sont prises sur le relief fin.
+Les niveaux montent jusqu'a 1 km au-dessus du plus haut relief fin.
 """
 
 from __future__ import annotations
@@ -69,6 +76,29 @@ def f_coriolis(lat: np.ndarray) -> float:
     return 2 * 7.2921e-5 * math.sin(math.radians(float(np.mean(lat))))
 
 
+def niveaux_pour(zt: np.ndarray, pas: float = 200.0) -> tuple[float, ...]:
+    """NIVEAUX_ASL prolonges de `pas` en `pas` tant que des noeuds valides existent plus haut
+    (relief fin au-dessus de 1 000 m : 1 km au-dessus du sol partout)."""
+    niveaux = list(NIVEAUX_ASL)
+    while niveaux[-1] + pas <= float(np.nanmax(zt)) + H_MAX:
+        niveaux.append(niveaux[-1] + pas)
+    return tuple(niveaux)
+
+
+def vers_grille(a: np.ndarray, lat_c: np.ndarray, lon_c: np.ndarray, lat_f: np.ndarray,
+                lon_f: np.ndarray) -> np.ndarray:
+    """Interpolation bilineaire des deux derniers axes (lat, lon croissantes) de la grille
+    grossiere vers la grille fine (incluse dans la grossiere)."""
+    def poids(c, f):
+        w = np.zeros((len(f), len(c)))
+        i = np.clip(np.searchsorted(c, f) - 1, 0, len(c) - 2)
+        r = np.clip((f - c[i]) / (c[i + 1] - c[i]), 0.0, 1.0)
+        w[np.arange(len(f)), i] = 1.0 - r
+        w[np.arange(len(f)), i + 1] += r
+        return w
+    return np.einsum("fy,...yx,gx->...fg", poids(lat_c, lat_f), a, poids(lon_c, lon_f))
+
+
 def noeuds_valides(zt: np.ndarray, niveaux=NIVEAUX_ASL) -> np.ndarray:
     """(nz, ny, nx) : noeud a une hauteur au-dessus du sol dans [H_MIN, H_MAX]."""
     h = np.asarray(niveaux)[:, None, None] - zt[None]
@@ -76,7 +106,8 @@ def noeuds_valides(zt: np.ndarray, niveaux=NIVEAUX_ASL) -> np.ndarray:
 
 
 def ecrire_jeu(dossier: Path, lat: np.ndarray, lon: np.ndarray, zt: np.ndarray,
-               lsm: np.ndarray, hauteur_capteur: np.ndarray, niveaux=NIVEAUX_ASL) -> dict:
+               lsm: np.ndarray, hauteur_capteur: np.ndarray, niveaux=NIVEAUX_ASL,
+               source: str = "ERA5") -> dict:
     """meta.json, split_days.json et aneo_grid_points.csv au format du generateur.
 
     lat croissante (sud -> nord), lon croissante ; zt, lsm, hauteur_capteur : (ny, nx)."""
@@ -103,7 +134,7 @@ def ecrire_jeu(dossier: Path, lat: np.ndarray, lon: np.ndarray, zt: np.ndarray,
     pd.concat([surface, noeuds]).to_csv(dossier / "aneo_grid_points.csv", index=False)
 
     meta = {
-        "producteur": "pcfno3d.tunisie_fno3d (ERA5 + METAR)",
+        "producteur": f"pcfno3d.tunisie_fno3d ({source} + METAR)",
         "grille_surface": {"nx": nx, "ny": ny, "dx_m": dx, "dy_m": dy},
         "noeuds_3d": {"stride": 1, "nx": nx, "ny": ny, "dx_m": dx,
                       "z_levels_asl_m": list(map(float, niveaux)),
@@ -116,7 +147,7 @@ def ecrire_jeu(dossier: Path, lat: np.ndarray, lon: np.ndarray, zt: np.ndarray,
         "conventions": {"u": "positif vers l'Est", "v": "positif vers le Nord",
                         "w": "positif vers le haut", "iy": "sud -> nord", "ix": "ouest -> est"},
         "f_coriolis": f_coriolis(lat),
-        "source": "ERA5 (Copernicus C3S) pour la verite ; METAR (IEM) pour les capteurs",
+        "source": f"{source} (Copernicus C3S) pour la verite ; METAR (IEM) pour les capteurs",
     }
     (dossier / "meta.json").write_text(json.dumps(meta, indent=2, ensure_ascii=False),
                                        encoding="utf-8")
@@ -203,9 +234,10 @@ def stations_metar(metar_brut: pd.DataFrame, lat: np.ndarray, lon: np.ndarray,
                    zt: np.ndarray) -> pd.DataFrame:
     """Une ligne par station : maille la plus proche, altitude, hauteur de l'anemometre."""
     rows = []
+    demi = 0.5 * abs(float(lat[1] - lat[0]))
     for st, g in metar_brut.groupby("station_id"):
         la, lo = float(g["lat"].median()), float(g["lon"].median())
-        if not (lat[0] - 0.125 <= la <= lat[-1] + 0.125 and lon[0] - 0.125 <= lo <= lon[-1] + 0.125):
+        if not (lat[0] - demi <= la <= lat[-1] + demi and lon[0] - demi <= lo <= lon[-1] + demi):
             continue
         h = g["height_agl_m"].median() if "height_agl_m" in g else np.nan
         rows.append({"station": st, "lat": la, "lon": lo,
@@ -314,14 +346,77 @@ def periodes_era5(dossier: Path):
             x.close()
 
 
+def lire_statique_land(dossier: Path):
+    """lat, lon (croissantes), zt (m), lsm sur la grille ERA5-Land (era5_land_fixe.nc) ; sur
+    la mer, relief et masque manquants pris dans ERA5 interpole."""
+    import xarray as xr
+
+    lat_c, lon_c, zt_c, lsm_c, _ = lire_statique(dossier)
+    with xr.open_dataset(Path(dossier) / "era5_land_fixe.nc") as f:
+        lat, lon = f["latitude"].values, f["longitude"].values
+        zt, lsm = np.squeeze(f["z"].values) / G, np.squeeze(f["lsm"].values)
+    desc = lat[0] > lat[-1]
+    lat, zt, lsm = (lat[::-1] if desc else lat), _orienter(zt, desc), _orienter(lsm, desc)
+    zt = np.where(np.isfinite(zt), zt, vers_grille(zt_c, lat_c, lon_c, lat, lon))
+    lsm = np.where(np.isfinite(lsm), lsm, vers_grille(lsm_c, lat_c, lon_c, lat, lon))
+    return lat, lon, zt.copy(), lsm.copy()
+
+
+def periodes_land(dossier: Path, lat_f: np.ndarray, lon_f: np.ndarray):
+    """`periodes_era5` sur la grille ERA5-Land : tout est interpole d'ERA5 vers la grille
+    fine, puis le vent 10 m, T 2 m et la pression de surface sont remplaces par ERA5-Land la
+    ou il a des valeurs (terres). Instants communs avec ERA5-Land seulement."""
+    import xarray as xr
+
+    d = Path(dossier)
+    lat_c, lon_c, *_ = lire_statique(d)
+    lands = [xr.open_dataset(f) for f in sorted(d.glob("era5_land_20*.nc"))]
+    if not lands:
+        raise FileNotFoundError(f"era5_land_<annee>_* requis dans {d}")
+    tdim = "valid_time" if "valid_time" in lands[0].dims else "time"
+    tout = xr.concat([x[["u10", "v10", "t2m", "sp"]] for x in lands], dim=tdim)
+    _, garde = np.unique(tout[tdim].values, return_index=True)
+    tout = tout.isel({tdim: np.sort(garde)})
+    t_land = tout[tdim].values.astype("datetime64[s]")
+    desc = tout["latitude"].values[0] > tout["latitude"].values[-1]
+    try:
+        for temps, sl, pl in periodes_era5(d):
+            communs = np.intersect1d(temps, t_land)
+            if len(communs) == 0:
+                continue
+            k = np.searchsorted(temps, communs)
+
+            def fin(a):
+                return vers_grille(a[k], lat_c, lon_c, lat_f, lon_f)
+
+            land = tout.isel({tdim: np.searchsorted(t_land, communs)}).load()
+            sl_f = {c: fin(a) for c, a in sl.items()}
+            for c in ("u10", "v10", "t2m", "sp"):
+                v = _orienter(land[c].values.astype(np.float64), desc)
+                sl_f[c] = np.where(np.isfinite(v), v, sl_f[c])
+            pl_f = {"p_hpa": pl["p_hpa"], **{c: fin(pl[c]) for c in ("u", "v", "z", "w")}}
+            yield communs, sl_f, pl_f
+    finally:
+        for x in lands:
+            x.close()
+
+
 # --------------------------------------------------------------------------- construction
 def construire(era5_dir: Path, metar_fichiers, data_dir: Path, cache_dir: Path,
-               verbose: bool = True) -> pd.DataFrame:
-    """Jeu (data_dir) + cache (cache_dir) au format v7. Reprise : les mois deja dans l'index
-    sont ignores."""
+               verbose: bool = True, grille: str = "era5") -> pd.DataFrame:
+    """Jeu (data_dir) + cache (cache_dir) au format v7, sur la grille ERA5 (0,25 deg) ou
+    ERA5-Land (`grille="land"`, 0,1 deg). Reprise : les instants deja dans l'index sont
+    ignores."""
     data_dir, cache_dir = Path(data_dir), Path(cache_dir)
     cache_dir.mkdir(parents=True, exist_ok=True)
-    lat, lon, zt, lsm, _ = lire_statique(era5_dir)
+    if grille == "land":
+        lat, lon, zt, lsm = lire_statique_land(era5_dir)
+        niveaux, source = niveaux_pour(zt), "ERA5-Land + ERA5"
+        periodes = periodes_land(era5_dir, lat, lon)
+    else:
+        lat, lon, zt, lsm, _ = lire_statique(era5_dir)
+        niveaux, source = NIVEAUX_ASL, "ERA5"
+        periodes = periodes_era5(era5_dir)
     ny, nx = zt.shape
     dx, dy = pas_metriques(lat, lon)
 
@@ -329,11 +424,12 @@ def construire(era5_dir: Path, metar_fichiers, data_dir: Path, cache_dir: Path,
     stations = stations_metar(brut, lat, lon, zt)
     hauteur = np.full((ny, nx), HAUTEUR_ANEMOMETRE)
     hauteur[stations["iy"], stations["ix"]] = stations["hauteur_anemometre_m"]
-    meta = ecrire_jeu(data_dir, lat, lon, zt, lsm, hauteur)
+    meta = ecrire_jeu(data_dir, lat, lon, zt, lsm, hauteur, niveaux, source)
     stations.to_csv(data_dir / "stations_metar.csv", index=False)
     metar = lire_metar(metar_fichiers)
     if verbose:
-        print(f"grille {ny} x {nx}, dx {dx/1000:.1f} km, dy {dy/1000:.1f} km, "
+        print(f"{source} : grille {len(niveaux)} x {ny} x {nx}, relief "
+              f"{zt.min():.0f} a {zt.max():.0f} m, dx {dx/1000:.1f} km, dy {dy/1000:.1f} km, "
               f"{meta['noeuds_3d']['nombre']} noeuds 3D ; {len(stations)} stations : "
               + ", ".join(stations["station"]))
 
@@ -342,11 +438,11 @@ def construire(era5_dir: Path, metar_fichiers, data_dir: Path, cache_dir: Path,
     split = json.loads((data_dir / "split_days.json").read_text())
     jeu_du_jour = {d: n for n, ds in (("train", split["train_days"]), ("val", split["val_days"]),
                                       ("test", split["test_days"])) for d in ds}
-    for temps, sl, pl in periodes_era5(era5_dir):
+    for temps, sl, pl in periodes:
         ts = pd.to_datetime(temps)
         if all(str(t) in faits for t in ts):
             continue
-        Y = verite_era5(sl, pl, zt, lsm, dx, dy)
+        Y = verite_era5(sl, pl, zt, lsm, dx, dy, niveaux)
         S = surface_capteurs(entree_stations(metar, temps, list(stations["station"])),
                              stations, ny, nx)
         rows = []

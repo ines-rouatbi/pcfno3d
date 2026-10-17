@@ -47,6 +47,12 @@ ALL_LEVELS = HIGH_LEVELS + PRESSURE_LEVELS
 PLW_VARS = ["vertical_velocity"]
 PL_VARS = ["u_component_of_wind", "v_component_of_wind", "vertical_velocity",
            "temperature", "geopotential"]
+# produit « land » : ERA5-Land, 0,1 deg (~9-11 km) sur les terres seulement (la mer est vide) :
+# surface fine de PC-FNO3D Tunisie (vent 10 m, T et point de rosee 2 m, pression de surface)
+LAND_VARS = ["10m_u_component_of_wind", "10m_v_component_of_wind", "2m_temperature",
+             "2m_dewpoint_temperature", "surface_pressure"]
+# produit « landfixe » : relief (geopotentiel) et masque terre-mer d'ERA5-Land, un instant
+LAND_FIXE_VARS = ["geopotential", "land_sea_mask"]
 SL_VARS = ["10m_u_component_of_wind", "10m_v_component_of_wind",
            "100m_u_component_of_wind", "100m_v_component_of_wind", "2m_temperature",
            "surface_pressure", "mean_sea_level_pressure", "geopotential"]
@@ -70,11 +76,13 @@ def domain_bbox(cfg, margin_deg: float) -> list[float]:
 def request(dataset: str, variables, year: int, month, days, hours, area,
             levels=None) -> dict:
     months = month if isinstance(month, (list, tuple)) else [month]
-    req = {"product_type": ["reanalysis"], "variable": list(variables),
+    req = {"variable": list(variables),
            "year": [str(year)], "month": [f"{m:02d}" for m in months],
            "day": [f"{d:02d}" for d in days],
            "time": [f"{h:02d}:00" for h in hours], "area": area,
            "data_format": "netcdf", "download_format": "unarchived"}
+    if dataset not in ("land", "landfixe"):        # ERA5-Land n'a pas de type de produit
+        req["product_type"] = ["reanalysis"]
     if levels:
         req["pressure_level"] = list(levels)
     return req
@@ -87,7 +95,8 @@ def by_months(client, out: Path, days, hours, area, products, n_months: int) -> 
              "plh": ("reanalysis-era5-pressure-levels", PLH_VARS, HIGH_LEVELS),
              "plx": ("reanalysis-era5-pressure-levels", PLH_VARS, ALL_LEVELS),
              "plw": ("reanalysis-era5-pressure-levels", PLW_VARS, ALL_LEVELS),
-             "sl": ("reanalysis-era5-single-levels", SL_VARS, None)}
+             "sl": ("reanalysis-era5-single-levels", SL_VARS, None),
+             "land": ("reanalysis-era5-land", LAND_VARS, None)}
     for year in sorted(set(days.year)):
         dy = days[days.year == year]
         months = sorted(set(dy.month))
@@ -132,7 +141,7 @@ def main() -> int:
     ap.add_argument("--start", help="AAAA-MM-JJ")
     ap.add_argument("--end", help="AAAA-MM-JJ (inclus)")
     ap.add_argument("--hours", default="0-23", help="ex. 0-23, ou 0,3,6,9,12,15,18,21")
-    ap.add_argument("--products", default="pl,sl", help="pl (1000-850 hPa), plh (800-700 hPa), plx (1000-700 hPa, u v z), plw (1000-700 hPa, omega), sl ; separes par des virgules")
+    ap.add_argument("--products", default="pl,sl", help="pl (1000-850 hPa), plh (800-700 hPa), plx (1000-700 hPa, u v z), plw (1000-700 hPa, omega), sl, land (ERA5-Land 0,1 deg), landfixe (relief et masque ERA5-Land) ; separes par des virgules")
     ap.add_argument("--out", default=str(REPO / "artifacts" / "reanalysis"))
     ap.add_argument("--chunk-days", type=int, default=4,
                     help="jours par requete (le CDS refuse les trop grosses)")
@@ -179,6 +188,24 @@ def main() -> int:
     else:
         hours = [int(v) for v in args.hours.split(",")]
     products = set(args.products.split(","))
+    if "landfixe" in products:                   # relief et masque ERA5-Land : un seul instant
+        products.discard("landfixe")
+        target = out / "era5_land_fixe.nc"
+        while not target.exists():
+            try:
+                client.retrieve("reanalysis-era5-land",
+                                request("landfixe", LAND_FIXE_VARS, 2025, 1, [1], [0], area),
+                                str(target.with_suffix(".part")))
+            except Exception as exc:                  # noqa: BLE001
+                if "temporarily limited" in str(exc) or "queued requests" in str(exc):
+                    print("  file d'attente du CDS pleine : nouvel essai dans 2 min", flush=True)
+                    time.sleep(120)
+                    continue
+                raise
+            target.with_suffix(".part").replace(target)
+        print(f"  {target.name} ({target.stat().st_size / 1e3:.0f} ko)", flush=True)
+        if not products:
+            return 0
     print(f"zone N,O,S,E = {area} | {args.start} -> {args.end} | heures {hours} | {products}")
 
     days = pd.date_range(args.start, args.end, freq="D")
@@ -210,6 +237,9 @@ def main() -> int:
                 elif prod == "plw":
                     req = request("plw", PLW_VARS, year, month, block, hours, area, ALL_LEVELS)
                     name = "reanalysis-era5-pressure-levels"
+                elif prod == "land":
+                    req = request("land", LAND_VARS, year, month, block, hours, area)
+                    name = "reanalysis-era5-land"
                 else:
                     req = request("sl", SL_VARS, year, month, block, hours, area)
                     name = "reanalysis-era5-single-levels"

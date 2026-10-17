@@ -1,0 +1,70 @@
+# PC-FNO3D Tunisie, grille ERA5-Land : le principe de la v7 (FNO 3D + loss physique, cible
+# u, v, w, rho aux noeuds 3D, niveaux au-dessus de la mer) sur TOUTE la Tunisie, a 0,1 deg :
+#   capteurs : les anemometres des 12 aeroports (METAR, vent horizontal a 10 m, T, HR, p) ;
+#   grille   : ERA5-Land (0,1 deg, ~9 x 11 km), relief ERA5-Land ;
+#   verite   : surface ERA5-Land (vent 10 m, T 2 m, pression ; ERA5 sur la mer), vent 100 m et
+#              niveaux de pression ERA5 interpoles sur la grille fine, du sol a 1 000 m.
+# Jeu et cache : `python scripts/tunisie_fno3d.py -c tunisie_fno3d_land construire`.
+# Un modele DISTINCT de la v7 (reference de comparaison) et de tunisie_fno3d (grille ERA5).
+#
+#   python -m pcfno3d -c tunisie_fno3d_land train
+#   python -m pcfno3d -c tunisie_fno3d_land evaluate
+name: tunisie_fno3d_land
+
+paths:
+  data_dir: C:/Users/inesr/AppData/Local/pcfno3d/tunisie_fno3d_land/jeu
+  cache_dir: C:/Users/inesr/AppData/Local/pcfno3d/tunisie_fno3d_land/cache
+  run_dir: C:/Users/inesr/AppData/Local/pcfno3d/runs/tunisie_fno3d_land
+  cache_mirror: null
+
+model:
+  width: 32
+  modes: [6, 16, 12]        # (z, y, x) pour une grille ~25 x 78 x 45 (+ rembourrage)
+  n_layers: 4
+  pad: [4, 8, 8]
+  proj_hidden: 128
+  local_conv: true
+  pool_surface: false       # un capteur = une maille, pas de bloc a agreger
+
+train:
+  epochs: 40
+  steps_per_epoch: 100
+  val_samples: 32
+  batch_size: 2             # CPU : ~5 s par pas de 2 sur cette grille (8 s par pas de 4)
+  accum_steps: 1
+  lr: 1.0e-3
+  weight_decay: 1.0e-4
+  warmup_phys_epochs: 4
+  num_workers: 0
+  ema_decay: 0.995          # 4 000 pas en tout
+  grad_clip: 1.0
+  save_every: 5
+  seed: 42
+
+loss:
+  lambda_mass: 1.0
+  mass_ref: 1.0e-8          # fixe par le residu de la verite (scripts/tunisie_fno3d.py masse)
+  lambda_bc: 0.1
+  lambda_smooth: 0.0
+  lambda_grad: 0.15
+  w_weight: 1.0
+  w_level_max: 25.0
+
+mask:
+  keep_train: [0.5, 1.0]    # 12 stations : en garder au moins la moitie
+  p_full: 0.3               # une part des exemples avec toutes les stations (production)
+  keep_eval: 1.0            # evaluation : toutes les stations disponibles
+
+dso:                        # memes seuils que la v7
+  rmse: 0.5
+  r2: 0.95
+  r2_all: 0.95
+  mass_rms: 1.0e-4
+  roughness_range: [0.9, 1.1]
+  time_s: 1.0
+  rmse_25pct: 0.7
+  min_level_cover: 0.05
+
+terrain_smooth_m: 0.0       # relief ERA5-Land deja a l'echelle de la grille
+f_coriolis: 8.13e-5         # s-1, latitude centrale 33,9 N
+capteurs_min_plan: 4        # plan de pression sur les aeroports (12 au plus)

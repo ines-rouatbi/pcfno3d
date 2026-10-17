@@ -1,6 +1,7 @@
 """PC-FNO3D Tunisie : jeu de donnees ERA5 + METAR au format v7 (voir pcfno3d.tunisie_fno3d).
 
     python scripts/tunisie_fno3d.py construire     # jeu (meta, grille, decoupage) + cache
+    python scripts/tunisie_fno3d.py -c tunisie_fno3d_land construire   # grille ERA5-Land
     python scripts/tunisie_fno3d.py masse          # residu de masse de la verite -> mass_ref
 puis l'entrainement et l'evaluation de la v7, sans changement :
     python -m pcfno3d -c tunisie_fno3d train
@@ -31,6 +32,9 @@ def main() -> int:
     ap.add_argument("--era5", default=str(BASE / "era5" / "tunisie"))
     ap.add_argument("--metar", default=str(BASE / "metar" / "historique"))
     ap.add_argument("--instants", type=int, default=50)
+    ap.add_argument("--grille", choices=["era5", "land"], default=None,
+                    help="era5 (0,25 deg) ou land (ERA5-Land 0,1 deg) ; par defaut land si "
+                         "la config se termine par _land")
     args = ap.parse_args()
     cfg = Config.load(args.config)
 
@@ -39,7 +43,9 @@ def main() -> int:
         if not fichiers:
             print(f"aucune archive METAR dans {args.metar}", file=sys.stderr)
             return 2
-        T.construire(Path(args.era5), fichiers, cfg.paths.data_dir, cfg.paths.cache_dir)
+        grille = args.grille or ("land" if args.config.endswith("_land") else "era5")
+        T.construire(Path(args.era5), fichiers, cfg.paths.data_dir, cfg.paths.cache_dir,
+                     grille=grille)
         return 0
 
     bilan = T.bilan_masse(cfg, n=args.instants)

@@ -84,3 +84,20 @@ def test_jeu_lu_par_geometry(tmp_path):
     assert np.allclose(geom.z_sensor, zt + 10.0)
     dx, dy = T.pas_metriques(lat, lon)                               # a 30,6 N
     assert np.isclose(geom.dx, dx) and np.isclose(geom.dy, dy) and 23900 < dx < 24050
+
+
+def test_vers_grille_bilineaire_exacte_sur_un_plan():
+    lat_c, lon_c = 30.0 + 0.25 * np.arange(5), 8.0 + 0.25 * np.arange(4)
+    plan = 3.0 * lat_c[:, None] - 2.0 * lon_c[None, :]
+    lat_f, lon_f = 30.0 + 0.1 * np.arange(11), 8.0 + 0.1 * np.arange(8)
+    fin = T.vers_grille(np.stack([plan, 2 * plan]), lat_c, lon_c, lat_f, lon_f)
+    assert fin.shape == (2, 11, 8)
+    assert np.allclose(fin[0], 3.0 * lat_f[:, None] - 2.0 * lon_f[None, :])
+    assert np.allclose(fin[1], 2 * fin[0])
+
+
+def test_niveaux_jusqu_a_1_km_au_dessus_du_plus_haut_relief():
+    assert T.niveaux_pour(np.array([[0.0, 900.0]])) == T.NIVEAUX_ASL
+    niv = T.niveaux_pour(np.array([[0.0, 1544.0]]))                  # djebel Chambi
+    assert niv[:len(T.NIVEAUX_ASL)] == T.NIVEAUX_ASL and niv[-1] == 2400.0
+    assert T.noeuds_valides(np.array([[1544.0]]), niv)[-1].all()
