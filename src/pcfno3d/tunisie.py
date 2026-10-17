@@ -59,19 +59,18 @@ def interpoler_hauteurs(h: np.ndarray, val: np.ndarray, cibles) -> np.ndarray:
     return np.stack(out).astype(np.float32)
 
 
-def _paires_mensuelles(dossier: Path) -> list[tuple[Path, Path, Path | None]]:
-    """Fichiers de download_reanalysis.py apparies par periode : era5_sl_* avec era5_plx_*
-    (1000-700 hPa) s'il existe, sinon era5_pl_* (+ era5_plh_*, niveaux hauts, s'il existe)."""
-    paires = []
-    for sl in sorted(Path(dossier).glob("era5_sl_*.nc")):
-        plx = sl.with_name(sl.name.replace("era5_sl_", "era5_plx_"))
-        pl = sl.with_name(sl.name.replace("era5_sl_", "era5_pl_"))
-        plh = sl.with_name(sl.name.replace("era5_sl_", "era5_plh_"))
-        if plx.exists():
-            paires.append((sl, plx, None))
-        elif pl.exists():
-            paires.append((sl, pl, plh if plh.exists() else None))
-    return paires
+def _fichiers_niveaux(dossier: Path) -> list[tuple[Path, Path | None]]:
+    """Fichiers de niveaux de pression : era5_plx_* (1000-700 hPa) s'il y en a, sinon
+    era5_pl_* (1000-850) avec, s'il existe pour la meme periode, era5_plh_* (800-700)."""
+    d = Path(dossier)
+    plx = sorted(d.glob("era5_plx_*.nc"))
+    if plx:
+        return [(f, None) for f in plx]
+    out = []
+    for pl in sorted(d.glob("era5_pl_*.nc")):
+        plh = pl.with_name(pl.name.replace("era5_pl_", "era5_plh_"))
+        out.append((pl, plh if plh.exists() else None))
+    return out
 
 
 def cible_era5(sl, pl) -> dict:
@@ -99,20 +98,37 @@ def cible_era5(sl, pl) -> dict:
 
 
 def lire_era5(dossier: Path) -> dict:
-    """Toutes les periodes telechargees -> cible concatenee dans le temps (sans doublon)."""
+    """Toutes les periodes telechargees -> cible concatenee dans le temps (sans doublon).
+
+    Les fichiers de niveaux simples (era5_sl_*) et de niveaux de pression ne couvrent pas
+    forcement les memes periodes (blocs de 6 mois contre 1 mois) : on les apparie par INSTANT,
+    un fichier de niveaux de pression a la fois (memoire bornee). Un instant absent de l'un
+    des deux produits est ignore."""
     import xarray as xr
 
+    sls = [xr.open_dataset(f) for f in sorted(Path(dossier).glob("era5_sl_*.nc"))]
+    if not sls:
+        raise FileNotFoundError(f"aucun fichier era5_sl_* dans {dossier}")
+    tdim = "valid_time" if "valid_time" in sls[0].dims else "time"
+    sl_tout = xr.concat([d[["u10", "v10", "u100", "v100", "z"]] for d in sls], dim=tdim).load()
+    for d in sls:
+        d.close()
+    _, garde = np.unique(sl_tout[tdim].values, return_index=True)
+    sl_tout = sl_tout.isel({tdim: np.sort(garde)})
     morceaux = []
-    for sl_f, pl_f, plh_f in _paires_mensuelles(dossier):
-        with xr.open_dataset(sl_f) as sl, xr.open_dataset(pl_f) as pl:
+    for pl_f, plh_f in _fichiers_niveaux(dossier):
+        with xr.open_dataset(pl_f) as pl:
             pl = pl[["u", "v", "z"]].load()
-            if plh_f is not None:
-                with xr.open_dataset(plh_f) as plh:
-                    pdim = "pressure_level" if "pressure_level" in pl.dims else "level"
-                    pl = xr.concat([pl, plh[["u", "v", "z"]].load()], dim=pdim)
-            morceaux.append(cible_era5(sl.load(), pl))
+        if plh_f is not None:
+            with xr.open_dataset(plh_f) as plh:
+                pdim = "pressure_level" if "pressure_level" in pl.dims else "level"
+                pl = xr.concat([pl, plh[["u", "v", "z"]].load()], dim=pdim)
+        communs = np.intersect1d(pl[tdim].values, sl_tout[tdim].values)
+        if len(communs) == 0:
+            continue
+        morceaux.append(cible_era5(sl_tout.sel({tdim: communs}), pl.sel({tdim: communs})))
     if not morceaux:
-        raise FileNotFoundError(f"aucune paire era5_sl_* / era5_pl_* dans {dossier}")
+        raise FileNotFoundError(f"aucun instant commun aux niveaux simples et de pression dans {dossier}")
     temps = np.concatenate([m["temps"] for m in morceaux])
     ordre = np.unique(temps, return_index=True)[1]
     return {"temps": temps[ordre], "lat": morceaux[0]["lat"], "lon": morceaux[0]["lon"],

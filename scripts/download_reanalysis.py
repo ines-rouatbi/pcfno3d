@@ -64,15 +64,59 @@ def domain_bbox(cfg, margin_deg: float) -> list[float]:
             round(float(lat.min()) - margin_deg, 2), round(float(lon.max()) + margin_deg, 2)]
 
 
-def request(dataset: str, variables, year: int, month: int, days, hours, area,
+def request(dataset: str, variables, year: int, month, days, hours, area,
             levels=None) -> dict:
+    months = month if isinstance(month, (list, tuple)) else [month]
     req = {"product_type": ["reanalysis"], "variable": list(variables),
-           "year": [str(year)], "month": [f"{month:02d}"], "day": [f"{d:02d}" for d in days],
+           "year": [str(year)], "month": [f"{m:02d}" for m in months],
+           "day": [f"{d:02d}" for d in days],
            "time": [f"{h:02d}:00" for h in hours], "area": area,
            "data_format": "netcdf", "download_format": "unarchived"}
     if levels:
         req["pressure_level"] = list(levels)
     return req
+
+
+def by_months(client, out: Path, days, hours, area, products, n_months: int) -> int:
+    """Une requete par bloc de `n_months` mois d'une meme annee ; un bloc refuse pour son cout
+    est coupe en deux ; file d'attente pleine : nouvel essai dans 2 min."""
+    specs = {"pl": ("reanalysis-era5-pressure-levels", PL_VARS, PRESSURE_LEVELS),
+             "plh": ("reanalysis-era5-pressure-levels", PLH_VARS, HIGH_LEVELS),
+             "plx": ("reanalysis-era5-pressure-levels", PLH_VARS, ALL_LEVELS),
+             "sl": ("reanalysis-era5-single-levels", SL_VARS, None)}
+    for year in sorted(set(days.year)):
+        dy = days[days.year == year]
+        months = sorted(set(dy.month))
+        dd = sorted(set(dy.day))
+        for prod in sorted(products):
+            name, variables, levels = specs[prod]
+            pending = [months[i:i + n_months] for i in range(0, len(months), n_months)]
+            while pending:
+                block = pending.pop(0)
+                target = out / f"era5_{prod}_{year}_m{block[0]:02d}-{block[-1]:02d}.nc"
+                monthly = [out / f"era5_{prod}_{year}{m:02d}_01-31.nc" for m in block]
+                if target.exists() or all(f.exists() for f in monthly):
+                    print(f"  deja la : {target.name}")
+                    continue
+                req = request(prod, variables, year, block, dd, hours, area, levels)
+                tmp = target.with_suffix(".part")
+                try:
+                    client.retrieve(name, req, str(tmp))
+                except Exception as exc:              # noqa: BLE001
+                    if "temporarily limited" in str(exc) or "queued requests" in str(exc):
+                        print("  file d'attente du CDS pleine : nouvel essai dans 2 min", flush=True)
+                        time.sleep(120)
+                        pending.insert(0, block)
+                        continue
+                    if "cost limits" in str(exc) and len(block) > 1:
+                        half = len(block) // 2
+                        print(f"  trop gros pour le CDS ({len(block)} mois) : en deux", flush=True)
+                        pending[:0] = [block[:half], block[half:]]
+                        continue
+                    raise
+                tmp.replace(target)
+                print(f"  {target.name} ({target.stat().st_size / 1e6:.1f} Mo)", flush=True)
+    return 0
 
 
 def main() -> int:
@@ -88,6 +132,10 @@ def main() -> int:
     ap.add_argument("--out", default=str(REPO / "artifacts" / "reanalysis"))
     ap.add_argument("--chunk-days", type=int, default=4,
                     help="jours par requete (le CDS refuse les trop grosses)")
+    ap.add_argument("--mois-par-requete", type=int, default=0,
+                    help="N > 0 : une requete pour N mois entiers (era5_<produit>_<annee>_mMM-MM.nc),"
+                         " coupee en deux si le CDS la refuse ; beaucoup moins de requetes quand la"
+                         " file du CDS est limitee")
     args = ap.parse_args()
 
     try:
@@ -130,6 +178,8 @@ def main() -> int:
     print(f"zone N,O,S,E = {area} | {args.start} -> {args.end} | heures {hours} | {products}")
 
     days = pd.date_range(args.start, args.end, freq="D")
+    if args.mois_par_requete > 0:
+        return by_months(client, out, days, hours, area, products, args.mois_par_requete)
     for (year, month), grp in days.to_series().groupby([days.year, days.month]):
         dd = sorted(grp.dt.day.tolist())
         for prod in sorted(products):
