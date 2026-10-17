@@ -766,11 +766,12 @@ def construire_instantane(wf, volume, S: np.ndarray, *, stem: str, data_kind: st
 
 def instantane_du_cache(wf, stem: str, *, data_kind: str, depot: "DepotLocal | None" = None,
                         moteur=None, dso6: dict | None = None,
-                        generated_at: str | None = None, garder_champs: bool = False
-                        ) -> Instantane:
+                        generated_at: str | None = None, garder_champs: bool = False,
+                        data: str | None = None) -> Instantane:
     """Un instant du cache -> Instantane : passe servie (fiabilite M2 et parc M5 s'ils
     sont configures dans `wf`), alertes M4 si `moteur` est fourni (journal chronologique),
-    roses des vents et historique lus dans `depot`."""
+    roses des vents et historique lus dans `depot`. `data` : versions.data (defaut : nom du
+    dossier data_dir), pour un cache construit depuis un autre jeu que data_dir."""
     S, hour, doy, stamp = wf.surface_from_cache(stem)
     vol = wf.predict(S, hour, doy, timestamp=stamp)
     res = None
@@ -781,7 +782,7 @@ def instantane_du_cache(wf, stem: str, *, data_kind: str, depot: "DepotLocal | N
         wf, vol, S, stem=stem, data_kind=data_kind, alertes=res, dso6=dso6,
         serie_vent=depot.serie_vent() if depot is not None else None,
         historique=depot.times() if depot is not None else None,
-        generated_at=generated_at, garder_champs=garder_champs)
+        generated_at=generated_at, garder_champs=garder_champs, data=data)
 
 
 def instantane_du_csv(wf, path: str | Path, *, data_kind: str,

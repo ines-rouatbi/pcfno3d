@@ -407,7 +407,7 @@ def cmd_publish(args) -> int:
     dso6 = json.loads(Path(args.dso6).read_bytes().decode("utf-8")) if args.dso6 else None
     kw = dict(data_kind=args.data_kind, depot=depot, moteur=moteur, dso6=dso6)
     try:
-        versions = versions_modele(wf, args.data_kind)
+        versions = versions_modele(wf, args.data_kind, args.data)
         inst = None
         if args.csv:
             inst = instantane_du_csv(wf, args.csv, **kw)
@@ -428,7 +428,7 @@ def cmd_publish(args) -> int:
             print(f"{sid} deja ecrit dans {depot.dossier(sid)} (immuable) : reutilise tel quel")
         else:
             if inst is None:
-                inst = instantane_du_cache(wf, stem, **kw)
+                inst = instantane_du_cache(wf, stem, data=args.data, **kw)
             depot.ecrire(inst)
             print(f"instantane {sid} ({inst.data_status}) -> {depot.dossier(sid)}")
             print(_temps_instantane(inst))
@@ -925,6 +925,8 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--data-kind", default="synthetique", choices=("synthetique", "reel", "test"),
                    help="nature des donnees (versions.data_kind, D15)")
     s.add_argument("--dso6", help="resume DSO6 (JSON de `pcfno3d dso6`) pour quality.calibration")
+    s.add_argument("--data", help="versions.data (defaut : nom du dossier data_dir) : jeu dont "
+                                  "vient le cache quand data_dir ne sert qu'a la geometrie")
     s.add_argument("--exports", action="store_true", help="NetCDF + CSV des noeuds (DE3)")
     s.add_argument("--remote", help="URL du Worker ; jeton dans ATOM_PUBLISH_TOKEN, jamais ici")
     s.add_argument("--checkpoint"), s.add_argument("--device")
