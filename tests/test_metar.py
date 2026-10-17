@@ -102,3 +102,19 @@ def test_corps_reconstruction():
     st = corps["stations"][0]
     assert corps["timestamp_utc"] == "2026-10-17T13:00:00Z"
     assert st["wind_u_m_s"] == 0.0 and "wind_dir_deg" not in st and "source" not in st
+
+
+def test_archive_iem_meme_format_que_le_temps_reel():
+    row = {"station": "DTNH", "valid": "2026-10-16 00:30", "lon": "10.4319", "lat": "36.0688",
+           "elevation": "2.00", "sknt": "10.00", "drct": "80.00", "tmpf": "78.80",
+           "dwpf": "62.60", "alti": "29.97"}
+    l, raison = metar.metar_vers_station(metar.iem_vers_obs(row))
+    assert raison is None and l["timestamp_utc"] == "2026-10-16T00:30:00Z"
+    assert l["wind_speed_m_s"] == pytest.approx(5.144, abs=1e-3) and l["wind_dir_deg"] == 80.0
+    assert l["temperature_c"] == pytest.approx(26.0) and l["elevation_m"] == 2.0
+    assert l["pressure_pa"] == pytest.approx(101465.0, abs=10.0)       # 29,97 inHg = 1014,9 hPa
+    # direction absente avec du vent : ecartee ; valeurs manquantes « M » : vides
+    l, raison = metar.metar_vers_station(metar.iem_vers_obs(dict(row, drct="M")))
+    assert l is None and "variable" in raison
+    l, _ = metar.metar_vers_station(metar.iem_vers_obs(dict(row, tmpf="M", alti="M")))
+    assert l["temperature_c"] is None and l["pressure_pa"] is None

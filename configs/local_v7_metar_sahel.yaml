@@ -1,0 +1,99 @@
+# Variante de local_v7 ancree sur la zone « Sahel METAR » (section real) : reconstructions
+# a la demande depuis les METAR de Monastir et d'Enfidha (scripts/collecteur_metar.py).
+# Le tableau de bord publie reste sur local_v7 (ancrage d'origine) : ne pas publier avec
+# cette configuration sous le meme modele (meta differente, refusee par le Worker).
+#
+# Servir le modele v7 ENTRAINE sur ce poste, en attendant la v8.
+#
+# Les poids viennent du Drive (aneo_fno3d_runs/v7/best_dso_v7.pt, 1,81 Go, et
+# norm_stats.json) ; `python scripts/install_v7_weights.py <dossier>` les verifie puis les
+# installe dans run_dir. Rien n'est reentraine ici.
+#
+# Mesure sur ce poste (8 coeurs, sans GPU) : 13,7 s par instant et 5,1 Go de pointe,
+# contre 0,091 s sur le GPU de Colab. Le modele est le meme, les valeurs sont les memes ;
+# seul le temps change, et le DSO4 (< 1 s) n'est donc PAS tenu ici. Pour la vitesse, la
+# voie Colab (notebooks/current/pcfno3d_api_colab.ipynb + `pcfno3d link set`) reste la
+# bonne.
+#
+#   python -m pcfno3d -c local_v7 serve --port 8000
+name: v7
+
+paths:
+  data_dir: aneo_dataset_3d_v2
+  # cache des instants deja construit sur ce poste (jours 2, 3, 14, 17 : memes tenseurs
+  # que ceux de la v7 — meme grille, meme agregation 2x2)
+  cache_dir: C:/Users/inesr/AppData/Local/pcfno3d/cache_reel
+  # hors OneDrive : 1,8 Go de poids n'ont rien a faire dans une synchronisation
+  run_dir: C:/Users/inesr/AppData/Local/pcfno3d/runs/v7
+  cache_mirror: null
+
+model:                      # architecture v7 exacte (453,25 M parametres)
+  width: 48
+  modes: [6, 32, 32]
+  n_layers: 4
+  pad: [4, 8, 8]
+  proj_hidden: 128
+  local_conv: true
+  pool_surface: true
+
+train:                      # non utilise pour servir ; garde les valeurs v7
+  epochs: 140
+  steps_per_epoch: 400
+  val_samples: 64
+  batch_size: 1
+  accum_steps: 2
+  lr: 1.0e-3
+  weight_decay: 1.0e-4
+  warmup_phys_epochs: 10
+  num_workers: 0
+  ema_decay: 0.999
+  grad_clip: 1.0
+  save_every: 5
+  seed: 42
+
+loss:
+  lambda_mass: 1.0
+  mass_ref: 5.0e-7
+  lambda_bc: 0.1
+  lambda_smooth: 0.0
+  lambda_grad: 0.15
+  w_weight: 1.0
+  w_level_max: 25.0
+
+mask:
+  keep_train: [0.2, 1.0]
+  keep_eval: 0.5
+
+dso:
+  rmse: 0.5
+  r2: 0.95
+  r2_all: 0.95
+  mass_rms: 1.0e-4
+  roughness_range: [0.9, 1.1]
+  time_s: 1.0
+  rmse_25pct: 0.7
+  min_level_cover: 0.05
+
+inference:
+  tta: 1                    # 8 passes = ~2 min par instant sur CPU : non
+  tta_keep: 0.7
+
+terrain_smooth_m: 300.0
+f_coriolis: 8.57e-5
+
+# Ancrage geographique SUPPOSE (14/10/2026). Le domaine fourni par Tukhnanutha est
+# synthetique : il n'a pas de position reelle. On le place a 36,0 N (la latitude de son
+# parametre de Coriolis, f = 8,57e-5 s-1), sur le relief collinaire du centre-nord tunisien.
+# Rectangle : 36,000-36,224 N, 9,700-10,255 E. Le relief du modele reste celui du
+# generateur, PAS celui de ce lieu.
+real:
+  # Zone « Sahel METAR » (2026-10-17) : seul placement du domaine de 50 x 25 km qui contient
+  # deux aeroports METAR actifs, Monastir DTMB (x 2,4 km, y 2,5 km) et Enfidha DTNH
+  # (x 47,6 km, y 2,5 km), sur le bord cotier ; le domaine s'etend de 25 km vers l'interieur
+  # (centre 35,856 N 10,509 E ; une bande de mer jusqu'a ~7 km au large de Sousse). Axe x de
+  # Monastir vers Enfidha. Position CHOISIE pour les METAR, pas celle du reseau ANEO : le
+  # relief reste celui du generateur, d'ou origin_assumed: true.
+  origin_lat: 35.75626
+  origin_lon: 10.79301
+  rotation_deg: 130.07
+  origin_assumed: true

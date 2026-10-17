@@ -28,14 +28,19 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 URL_METAR = "https://aviationweather.gov/api/data/metar"
+# Archive METAR mondiale de l'Iowa Environmental Mesonet (gratuite, sans cle) : historique.
+URL_IEM = "https://mesonet.agron.iastate.edu/cgi-bin/request/asos.py"
 NOEUD_M_S = 0.514444
+POUCE_HG_HPA = 33.8639
 HAUTEUR_ANEMOMETRE_M = 10.0
 
-# Aeroports tunisiens qui publient un METAR (verifie le 2026-10-17).
+# Aeroports tunisiens qui publient un METAR (verifie le 2026-10-17 : aviationweather.gov et
+# archive IEM, reseau TN__ASOS ; Kelibia DTTL, Jendouba DTTN et El Borma DTTR n'emettent plus).
 STATIONS_TUNISIE = {
     "DTTA": "Tunis-Carthage", "DTNH": "Enfidha-Hammamet", "DTMB": "Monastir",
-    "DTTB": "Bizerte", "DTKA": "Tabarka", "DTTX": "Sfax", "DTTJ": "Djerba-Zarzis",
-    "DTTG": "Gabes", "DTTF": "Gafsa", "DTTZ": "Tozeur", "DTTD": "Remada",
+    "DTTB": "Bizerte", "DTKA": "Tabarka", "DTTK": "Kairouan", "DTTX": "Sfax",
+    "DTTJ": "Djerba-Zarzis", "DTTG": "Gabes", "DTTF": "Gafsa", "DTTZ": "Tozeur",
+    "DTTD": "Remada",
 }
 
 # Colonnes du tableau de stations de `pcfno3d import-real --stations` (realdata).
@@ -106,6 +111,46 @@ def telecharger(ids: list[str], heures: int = 2, timeout: float = 20.0) -> list[
     with urllib.request.urlopen(req, timeout=timeout) as r:
         corps = r.read()
     return json.loads(corps) if corps.strip() else []
+
+
+def _nombre(v) -> float | None:
+    try:
+        return None if v in (None, "", "M", "T") else float(v)
+    except ValueError:
+        return None
+
+
+def iem_vers_obs(row: dict) -> dict:
+    """Une ligne CSV de l'archive IEM -> le meme dictionnaire qu'un METAR JSON
+    d'aviationweather.gov (unites converties : F -> C, pouces de mercure -> hPa), pour
+    passer par le meme `metar_vers_station`. Direction absente avec du vent -> « VRB »."""
+    f2c = lambda f: None if f is None else round((f - 32.0) * 5.0 / 9.0, 1)  # noqa: E731
+    sknt, drct, alti = _nombre(row.get("sknt")), _nombre(row.get("drct")), _nombre(row.get("alti"))
+    valid = str(row.get("valid", "")).strip()
+    return {"icaoId": row.get("station"),
+            "reportTime": valid.replace(" ", "T") + ":00Z" if valid else None,
+            "lat": _nombre(row.get("lat")), "lon": _nombre(row.get("lon")),
+            "elev": _nombre(row.get("elevation")), "wspd": sknt,
+            "wdir": drct if drct is not None else ("VRB" if sknt else None),
+            "temp": f2c(_nombre(row.get("tmpf"))), "dewp": f2c(_nombre(row.get("dwpf"))),
+            "altim": None if alti is None else round(alti * POUCE_HG_HPA, 1)}
+
+
+def telecharger_iem(ids: list[str], debut: datetime, fin: datetime,
+                    timeout: float = 300.0) -> list[dict]:
+    """Archive METAR (IEM) de `debut` a `fin` (UTC) pour les aeroports `ids` : lignes CSV
+    brutes (dictionnaires), messages de routine et speciaux."""
+    q = "&".join(f"station={s}" for s in ids)
+    q += "".join(f"&data={d}" for d in ("sknt", "drct", "tmpf", "dwpf", "alti"))
+    q += (f"&year1={debut.year}&month1={debut.month}&day1={debut.day}"
+          f"&year2={fin.year}&month2={fin.month}&day2={fin.day}"
+          "&tz=Etc/UTC&format=onlycomma&latlon=yes&elev=yes&missing=M&trace=T&direct=no"
+          "&report_type=3&report_type=4")
+    req = urllib.request.Request(f"{URL_IEM}?{q}",
+                                 headers={"User-Agent": "pcfno3d-collecteur-metar/1.0"})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        texte = r.read().decode("utf-8", errors="replace")
+    return list(csv.DictReader(texte.splitlines()))
 
 
 def instant_commun(lignes: list[dict], tolerance_min: int = 30) -> tuple[str | None, list[dict]]:
