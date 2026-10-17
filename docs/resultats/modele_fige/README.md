@@ -4,6 +4,11 @@
 modèle ne change plus dans le cadre du PFE. Tag git annoté : **`v7-fige`** (nom retenu par
 l'utilisatrice ; le § 8 prévoyait `modele-fige-v7`).*
 
+*Précision du 2026-10-17 (décision de l'utilisatrice, qui entraîne les modèles) : le gel fixe
+la **référence** — ces poids, ces résultats et ce tag ne sont jamais écrasés — mais
+n'interdit pas de réentraîner. Un nouveau modèle porte son propre nom et son propre dossier
+de run, et ses résultats sont comparés à ceux de la v7 figée.*
+
 ## Modèle gelé : v7 seule
 
 | Élément | Valeur |

@@ -59,8 +59,11 @@ farm); M6 replayed the 120 test instants; M8 measured (L6: max u, v RMSE v7 0.66
 m/s; E2 is a negative result). **M1 delivered** (cell 10i, Colab A100, 2026-10-16,
 `docs/M1_PROTOCOLE.md`): the post-model correction passes C1 (worst level u 0.419, v 0.382)
 and C3, but **fails C2** on the 46 episode instants — **not retained**. **v7 is frozen
-alone** (annotated tag `v7-fige`, `docs/resultats/modele_fige/README.md`): the model no
-longer changes within the PFE; no v8 or retrain without Rayen's agreement. DSO1 is still
+alone** (annotated tag `v7-fige`, `docs/resultats/modele_fige/README.md`): the tag is the
+**reference** every later result is compared to, **not a ban on retraining** — Ines trains
+and builds the models and decides retrains herself (2026-10-17). A retrained or new model
+gets its own name and `run_dir` (never overwrite `runs/v7` or the `v7-fige` results) and is
+reported against v7. DSO1 is still
 not met at 650–1000 m and is reported with the WMO criterion. The correction stays on
 `agent/ines/m1-correction-post-modele`, unmerged. Details: `tukhnanutha.md` § 5 "Delivery
 state".

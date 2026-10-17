@@ -136,7 +136,9 @@ a terrain correction.
   - **C3 conforming**: DSO2 2.58e-5, DSO3 0.951, DSO5 0.508, DSO4 121 ms (model alone 92 ms).
   - **Decision: correction NOT retained; v7 is frozen alone** (annotated tag `v7-fige`,
     `docs/resultats/modele_fige/README.md`). The correction stays, documented, on
-    `agent/ines/m1-correction-post-modele`. No v8 or retrain without Rayen's agreement.
+    `agent/ines/m1-correction-post-modele`. The freeze fixes the **reference**, it does not
+    forbid retraining: Ines trains the models and decides retrains (2026-10-17); a new model
+    gets its own name and run_dir and is compared to `v7-fige`.
   - Reserve printed by 10i: coefficients learnt on synthetic data; on real data barometer
     error (±10–50 Pa) is the same order as the geostrophic signal (26 Pa for 10 m/s).
   - Open: the Drive copy of `eval_best_dso_v7/test_summary.json` no longer has its
