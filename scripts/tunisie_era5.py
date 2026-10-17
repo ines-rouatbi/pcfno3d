@@ -238,9 +238,13 @@ def cmd_predire(args) -> int:
         import matplotlib.pyplot as plt
 
         lat, lon = np.asarray(ck["lat"]), np.asarray(ck["lon"])
+        jeu = Path(args.dossier) / "jeu.npz"
+        terre = np.load(jeu)["terre"] if jeu.exists() else None
         fig, axes = plt.subplots(1, 2, figsize=(10, 8), constrained_layout=True)
         for ax, k in zip(axes, (0, 3)):
             im = ax.pcolormesh(lon, lat, vit[k], shading="nearest", cmap="viridis")
+            if terre is not None:
+                ax.contour(lon, lat, terre.astype(float), levels=[0.5], colors="k", linewidths=0.8)
             ax.quiver(lon, lat, p[k], p[H + k], color="w", scale=150, width=0.003)
             ax.scatter(ck["st_lon"], ck["st_lat"], c=["r" if x else "0.5" for x in X[0, :, -1]], s=18)
             ax.set_title(f"{int(ck['hauteurs_agl_m'][k])} m au-dessus du sol")
