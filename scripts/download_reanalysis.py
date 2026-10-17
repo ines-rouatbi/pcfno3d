@@ -35,6 +35,9 @@ REPO = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(REPO / "src")]
 
 PRESSURE_LEVELS = ["850", "875", "900", "925", "950", "975", "1000"]
+# niveaux hauts (produit « plh ») : 1000 m au-dessus d'un relief de 1 200 m = ~780 hPa
+HIGH_LEVELS = ["700", "750", "775", "800"]
+PLH_VARS = ["u_component_of_wind", "v_component_of_wind", "geopotential"]
 PL_VARS = ["u_component_of_wind", "v_component_of_wind", "vertical_velocity",
            "temperature", "geopotential"]
 SL_VARS = ["10m_u_component_of_wind", "10m_v_component_of_wind",
@@ -77,7 +80,7 @@ def main() -> int:
     ap.add_argument("--start", help="AAAA-MM-JJ")
     ap.add_argument("--end", help="AAAA-MM-JJ (inclus)")
     ap.add_argument("--hours", default="0-23", help="ex. 0-23, ou 0,3,6,9,12,15,18,21")
-    ap.add_argument("--products", default="pl,sl", help="pl (niveaux de pression), sl, ou les deux")
+    ap.add_argument("--products", default="pl,sl", help="pl (niveaux de pression 1000-850 hPa), plh (800-700 hPa), sl ; separes par des virgules")
     ap.add_argument("--out", default=str(REPO / "artifacts" / "reanalysis"))
     ap.add_argument("--chunk-days", type=int, default=4,
                     help="jours par requete (le CDS refuse les trop grosses)")
@@ -139,6 +142,9 @@ def main() -> int:
                 if prod == "pl":
                     req = request("pl", PL_VARS, year, month, block, hours, area,
                                   PRESSURE_LEVELS)
+                    name = "reanalysis-era5-pressure-levels"
+                elif prod == "plh":
+                    req = request("plh", PLH_VARS, year, month, block, hours, area, HIGH_LEVELS)
                     name = "reanalysis-era5-pressure-levels"
                 else:
                     req = request("sl", SL_VARS, year, month, block, hours, area)

@@ -7,9 +7,12 @@ Un modele DISTINCT de PC-FNO3D v7 (domaine de 50 x 25 km au pas de 100 m, relief
               ~28 km ; 30,0-37,75 N, 7,25-11,75 E), a 10, 100, 250, 500, 750 et 1000 m
               au-dessus du sol ;
     verite  : ERA5 (Copernicus) : vent a 10 et 100 m des niveaux simples, niveaux de pression
-              1000-850 hPa interpoles lineairement en hauteur au-dessus du sol (geopotentiel,
-              orographie ERA5). Au-dessus du plus haut niveau disponible (850 hPa, ~1 500 m au-
-              dessus de la mer) la cible est ABSENTE (NaN), jamais extrapolee.
+              1000-700 hPa (fichiers era5_pl_* : 1000-850 ; era5_plh_* : 800-700, ~3 000 m)
+              interpoles lineairement en hauteur au-dessus du sol (geopotentiel, orographie
+              ERA5). Au-dessus du plus haut niveau disponible la cible est ABSENTE (NaN),
+              jamais extrapolee ; avec 700 hPa, 1000 m au-dessus du sol est couvert partout.
+    horizon : 0 h = reconstruction de l'instant des mesures ; 3 h, 6 h... = prevision du champ
+              a l'instant des mesures + horizon (un modele par horizon).
 C'est le champ ERA5 qu'on apprend a reconstruire depuis les seules mesures disponibles en temps
 reel : sa resolution (~28 km) est celle d'ERA5, pas celle de PC-FNO3D. Decoupage temporel :
 2021-2023 entrainement, 2024 validation, 2025 test.
@@ -55,13 +58,15 @@ def interpoler_hauteurs(h: np.ndarray, val: np.ndarray, cibles) -> np.ndarray:
     return np.stack(out).astype(np.float32)
 
 
-def _paires_mensuelles(dossier: Path) -> list[tuple[Path, Path]]:
-    """Fichiers era5_sl_* / era5_pl_* de download_reanalysis.py, apparies par periode."""
+def _paires_mensuelles(dossier: Path) -> list[tuple[Path, Path, Path | None]]:
+    """Fichiers era5_sl_* / era5_pl_* (+ era5_plh_*, niveaux hauts, s'il existe) de
+    download_reanalysis.py, apparies par periode."""
     paires = []
     for sl in sorted(Path(dossier).glob("era5_sl_*.nc")):
         pl = sl.with_name(sl.name.replace("era5_sl_", "era5_pl_"))
+        plh = sl.with_name(sl.name.replace("era5_sl_", "era5_plh_"))
         if pl.exists():
-            paires.append((sl, pl))
+            paires.append((sl, pl, plh if plh.exists() else None))
     return paires
 
 
@@ -94,9 +99,14 @@ def lire_era5(dossier: Path) -> dict:
     import xarray as xr
 
     morceaux = []
-    for sl_f, pl_f in _paires_mensuelles(dossier):
+    for sl_f, pl_f, plh_f in _paires_mensuelles(dossier):
         with xr.open_dataset(sl_f) as sl, xr.open_dataset(pl_f) as pl:
-            morceaux.append(cible_era5(sl.load(), pl.load()))
+            pl = pl[["u", "v", "z"]].load()
+            if plh_f is not None:
+                with xr.open_dataset(plh_f) as plh:
+                    pdim = "pressure_level" if "pressure_level" in pl.dims else "level"
+                    pl = xr.concat([pl, plh[["u", "v", "z"]].load()], dim=pdim)
+            morceaux.append(cible_era5(sl.load(), pl))
     if not morceaux:
         raise FileNotFoundError(f"aucune paire era5_sl_* / era5_pl_* dans {dossier}")
     temps = np.concatenate([m["temps"] for m in morceaux])
@@ -283,6 +293,16 @@ def reference_idw(X: np.ndarray, st_lat, st_lon, lat, lon, alpha: float = 1 / 7,
     f = np.array([(h / 10.0) ** alpha for h in HAUTEURS_AGL])
     return np.concatenate([u10[:, None] * f[None, :, None, None],
                            v10[:, None] * f[None, :, None, None]], 1).astype(np.float32)
+
+
+def paires_horizon(temps, horizon_h: int) -> tuple[np.ndarray, np.ndarray]:
+    """Indices (source, cible) tels que temps[cible] = temps[source] + horizon : mesures a
+    l'instant source, champ a l'instant cible (horizon 0 : les memes)."""
+    t = np.asarray(temps).astype("datetime64[s]")
+    pos = {v: i for i, v in enumerate(t.astype("int64"))}
+    dt = int(horizon_h) * 3600
+    src = [i for i, v in enumerate(t.astype("int64")) if v + dt in pos]
+    return np.array(src, int), np.array([pos[t.astype("int64")[i] + dt] for i in src], int)
 
 
 def annee_de(temps) -> np.ndarray:

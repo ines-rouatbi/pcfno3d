@@ -137,3 +137,30 @@ def test_references_climatologie_et_idw():
     assert p[0, H - 1, 0, 0] == pytest.approx(3.0 * 100 ** (1 / 7), rel=1e-3)   # 1000 m, loi puissance
     r = tunisie.rmse_par_niveau(p, p)
     assert all(v["vitesse"] == 0 for v in r.values())
+
+
+def test_paires_horizon_prevision():
+    t = np.array(["2025-01-01T00", "2025-01-01T03", "2025-01-01T06", "2025-01-01T12"],
+                 dtype="datetime64[s]")
+    s, c = tunisie.paires_horizon(t, 0)
+    assert (s == c).all() and len(s) == 4
+    s, c = tunisie.paires_horizon(t, 3)
+    assert s.tolist() == [0, 1] and c.tolist() == [1, 2]            # 06 h -> 09 h absent
+    s, c = tunisie.paires_horizon(t, 6)
+    assert s.tolist() == [0, 2] and c.tolist() == [2, 3]
+
+
+def test_niveaux_hauts_couvrent_1000_m_sur_le_relief():
+    import xarray as xr
+
+    sl, pl = _era5()
+    z_haut = np.array([1960.0, 2200.0, 2460.0, 3010.0])                # 800 -> 700 hPa
+    plh = xr.Dataset({k: (("valid_time", "pressure_level", "latitude", "longitude"),
+                          np.broadcast_to(v[None, :, None, None], (3, 4, 2, 2)).copy())
+                      for k, v in (("u", z_haut / 100.0), ("v", z_haut * 0), ("z", z_haut * tunisie.G))},
+                     coords={"valid_time": sl["valid_time"], "pressure_level": [800, 775, 750, 700],
+                             "latitude": sl["latitude"], "longitude": sl["longitude"]})
+    c = tunisie.cible_era5(sl, xr.concat([pl, plh], dim="pressure_level"))
+    montagne = c["U"][0, :, 1, 1]                                       # sol a 900 m
+    assert np.isfinite(montagne).all()                                  # 1000 m sol = 1900 m mer
+    assert montagne[5] == pytest.approx(np.interp(1900, [1460, 1960], [14.6, 19.6]))
