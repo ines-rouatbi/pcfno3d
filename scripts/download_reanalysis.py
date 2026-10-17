@@ -26,6 +26,7 @@ depuis la page du jeu (bouton « Show API request ») avant de l'ajouter ici.
 from __future__ import annotations
 
 import argparse
+import time
 import sys
 from pathlib import Path
 
@@ -38,6 +39,9 @@ PRESSURE_LEVELS = ["850", "875", "900", "925", "950", "975", "1000"]
 # niveaux hauts (produit « plh ») : 1000 m au-dessus d'un relief de 1 200 m = ~780 hPa
 HIGH_LEVELS = ["700", "750", "775", "800"]
 PLH_VARS = ["u_component_of_wind", "v_component_of_wind", "geopotential"]
+# produit « plx » : 1000 -> 700 hPa en UNE requete (u, v, geopotentiel), deux fois moins de
+# requetes que pl + plh quand la file d'attente du CDS limite le nombre de requetes
+ALL_LEVELS = HIGH_LEVELS + PRESSURE_LEVELS
 PL_VARS = ["u_component_of_wind", "v_component_of_wind", "vertical_velocity",
            "temperature", "geopotential"]
 SL_VARS = ["10m_u_component_of_wind", "10m_v_component_of_wind",
@@ -80,7 +84,7 @@ def main() -> int:
     ap.add_argument("--start", help="AAAA-MM-JJ")
     ap.add_argument("--end", help="AAAA-MM-JJ (inclus)")
     ap.add_argument("--hours", default="0-23", help="ex. 0-23, ou 0,3,6,9,12,15,18,21")
-    ap.add_argument("--products", default="pl,sl", help="pl (niveaux de pression 1000-850 hPa), plh (800-700 hPa), sl ; separes par des virgules")
+    ap.add_argument("--products", default="pl,sl", help="pl (1000-850 hPa), plh (800-700 hPa), plx (1000-700 hPa, u v z), sl ; separes par des virgules")
     ap.add_argument("--out", default=str(REPO / "artifacts" / "reanalysis"))
     ap.add_argument("--chunk-days", type=int, default=4,
                     help="jours par requete (le CDS refuse les trop grosses)")
@@ -146,6 +150,9 @@ def main() -> int:
                 elif prod == "plh":
                     req = request("plh", PLH_VARS, year, month, block, hours, area, HIGH_LEVELS)
                     name = "reanalysis-era5-pressure-levels"
+                elif prod == "plx":
+                    req = request("plx", PLH_VARS, year, month, block, hours, area, ALL_LEVELS)
+                    name = "reanalysis-era5-pressure-levels"
                 else:
                     req = request("sl", SL_VARS, year, month, block, hours, area)
                     name = "reanalysis-era5-single-levels"
@@ -153,6 +160,12 @@ def main() -> int:
                 try:
                     client.retrieve(name, req, str(tmp))
                 except Exception as exc:              # noqa: BLE001
+                    if "temporarily limited" in str(exc) or "queued requests" in str(exc):
+                        # file d'attente du CDS pleine (requetes par jeu limitees) : on attend
+                        print("  file d'attente du CDS pleine : nouvel essai dans 2 min", flush=True)
+                        time.sleep(120)
+                        pending.insert(0, block)
+                        continue
                     if "cost limits" in str(exc) and len(block) > 1:
                         half = len(block) // 2
                         print(f"  trop gros pour le CDS ({len(block)} jours) : en deux")

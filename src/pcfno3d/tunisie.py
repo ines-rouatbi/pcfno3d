@@ -7,7 +7,8 @@ Un modele DISTINCT de PC-FNO3D v7 (domaine de 50 x 25 km au pas de 100 m, relief
               ~28 km ; 30,0-37,75 N, 7,25-11,75 E), a 10, 100, 250, 500, 750 et 1000 m
               au-dessus du sol ;
     verite  : ERA5 (Copernicus) : vent a 10 et 100 m des niveaux simples, niveaux de pression
-              1000-700 hPa (fichiers era5_pl_* : 1000-850 ; era5_plh_* : 800-700, ~3 000 m)
+              1000-700 hPa (era5_plx_* : 1000-700 en un fichier ; ou era5_pl_* : 1000-850 et
+              era5_plh_* : 800-700, ~3 000 m)
               interpoles lineairement en hauteur au-dessus du sol (geopotentiel, orographie
               ERA5). Au-dessus du plus haut niveau disponible la cible est ABSENTE (NaN),
               jamais extrapolee ; avec 700 hPa, 1000 m au-dessus du sol est couvert partout.
@@ -59,13 +60,16 @@ def interpoler_hauteurs(h: np.ndarray, val: np.ndarray, cibles) -> np.ndarray:
 
 
 def _paires_mensuelles(dossier: Path) -> list[tuple[Path, Path, Path | None]]:
-    """Fichiers era5_sl_* / era5_pl_* (+ era5_plh_*, niveaux hauts, s'il existe) de
-    download_reanalysis.py, apparies par periode."""
+    """Fichiers de download_reanalysis.py apparies par periode : era5_sl_* avec era5_plx_*
+    (1000-700 hPa) s'il existe, sinon era5_pl_* (+ era5_plh_*, niveaux hauts, s'il existe)."""
     paires = []
     for sl in sorted(Path(dossier).glob("era5_sl_*.nc")):
+        plx = sl.with_name(sl.name.replace("era5_sl_", "era5_plx_"))
         pl = sl.with_name(sl.name.replace("era5_sl_", "era5_pl_"))
         plh = sl.with_name(sl.name.replace("era5_sl_", "era5_plh_"))
-        if pl.exists():
+        if plx.exists():
+            paires.append((sl, plx, None))
+        elif pl.exists():
             paires.append((sl, pl, plh if plh.exists() else None))
     return paires
 
