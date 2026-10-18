@@ -88,6 +88,16 @@ def request(dataset: str, variables, year: int, month, days, hours, area,
     return req
 
 
+def reseau_coupe(exc: Exception) -> bool:
+    """Coupure reseau ou serveur indisponible (SSL, connexion, 5xx) : on reessaie."""
+    import requests
+
+    if isinstance(exc, (requests.exceptions.ConnectionError, requests.exceptions.Timeout)):
+        return True
+    rep = getattr(exc, "response", None)
+    return rep is not None and getattr(rep, "status_code", 0) >= 500
+
+
 def by_months(client, out: Path, days, hours, area, products, n_months: int) -> int:
     """Une requete par bloc de `n_months` mois d'une meme annee ; un bloc refuse pour son cout
     est coupe en deux ; file d'attente pleine : nouvel essai dans 2 min."""
@@ -116,8 +126,8 @@ def by_months(client, out: Path, days, hours, area, products, n_months: int) -> 
                 try:
                     client.retrieve(name, req, str(tmp))
                 except Exception as exc:              # noqa: BLE001
-                    if "temporarily limited" in str(exc) or "queued requests" in str(exc):
-                        print("  file d'attente du CDS pleine : nouvel essai dans 2 min", flush=True)
+                    if reseau_coupe(exc) or "temporarily limited" in str(exc) or "queued requests" in str(exc):
+                        print(f"  file d'attente du CDS pleine ou reseau coupe ({type(exc).__name__}) : nouvel essai dans 2 min", flush=True)
                         time.sleep(120)
                         pending.insert(0, block)
                         continue
@@ -197,8 +207,8 @@ def main() -> int:
                                 request("landfixe", LAND_FIXE_VARS, 2025, 1, [1], [0], area),
                                 str(target.with_suffix(".part")))
             except Exception as exc:                  # noqa: BLE001
-                if "temporarily limited" in str(exc) or "queued requests" in str(exc):
-                    print("  file d'attente du CDS pleine : nouvel essai dans 2 min", flush=True)
+                if reseau_coupe(exc) or "temporarily limited" in str(exc) or "queued requests" in str(exc):
+                    print(f"  file d'attente du CDS pleine ou reseau coupe ({type(exc).__name__}) : nouvel essai dans 2 min", flush=True)
                     time.sleep(120)
                     continue
                 raise
@@ -247,9 +257,9 @@ def main() -> int:
                 try:
                     client.retrieve(name, req, str(tmp))
                 except Exception as exc:              # noqa: BLE001
-                    if "temporarily limited" in str(exc) or "queued requests" in str(exc):
+                    if reseau_coupe(exc) or "temporarily limited" in str(exc) or "queued requests" in str(exc):
                         # file d'attente du CDS pleine (requetes par jeu limitees) : on attend
-                        print("  file d'attente du CDS pleine : nouvel essai dans 2 min", flush=True)
+                        print(f"  file d'attente du CDS pleine ou reseau coupe ({type(exc).__name__}) : nouvel essai dans 2 min", flush=True)
                         time.sleep(120)
                         pending.insert(0, block)
                         continue
