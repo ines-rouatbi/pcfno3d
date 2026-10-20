@@ -1,16 +1,20 @@
-# PC-FNO3D Tunisie, grille ERA5-Land, entrainement sur GPU dans Colab
-# (notebooks/current/pcfno3d_tunisie_land_colab.ipynb). Meme jeu et meme physique que
-# tunisie_fno3d_land.yaml ; le modele est celui de la v7 (largeur 48), entraine plus longtemps.
+# PC-FNO3D v9 : la methode de la v7 entrainee sur DONNEES REELLES, toute la Tunisie
+# (decision de Rayen et Ines, 2026-10-21 : un seul modele, celui-ci, servi sur atom.zelqane.com ;
+# la v7 synthetique reste la reference de comparaison et la preuve de methode).
+#   capteurs : anemometres des aeroports (METAR) ; verite : ERA5-Land (surface, 0,1 deg) +
+#   ERA5 (altitude) ; validation en plus sur les radiosondages de Tunis-Carthage et Tozeur.
+# Entrainement sur GPU dans Colab : notebooks/current/pcfno3d_v9_colab.ipynb (grille ERA5-Land :
+# `scripts/tunisie_fno3d.py --grille land`). Modele de largeur 48, comme la v7.
 #   jeu et cache : disque local de Colab (construits dans la session, ou recopies du Drive) ;
 #   checkpoints  : disque local a chaque epoque, recopies sur le Drive toutes les 5 epoques.
-name: tunisie_fno3d_land
+name: v9
 
 paths:
   data_dir: /content/tunisie_land/jeu
   cache_dir: /content/tunisie_land/cache
-  run_dir: /content/drive/MyDrive/pcfno3d_tunisie/runs/tunisie_fno3d_land_colab
+  run_dir: /content/drive/MyDrive/pcfno3d_tunisie/runs/v9
   cache_mirror: null
-  local_dir: /content/run_local_tunisie_land
+  local_dir: /content/run_local_v9
   web_dir: /content/tunisie_land/web
 
 model:

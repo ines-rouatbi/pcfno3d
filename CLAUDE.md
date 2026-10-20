@@ -68,6 +68,19 @@ not met at 650–1000 m and is reported with the WMO criterion. The correction s
 `agent/ines/m1-correction-post-modele`, unmerged. Details: `tukhnanutha.md` § 5 "Delivery
 state".
 
+**v9 — the single model going forward (decision of Rayen and Ines, 2026-10-21).** The v7
+method (same FNO 3D, physics loss, targets u, v, w, ρ from 5 m to 1 km above ground) trained
+on **real data over all of Tunisia**: inputs = airport anemometers (METAR, horizontal wind at
+10 m, w channel = 0), training truth = ERA5-Land surface (0.1°) + ERA5 aloft, grid 23 × 78 × 45
+(≈ 9 × 11 km), extra validation on real IGRA radiosondes (Tunis-Carthage, Tozeur). Configs
+`v9_colab.yaml` (training, `notebooks/current/pcfno3d_v9_colab.ipynb`, Colab A100) and
+`v9.yaml` (ines-pc, serving); data build `scripts/tunisie_fno3d.py --grille land`
+(`pcfno3d.tunisie_fno3d`). v9 is the model to serve on atom.zelqane.com once trained and
+scored; the synthetic v7 stays as the comparison reference and proof of method (100 m detail
+has no real-data equivalent). The name v8 is taken (the rejected 2026-10-12 fine-tune).
+ERA5 is a reanalysis: say "training truth", never "measurements". Forecasting (E19, 10–30 min)
+is a future extension: v9 is a reconstruction/analysis of the current instant.
+
 `notebooks/archive/` holds the architectures explored and then dropped (FNO2D variants, U-Net/FNO,
 GNN, DeepONet, ResNet, ViT). They are history, not alternatives to maintain — do not "fix" them.
 

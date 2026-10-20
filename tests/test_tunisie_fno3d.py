@@ -101,3 +101,21 @@ def test_niveaux_jusqu_a_1_km_au_dessus_du_plus_haut_relief():
     niv = T.niveaux_pour(np.array([[0.0, 1544.0]]))                  # djebel Chambi
     assert niv[:len(T.NIVEAUX_ASL)] == T.NIVEAUX_ASL and niv[-1] == 2400.0
     assert T.noeuds_valides(np.array([[1544.0]]), niv)[-1].all()
+
+
+def test_radiosondages_maille_colonne_et_bilan():
+    from pcfno3d import radiosondages as R
+
+    meta = {"georeference": {"lat_sud": 30.0, "lon_ouest": 7.3, "pas_deg": 0.1}}
+    assert R.maille(meta, 36.8507, 10.2147, 78, 45) == (69, 29)
+    h = np.array([np.nan, 15.0, 40.0, 90.0])                         # 1er noeud sous le relief
+    u, v = np.array([9.0, 1.0, 2.0, 4.0]), np.zeros(4)
+    ui, vi = R.colonne_aux_hauteurs(h, u, v, np.array([10.0, 15.0, 65.0, 200.0]))
+    assert np.isnan(ui[0]) and np.isnan(ui[3]) and np.allclose(ui[1:3], [1.0, 3.0])
+    p = pd.DataFrame({"site": "A", "temps": [0, 0, 1], "h_agl_m": [100.0, 600.0, 100.0],
+                      "u_obs": [1.0, 2.0, 3.0], "v_obs": 0.0, "u_modele": [2.0, 2.0, 3.0],
+                      "v_modele": 0.0, "u_era5": [1.0, 2.0, 3.0], "v_era5": 0.0})
+    b = R.bilan(p).set_index("tranche_m")
+    assert b.loc["(0.0, 250.0]", "n"] == 2 and b.loc["(0.0, 250.0]", "radiosondages"] == 2
+    assert np.isclose(b.loc["(0.0, 250.0]", "rmse_vect_modele"], np.sqrt(0.5))
+    assert b.loc["(0.0, 250.0]", "rmse_vect_era5"] == 0.0
