@@ -62,8 +62,11 @@ class Trainer:
             self.optimizer, max_lr=cfg.train.lr, total_steps=self.total_steps,
             pct_start=0.1, anneal_strategy="cos")
 
-        self.amp_dtype = torch.bfloat16 if self.device.type == "cuda" else torch.float32
-        self.use_amp = self.device.type == "cuda"
+        # bf16 seulement sur les GPU qui l'ont en materiel (Ampere et plus : L4, A100) ; sur
+        # un T4 (Colab gratuit), bf16 est emule et lent : on reste en fp32
+        bf16 = self.device.type == "cuda" and torch.cuda.get_device_capability(self.device)[0] >= 8
+        self.amp_dtype = torch.bfloat16 if bf16 else torch.float32
+        self.use_amp = bf16
 
         self.start_epoch, self.best_val, self.history = 0, float("inf"), []
         self._best_dirty = False        # best.pt de travail plus recent que le durable

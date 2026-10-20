@@ -34,7 +34,7 @@ def main() -> int:
     ap.add_argument("--instants", type=int, default=50)
     ap.add_argument("--grille", choices=["era5", "land"], default=None,
                     help="era5 (0,25 deg) ou land (ERA5-Land 0,1 deg) ; par defaut land si "
-                         "la config se termine par _land")
+                         "le nom de la config contient _land")
     args = ap.parse_args()
     cfg = Config.load(args.config)
 
@@ -43,7 +43,7 @@ def main() -> int:
         if not fichiers:
             print(f"aucune archive METAR dans {args.metar}", file=sys.stderr)
             return 2
-        grille = args.grille or ("land" if args.config.endswith("_land") else "era5")
+        grille = args.grille or ("land" if "_land" in args.config else "era5")
         T.construire(Path(args.era5), fichiers, cfg.paths.data_dir, cfg.paths.cache_dir,
                      grille=grille)
         return 0

@@ -1,0 +1,66 @@
+# PC-FNO3D Tunisie, grille ERA5-Land, entrainement sur GPU dans Colab
+# (notebooks/current/pcfno3d_tunisie_land_colab.ipynb). Meme jeu et meme physique que
+# tunisie_fno3d_land.yaml ; le modele est celui de la v7 (largeur 48), entraine plus longtemps.
+#   jeu et cache : disque local de Colab (construits dans la session, ou recopies du Drive) ;
+#   checkpoints  : disque local a chaque epoque, recopies sur le Drive toutes les 5 epoques.
+name: tunisie_fno3d_land
+
+paths:
+  data_dir: /content/tunisie_land/jeu
+  cache_dir: /content/tunisie_land/cache
+  run_dir: /content/drive/MyDrive/pcfno3d_tunisie/runs/tunisie_fno3d_land_colab
+  cache_mirror: null
+  local_dir: /content/run_local_tunisie_land
+  web_dir: /content/tunisie_land/web
+
+model:
+  width: 48                 # comme la v7
+  modes: [6, 16, 12]        # (z, y, x) pour la grille 23 x 78 x 45 (+ rembourrage)
+  n_layers: 4
+  pad: [4, 8, 8]
+  proj_hidden: 128
+  local_conv: true
+  pool_surface: false       # un capteur = une maille, pas de bloc a agreger
+
+train:
+  epochs: 60
+  steps_per_epoch: 200
+  val_samples: 64
+  batch_size: 8
+  accum_steps: 1
+  lr: 1.0e-3
+  weight_decay: 1.0e-4
+  warmup_phys_epochs: 6
+  num_workers: 2
+  ema_decay: 0.999          # 12 000 pas en tout
+  grad_clip: 1.0
+  save_every: 5
+  seed: 42
+
+loss:
+  lambda_mass: 1.0
+  mass_ref: 1.0e-8          # fixe par le residu de la verite (scripts/tunisie_fno3d.py masse)
+  lambda_bc: 0.1
+  lambda_smooth: 0.0
+  lambda_grad: 0.15
+  w_weight: 1.0
+  w_level_max: 25.0
+
+mask:
+  keep_train: [0.5, 1.0]    # 12 stations : en garder au moins la moitie
+  p_full: 0.3               # une part des exemples avec toutes les stations (production)
+  keep_eval: 1.0            # evaluation : toutes les stations disponibles
+
+dso:                        # memes seuils que la v7
+  rmse: 0.5
+  r2: 0.95
+  r2_all: 0.95
+  mass_rms: 1.0e-4
+  roughness_range: [0.9, 1.1]
+  time_s: 1.0
+  rmse_25pct: 0.7
+  min_level_cover: 0.05
+
+terrain_smooth_m: 0.0       # relief ERA5-Land deja a l'echelle de la grille
+f_coriolis: 8.13e-5         # s-1, latitude centrale 33,9 N
+capteurs_min_plan: 4        # plan de pression sur les aeroports (12 au plus)
