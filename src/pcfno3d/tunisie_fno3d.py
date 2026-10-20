@@ -351,10 +351,25 @@ def lire_statique_land(dossier: Path):
     la mer, relief et masque manquants pris dans ERA5 interpole."""
     import xarray as xr
 
+    import zipfile
+
     lat_c, lon_c, zt_c, lsm_c, _ = lire_statique(dossier)
-    with xr.open_dataset(Path(dossier) / "era5_land_fixe.nc") as f:
-        lat, lon = f["latitude"].values, f["longitude"].values
-        zt, lsm = np.squeeze(f["z"].values) / G, np.squeeze(f["lsm"].values)
+    fixe = Path(dossier) / "era5_land_fixe.nc"
+    if zipfile.is_zipfile(fixe):              # le CDS livre relief et masque en zip (2 netCDF)
+        extrait = Path(dossier) / "era5_land_fixe"
+        with zipfile.ZipFile(fixe) as z:
+            z.extractall(extrait)
+        fichiers = sorted(extrait.glob("*.nc"))
+    else:
+        fichiers = [fixe]
+    champs = {}
+    for fichier in fichiers:                  # relief et masque n'ont pas la meme date
+        with xr.open_dataset(fichier) as f:
+            lat, lon = f["latitude"].values, f["longitude"].values
+            for v in f.data_vars:
+                a = f[v]
+                champs[v] = a.isel({d: 0 for d in a.dims if d not in ("latitude", "longitude")}).values
+    zt, lsm = champs["z"] / G, champs["lsm"]
     desc = lat[0] > lat[-1]
     lat, zt, lsm = (lat[::-1] if desc else lat), _orienter(zt, desc), _orienter(lsm, desc)
     zt = np.where(np.isfinite(zt), zt, vers_grille(zt_c, lat_c, lon_c, lat, lon))
