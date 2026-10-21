@@ -1,0 +1,79 @@
+# PC-FNO3D reel (Grand Tunis) : LE modele deploye (decision du 2026-10-21 ; la v7 en est la base
+# — memes operateurs, memes poids de depart —, la v9 l'assurance).
+#   verite : generateur force par ERA5 heure par heure (scripts/forcage_era5.py), relief
+#   Copernicus DEM 30 m et occupation du sol ESA WorldCover ; AUCUNE station n'y entre.
+#   capteurs : anemometres a 10 m (Tunis-Carthage METAR, Zaghouan et Nabeul SYNOP INM) ; ils ne
+#   servent qu'a l'entree, a l'affinage hors blocs de test et a la validation.
+#   domaine : 68 x 56 km, 36,395-36,900 N, 10,040-10,800 E ; surface 50 m, noeuds 100 m,
+#   niveaux v7 (25 a 1 000 m au-dessus de la mer).
+#   decoupage : test = janv.-mars 2022 + juil.-aout 2022 ; validation = janv.-fev. 2021 +
+#   juil. 2021 ; entrainement = le reste de 2021-2025, a plus de 7 jours des blocs.
+# Jeu et cache : python scripts/generate_aneo_3d.py --cache-dir ... (cf. configs/grand_tunis_colab.yaml).
+# Ce fichier : le poste local (controle du cache, service sur CPU).
+name: grand_tunis
+
+paths:
+  data_dir: C:/Users/inesr/AppData/Local/pcfno3d/grand_tunis/jeu
+  cache_dir: C:/Users/inesr/AppData/Local/pcfno3d/grand_tunis/cache
+  run_dir: C:/Users/inesr/AppData/Local/pcfno3d/runs/grand_tunis
+  cache_mirror: null
+
+model:                      # architecture v7 exacte : les poids v7 servent de depart
+  width: 48
+  modes: [6, 32, 32]
+  n_layers: 4
+  pad: [4, 8, 8]
+  proj_hidden: 128
+  local_conv: true
+  pool_surface: true        # le cache est agrege 2 x 2 par le generateur (comme la v7)
+
+train:
+  epochs: 60
+  steps_per_epoch: 200
+  val_samples: 64
+  batch_size: 1
+  accum_steps: 2
+  lr: 3.0e-4                # depart des poids v7 : pas plus petit
+  weight_decay: 1.0e-4
+  warmup_phys_epochs: 3
+  num_workers: 0
+  ema_decay: 0.999
+  grad_clip: 1.0
+  save_every: 5
+  seed: 42
+
+loss:
+  lambda_mass: 1.0
+  mass_ref: 5.0e-7
+  lambda_bc: 0.1
+  lambda_smooth: 0.0
+  lambda_grad: 0.15
+  w_weight: 1.0
+  w_level_max: 25.0
+
+mask:
+  keep_train: [0.2, 1.0]
+  keep_eval: 0.5
+
+dso:
+  rmse: 0.5
+  r2: 0.95
+  r2_all: 0.95
+  mass_rms: 1.0e-4
+  roughness_range: [0.9, 1.1]
+  time_s: 1.0
+  rmse_25pct: 0.7
+  min_level_cover: 0.05
+
+inference:
+  tta: 1
+  tta_keep: 0.7
+
+terrain_smooth_m: 300.0     # comme le generateur (TERRAIN_SMOOTH_M)
+f_coriolis: 8.705e-5        # latitude centrale 36,65 N (grille_reelle.json)
+
+real:
+  origin_lat: 36.395
+  origin_lon: 10.04
+  rotation_deg: 0.0
+  origin_assumed: false     # grille reelle : relief et position vrais

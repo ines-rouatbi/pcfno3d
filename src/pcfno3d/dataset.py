@@ -61,7 +61,8 @@ class ANEO3D(Dataset):
             keep = self.keep_eval
         stem = self.stems[j]
         S = np.load(self.cache_dir / f"{stem}_S.npy")
-        Y = np.load(self.cache_dir / f"{stem}_Y.npy")
+        # le cache du generateur reel stocke la cible en float16 (moitie du disque)
+        Y = np.load(self.cache_dir / f"{stem}_Y.npy").astype(np.float32, copy=False)
         if not self.train and self.reseau is not None:
             sensor = (S[7] > 0.5) & self.reseau
         elif not self.train and self.spacing_m:

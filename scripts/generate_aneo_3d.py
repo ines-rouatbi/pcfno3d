@@ -658,10 +658,11 @@ def _periodes(texte):
 
 
 def calendrier_era5(forcage: pd.DataFrame, test: str, val: str, marge_jours: int,
-                    pas_train: int, debut: str | None = None, fin: str | None = None):
+                    pas_train: int, debut: str | None = None, fin: str | None = None,
+                    pas_test: int = 1, pas_val: int = 1):
     """Jours reels ayant les 8 heures synoptiques dans le forcage ; test et validation par blocs
     de dates, entrainement = le reste, a plus de `marge_jours` des blocs ; un jour sur
-    `pas_train` garde pour l'entrainement."""
+    `pas_train` (`pas_test`, `pas_val`) garde dans chaque ensemble (volume du jeu)."""
     heures = forcage.index[forcage.index.hour.isin(SYNOPTIC_HOURS)]
     compte = pd.Series(1, index=heures.normalize()).groupby(level=0).sum()
     dates = [d for d, n in compte.items() if n == len(SYNOPTIC_HOURS)]
@@ -676,7 +677,8 @@ def calendrier_era5(forcage: pd.DataFrame, test: str, val: str, marge_jours: int
         return any(a - m <= d <= b + m for a, b in liste)
 
     days, split = [], {"train_days": [], "val_days": [], "test_days": []}
-    n_train = 0
+    vus = {"train_days": 0, "val_days": 0, "test_days": 0}
+    pas = {"train_days": pas_train, "val_days": pas_val, "test_days": pas_test}
     for d in dates:
         if dans(d, blocs["test"]):
             jeu = "test_days"
@@ -685,10 +687,10 @@ def calendrier_era5(forcage: pd.DataFrame, test: str, val: str, marge_jours: int
         elif dans(d, blocs["test"] + blocs["val"], marge):
             continue                                   # tampon autour des blocs
         else:
-            n_train += 1
-            if (n_train - 1) % pas_train:
-                continue
             jeu = "train_days"
+        vus[jeu] += 1
+        if (vus[jeu] - 1) % pas[jeu]:
+            continue
         idx = len(days) + 1
         days.append({"day_index": idx, "date": d.date()})
         split[jeu].append(idx)
@@ -1079,6 +1081,46 @@ def instant_rows(st: DayState, static: dict, surf: dict, vol: dict, t_sec: float
     return {c: cols[c] for c in OBS_COLUMNS}, su_g, sv_g, st_g
 
 
+def instant_tenseurs(st: DayState, static: dict, surf: dict, vol: dict, t_sec: float,
+                     interp_mask: np.ndarray, pool: bool = True):
+    """Un instant directement au format du cache pcfno3d (sans CSV) :
+        S (8, ny, nx) float32 : u, v, w, T, rho, HR, p, capteur_dispo (surface, bruit de mesure
+          compris, agregee par bloc STRIDE x STRIDE comme Geometry.pool_surface) ;
+        Y (4, nz, ny, nx) float16 : u, v, w, rho aux noeuds 3D, 0 sous le relief.
+    float16 suffit a la cible (1e-3 relatif) et divise le cache par deux ; S reste en float32
+    (la pression depasse la plage du float16). Renvoie aussi les champs bruites pour le QC."""
+    rng = st.rng_obs
+    speed = math.hypot(*st.geostrophic(t_sec)[2:])
+    sig_uv = min(0.1, 0.02 + 0.006 * speed)
+    shape = (NY_S, NX_S)
+    noisy = ~interp_mask
+    su = surf["u"] + noisy * rng.normal(0.0, sig_uv, shape)
+    sv = surf["v"] + noisy * rng.normal(0.0, sig_uv, shape)
+    sw = surf["w"] + noisy * rng.normal(0.0, 0.003, shape)
+    stc = surf["t"] + noisy * rng.normal(0.0, 0.05, shape)
+    canaux = (su, sv, sw, stc, surf["rho"], surf["rh"], surf["p"])
+
+    k = STRIDE
+    S = np.zeros((8, NY_V, NX_V), np.float32)
+    if pool:
+        m = noisy[:NY_V * k, :NX_V * k].reshape(NY_V, k, NX_V, k).astype(np.float64)
+        cnt = m.sum(axis=(1, 3))
+        for c, a in enumerate(canaux):
+            v = np.asarray(a, np.float64)[:NY_V * k, :NX_V * k].reshape(NY_V, k, NX_V, k)
+            S[c] = np.where(cnt > 0, (v * m).sum(axis=(1, 3)) / np.maximum(cnt, 1.0), 0.0)
+        S[7] = cnt > 0
+    else:
+        for c, a in enumerate(canaux):
+            S[c] = np.asarray(a)[::k, ::k][:NY_V, :NX_V]
+        S[7] = noisy[::k, ::k][:NY_V, :NX_V]
+
+    nv = static["node_valid"]
+    Y = np.zeros((4, NZ, NY_V, NX_V), np.float16)
+    for c, cle in enumerate(("u", "v", "w", "rho")):
+        Y[c] = np.where(nv, np.nan_to_num(vol[cle]), 0.0)
+    return S, Y, su, sv, stc
+
+
 def _arrow_csv_options():
     """Options CSV pyarrow sans guillemets ; None si la version installee ne les supporte pas."""
     if not HAS_ARROW:
@@ -1267,6 +1309,46 @@ def generate_day(day: dict, instants: list, sector: int, seed: int, out_dir: str
     return idx, "ok", time.time() - t_start
 
 
+def generate_day_cache(day: dict, instants: list, sector: int, seed: int, out_dir: str,
+                       cache_dir: str, pool: bool = True):
+    """Comme generate_day, mais ecrit directement <jour>_<HHMMSS>_S.npy / _Y.npy dans le
+    cache du modele (pas de CSV : ~3 fois moins de disque, pas de conversion sur Colab).
+    Renvoie aussi les lignes d'index (stem, day, timestamp, hour, doy)."""
+    static, pre = _STATIC, _PRE
+    out_dir, cache_dir = Path(out_dir), Path(cache_dir)
+    date = day["date"]
+    idx = day["day_index"]
+    qc_path = out_dir / "qc" / f"qc_day_{idx:04d}.csv"
+
+    t_start = time.time()
+    st = (DayStateERA5(idx, date, sector, static, seed, _FORCAGE, _CHAMPS) if _FORCAGE is not None
+          else DayState(idx, date, sector, static, seed))
+    rng_day = np.random.default_rng(seed + 104729)
+    interp_mask = rng_day.random((NY_S, NX_S)) < 0.012
+
+    qc_rows, rows = [], []
+    prev = None
+    for t_sec, episode in instants:
+        surf, vol, meta = compute_fields(st, static, pre, t_sec, episode)
+        S, Y, su, sv, stc = instant_tenseurs(st, static, surf, vol, t_sec, interp_mask, pool)
+        ts = dt.datetime.combine(date, dt.time()) + dt.timedelta(seconds=float(t_sec))
+        stem = f"{idx:04d}_{ts.strftime('%H%M%S')}"
+        for suffixe, a in (("_S", S), ("_Y", Y)):
+            tmp = cache_dir / f"{stem}{suffixe}.tmp.npy"
+            np.save(tmp, a)
+            os.replace(tmp, cache_dir / f"{stem}{suffixe}.npy")
+        rows.append({"stem": stem, "day": idx, "timestamp": ts.strftime("%Y-%m-%d %H:%M:%S"),
+                     "hour": ts.hour + ts.minute / 60 + ts.second / 3600,
+                     "doy": ts.timetuple().tm_yday})
+        row = qc_instant(static, vol, su, sv, stc, meta, prev, t_sec)
+        row.update({"day_index": idx, "timestamp_utc": rows[-1]["timestamp"],
+                    "episode": episode or "synoptique"})
+        qc_rows.append(row)
+        prev = {"t": t_sec, "u": su, "v": sv}
+    pd.DataFrame(qc_rows).to_csv(qc_path, index=False, encoding="utf-8")
+    return idx, "ok", time.time() - t_start, rows
+
+
 # =============================================================================
 # SYNTHESE DU CONTROLE QUALITE
 # =============================================================================
@@ -1340,6 +1422,50 @@ def _configurer(args) -> None:
         PERTURB = args.perturbations
 
 
+def generer_cache(args, tasks, split, static_path: Path, out_dir: Path) -> None:
+    """Generation parallele vers le cache (--cache-dir). Reprise : un jour dont tous les
+    instants sont deja dans index.csv est saute. L'index porte aussi le vent geostrophique et
+    le cisaillement ERA5 de l'instant (entree grande echelle possible du modele reel)."""
+    cache_dir = Path(args.cache_dir)
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    index_path = cache_dir / "index.csv"
+    faits = set(pd.read_csv(index_path)["day"]) if index_path.exists() else set()
+    jeu = {d: n for n, cle in (("train", "train_days"), ("val", "val_days"), ("test", "test_days"))
+           for d in split[cle]}
+    forcage = lire_forcage(args.forcage) if args.forcage else None
+    restant = [t for t in tasks if t[0]["day_index"] not in faits]
+    log(f"Cache {cache_dir} : {len(tasks) - len(restant)} jours deja faits, {len(restant)} a generer")
+
+    t0 = time.time()
+    done = 0
+    with ProcessPoolExecutor(max_workers=args.workers, initializer=_worker_init,
+                             initargs=(str(static_path),
+                                       str(args.forcage) if args.forcage else None)) as ex:
+        futs = [ex.submit(generate_day_cache, d, inst, sec, seed, str(out_dir), str(cache_dir),
+                          not args.sans_pool)
+                for d, inst, sec, seed in restant]
+        for fut in as_completed(futs):
+            idx, status, dur, rows = fut.result()
+            df = pd.DataFrame(rows)
+            df["split"] = jeu.get(idx, "test")
+            if forcage is not None:
+                f = forcage.reindex(pd.to_datetime(df["timestamp"]))
+                for c in ("ug", "vg", "shear_u", "shear_v"):
+                    df[f"era5_{c}"] = f[c].values if c in f else np.nan
+            df.to_csv(index_path, mode="a", header=not index_path.exists(), index=False)
+            done += 1
+            eta = (time.time() - t0) / done * (len(restant) - done)
+            log(f"Jour {idx:04d} : {status} ({dur:.0f} s, {len(rows)} instants) | "
+                f"{done}/{len(restant)} | reste ~{eta / 60:.0f} min")
+
+    summary = qc_summary(out_dir, split)
+    if summary:
+        for name, r in summary["controles"].items():
+            flag = {True: "CONFORME", False: "NON CONFORME", None: "n/a"}[r["conforme"]]
+            log(f"  {name:32s} {r['valeur']:.4g} (seuil {r['seuil']}) -> {flag}")
+    log("Termine.")
+
+
 def main():
     ap = argparse.ArgumentParser(description="Generateur du dataset ANEO 3D (Tukhnanutha)")
     ap.add_argument("--input-grid", type=Path, default=None,
@@ -1361,11 +1487,20 @@ def main():
     ap.add_argument("--val", default="", help="blocs de validation, meme format")
     ap.add_argument("--marge-jours", type=int, default=7, help="jours ecartes autour des blocs")
     ap.add_argument("--pas-train", type=int, default=1, help="un jour d'entrainement sur N")
+    ap.add_argument("--pas-test", type=int, default=1, help="un jour de test sur N")
+    ap.add_argument("--pas-val", type=int, default=1, help="un jour de validation sur N")
     ap.add_argument("--debut", default=None)
     ap.add_argument("--fin", default=None)
     ap.add_argument("--perturbations", type=float, default=None,
                     help="facteur des perturbations aleatoires de petite echelle (forcage : 0,4)")
     ap.add_argument("--f-coriolis", type=float, default=None)
+    ap.add_argument("--cache-dir", type=Path, default=None,
+                    help="ecrit directement le cache du modele (_S.npy / _Y.npy + index.csv) au "
+                         "lieu des CSV journaliers ; la grille, meta.json et split_days.json "
+                         "restent dans --output-dir")
+    ap.add_argument("--sans-pool", action="store_true",
+                    help="cache : un capteur sur STRIDE**2 au lieu de la moyenne par bloc "
+                         "(doit suivre model.pool_surface de la config d'entrainement)")
     ap.add_argument("--csv-brut", action="store_true",
                     help="Fichiers d'observations en .csv non compresse (environ 4 fois plus volumineux)")
     args = ap.parse_args()
@@ -1396,7 +1531,8 @@ def main():
     # 2. Calendrier et split
     if args.forcage:
         days, split, schedule = calendrier_era5(lire_forcage(args.forcage), args.test, args.val,
-                                                args.marge_jours, args.pas_train, args.debut, args.fin)
+                                                args.marge_jours, args.pas_train, args.debut, args.fin,
+                                                args.pas_test, args.pas_val)
         minute_days, sec_days = [], []
         args.n_days = len(days)
         log(f"Forcage ERA5 : {len(days)} jours reels (test {len(split['test_days'])}, "
@@ -1462,6 +1598,10 @@ def main():
             continue
         inst = schedule[i][: args.max_instants] if args.max_instants else schedule[i]
         tasks.append((d, inst, int(sectors[i - 1]), args.seed * 1000 + i))
+
+    if args.cache_dir:
+        generer_cache(args, tasks, split, static_path, out_dir)
+        return
 
     t0 = time.time()
     done = 0

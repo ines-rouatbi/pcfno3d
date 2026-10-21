@@ -131,7 +131,7 @@ def by_months(client, out: Path, days, hours, area, products, n_months: int) -> 
                     client.retrieve(name, req, str(tmp))
                 except Exception as exc:              # noqa: BLE001
                     if reseau_coupe(exc) or "temporarily limited" in str(exc) or "queued requests" in str(exc):
-                        print(f"  file d'attente du CDS pleine ou reseau coupe ({type(exc).__name__}) : nouvel essai dans 2 min", flush=True)
+                        print(f"  file d'attente du CDS pleine ou reseau coupe ({type(exc).__name__}: {str(exc)[:160]}) : nouvel essai dans 2 min", flush=True)
                         time.sleep(120)
                         pending.insert(0, block)
                         continue
@@ -212,7 +212,7 @@ def main() -> int:
                                 str(target.with_suffix(".part")))
             except Exception as exc:                  # noqa: BLE001
                 if reseau_coupe(exc) or "temporarily limited" in str(exc) or "queued requests" in str(exc):
-                    print(f"  file d'attente du CDS pleine ou reseau coupe ({type(exc).__name__}) : nouvel essai dans 2 min", flush=True)
+                    print(f"  file d'attente du CDS pleine ou reseau coupe ({type(exc).__name__}: {str(exc)[:160]}) : nouvel essai dans 2 min", flush=True)
                     time.sleep(120)
                     continue
                 raise
@@ -263,7 +263,7 @@ def main() -> int:
                 except Exception as exc:              # noqa: BLE001
                     if reseau_coupe(exc) or "temporarily limited" in str(exc) or "queued requests" in str(exc):
                         # file d'attente du CDS pleine (requetes par jeu limitees) : on attend
-                        print(f"  file d'attente du CDS pleine ou reseau coupe ({type(exc).__name__}) : nouvel essai dans 2 min", flush=True)
+                        print(f"  file d'attente du CDS pleine ou reseau coupe ({type(exc).__name__}: {str(exc)[:160]}) : nouvel essai dans 2 min", flush=True)
                         time.sleep(120)
                         pending.insert(0, block)
                         continue
