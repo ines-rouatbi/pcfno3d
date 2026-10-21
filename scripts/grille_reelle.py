@@ -1,7 +1,8 @@
 """Grille de surface REELLE pour le generateur ANEO 3D (scripts/generate_aneo_3d.py --input-grid).
 
 Remplace le relief synthetique par le relief et l'occupation du sol reels d'une zone de
-Tunisie (par defaut le Grand Tunis, 50 x 40 km a 50 m : 1000 x 800 points) :
+Tunisie (par defaut le Grand Tunis, 68 x 56 km a 50 m : 1360 x 1120 points, avec trois
+stations reelles : Tunis-Carthage, Zaghouan, Nabeul) :
     relief   : Copernicus DEM GLO-30 (1 seconde d'arc, ~30 m), lisse puis interpole a 50 m ;
     rugosite : ESA WorldCover 2021 (10 m), z0 par classe, moyenne logarithmique sur la maille ;
     capteurs : hauteur des mats ANEO simulee (20-30 m), comme le generateur.
@@ -32,8 +33,14 @@ WORLDCOVER = {10: (4, 1.0), 20: (2, 0.2), 30: (2, 0.03), 40: (3, 0.1), 50: (5, 1
               60: (2, 0.01), 70: (2, 0.001), 80: (1, 0.0002), 90: (1, 0.05), 95: (4, 0.5),
               100: (2, 0.03), 0: (1, 0.0002)}
 NOMS = {1: "eau", 2: "plaine", 3: "agricole", 4: "foret", 5: "urbain"}
-STATIONS = {"DTTA Tunis-Carthage (METAR, INM 60715, radiosondage IGRA TSM00060715)": (36.8507, 10.2147),
-            "Nabeul (INM 60728)": (36.45, 10.7333), "Zaghouan (INM 60729)": (36.3667, 10.1167),
+# stations reelles, coordonnees verifiees contre le relief Copernicus et l'altitude officielle :
+#   Zaghouan : catalogue INM (36,3667 N 10,1167 E) -> 959 m, le sommet du djebel (arrondi faux) ;
+#              NOAA ISD (36,433 N 10,083 E) -> 141 m pour 156 m officiels : retenu ;
+#   Nabeul   : catalogue INM (36,45 N 10,7333 E) -> 9 m pour 1 m officiel : retenu ;
+#              NOAA ISD (36,467 N 10,700 E) -> 55 m, douteux.
+STATIONS = {"DTTA Tunis-Carthage (METAR, INM 60715, radiosondage IGRA TSM00060715)": (36.8504, 10.2156),
+            "Zaghouan-Mograne (synop INM 60729, NOAA ISD 607290)": (36.433, 10.083),
+            "Nabeul (synop INM 60728, NOAA ISD 607280)": (36.45, 10.7333),
             "Bizerte (INM 60714)": (37.25, 9.8), "Kelibia (INM 60720)": (36.85, 11.0833)}
 SOURCES = {
     "relief": "Copernicus DEM GLO-30, doi:10.5270/ESA-c5d3d65 - (c) DLR e.V. 2010-2014 and (c) "
@@ -221,10 +228,10 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--dem", required=True, help="dossier des tuiles Copernicus et WorldCover")
     ap.add_argument("--sortie", required=True)
-    ap.add_argument("--lat-sud", type=float, default=36.62)
-    ap.add_argument("--lon-ouest", type=float, default=10.00)
-    ap.add_argument("--nx", type=int, default=1000)
-    ap.add_argument("--ny", type=int, default=800)
+    ap.add_argument("--lat-sud", type=float, default=36.395)
+    ap.add_argument("--lon-ouest", type=float, default=10.04)
+    ap.add_argument("--nx", type=int, default=1360)
+    ap.add_argument("--ny", type=int, default=1120)
     ap.add_argument("--dx", type=float, default=50.0)
     args = ap.parse_args()
     df, info = construire(Path(args.dem), args.lat_sud, args.lon_ouest, args.nx, args.ny, args.dx)
