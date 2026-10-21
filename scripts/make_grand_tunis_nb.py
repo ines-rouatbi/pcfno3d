@@ -84,6 +84,19 @@ DON = Path("/content/donnees")
 if not (DON / "grand_tunis" / "forcage_era5.csv").exists():
     with zipfile.ZipFile(GT / "grand_tunis_donnees.zip") as zf:
         zf.extractall(DON)
+# mises a jour deposees apres coup sur le Drive (morceaux de moins de 10 Mo) :
+# maj_<fichier> ou maj_<fichier>.000, .001... -> remplacent <fichier> dans donnees/grand_tunis
+import collections
+morceaux = collections.defaultdict(list)
+for f in sorted(GT.glob("maj_*")):
+    nom = f.name[4:]
+    tete, _, queue = nom.rpartition(".")
+    morceaux[tete if queue.isdigit() and tete else nom].append(f)
+for nom, fs in morceaux.items():
+    with open(DON / "grand_tunis" / nom, "wb") as out:
+        for f in sorted(fs):
+            out.write(f.read_bytes())
+    print("mise a jour :", nom, "<-", [f.name for f in sorted(fs)])
 print(sorted(p.name for p in (DON / "grand_tunis").iterdir()))
 '''
 

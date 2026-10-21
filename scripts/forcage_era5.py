@@ -65,11 +65,13 @@ def _boite(ds, info, marge):
     return ds.sel(sel)
 
 
-def forcage(era5: Path, info: dict, marge: float = 0.15) -> pd.DataFrame:
+def forcage(era5: Path, info: dict, marge: float = 0.15, slx: bool = True) -> pd.DataFrame:
     d = Path(era5)
     pl = _ouvrir(sorted(d.glob("era5_plx_*.nc")), ["u", "v", "z"])
     sl = _ouvrir(sorted(d.glob("era5_sl_*.nc")), ["u10", "v10", "u100", "v100", "t2m", "sp", "msl", "z"])
-    slx = _ouvrir(sorted(d.glob("era5_slx_*.nc")), ["sst", "skt", "blh"])
+    # sans_slx : une seule regle pour tout le jeu (contraste t2m, couche limite par formule),
+    # quand la SST / temperature de peau ne couvre qu'une partie des dates
+    slx = _ouvrir(sorted(d.glob("era5_slx_*.nc")), ["sst", "skt", "blh"]) if slx else None
     import xarray as xr
     with xr.open_dataset(d / "masque_terre_mer.nc") as m:
         lsm = _boite(m["lsm"].squeeze(drop=True).load(), info, marge)
@@ -154,9 +156,11 @@ def main() -> int:
     ap.add_argument("--era5", required=True)
     ap.add_argument("--grille", required=True, help="grille_reelle.json (scripts/grille_reelle.py)")
     ap.add_argument("--sortie", required=True)
+    ap.add_argument("--sans-slx", action="store_true",
+                    help="ignore SST / temperature de peau / couche limite (meme regle partout)")
     args = ap.parse_args()
     info = json.loads(Path(args.grille).read_text(encoding="utf-8"))
-    df = forcage(Path(args.era5), info)
+    df = forcage(Path(args.era5), info, slx=not args.sans_slx)
     df.to_csv(args.sortie, index=False, float_format="%.5g")
     np.savez_compressed(Path(args.sortie).with_suffix(".npz"), **df.attrs["champs"])
     t = pd.to_datetime(df["timestamp_utc"])
