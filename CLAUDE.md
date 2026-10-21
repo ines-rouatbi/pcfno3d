@@ -81,6 +81,26 @@ has no real-data equivalent). The name v8 is taken (the rejected 2026-10-12 fine
 ERA5 is a reanalysis: say "training truth", never "measurements". Forecasting (E19, 10–30 min)
 is a future extension: v9 is a reconstruction/analysis of the current instant.
 
+**PC-FNO3D réel (Grand Tunis) — THE deployed model (decision of Ines, 2026-10-21, after
+v9 above).** v7 is its base (same operators, starts from v7 weights, `configs/grand_tunis.yaml`
+= v7 architecture), v9 its insurance. Domain 68 × 56 km (36.395–36.900 N, 10.04–10.80 E),
+surface 50 m (Copernicus DEM + ESA WorldCover, `scripts/grille_reelle.py`), nodes 100 m,
+v7 levels. **Training truth = the generator forced by ERA5** (`scripts/forcage_era5.py` →
+`forcage_era5.csv/.npz`; `generate_aneo_3d.py --forcage`: `DayStateERA5`, sea breeze from
+the land–sea contrast, large scale recalibrated on ERA5 cell by cell at the same height
+above ground, w by continuity). **Stations never enter the truth** — only the input, fine-tuning
+outside test blocks, and validation (rule of Ines). Stations in the domain: Tunis-Carthage
+(METAR), Zaghouan 60729 and Nabeul 60728 (SYNOP via NOAA ISD, `scripts/isd_synop.py`; ends
+2025-08-24). Split: test = Jan–Mar 2022 + Jul–Aug 2022, val = Jan–Feb 2021 + Jul 2021,
+train = the rest with 7 days of margin. `--cache-dir` writes the model cache directly
+(`_S` float32 pooled 2×2, `_Y` float16, `_E` = ERA5 10 m wind, `index.csv` with ERA5 ug/vg/shear;
+~49 MB/instant) plus `data_dir/stations.json`. Input mode `mask.entree: era5_stations` =
+ERA5 10 m pseudo-sensors every 2.5 km + the station cells (the production input; v7's dense
+layer would leave the model blind with 3 stations). Gates before full generation:
+`scripts/test_generateur_reel.py` (winter J2: mass exact, domain mean ≈ ERA5, all three
+stations ≤ ERA5 RMSE — passed 2026-10-21) and `scripts/brise_mer.py` (summer diurnal
+direction cycle at Tunis-Carthage and Nabeul, figure shown to Ines before generating).
+
 `notebooks/archive/` holds the architectures explored and then dropped (FNO2D variants, U-Net/FNO,
 GNN, DeepONet, ResNet, ViT). They are history, not alternatives to maintain — do not "fix" them.
 
