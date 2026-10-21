@@ -657,6 +657,79 @@ def _periodes(texte):
     return out
 
 
+JOUR_0_ERA5 = pd.Timestamp("2021-01-01")
+SAISONS = {12: "DJF", 1: "DJF", 2: "DJF", 3: "MAM", 4: "MAM", 5: "MAM",
+           6: "JJA", 7: "JJA", 8: "JJA", 9: "SON", 10: "SON", 11: "SON"}
+HEURES_A, HEURES_B = (0, 6, 12, 18), (3, 9, 15, 21)
+
+
+def numero_jour(d) -> int:
+    """Numero de jour stable : jours depuis le 01/01/2021, + 1 (nom des instants en cache)."""
+    return int((pd.Timestamp(d).normalize() - JOUR_0_ERA5).days) + 1
+
+
+def _regulier(liste: list, n: int) -> list:
+    """n elements regulierement espaces dans une liste triee (tous si n >= len)."""
+    if n >= len(liste):
+        return list(liste)
+    if n <= 0:
+        return []
+    return [liste[int(i)] for i in np.unique(np.linspace(0, len(liste) - 1, n).round().astype(int))]
+
+
+def calendrier_equilibre(forcage: pd.DataFrame, test: str, val: str, marge_jours: int,
+                         instants: int, heures_par_jour: int = 4, part_test: float = 0.18,
+                         part_val: float = 0.12):
+    """`instants` repartis par saison et par heure (generation reelle, Grand Tunis).
+
+    Chaque jour retenu porte `heures_par_jour` instants : 4 = alternance (0, 6, 12, 18) /
+    (3, 9, 15, 21) h UTC, d'un jour retenu au suivant dans chaque groupe -> les 8 heures
+    synoptiques autant representees ; 8 = toutes.
+      test / validation : part_test / part_val des jours, a parts egales entre les blocs de
+        dates, places regulierement sur TOUT le bloc (pas seulement ses jours deja forces) :
+        les jours d'un bloc dont le forcage manque encore attendent ses donnees, le calendrier
+        ne change pas quand elles arrivent ;
+      entrainement : le reste, a parts egales entre les 4 saisons (DJF, MAM, JJA, SON), parmi
+        les jours forces a plus de `marge_jours` des blocs.
+    Le calendrier est fige dans calendrier.json par l'appelant (main) des le premier passage."""
+    heures = forcage.index[forcage.index.hour.isin(SYNOPTIC_HOURS)]
+    compte = pd.Series(1, index=heures.normalize()).groupby(level=0).sum()
+    forces = {d for d, n in compte.items() if n == len(SYNOPTIC_HOURS)}
+    blocs = {"test": _periodes(test), "val": _periodes(val)}
+    marge = pd.Timedelta(days=marge_jours)
+    tous_blocs = blocs["test"] + blocs["val"]
+
+    n_jours = int(round(instants / heures_par_jour))
+    n_test, n_val = int(round(n_jours * part_test)), int(round(n_jours * part_val))
+    groupes = []                                    # (jeu, nom du groupe, dates)
+    for jeu, n in (("test", n_test), ("val", n_val)):
+        for k, (a, b) in enumerate(blocs[jeu]):
+            dates = list(pd.date_range(a, b, freq="D"))
+            groupes.append((jeu, f"{jeu}_{a:%Y%m%d}", _regulier(dates, n // len(blocs[jeu])
+                                                                  + (k < n % len(blocs[jeu])))))
+    libres = sorted(d for d in forces if not any(a - marge <= d <= b + marge for a, b in tous_blocs))
+    n_train = n_jours - n_test - n_val
+    for k, saison in enumerate(("DJF", "MAM", "JJA", "SON")):
+        dates = [d for d in libres if SAISONS[d.month] == saison]
+        groupes.append(("train", saison, _regulier(dates, n_train // 4 + (k < n_train % 4))))
+
+    days, split, schedule = [], {"train_days": [], "val_days": [], "test_days": []}, {}
+    for jeu, _, dates in groupes:
+        for j, d in enumerate(dates):
+            idx = numero_jour(d)
+            if heures_par_jour >= 8:
+                h = SYNOPTIC_HOURS
+            else:
+                h = (HEURES_A if j % 2 == 0 else HEURES_B)[:heures_par_jour]
+            days.append({"day_index": idx, "date": d.date()})
+            split[f"{jeu}_days"].append(idx)
+            schedule[idx] = [(hh * 3600, None) for hh in h]
+    days.sort(key=lambda x: x["day_index"])
+    for k in split:
+        split[k].sort()
+    return days, split, schedule
+
+
 def calendrier_era5(forcage: pd.DataFrame, test: str, val: str, marge_jours: int,
                     pas_train: int, debut: str | None = None, fin: str | None = None,
                     pas_test: int = 1, pas_val: int = 1):
@@ -691,7 +764,7 @@ def calendrier_era5(forcage: pd.DataFrame, test: str, val: str, marge_jours: int
         vus[jeu] += 1
         if (vus[jeu] - 1) % pas[jeu]:
             continue
-        idx = len(days) + 1
+        idx = numero_jour(d)
         days.append({"day_index": idx, "date": d.date()})
         split[jeu].append(idx)
     schedule = {d["day_index"]: [(h * 3600, None) for h in SYNOPTIC_HOURS] for d in days}
@@ -982,6 +1055,19 @@ def compute_fields(st: DayState, static: dict, pre: dict, t_sec: float, episode:
     return surf, vol, meta
 
 
+def mer_ouverte(eau: np.ndarray, largeur_chenal_m: float = 400.0, dx: float = DX_S) -> np.ndarray:
+    """Eau marine : la partie de l'eau reliee au bord du domaine, une fois coupes les chenaux
+    plus etroits que `largeur_chenal_m` (canal de La Goulette...). Lacs, lagunes et sebkhas
+    interieurs ne comptent pas comme mer pour la brise. Regle generale, sans exception locale."""
+    from scipy.ndimage import binary_dilation, binary_erosion, label
+    r = max(int(round(largeur_chenal_m / (2.0 * dx))), 1)
+    coeur = binary_erosion(eau, iterations=r, border_value=1)
+    lab, _ = label(coeur)
+    bord = np.unique(np.concatenate([lab[0], lab[-1], lab[:, 0], lab[:, -1]]))
+    mer = np.isin(lab, bord[bord > 0])
+    return binary_dilation(mer, iterations=r) & eau      # le trait de cote est restaure
+
+
 def precompute_static_derived(static: dict):
     zt = static["zt"]
     rel = zt - gaussian_filter(zt, sigma=1500.0 / DX_S, mode="nearest")
@@ -999,10 +1085,11 @@ def precompute_static_derived(static: dict):
     # profil vertical de la correction divergente : integrale (trapezes) egale a 1
     prof = Z_LEVELS / Z_LEVELS[-1]
     integ = np.sum(0.5 * (prof[1:] + prof[:-1]) * np.diff(Z_LEVELS))
-    # brise : distance signee a la cote (> 0 sur terre), normale vers l'interieur des terres,
-    # poids maximal a la cote et decroissant vers la terre (15 km) et vers la mer (10 km)
+    # brise : distance signee a la cote MARINE (> 0 sur terre ; lacs et sebkhas = terre),
+    # normale vers l'interieur des terres, poids maximal a la cote et decroissant vers la terre
+    # (15 km) et vers la mer (10 km)
     from scipy.ndimage import distance_transform_edt
-    eau = static["z0"] <= 3e-4
+    eau = mer_ouverte(static["z0"] <= 3e-4, dx=static["dx_s"])
     if eau.any() and (~eau).any():
         dist = (distance_transform_edt(~eau) - distance_transform_edt(eau)) * static["dx_s"]
         ds = gaussian_filter(dist, sigma=500.0 / DX_S, mode="nearest")
@@ -1509,6 +1596,14 @@ def main():
     ap.add_argument("--pas-train", type=int, default=1, help="un jour d'entrainement sur N")
     ap.add_argument("--pas-test", type=int, default=1, help="un jour de test sur N")
     ap.add_argument("--pas-val", type=int, default=1, help="un jour de validation sur N")
+    ap.add_argument("--instants", type=int, default=None,
+                    help="forcage : nombre d'instants repartis par saison et par heure "
+                         "(calendrier_equilibre, fige dans calendrier.json)")
+    ap.add_argument("--heures-par-jour", type=int, default=4)
+    ap.add_argument("--jeux", default="train,val,test",
+                    help="ensembles a generer dans ce passage (points de reprise)")
+    ap.add_argument("--partie", default=None,
+                    help="i/n : la i-eme des n parts (par numero de jour) des jours selectionnes")
     ap.add_argument("--debut", default=None)
     ap.add_argument("--fin", default=None)
     ap.add_argument("--perturbations", type=float, default=None,
@@ -1549,7 +1644,36 @@ def main():
     np.savez(static_path, **{k: v for k, v in static.items()})
 
     # 2. Calendrier et split
-    if args.forcage:
+    if args.forcage and args.instants:
+        cal = out_dir / "calendrier.json"
+        if cal.exists():
+            c = json.loads(cal.read_text(encoding="utf-8"))
+            days = [{"day_index": d["day_index"], "date": dt.date.fromisoformat(d["date"])}
+                    for d in c["days"]]
+            split = c["split"]
+            schedule = {int(k): [(t, None) for t in v] for k, v in c["schedule"].items()}
+            log(f"Calendrier fige relu : {cal}")
+        else:
+            days, split, schedule = calendrier_equilibre(
+                lire_forcage(args.forcage), args.test, args.val, args.marge_jours, args.instants,
+                args.heures_par_jour)
+            cal.write_text(json.dumps({
+                "days": [{"day_index": d["day_index"], "date": d["date"].isoformat()} for d in days],
+                "split": split,
+                "schedule": {str(k): [t for t, _ in v] for k, v in schedule.items()},
+                "parametres": {"instants": args.instants, "heures_par_jour": args.heures_par_jour,
+                               "test": args.test, "val": args.val, "marge_jours": args.marge_jours},
+            }, indent=1), encoding="utf-8")
+            log(f"Calendrier equilibre fige : {cal}")
+        forces = set(lire_forcage(args.forcage).index.normalize())
+        manque = [d for d in days if pd.Timestamp(d["date"]) not in forces]
+        minute_days, sec_days = [], []
+        args.n_days = len(days)
+        log(f"{len(days)} jours, {sum(len(v) for v in schedule.values())} instants (test "
+            f"{len(split['test_days'])}, validation {len(split['val_days'])}, entrainement "
+            f"{len(split['train_days'])} jours) ; {len(manque)} jours sans forcage pour l'instant")
+        days = [d for d in days if pd.Timestamp(d["date"]) in forces]
+    elif args.forcage:
         days, split, schedule = calendrier_era5(lire_forcage(args.forcage), args.test, args.val,
                                                 args.marge_jours, args.pas_train, args.debut, args.fin,
                                                 args.pas_test, args.pas_val)
@@ -1560,10 +1684,18 @@ def main():
     else:
         split = build_split(args.n_days)
         days, schedule, minute_days, sec_days = build_calendar(args.n_days, split, rng)
-    sectors = np.tile(np.arange(8), args.n_days // 8 + 1)[: args.n_days]
+    n_sect = max([d["day_index"] for d in days] + [args.n_days])
+    sectors = np.tile(np.arange(8), n_sect // 8 + 1)[: n_sect]
     rng.shuffle(sectors)
 
     selected = [d["day_index"] for d in days]
+    if args.forcage:
+        jeux = {f"{j.strip()}_days" for j in args.jeux.split(",") if j.strip()}
+        garde = {i for k in jeux for i in split[k]}
+        selected = [i for i in selected if i in garde]
+        if args.partie:
+            a, n = (int(x) for x in args.partie.split("/"))
+            selected = [x for k, x in enumerate(selected) if k * n // len(selected) == a - 1]
     if args.days:
         sel = set()
         for part in args.days.split(","):

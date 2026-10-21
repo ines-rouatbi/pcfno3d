@@ -51,9 +51,12 @@ class PCFNO3D(nn.Module):
 
     def __init__(self, cin: int, width: int, modes: tuple[int, int, int], n_layers: int,
                  pad: tuple[int, int, int], proj_hidden: int = 128,
-                 local: bool = False) -> None:
+                 local: bool = False, recalcul: bool = False) -> None:
         super().__init__()
         self.pad = pad
+        # recalcul des activations couche par couche a la retropropagation (memoire GPU des
+        # grandes grilles, ex. Grand Tunis 12 x 560 x 680) : memes resultats, ~30 % plus lent
+        self.recalcul = recalcul
         self.lift = nn.Sequential(nn.Conv3d(cin, width, 1), nn.GELU(),
                                   nn.Conv3d(width, width, 1))
         self.spec = nn.ModuleList([SpectralConv3d(width, width, modes)
@@ -66,19 +69,24 @@ class PCFNO3D(nn.Module):
         self.proj = nn.Sequential(nn.Conv3d(width, proj_hidden, 1), nn.GELU(),
                                   nn.Conv3d(proj_hidden, 3, 1))
 
+    def _couche(self, x: torch.Tensor, n: int) -> torch.Tensor:
+        y = self.spec[n](x) + self.skip[n](x)
+        if self.local is not None:
+            y = y + self.local[n](x)
+        return F.gelu(y) if n < len(self.spec) - 1 else y
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         D, H, W = x.shape[-3:]
         pz, py, px = self.pad
         x = self.lift(x)
         # zeros aux bords : limite la periodicite imposee par la FFT
         x = F.pad(x, (0, px, 0, py, 0, pz))
-        for n, (sc, sk) in enumerate(zip(self.spec, self.skip)):
-            y = sc(x) + sk(x)
-            if self.local is not None:
-                y = y + self.local[n](x)
-            x = y
-            if n < len(self.spec) - 1:
-                x = F.gelu(x)
+        for n in range(len(self.spec)):
+            if self.recalcul and self.training and x.requires_grad:
+                from torch.utils.checkpoint import checkpoint
+                x = checkpoint(self._couche, x, n, use_reentrant=False)
+            else:
+                x = self._couche(x, n)
         x = x[..., :D, :H, :W]
         # tete en fp32 : en bf16 la sortie est arrondie a quelques cm/s, et ce bruit passe
         # dans les differences centrees, creant un plancher sur le residu de masse (DSO2)
@@ -89,7 +97,7 @@ class PCFNO3D(nn.Module):
 def build_model(cfg: Config, c_in: int) -> PCFNO3D:
     m = cfg.model
     return PCFNO3D(c_in, m.width, m.modes, m.n_layers, m.pad, m.proj_hidden,
-                   local=m.local_conv)
+                   local=m.local_conv, recalcul=m.recalcul_activations)
 
 
 def count_parameters(model: nn.Module) -> int:

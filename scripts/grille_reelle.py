@@ -4,8 +4,10 @@ Remplace le relief synthetique par le relief et l'occupation du sol reels d'une 
 Tunisie (par defaut le Grand Tunis, 68 x 56 km a 50 m : 1360 x 1120 points, avec trois
 stations reelles : Tunis-Carthage, Zaghouan, Nabeul) :
     relief   : Copernicus DEM GLO-30 (1 seconde d'arc, ~30 m), lisse puis interpole a 50 m ;
-    rugosite : ESA WorldCover 2021 (10 m), z0 par classe, moyenne logarithmique sur la maille ;
-    capteurs : hauteur des mats ANEO simulee (20-30 m), comme le generateur.
+    rugosite : ESA WorldCover 2021 (10 m), z0 par classe, moyenne logarithmique sur des blocs de
+               100 m (les mailles des noeuds 3D), la meme valeur pour les 4 points de surface
+               du bloc : regle unique sur tout le domaine, sans retouche locale ;
+    capteurs : --hauteur-capteur (anemometres reels : 10 m), sinon mats ANEO simules (20-30 m).
 Projection locale : x vers l'Est, y vers le Nord, en metres depuis le coin sud-ouest, pas
 metrique constant pris a la latitude centrale (comme pcfno3d.tunisie_fno3d.pas_metriques).
 
@@ -33,6 +35,7 @@ WORLDCOVER = {10: (4, 1.0), 20: (2, 0.2), 30: (2, 0.03), 40: (3, 0.1), 50: (5, 1
               60: (2, 0.01), 70: (2, 0.001), 80: (1, 0.0002), 90: (1, 0.05), 95: (4, 0.5),
               100: (2, 0.03), 0: (1, 0.0002)}
 NOMS = {1: "eau", 2: "plaine", 3: "agricole", 4: "foret", 5: "urbain"}
+BLOC_Z0_M = 100.0          # rugosite agregee a la maille des noeuds 3D
 # stations reelles, coordonnees verifiees contre le relief Copernicus et l'altitude officielle :
 #   Zaghouan : catalogue INM (36,3667 N 10,1167 E) -> 959 m, le sommet du djebel (arrondi faux) ;
 #              NOAA ISD (36,433 N 10,083 E) -> 141 m pour 156 m officiels : retenu ;
@@ -122,8 +125,21 @@ def echantillonner(tab, lat_n, lon_o, pas, lat, lon, ordre=1):
             + a * (1 - b) * tab[i0 + 1, j0] + a * b * tab[i0 + 1, j0 + 1])
 
 
+def agreger_z0(z0: np.ndarray, bloc: int) -> np.ndarray:
+    """Moyenne logarithmique de z0 par blocs bloc x bloc (alignes sur le coin sud-ouest, comme
+    les noeuds 3D), recopiee sur chaque point du bloc. Des moyennes logarithmiques de mailles
+    de meme taille donnent exactement celle des pixels de 10 m du bloc."""
+    ny, nx = z0.shape
+    lz = np.log(z0)
+    out = np.empty_like(lz)
+    for j in range(0, ny, bloc):
+        for i in range(0, nx, bloc):
+            out[j:j + bloc, i:i + bloc] = lz[j:j + bloc, i:i + bloc].mean()
+    return np.exp(out)
+
+
 def construire(dem_dir: Path, lat_sud: float, lon_ouest: float, nx: int, ny: int, dx: float,
-               graine: int = 2026) -> tuple[pd.DataFrame, dict]:
+               graine: int = 2026, hauteur_capteur: float | None = None) -> tuple[pd.DataFrame, dict]:
     from scipy.ndimage import gaussian_filter
 
     lat_c = lat_sud + ny * dx / 2 / metres_par_degre(lat_sud)[1]
@@ -160,13 +176,15 @@ def construire(dem_dir: Path, lat_sud: float, lon_ouest: float, nx: int, ny: int
     z0_tab = np.vectorize(lambda c: WORLDCOVER.get(int(c), (2, 0.03))[1])(classes)
     code_tab = np.vectorize(lambda c: WORLDCOVER.get(int(c), (2, 0.03))[0])(classes)
     z0 = np.exp(np.log(z0_tab).mean(axis=0))
+    z0 = agreger_z0(z0, max(int(round(BLOC_Z0_M / dx)), 1))         # 10 m -> blocs de 100 m
     occ = np.apply_along_axis(lambda v: np.bincount(v, minlength=6).argmax(), 0, code_tab)
     zt = np.where((occ == 1) & (zt < 1.0) & (zt > -1.0), 0.0, zt)       # mer et lagunes a 0 m
 
     gy, gx = np.gradient(zt, dx, dx)
     pente = np.degrees(np.arctan(np.hypot(gx, gy)))
     orient = np.degrees(np.arctan2(-gx, -gy)) % 360.0
-    zrel = np.random.default_rng(graine).uniform(20.0, 30.0, size=(ny, nx))
+    zrel = (np.full((ny, nx), float(hauteur_capteur)) if hauteur_capteur
+            else np.random.default_rng(graine).uniform(20.0, 30.0, size=(ny, nx)))
     df = pd.DataFrame({
         "point_id": (iy * nx + ix + 1).ravel(), "ix": ix.ravel(), "iy": iy.ravel(),
         "x_m": x.ravel().astype(np.float64), "y_m": y.ravel().astype(np.float64),
@@ -233,8 +251,11 @@ def main() -> int:
     ap.add_argument("--nx", type=int, default=1360)
     ap.add_argument("--ny", type=int, default=1120)
     ap.add_argument("--dx", type=float, default=50.0)
+    ap.add_argument("--hauteur-capteur", type=float, default=None,
+                    help="hauteur des capteurs (m) ; anemometres reels : 10")
     args = ap.parse_args()
-    df, info = construire(Path(args.dem), args.lat_sud, args.lon_ouest, args.nx, args.ny, args.dx)
+    df, info = construire(Path(args.dem), args.lat_sud, args.lon_ouest, args.nx, args.ny, args.dx,
+                          hauteur_capteur=args.hauteur_capteur)
     out = Path(args.sortie)
     out.mkdir(parents=True, exist_ok=True)
     df.to_csv(out / "aneo_grid_points_surface.csv", index=False, lineterminator="\n")

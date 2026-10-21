@@ -132,6 +132,7 @@ class ModelCfg:
     proj_hidden: int = 128
     local_conv: bool = True                     # branche convolutive locale 3x3x3
     pool_surface: bool = True                   # moyenne des capteurs par bloc stride x stride
+    recalcul_activations: bool = False          # memoire GPU des grandes grilles (meme resultat)
 
     def __post_init__(self) -> None:
         self.modes = tuple(int(m) for m in self.modes)      # type: ignore[assignment]
