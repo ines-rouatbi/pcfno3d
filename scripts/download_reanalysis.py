@@ -47,6 +47,9 @@ ALL_LEVELS = HIGH_LEVELS + PRESSURE_LEVELS
 PLW_VARS = ["vertical_velocity"]
 PL_VARS = ["u_component_of_wind", "v_component_of_wind", "vertical_velocity",
            "temperature", "geopotential"]
+# produit « slx » : contraste terre-mer et couche limite (brise de mer du generateur reel) :
+# temperature de surface de la mer, temperature de peau du sol, hauteur de couche limite
+SLX_VARS = ["sea_surface_temperature", "skin_temperature", "boundary_layer_height"]
 # produit « land » : ERA5-Land, 0,1 deg (~9-11 km) sur les terres seulement (la mer est vide) :
 # surface fine de PC-FNO3D Tunisie (vent 10 m, T et point de rosee 2 m, pression de surface)
 LAND_VARS = ["10m_u_component_of_wind", "10m_v_component_of_wind", "2m_temperature",
@@ -106,7 +109,8 @@ def by_months(client, out: Path, days, hours, area, products, n_months: int) -> 
              "plx": ("reanalysis-era5-pressure-levels", PLH_VARS, ALL_LEVELS),
              "plw": ("reanalysis-era5-pressure-levels", PLW_VARS, ALL_LEVELS),
              "sl": ("reanalysis-era5-single-levels", SL_VARS, None),
-             "land": ("reanalysis-era5-land", LAND_VARS, None)}
+             "land": ("reanalysis-era5-land", LAND_VARS, None),
+             "slx": ("reanalysis-era5-single-levels", SLX_VARS, None)}
     for year in sorted(set(days.year)):
         dy = days[days.year == year]
         months = sorted(set(dy.month))
@@ -151,7 +155,7 @@ def main() -> int:
     ap.add_argument("--start", help="AAAA-MM-JJ")
     ap.add_argument("--end", help="AAAA-MM-JJ (inclus)")
     ap.add_argument("--hours", default="0-23", help="ex. 0-23, ou 0,3,6,9,12,15,18,21")
-    ap.add_argument("--products", default="pl,sl", help="pl (1000-850 hPa), plh (800-700 hPa), plx (1000-700 hPa, u v z), plw (1000-700 hPa, omega), sl, land (ERA5-Land 0,1 deg), landfixe (relief et masque ERA5-Land) ; separes par des virgules")
+    ap.add_argument("--products", default="pl,sl", help="pl (1000-850 hPa), plh (800-700 hPa), plx (1000-700 hPa, u v z), plw (1000-700 hPa, omega), sl, slx (SST, temperature de peau, couche limite), land (ERA5-Land 0,1 deg), landfixe (relief et masque ERA5-Land) ; separes par des virgules")
     ap.add_argument("--out", default=str(REPO / "artifacts" / "reanalysis"))
     ap.add_argument("--chunk-days", type=int, default=4,
                     help="jours par requete (le CDS refuse les trop grosses)")
