@@ -64,7 +64,10 @@ except ImportError:
 # CONFIGURATION
 # =============================================================================
 
-NX_S, NY_S = 1000, 500          # grille de surface
+# grille de surface : 1000 x 500 (50 x 25 km, v7) par defaut ; une grille reelle d'une autre taille
+# passe par --nx/--ny, qui fixent aussi ces variables d'environnement pour les processus de calcul
+NX_S = int(os.environ.get("ANEO_GEN_NX", 1000))
+NY_S = int(os.environ.get("ANEO_GEN_NY", 500))
 DX_S = 50.0                     # pas de surface (m)
 STRIDE = 2                      # noeuds 3D : une colonne sur deux
 NX_V, NY_V = NX_S // STRIDE, NY_S // STRIDE
@@ -77,6 +80,12 @@ TERRAIN_DECAY_M = 300.0         # decroissance verticale de l'influence du relie
 TERRAIN_SMOOTH_M = 300.0        # lissage du relief vu par l'ecoulement
 W_DAMPING_M = 300.0             # echelle d'amortissement vertical de w (m)
 A_ROT, A_DIV, A_SLOPE = 0.12, 0.03, 1.0     # amplitudes des perturbations (rotationnelle, divergente, pente)
+# forcage ERA5 : les perturbations aleatoires de petite echelle sont reduites (facteur), pour que la
+# verite ne contienne pas de structures inventees que les stations reelles ne peuvent pas confirmer
+PERTURB = float(os.environ.get("ANEO_GEN_PERTURB", 1.0))
+A_ROT, A_DIV = A_ROT * PERTURB, A_DIV * PERTURB
+# brise de mer / de terre (forcage ERA5 seulement) : profondeur, penetration terre et mer
+H_BRISE_M, L_BRISE_TERRE_M, L_BRISE_MER_M = 400.0, 15000.0, 10000.0
 
 N_DAYS_DEFAULT = 100
 SYNOPTIC_HOURS = [0, 3, 6, 9, 12, 15, 18, 21]
@@ -87,7 +96,7 @@ G_ACC = 9.80665
 RD = 287.05
 KAPPA = 0.2857
 P_REF = 100000.0
-F_CORIOLIS = 8.57e-5            # latitude ~36 N
+F_CORIOLIS = float(os.environ.get("ANEO_GEN_F", 8.57e-5))   # latitude ~36 N (grille reelle : la sienne)
 LAPSE = 0.0065
 
 OBS_COLUMNS = [
@@ -304,7 +313,11 @@ def build_static(df_surface: pd.DataFrame):
     node_valid = (Z_LEVELS[:, None, None] - zt_v[None, :, :]) >= MIN_ZREL_NODE
     kk, jj, ii = np.nonzero(node_valid)
 
+    geo = {}
+    if "lat" in df_surface.columns and "lon" in df_surface.columns:
+        geo = {"lat": g("lat"), "lon": g("lon")}
     return {
+        **geo,
         "zt": zt, "z0": z0, "zrel": zrel, "x": x, "y": y,
         "dx_s": dx_s, "dy_s": dy_s, "point_id": point_id,
         "node_k": kk.astype(np.int32), "node_j": jj.astype(np.int32), "node_i": ii.astype(np.int32),
@@ -475,10 +488,212 @@ class DayState:
         s_raw = -math.sin(2 * math.pi * (h - 6.5) / 24.0)
         return s_raw * (1.0 - 0.8 * min(g / 14.0, 1.0)) * (1.0 - 0.5 * self.cloud)
 
+    # crochets : le forcage ERA5 (DayStateERA5) les remplace ; ici, les formules d'origine
+    def au_temps(self, t_sec):
+        """Met a jour les parametres qui varient dans la journee (rien en synthetique)."""
+
+    def hauteur_cl(self, t_sec, s):
+        return 700.0 - 500.0 * s if s > 0 else 700.0 + 800.0 * (-s)
+
+    def t_mer(self, t_sec, g, h):
+        amp_d = 5.0 * (1.0 - 0.6 * min(g / 15.0, 1.0)) * (1.0 - 0.5 * self.cloud)
+        return self.t_mean + amp_d * math.sin(2 * math.pi * (h - 8.0) / 24.0)
+
+    def p_mer(self, t_sec, h):
+        return self.p_mean + 120.0 * math.sin(2 * math.pi * h / 12.0)
+
+    def brise(self, t_sec, g):
+        """Amplitude de la brise (m/s) : > 0 brise de mer (vers la terre), < 0 brise de terre."""
+        return 0.0
+
+    def profil_cible(self, t_sec):
+        """Vent moyen impose a chaque niveau (u, v) ou None : rien en synthetique."""
+        return None
+
     def blend(self, name, t_sec):
         fa, fb = self.fields[name]
         phi = (math.pi / 2.0) * (t_sec / 3600.0) / 6.0
         return math.cos(phi) * fa + math.sin(phi) * fb
+
+
+class DayStateERA5(DayState):
+    """Journee pilotee par ERA5 (scripts/forcage_era5.py) au lieu de tirages au hasard.
+
+    Seuls ERA5, le relief et le sol entrent ici : aucune station. Restent aleatoires les
+    perturbations de petite echelle (reduites par ANEO_GEN_PERTURB) et les champs de bruit de
+    temperature et d'humidite ; le jet nocturne synthetique est coupe."""
+
+    def __init__(self, day_index, date, sector, static, seed, forcage: pd.DataFrame,
+                 champs: dict | None = None):
+        super().__init__(day_index, date, sector, static, seed)
+        self.champs = champs
+        t0 = pd.Timestamp(date)
+        f = forcage[(forcage.index >= t0 - pd.Timedelta(hours=3))
+                    & (forcage.index <= t0 + pd.Timedelta(hours=27))]
+        if f.empty:
+            raise ValueError(f"pas de forcage ERA5 pour le {date}")
+        self.f = f
+        self.f_s = (f.index - t0).total_seconds().to_numpy()
+        self.jet_day = False
+        self.cloud = 0.5
+        jour = f[(f.index >= t0) & (f.index < t0 + pd.Timedelta(days=1))]
+        self.t_mean = float(jour["t_mer_c"].mean())
+        self.p_mean = float(jour["p_mer_pa"].mean())
+        self.au_temps(0.0)
+
+    def _val(self, col, t_sec):
+        return float(np.interp(t_sec, self.f_s, self.f[col].to_numpy()))
+
+    def au_temps(self, t_sec):
+        self.veer = self._val("veer_deg", t_sec)
+        self.shear_u = self._val("shear_u", t_sec)
+        self.shear_v = self._val("shear_v", t_sec)
+        # gradient de temperature coherent avec le cisaillement (vent thermique inverse)
+        coef = G_ACC / (F_CORIOLIS * (self.t_mean + 273.15))
+        self.dtdy = -self.shear_u / coef
+        self.dtdx = self.shear_v / coef
+
+    def geostrophic(self, t_sec):
+        ug, vg = self._val("ug", t_sec), self._val("vg", t_sec)
+        g = math.hypot(ug, vg)
+        d = (270.0 - math.degrees(math.atan2(vg, ug))) % 360.0
+        return g, d, ug, vg
+
+    def stability(self, t_sec, g):
+        return float(np.clip(self._val("stabilite", t_sec), -1.0, 1.0))
+
+    def hauteur_cl(self, t_sec, s):
+        if "h_cl_m" in self.f and self.f["h_cl_m"].notna().all():
+            return float(np.clip(self._val("h_cl_m", t_sec), 150.0, 2500.0))
+        return super().hauteur_cl(t_sec, s)
+
+    def t_mer(self, t_sec, g, h):
+        return self._val("t_mer_c", t_sec)
+
+    def p_mer(self, t_sec, h):
+        return self._val("p_mer_pa", t_sec)
+
+    def brise(self, t_sec, g):
+        """Amplitude ~ 1,5 sqrt(|dT terre-mer|), au plus 6 m/s, etouffee par le vent synoptique ;
+        la brise de terre (nuit, dT < 0) est deux fois plus faible."""
+        dt_tm = self._val("dt_terre_mer_k", t_sec)
+        a = min(6.0, 1.5 * math.sqrt(abs(dt_tm))) * math.exp(-(g / 8.0) ** 2)
+        return a if dt_tm > 0 else -0.5 * a
+
+    def champ_cible(self, t_sec):
+        """Vent ERA5 maille par maille (u, v : niveau, lat, lon) a l'instant, interpole dans le
+        temps ; None sans fichier de champs."""
+        c = self.champs
+        if c is None:
+            return None
+        t = (pd.Timestamp(self.date) + pd.Timedelta(seconds=t_sec)).value // 10 ** 9
+        i = int(np.clip(np.searchsorted(c["temps"], t), 1, len(c["temps"]) - 1))
+        t0, t1 = c["temps"][i - 1], c["temps"][i]
+        a = float(np.clip((t - t0) / max(t1 - t0, 1), 0.0, 1.0))
+        if abs(t - t0) > 6 * 3600 and abs(t1 - t) > 6 * 3600:
+            raise ValueError(f"pas de champ ERA5 pres du {pd.Timestamp(t, unit='s')}")
+        return ((1 - a) * c["u"][i - 1] + a * c["u"][i], (1 - a) * c["v"][i - 1] + a * c["v"][i])
+
+    def profil_cible(self, t_sec):
+        """Vent ERA5 moyen sur la zone a chaque niveau du modele : la grande echelle du champ
+        genere est celle d'ERA5, le generateur n'en ajoute que les details (relief, cote)."""
+        u = np.array([self._val(f"u_era5_{int(z)}", t_sec) for z in Z_LEVELS])
+        v = np.array([self._val(f"v_era5_{int(z)}", t_sec) for z in Z_LEVELS])
+        return u, v
+
+
+def lire_champs(chemin_forcage) -> dict | None:
+    """Champs ERA5 par maille ecrits a cote du forcage (forcage_era5.npz), s'ils existent."""
+    f = Path(chemin_forcage).with_suffix(".npz")
+    if not f.exists():
+        return None
+    with np.load(f) as d:
+        return {k: d[k] for k in d.files}
+
+
+def _bilineaire(lat_e, lon_e, champ, lat, lon):
+    """Champ (..., ny_e, nx_e) sur une grille reguliere croissante -> points (lat, lon)."""
+    fy = np.clip((lat - lat_e[0]) / (lat_e[1] - lat_e[0]), 0, len(lat_e) - 1.000001)
+    fx = np.clip((lon - lon_e[0]) / (lon_e[1] - lon_e[0]), 0, len(lon_e) - 1.000001)
+    i, j = np.floor(fy).astype(int), np.floor(fx).astype(int)
+    a, b = fy - i, fx - j
+    return ((1 - a) * (1 - b) * champ[..., i, j] + (1 - a) * b * champ[..., i, j + 1]
+            + a * (1 - b) * champ[..., i + 1, j] + a * b * champ[..., i + 1, j + 1])
+
+
+def _era5_au_sol(champs, champ, lat, lon, h_sol):
+    """Vent ERA5 aux points (lat, lon) a la hauteur h_sol au-dessus du sol (meme forme) :
+    bilineaire dans le plan, lineaire en hauteur entre les hauteurs du fichier."""
+    hs = champs["hauteurs_sol"]
+    h = np.clip(h_sol, hs[0], hs[-1])
+    k = np.clip(np.searchsorted(hs, h) - 1, 0, len(hs) - 2)
+    t = (h - hs[k]) / (hs[k + 1] - hs[k])
+    plan = _bilineaire(champs["lat"], champs["lon"], champ, lat, lon)      # (nh, ...)
+    lo = np.take_along_axis(plan, k[None], axis=0)[0]
+    hi = np.take_along_axis(plan, (k + 1)[None], axis=0)[0]
+    return (1.0 - t) * lo + t * hi
+
+
+def _passe_bas(a, sigma_px, facteur=8):
+    """Lissage gaussien d'un grand champ 2D par sous-echantillonnage (rapide)."""
+    from scipy.ndimage import zoom
+    petit = a[::facteur, ::facteur]
+    petit = gaussian_filter(petit, sigma=sigma_px / facteur, mode="nearest")
+    return zoom(petit, (a.shape[0] / petit.shape[0], a.shape[1] / petit.shape[1]), order=1)[:a.shape[0], :a.shape[1]]
+
+
+def lire_forcage(chemin) -> pd.DataFrame:
+    f = pd.read_csv(chemin)
+    f.index = pd.to_datetime(f["timestamp_utc"]).dt.tz_localize(None)
+    return f.sort_index()
+
+
+def _periodes(texte):
+    out = []
+    for morceau in (texte or "").split(","):
+        if morceau.strip():
+            a, b = morceau.split(":")
+            out.append((pd.Timestamp(a), pd.Timestamp(b)))
+    return out
+
+
+def calendrier_era5(forcage: pd.DataFrame, test: str, val: str, marge_jours: int,
+                    pas_train: int, debut: str | None = None, fin: str | None = None):
+    """Jours reels ayant les 8 heures synoptiques dans le forcage ; test et validation par blocs
+    de dates, entrainement = le reste, a plus de `marge_jours` des blocs ; un jour sur
+    `pas_train` garde pour l'entrainement."""
+    heures = forcage.index[forcage.index.hour.isin(SYNOPTIC_HOURS)]
+    compte = pd.Series(1, index=heures.normalize()).groupby(level=0).sum()
+    dates = [d for d, n in compte.items() if n == len(SYNOPTIC_HOURS)]
+    if debut:
+        dates = [d for d in dates if d >= pd.Timestamp(debut)]
+    if fin:
+        dates = [d for d in dates if d <= pd.Timestamp(fin)]
+    blocs = {"test": _periodes(test), "val": _periodes(val)}
+    marge = pd.Timedelta(days=marge_jours)
+
+    def dans(d, liste, m=pd.Timedelta(0)):
+        return any(a - m <= d <= b + m for a, b in liste)
+
+    days, split = [], {"train_days": [], "val_days": [], "test_days": []}
+    n_train = 0
+    for d in dates:
+        if dans(d, blocs["test"]):
+            jeu = "test_days"
+        elif dans(d, blocs["val"]):
+            jeu = "val_days"
+        elif dans(d, blocs["test"] + blocs["val"], marge):
+            continue                                   # tampon autour des blocs
+        else:
+            n_train += 1
+            if (n_train - 1) % pas_train:
+                continue
+            jeu = "train_days"
+        idx = len(days) + 1
+        days.append({"day_index": idx, "date": d.date()})
+        split[jeu].append(idx)
+    schedule = {d["day_index"]: [(h * 3600, None) for h in SYNOPTIC_HOURS] for d in days}
+    return days, split, schedule
 
 
 # =============================================================================
@@ -518,10 +733,12 @@ def compute_fields(st: DayState, static: dict, pre: dict, t_sec: float, episode:
     Calcule tous les champs a l'instant t.
     Retourne un dict avec les champs de surface (NY_S, NX_S) et de volume (NZ, NY_V, NX_V).
     """
+    st.au_temps(t_sec)
     g, gdir, ug, vg = st.geostrophic(t_sec)
     s = st.stability(t_sec, g)
-    h_bl = 700.0 - 500.0 * s if s > 0 else 700.0 + 800.0 * (-s)
+    h_bl = st.hauteur_cl(t_sec, s)
     h = t_sec / 3600.0
+    a_brise = st.brise(t_sec, g)
 
     # Advection des perturbations par le vent moyen de couche limite
     shift_x = 0.8 * ug * t_sec
@@ -549,15 +766,14 @@ def compute_fields(st: DayState, static: dict, pre: dict, t_sec: float, episode:
         front_s = st.front_turn * 0.5 * (1.0 + np.tanh((pos - 12.0 * t_ep) / 2000.0))
 
     # Temperature et humidite de reference (niveau mer puis sol)
-    amp_d = 5.0 * (1.0 - 0.6 * min(g / 15.0, 1.0)) * (1.0 - 0.5 * st.cloud)
-    t_sl_mean = st.t_mean + amp_d * math.sin(2 * math.pi * (h - 8.0) / 24.0)
+    t_sl_mean = st.t_mer(t_sec, g, h)
     xc = static["x"] - static["x"].mean()
     yc = static["y"] - static["y"].mean()
     t_sl_s = t_sl_mean + 0.1 * tn_s + st.dtdx * xc + st.dtdy * yc
     rh_s_ref = st.rh_mean - 1.8 * (t_sl_mean - st.t_mean) + 8.0 * rn_s
 
     # Pression au niveau de la mer : maree + equilibre geostrophique
-    p0 = st.p_mean + 120.0 * math.sin(2 * math.pi * h / 12.0)
+    p0 = st.p_mer(t_sec, h)
     p_sl_s = p0 + 1.2 * F_CORIOLIS * (vg * xc - ug * yc)
 
     def state_at(z_asl, z_agl_true, sl):
@@ -598,6 +814,15 @@ def compute_fields(st: DayState, static: dict, pre: dict, t_sec: float, episode:
         u = u + sw * decay * pre["upslope_x"][sl]
         v = v + sw * decay * pre["upslope_y"][sl]
 
+        # Brise de mer (jour) / de terre (nuit), perpendiculaire a la cote : courant de basses
+        # couches vers la terre, retour plus faible au-dessus ; w suit par la continuite
+        if a_brise != 0.0:
+            zb = np.maximum(z_agl, 0.0) / H_BRISE_M
+            prof = np.where(zb < 1.0, 1.0 - zb,
+                            np.where(zb < 2.0, -0.35 * np.sin(np.pi * (zb - 1.0)), 0.0))
+            u = u + a_brise * prof * pre["brise_x"][sl]
+            v = v + a_brise * prof * pre["brise_y"][sl]
+
         t_ground = t_sl_s[sl] - LAPSE * zt
         # temperature et humidite : hauteur reelle au-dessus du sol (gradient adiabatique local)
         z_th = np.maximum(z_agl_true, 0.0)
@@ -626,6 +851,40 @@ def compute_fields(st: DayState, static: dict, pre: dict, t_sec: float, episode:
         f = state_at(z, z - zt_v, sl_v)
         for key in vol:
             vol[key][k] = f[key]
+
+    # Recalage de la grande echelle (forcage ERA5) : a chaque niveau, un vent UNIFORME ramene la
+    # moyenne sur les noeuds valides a celle d'ERA5. Uniforme : la divergence horizontale ne
+    # change pas ; w est integre ensuite, la conservation de la masse reste exacte.
+    champ = st.champ_cible(t_sec) if hasattr(st, "champ_cible") else None
+    cible = st.profil_cible(t_sec)
+    du = dv = None
+    cu = cv = None
+    if champ is not None and "lat" in static:
+        # recalage SPATIAL : la grande echelle (lissee a ~12 km) du champ genere est remplacee,
+        # niveau par niveau, par ERA5 interpole a chaque noeud ; les details restent
+        # (meme hauteur au-dessus du sol que dans ERA5 : le recalage suit le relief)
+        lat_v, lon_v = static["lat"][sl_v], static["lon"][sl_v]
+        sig = 12000.0 / (static["dx_s"] * STRIDE)
+        cu, cv = np.zeros_like(vol["u"]), np.zeros_like(vol["v"])
+        for k in range(NZ):
+            h_sol = np.maximum(Z_LEVELS[k] - zt_v, MIN_ZREL_NODE)
+            cu[k] = _era5_au_sol(st.champs, champ[0], lat_v, lon_v, h_sol) - _passe_bas(vol["u"][k], sig)
+            cv[k] = _era5_au_sol(st.champs, champ[1], lat_v, lon_v, h_sol) - _passe_bas(vol["v"][k], sig)
+        vol["u"] += cu
+        vol["v"] += cv
+    elif cible is not None:
+        du, dv = np.zeros(NZ), np.zeros(NZ)
+        for k in range(NZ):
+            ok = static["node_valid"][k]
+            if ok.any() and np.isfinite(cible[0][k]) and np.isfinite(cible[1][k]):
+                du[k] = cible[0][k] - float(vol["u"][k][ok].mean())
+                dv[k] = cible[1][k] - float(vol["v"][k][ok].mean())
+        for k in range(NZ):                     # niveaux sans noeud : correction du plus proche
+            if not static["node_valid"][k].any():
+                j = int(np.argmax(static["node_valid"].reshape(NZ, -1).any(1)))
+                du[k], dv[k] = du[j], dv[j]
+        vol["u"] += du[:, None, None]
+        vol["v"] += dv[:, None, None]
 
     # w par la continuite (integration de bas en haut, schema aux demi-niveaux)
     dx_v = static["dx_s"] * STRIDE
@@ -680,6 +939,14 @@ def compute_fields(st: DayState, static: dict, pre: dict, t_sec: float, episode:
     sl_s = (slice(None), slice(None))
     z_abs = static["zt"] + static["zrel"]
     surf = state_at(z_abs, static["zrel"], sl_s)
+    if cu is not None:                          # recalage spatial, a la hauteur du capteur
+        sig_s = 12000.0 / static["dx_s"]
+        for i_c, cle in ((0, "u"), (1, "v")):
+            cible_s = _era5_au_sol(st.champs, champ[i_c], static["lat"], static["lon"], static["zrel"])
+            surf[cle] = surf[cle] + cible_s - _passe_bas(surf[cle], sig_s, facteur=16)
+    if du is not None:                          # meme recalage, a l'altitude du capteur
+        surf["u"] = surf["u"] + np.interp(z_abs, Z_LEVELS, du)
+        surf["v"] = surf["v"] + np.interp(z_abs, Z_LEVELS, dv)
 
     idx = np.clip(np.searchsorted(Z_LEVELS, z_abs) - 1, 0, NZ - 2)
     z_lo = Z_LEVELS[idx]
@@ -709,7 +976,7 @@ def compute_fields(st: DayState, static: dict, pre: dict, t_sec: float, episode:
     wt = np.clip((z_abs - z_lo) / np.maximum(z_hi - z_lo, 1e-6), 0.0, 1.0)
     surf["w"] = (1.0 - wt) * w_lo + wt * w_hi
 
-    meta = {"g": g, "gdir": gdir, "s": s, "h_bl": h_bl}
+    meta = {"g": g, "gdir": gdir, "s": s, "h_bl": h_bl, "brise": a_brise}
     return surf, vol, meta
 
 
@@ -730,7 +997,21 @@ def precompute_static_derived(static: dict):
     # profil vertical de la correction divergente : integrale (trapezes) egale a 1
     prof = Z_LEVELS / Z_LEVELS[-1]
     integ = np.sum(0.5 * (prof[1:] + prof[:-1]) * np.diff(Z_LEVELS))
+    # brise : distance signee a la cote (> 0 sur terre), normale vers l'interieur des terres,
+    # poids maximal a la cote et decroissant vers la terre (15 km) et vers la mer (10 km)
+    from scipy.ndimage import distance_transform_edt
+    eau = static["z0"] <= 3e-4
+    if eau.any() and (~eau).any():
+        dist = (distance_transform_edt(~eau) - distance_transform_edt(eau)) * static["dx_s"]
+        ds = gaussian_filter(dist, sigma=500.0 / DX_S, mode="nearest")
+        nyc, nxc = np.gradient(ds, static["dy_s"], static["dx_s"])
+        nn = np.maximum(np.hypot(nxc, nyc), 1e-9)
+        poids = np.where(dist >= 0, np.exp(-dist / L_BRISE_TERRE_M), np.exp(dist / L_BRISE_MER_M))
+        bx, by = poids * nxc / nn, poids * nyc / nn
+    else:
+        bx = by = np.zeros_like(zt)
     return {"relief": rel, "upslope_x": ux, "upslope_y": uy, "dzt_dx_v": gxv, "dzt_dy_v": gyv,
+            "brise_x": bx, "brise_y": by,
             "dzt_dx_s": gxs, "dzt_dy_s": gys, "zt_smooth": zt_flow,
             "corr_profile": prof / integ,
             "kx_v": np.fft.fftfreq(NX_V, d=static["dx_s"] * STRIDE),
@@ -927,10 +1208,15 @@ def qc_instant(static, vol, surf_u, surf_v, surf_t, meta, prev, t_sec):
 
 _STATIC = None
 _PRE = None
+_FORCAGE = None
+_CHAMPS = None
 
 
-def _worker_init(static_path: str):
-    global _STATIC, _PRE
+def _worker_init(static_path: str, forcage_path: str | None = None):
+    global _STATIC, _PRE, _FORCAGE
+    global _CHAMPS
+    _FORCAGE = lire_forcage(forcage_path) if forcage_path else None
+    _CHAMPS = lire_champs(forcage_path) if forcage_path else None
     data = np.load(static_path, allow_pickle=False)
     _STATIC = {k: data[k] for k in data.files}
     for k in ("dx_s", "dy_s"):
@@ -952,7 +1238,8 @@ def generate_day(day: dict, instants: list, sector: int, seed: int, out_dir: str
         return idx, "deja present", 0.0
 
     t_start = time.time()
-    st = DayState(idx, date, sector, static, seed)
+    st = (DayStateERA5(idx, date, sector, static, seed, _FORCAGE, _CHAMPS) if _FORCAGE is not None
+          else DayState(idx, date, sector, static, seed))
     rng_day = np.random.default_rng(seed + 104729)
     quality = rng_day.uniform(0.85, 0.95, size=(NY_S, NX_S))
     interp_mask = rng_day.random((NY_S, NX_S)) < 0.012
@@ -1036,6 +1323,23 @@ def qc_summary(out_dir: Path, split: dict):
 # PROGRAMME PRINCIPAL
 # =============================================================================
 
+def _configurer(args) -> None:
+    """Taille de grille, Coriolis et perturbations : variables globales du processus principal
+    ET variables d'environnement, lues a l'import par les processus de calcul."""
+    global NX_S, NY_S, NX_V, NY_V, F_CORIOLIS, A_ROT, A_DIV, PERTURB
+    if args.nx and args.ny:
+        os.environ["ANEO_GEN_NX"], os.environ["ANEO_GEN_NY"] = str(args.nx), str(args.ny)
+        NX_S, NY_S = args.nx, args.ny
+        NX_V, NY_V = NX_S // STRIDE, NY_S // STRIDE
+    if args.f_coriolis:
+        os.environ["ANEO_GEN_F"] = str(args.f_coriolis)
+        F_CORIOLIS = args.f_coriolis
+    if args.perturbations is not None:
+        os.environ["ANEO_GEN_PERTURB"] = str(args.perturbations)
+        A_ROT, A_DIV = A_ROT / PERTURB * args.perturbations, A_DIV / PERTURB * args.perturbations
+        PERTURB = args.perturbations
+
+
 def main():
     ap = argparse.ArgumentParser(description="Generateur du dataset ANEO 3D (Tukhnanutha)")
     ap.add_argument("--input-grid", type=Path, default=None,
@@ -1049,9 +1353,23 @@ def main():
     ap.add_argument("--max-instants", type=int, default=None, help="Limite d'instants par jour (tests)")
     ap.add_argument("--workers", type=int, default=max(1, min(8, (os.cpu_count() or 2) - 1)))
     ap.add_argument("--seed", type=int, default=2026)
+    ap.add_argument("--nx", type=int, default=None, help="taille de la grille de surface (grille reelle)")
+    ap.add_argument("--ny", type=int, default=None)
+    ap.add_argument("--forcage", type=Path, default=None,
+                    help="forcage ERA5 (scripts/forcage_era5.py) : jours reels au lieu de tirages")
+    ap.add_argument("--test", default="", help="blocs de test, ex. 2022-01-01:2022-03-31,2022-07-01:2022-08-31")
+    ap.add_argument("--val", default="", help="blocs de validation, meme format")
+    ap.add_argument("--marge-jours", type=int, default=7, help="jours ecartes autour des blocs")
+    ap.add_argument("--pas-train", type=int, default=1, help="un jour d'entrainement sur N")
+    ap.add_argument("--debut", default=None)
+    ap.add_argument("--fin", default=None)
+    ap.add_argument("--perturbations", type=float, default=None,
+                    help="facteur des perturbations aleatoires de petite echelle (forcage : 0,4)")
+    ap.add_argument("--f-coriolis", type=float, default=None)
     ap.add_argument("--csv-brut", action="store_true",
                     help="Fichiers d'observations en .csv non compresse (environ 4 fois plus volumineux)")
     args = ap.parse_args()
+    _configurer(args)
 
     out_dir = args.output_dir
     (out_dir / "qc").mkdir(parents=True, exist_ok=True)
@@ -1076,8 +1394,16 @@ def main():
     np.savez(static_path, **{k: v for k, v in static.items()})
 
     # 2. Calendrier et split
-    split = build_split(args.n_days)
-    days, schedule, minute_days, sec_days = build_calendar(args.n_days, split, rng)
+    if args.forcage:
+        days, split, schedule = calendrier_era5(lire_forcage(args.forcage), args.test, args.val,
+                                                args.marge_jours, args.pas_train, args.debut, args.fin)
+        minute_days, sec_days = [], []
+        args.n_days = len(days)
+        log(f"Forcage ERA5 : {len(days)} jours reels (test {len(split['test_days'])}, "
+            f"validation {len(split['val_days'])}, entrainement {len(split['train_days'])})")
+    else:
+        split = build_split(args.n_days)
+        days, schedule, minute_days, sec_days = build_calendar(args.n_days, split, rng)
     sectors = np.tile(np.arange(8), args.n_days // 8 + 1)[: args.n_days]
     rng.shuffle(sectors)
 
@@ -1140,7 +1466,8 @@ def main():
     t0 = time.time()
     done = 0
     with ProcessPoolExecutor(max_workers=args.workers, initializer=_worker_init,
-                             initargs=(str(static_path),)) as ex:
+                             initargs=(str(static_path),
+                                       str(args.forcage) if args.forcage else None)) as ex:
         futs = [ex.submit(generate_day, d, inst, sec, seed, str(out_dir), node_id_start,
                           str(args.drive_dir) if args.drive_dir else None, compress)
                 for d, inst, sec, seed in tasks]
