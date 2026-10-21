@@ -63,7 +63,10 @@ class ANEO3D(Dataset):
         S = np.load(self.cache_dir / f"{stem}_S.npy")
         # le cache du generateur reel stocke la cible en float16 (moitie du disque)
         Y = np.load(self.cache_dir / f"{stem}_Y.npy").astype(np.float32, copy=False)
-        if not self.train and self.reseau is not None:
+        if self.geom.cfg.mask.entree == "era5_stations":
+            S, sensor = entree_era5_stations(S, self.cache_dir / f"{stem}_E.npy", self.geom,
+                                             rng, self.train)
+        elif not self.train and self.reseau is not None:
             sensor = (S[7] > 0.5) & self.reseau
         elif not self.train and self.spacing_m:
             sensor = (S[7] > 0.5) & lattice_mask(S[7].shape, self.spacing_m, self.geom.dx, rng)
@@ -72,6 +75,46 @@ class ANEO3D(Dataset):
         tfeat = time_geo_features(S, sensor, self.hours[j], self.doys[j], self.geom)
         return (torch.from_numpy(S[:N_SURF]), torch.from_numpy(sensor.astype(np.float32)),
                 torch.from_numpy(tfeat), torch.from_numpy(Y), j)
+
+
+def cellules_stations(geom: Geometry) -> np.ndarray:
+    """(n, 2) indices (iy, ix) des stations reelles sur la grille du modele
+    (data_dir/stations.json, ecrit par le generateur) ; vide sans fichier."""
+    cache = getattr(geom, "_cellules_stations", None)
+    if cache is None:
+        import json
+        f = geom.cfg.paths.data_dir / "stations.json"
+        cache = np.zeros((0, 2), dtype=int)
+        if f.exists():
+            st = json.loads(f.read_text(encoding="utf-8"))
+            cache = np.array([[s["iy"], s["ix"]] for s in st], dtype=int).reshape(-1, 2)
+        geom._cellules_stations = cache
+    return cache
+
+
+def entree_era5_stations(S: np.ndarray, chemin_e, geom: Geometry, rng: np.random.Generator,
+                         train: bool) -> tuple[np.ndarray, np.ndarray]:
+    """Entree de production du modele reel : vent ERA5 a 10 m sur un reseau regulier (tous
+    les `mask.pas_era5_m`) + les stations reelles (valeur du cache = verite generee au point).
+
+    T, rho, HR, p des pseudo-capteurs restent ceux de la couche de surface du cache (grande
+    echelle) ; w = 0 partout (ni ERA5 a 10 m ni un anemometre ne le donnent)."""
+    m = geom.cfg.mask
+    E = np.load(chemin_e).astype(np.float32)
+    k = max(int(round(m.pas_era5_m / geom.dx)), 1)
+    o = (int(rng.integers(0, k)), int(rng.integers(0, k))) if train else (k // 2, k // 2)
+    reseau = np.zeros(S.shape[1:], dtype=bool)
+    reseau[o[0]::k, o[1]::k] = True
+    st = np.zeros_like(reseau)
+    for iy, ix in cellules_stations(geom):
+        if not train or rng.random() < m.p_station:
+            st[iy, ix] = True
+    era5 = reseau & ~st                         # une station prime sur le pseudo-capteur
+    S = S.copy()
+    S[0] = np.where(era5, E[0], S[0])
+    S[1] = np.where(era5, E[1], S[1])
+    S[2] = 0.0
+    return S, (reseau | st) & np.isfinite(S[:7]).all(axis=0)
 
 
 def lattice_mask(shape: tuple[int, int], spacing_m: float, dx_m: float,

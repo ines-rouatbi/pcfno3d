@@ -1333,7 +1333,16 @@ def generate_day_cache(day: dict, instants: list, sector: int, seed: int, out_di
         S, Y, su, sv, stc = instant_tenseurs(st, static, surf, vol, t_sec, interp_mask, pool)
         ts = dt.datetime.combine(date, dt.time()) + dt.timedelta(seconds=float(t_sec))
         stem = f"{idx:04d}_{ts.strftime('%H%M%S')}"
-        for suffixe, a in (("_S", S), ("_Y", Y)):
+        tenseurs = [("_S", S), ("_Y", Y)]
+        champ = st.champ_cible(t_sec) if hasattr(st, "champ_cible") else None
+        if champ is not None and "lat" in static:
+            # entree de production : vent ERA5 a 10 m au-dessus du sol aux noeuds (100 m)
+            lat_v = static["lat"][::STRIDE, ::STRIDE][:NY_V, :NX_V]
+            lon_v = static["lon"][::STRIDE, ::STRIDE][:NY_V, :NX_V]
+            dix = np.full(lat_v.shape, 10.0)
+            E = np.stack([_era5_au_sol(st.champs, champ[c], lat_v, lon_v, dix) for c in (0, 1)])
+            tenseurs.append(("_E", E.astype(np.float16)))
+        for suffixe, a in tenseurs:
             tmp = cache_dir / f"{stem}{suffixe}.tmp.npy"
             np.save(tmp, a)
             os.replace(tmp, cache_dir / f"{stem}{suffixe}.npy")
@@ -1429,6 +1438,17 @@ def generer_cache(args, tasks, split, static_path: Path, out_dir: Path) -> None:
     cache_dir = Path(args.cache_dir)
     cache_dir.mkdir(parents=True, exist_ok=True)
     index_path = cache_dir / "index.csv"
+    # stations reelles du domaine (grille_reelle.json a cote de la grille) -> cellules du
+    # modele, pour l'entree « era5_stations » (pcfno3d.dataset)
+    info = Path(args.input_grid).parent / "grille_reelle.json" if args.input_grid else None
+    if info is not None and info.exists():
+        st = json.loads(info.read_text(encoding="utf-8")).get("stations", {})
+        cellules = [{"nom": n, "iy": int(v["iy"]) // STRIDE, "ix": int(v["ix"]) // STRIDE,
+                     "lat": v["lat"], "lon": v["lon"]}
+                    for n, v in st.items() if v.get("dans_la_zone")]
+        (out_dir / "stations.json").write_text(json.dumps(cellules, indent=2, ensure_ascii=False),
+                                               encoding="utf-8")
+        log(f"stations du domaine : {', '.join(c['nom'] for c in cellules)}")
     faits = set(pd.read_csv(index_path)["day"]) if index_path.exists() else set()
     jeu = {d: n for n, cle in (("train", "train_days"), ("val", "val_days"), ("test", "test_days"))
            for d in split[cle]}

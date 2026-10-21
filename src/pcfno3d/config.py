@@ -220,8 +220,19 @@ class MaskCfg:
     # de la distribution, et la v7 y est mesurablement PIRE qu'a 50 % (RMSE max u 0,705
     # contre 0,593). C'est pourtant le cas de production. 0 = comportement v7.
     p_full: float = 0.0
+    # Entree du modele reel (Grand Tunis) : « capteurs » (v7 : couche de surface du cache,
+    # masquee au hasard) ou « era5_stations » : vent ERA5 a 10 m (_E.npy) sur un reseau
+    # regulier de pseudo-capteurs tous les `pas_era5_m`, plus les cellules des stations
+    # reelles (data_dir/stations.json) avec la valeur du cache, chacune gardee avec la
+    # probabilite `p_station` a l'entrainement (toutes en evaluation). C'est l'entree de
+    # production : ERA5 (ou la prevision) + les anemometres.
+    entree: str = "capteurs"
+    pas_era5_m: float = 2500.0
+    p_station: float = 0.8
 
     def __post_init__(self) -> None:
+        if self.entree not in ("capteurs", "era5_stations"):
+            raise ValueError(f"mask.entree : 'capteurs' ou 'era5_stations', recu {self.entree!r}")
         self.keep_train = tuple(float(k) for k in self.keep_train)   # type: ignore[assignment]
         if not 0.0 <= float(self.p_full) <= 1.0:
             raise ValueError(f"mask.p_full doit etre dans [0, 1], recu {self.p_full}")

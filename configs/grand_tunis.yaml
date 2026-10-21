@@ -52,8 +52,11 @@ loss:
   w_level_max: 25.0
 
 mask:
-  keep_train: [0.2, 1.0]
-  keep_eval: 0.5
+  entree: era5_stations     # ERA5 10 m tous les 2,5 km + les anemometres reels (production)
+  pas_era5_m: 2500.0
+  p_station: 0.8
+  keep_train: [0.2, 1.0]    # sans effet en era5_stations
+  keep_eval: 1.0
 
 dso:
   rmse: 0.5
