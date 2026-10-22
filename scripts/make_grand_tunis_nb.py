@@ -273,6 +273,9 @@ du vent ERA5 à chaque nœud et du forçage de l'instant** (ug, vg, cisaillement
 stabilité, contraste terre-mer) ; sortie u, v = ERA5 + correction apprise. Départ : `best.pt`
 de la v1 (`runs/grand_tunis/`), u, v de départ = ERA5 (R² 0,95 / 0,97 en validation). 20 époques.
 Résultats : `runs/grand_tunis_v2/`."""),
+    "grand_tunis_v2_long_colab": ("v2 prolongé, mode réel", """
+**v2 prolongé, mode réel** : mêmes entrées et sortie que la v2 ; départ = `best.pt` de la v2
+(`runs/grand_tunis_v2/`), 40 époques de plus à LR 1e-4. Résultats : `runs/grand_tunis_v2_long/`."""),
     "grand_tunis_v2_aneo_colab": ("v2, mode ANEO simulé", """
 **v2, mode ANEO simulé** : entrée = réseau dense de capteurs à 10 m (couche de surface du jeu,
 masquée au hasard, comme la v7) + vent ERA5 à chaque nœud + forçage de l'instant ; sortie u, v =
@@ -398,6 +401,8 @@ def main() -> int:
                     ("pcfno3d_grand_tunis_colab.ipynb", entrainement()),
                     ("pcfno3d_grand_tunis_v2_colab.ipynb",
                      entrainement("grand_tunis_v2_colab", "grand_tunis_v2")),
+                    ("pcfno3d_grand_tunis_v2_long_colab.ipynb",
+                     entrainement("grand_tunis_v2_long_colab", "grand_tunis_v2_long")),
                     ("pcfno3d_grand_tunis_v2_aneo_colab.ipynb",
                      entrainement("grand_tunis_v2_aneo_colab", "grand_tunis_v2_aneo")),
                     ("pcfno3d_grand_tunis_diagnostic_colab.ipynb", diagnostic())):
