@@ -114,7 +114,15 @@ device. `model.residuel_era5`: u, v = ERA5 (last two input channels) + learned c
 residual model) the u, v rows of the last projection, so training starts at ERA5. Serving needs
 the instant's `timestamp`. Two modes: `grand_tunis_v2_colab.yaml` (real: ERA5 10 m + stations,
 from v1 `best.pt`) and `grand_tunis_v2_aneo_colab.yaml` (simulated dense ANEO network, from v7);
-notebooks from `scripts/make_grand_tunis_nb.py`. Also fixed that day: METAR u, v now filled on
+notebooks from `scripts/make_grand_tunis_nb.py`. **v2 real-mode result (Colab A100, 2026-10-22,
+20 epochs, `runs/grand_tunis_v2/eval_pcfno3d/best`)**: validation R² u 0.986 / v 0.992 / w 0.908
+(v1 0.781 / 0.729 / 0.609); test, 180 synoptic instants: global RMSE u 0.478 / v 0.453 m/s, R² u, v
+≥ 0.975 at every level, direction MAE 3.9°, DSO4 290 ms. Not met: per-level RMSE ≤ 0.5 (0.48–0.59
+below 75 m and at 400–500 m), DSO2 mass 1.77e-4 (> 1e-4: ERA5 added in the residual is not
+divergence-free), DSO3 roughness 0.76 (too smooth). The DSO5 sweep is meaningless in
+`era5_stations` mode (`keep` is ignored: identical rows) — robustness there means dropping
+stations / ERA5 points, still to write. Validation against real stations and radiosondes still to
+do. Also fixed that day: METAR u, v now filled on
 import for every non-calm report (`metar.py`), IGRA launch time of 00 UTC balloons dated the
 previous day (`igra_radiosondages.py`; matching was already on `temps`).
 
