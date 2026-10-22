@@ -22,7 +22,7 @@ import torch
 from .config import Config, pick_device
 from .dataset import assemble_input
 from .features import time_geo_features
-from .geometry import N_SURF, SURF_VARS, Geometry
+from .geometry import N_SURF, N_TFEAT, SURF_VARS, Geometry
 from .model import build_model, model_cfg_from_checkpoint
 from .normalize import Normalizer
 from .reliability import (CLASSES, NODATA_U8, STATUT_MESURE, Calibration, Reliability,
@@ -319,6 +319,18 @@ class ModelLock:
         return self._pris
 
 
+def caracteristiques(S: np.ndarray, sensor: np.ndarray, hour: float, doy: int, geom: Geometry,
+                     extra: np.ndarray | None = None) -> np.ndarray:
+    """Le vecteur tfeat du modele : les 8 canaux temps / physique, suivis du forcage ERA5 de
+    l'instant (`ForcageERA5.vecteur`) quand le modele le recoit (paths.forcage_era5)."""
+    t = time_geo_features(S, sensor, hour, doy, geom)
+    if geom.forcage is None:
+        return t
+    if extra is None:
+        raise ValueError("ce modele recoit le forcage ERA5 : l'instant (UTC) est requis")
+    return np.concatenate([t, np.asarray(extra, np.float32)]).astype(np.float32)
+
+
 @torch.no_grad()
 def ensemble_forward(net: torch.nn.Module, geom: Geometry, norm: Normalizer,
                      s_raw: torch.Tensor, sensor: torch.Tensor, hour: float, doy: int,
@@ -339,9 +351,11 @@ def ensemble_forward(net: torch.nn.Module, geom: Geometry, norm: Normalizer,
     """
     device = s_raw.device
     if tfeat is None:
-        tfeat = torch.from_numpy(time_geo_features(
+        tfeat = torch.from_numpy(caracteristiques(
             s_raw[0].float().cpu().numpy(), sensor[0].cpu().numpy() > 0.5, hour, doy, geom)
         )[None].to(device)
+    # forcage ERA5 de l'instant (s'il y en a un) : le meme pour toutes les passes
+    extra = tfeat[0, N_TFEAT:].cpu().numpy() if geom.forcage is not None else None
 
     with torch.autocast(device_type=device.type, dtype=amp_dtype, enabled=use_amp):
         total = net(assemble_input(s_raw, sensor, tfeat, geom, norm)).float()
@@ -356,7 +370,8 @@ def ensemble_forward(net: torch.nn.Module, geom: Geometry, norm: Normalizer,
         if kept.sum() == 0:                       # garde-fou : jamais une passe sans capteur
             kept = base
         sensor_i = torch.from_numpy(kept.astype(np.float32))[None].to(device)
-        tfeat_i = torch.from_numpy(time_geo_features(s_np, kept, hour, doy, geom))[None].to(device)
+        tfeat_i = torch.from_numpy(caracteristiques(s_np, kept, hour, doy, geom, extra)
+                                   )[None].to(device)
         with torch.autocast(device_type=device.type, dtype=amp_dtype, enabled=use_amp):
             total = total + net(assemble_input(s_raw, sensor_i, tfeat_i, geom, norm)).float()
     return total / k
@@ -505,7 +520,8 @@ class WindFieldModel:
         k_keep = self.cfg.inference.tta_keep if tta_keep is None else float(tta_keep)
         rng = np.random.default_rng(seed)
         sensor = (S[7] > 0.5) & (rng.random(S[7].shape) < keep)
-        tfeat = time_geo_features(S, sensor, hour, doy, geom)
+        extra = self._forcage(timestamp)
+        tfeat = caracteristiques(S, sensor, hour, doy, geom, extra)
 
         s_t = torch.from_numpy(np.ascontiguousarray(S[:N_SURF]))[None].to(self.device)
         m_t = torch.from_numpy(sensor.astype(np.float32))[None].to(self.device)
@@ -534,7 +550,7 @@ class WindFieldModel:
         vol = Volume(u, v, w, geom, timestamp=timestamp, n_sensors=int(sensor.sum()),
                      inference_s=elapsed, farm_context=ctx)
         if actif:
-            self._defer(vol, S, hour, doy, sensor, served, real_sensors)
+            self._defer(vol, S, hour, doy, sensor, served, real_sensors, extra)
             if not defer:
                 # synchrone : l'erreur d'origine remonte telle quelle (ex. memoire GPU)
                 vol.wait_reliability(raise_on_error=False)
@@ -542,8 +558,17 @@ class WindFieldModel:
                     raise vol._rel_exc
         return vol
 
+    def _forcage(self, timestamp) -> np.ndarray | None:
+        """Forcage ERA5 de l'instant (paths.forcage_era5), None pour un modele sans."""
+        f = self.geom.forcage
+        if f is None:
+            return None
+        if timestamp is None:
+            raise ValueError("ce modele recoit le forcage ERA5 : timestamp (UTC) requis")
+        return f.vecteur(timestamp)
+
     def _defer(self, vol: Volume, S: np.ndarray, hour: float, doy: int, sensor: np.ndarray,
-               served: tuple, real_sensors: bool) -> None:
+               served: tuple, real_sensors: bool, extra: np.ndarray | None = None) -> None:
         """Met le volume en etat en_cours avec le calcul de sa fiabilite (ensemble,
         calibration, statut, couverture, classe, et membres captures pour le parc M5), fait
         plus tard, une seule fois. Le calcul garde ses entrees jusqu'a ce qu'il ait tourne."""
@@ -555,7 +580,8 @@ class WindFieldModel:
             rel = assess(served,
                          lambda masks: [self._capture(m, captured)
                                         for m in self._members(S, masks, hour, doy,
-                                                               secondaire=True)],
+                                                               secondaire=True,
+                                                               extra=extra)],
                          sensor, self.geom, self.cfg.reliability, calibration, real_sensors)
             if vol.farm_context is not None:
                 ctx = vol.farm_context
@@ -589,7 +615,8 @@ class WindFieldModel:
             # et indice valent NaN quelle que soit la valeur (reliability.assess)
             served = tuple(np.where(self.geom.valid, a, 0.0).astype(a.dtype)
                            for a in (volume.u, volume.v, volume.w))
-            self._defer(volume, S, hour, doy, sens, served, real_sensors)
+            self._defer(volume, S, hour, doy, sens, served, real_sensors,
+                        self._forcage(volume.timestamp))
         volume.wait_reliability()
         return volume
 
@@ -613,17 +640,18 @@ class WindFieldModel:
             captured.append(np.stack([uvw[0][:, jj, ii], uvw[1][:, jj, ii]]))
         return uvw
 
-    def _member(self, S: np.ndarray, kept: np.ndarray, hour: float,
-                doy: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def _member(self, S: np.ndarray, kept: np.ndarray, hour: float, doy: int,
+                extra: np.ndarray | None = None) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Une passe de l'ensemble de fiabilite : capteurs `kept`, caracteristiques
         geostrophiques / thermiques RECALCULEES sur eux. Sortie (u, v, w) en m/s, sans
         masque NaN, post-traitement compris (`_post_member`). Lot de 1 : meme calcul,
         bit a bit, que la passe unique d'avant les lots."""
-        return self._members(S, [kept], hour, doy, batch=1)[0]
+        return self._members(S, [kept], hour, doy, batch=1, extra=extra)[0]
 
     @torch.no_grad()
     def _members(self, S: np.ndarray, masks: list[np.ndarray], hour: float, doy: int,
-                 batch: int | None = None, secondaire: bool = False
+                 batch: int | None = None, secondaire: bool = False,
+                 extra: np.ndarray | None = None
                  ) -> list[tuple[np.ndarray, np.ndarray, np.ndarray]]:
         """Les passes de l'ensemble de fiabilite, une par masque et dans l'ordre, faites par
         LOTS : un seul passage avant du reseau pour `batch` passes (defaut
@@ -643,7 +671,8 @@ class WindFieldModel:
         i0 = 0
         while i0 < len(masks):
             part = masks[i0:i0 + lot]
-            tfeat = np.stack([time_geo_features(s_feat, m, hour, doy, geom) for m in part])
+            tfeat = np.stack([caracteristiques(s_feat, m, hour, doy, geom, extra)
+                              for m in part])
             m_t = torch.from_numpy(np.stack(part).astype(np.float32)).to(self.device)
             t_t = torch.from_numpy(tfeat).to(self.device)
             verrou = self._lock.secondaire() if secondaire else self._lock

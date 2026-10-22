@@ -26,6 +26,7 @@ import torch
 from .config import Config
 from .dataset import ANEO3D, assemble_input, eval_loader, is_synoptic, make_splits
 from .dso import dso3_conforme
+from .geometry import N_TFEAT
 from .inference import WindFieldModel, ensemble_forward
 from .losses import PhysicsLoss
 from .reliability import (COMPOSANTES, MESURE_SECONDE_LECTURE, Calibration, DSO6Accumulator,
@@ -176,20 +177,23 @@ class Evaluator:
         geom, wf, rc = self.geom, self.wf, self.cfg.reliability
         levels = geom.eval_levels()
         ds = self._reliability_instants(jeu, n_instants, keep) if ds is None else ds
-        for n, (s_raw, sensor, _tfeat, y, j) in enumerate(ds):
+        for n, (s_raw, sensor, tfeat, y, j) in enumerate(ds):
             stem = str(ds.stems[j])
             s_np, m_np = s_raw.numpy(), sensor.numpy() > 0.5
             hour, doy = float(ds.hours[j]), int(ds.doys[j])
+            # forcage ERA5 de l'instant (modele reel), le meme pour toutes les passes
+            extra = tfeat.numpy()[N_TFEAT:] if geom.forcage is not None else None
             if self.tta > 1:
                 pred = ensemble_forward(
                     wf.model, geom, self.norm, s_raw[None].to(wf.device),
                     sensor[None].to(wf.device), hour, doy, k=self.tta, keep=self.tta_keep,
-                    seed=int(j), amp_dtype=wf.amp_dtype, use_amp=wf.use_amp)
+                    seed=int(j), amp_dtype=wf.amp_dtype, use_amp=wf.use_amp,
+                    tfeat=tfeat[None].to(wf.device) if extra is not None else None)
                 served = tuple(a[0].float().cpu().numpy() for a in self.norm.denorm(pred))
             else:
-                served = wf._member(s_np, m_np, hour, doy)
+                served = wf._member(s_np, m_np, hour, doy, extra)
             members = wf._members(s_np, member_masks(m_np, rc.members, rc.keep, rc.seed),
-                                  hour, doy)
+                                  hour, doy, extra=extra)
             sig = ensemble_sigma(served, members)
             y_np = y.numpy()
             truth = {"u": y_np[0], "v": y_np[1], "w": y_np[2],

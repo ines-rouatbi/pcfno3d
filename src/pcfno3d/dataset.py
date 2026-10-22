@@ -11,7 +11,7 @@ from torch.utils.data import DataLoader, Dataset
 
 from .config import Config
 from .features import time_geo_features
-from .geometry import N_SURF, Geometry
+from .geometry import N_SURF, N_TFEAT, Geometry
 from .normalize import Normalizer
 
 
@@ -73,6 +73,10 @@ class ANEO3D(Dataset):
         else:
             sensor = (S[7] > 0.5) & (rng.random(S[7].shape) < keep)
         tfeat = time_geo_features(S, sensor, self.hours[j], self.doys[j], self.geom)
+        if self.geom.forcage is not None:
+            # forcage ERA5 de l'instant : 7 scalaires + cellules u, v (pcfno3d.forcage)
+            from .forcage import horodatage
+            tfeat = np.concatenate([tfeat, self.geom.forcage.vecteur(horodatage(self.geom, stem))])
         return (torch.from_numpy(S[:N_SURF]), torch.from_numpy(sensor.astype(np.float32)),
                 torch.from_numpy(tfeat), torch.from_numpy(Y), j)
 
@@ -138,6 +142,8 @@ def assemble_input(s_raw: torch.Tensor, sensor: torch.Tensor, tfeat: torch.Tenso
 
     7 mesures normalisees + 1 carte de disponibilite + 6 canaux de relief, recopies sur
     les nz niveaux ; + 3 canaux de geometrie par niveau ; + 8 canaux temps / physique.
+    Avec le forcage ERA5 (paths.forcage_era5) : + 7 scalaires de forcage, puis u, v ERA5 a
+    chaque noeud normalises comme la cible, en DERNIER (la sortie residuelle les lit la).
     """
     B = s_raw.shape[0]
     nz, ny, nx = geom.shape
@@ -145,8 +151,15 @@ def assemble_input(s_raw: torch.Tensor, sensor: torch.Tensor, tfeat: torch.Tenso
     s2d = torch.cat([s, sensor[:, None], geom.static_2d_t.expand(B, -1, -1, -1)], dim=1)
     x2d = s2d[:, :, None].expand(-1, -1, nz, -1, -1)
     x3d = geom.static_3d_t.expand(B, -1, -1, -1, -1)
-    xt = tfeat[:, :, None, None, None].expand(-1, -1, nz, ny, nx)
-    return torch.cat([x2d, x3d, xt], dim=1)
+    if geom.forcage is None:
+        xt = tfeat[:, :, None, None, None].expand(-1, -1, nz, ny, nx)
+        return torch.cat([x2d, x3d, xt], dim=1)
+    from .forcage import N_SCAL
+    n = N_TFEAT + N_SCAL
+    xt = tfeat[:, :n, None, None, None].expand(-1, -1, nz, ny, nx)
+    era5 = geom.interp_era5.dense(tfeat[:, n:])
+    era5 = (era5 - norm.y_mu[None, :2, None, None, None])         / norm.y_sd[None, :2, None, None, None] * geom.valid_t
+    return torch.cat([x2d, x3d, xt, era5.to(x2d.dtype)], dim=1)
 
 
 @dataclass

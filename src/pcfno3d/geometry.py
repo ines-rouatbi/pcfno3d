@@ -97,6 +97,13 @@ class Geometry:
         self._derive()
         self._to_torch()
 
+        # modele reel : vent ERA5 aux noeuds + forcage de l'instant (pcfno3d.forcage)
+        self.forcage = self.interp_era5 = None
+        if cfg.paths.forcage_era5 is not None:
+            from .forcage import ForcageERA5, InterpERA5
+            self.forcage = ForcageERA5(cfg.paths.forcage_era5)
+            self.interp_era5 = InterpERA5(self.forcage, self)
+
     # ------------------------------------------------------------------ construction
     def _build_from_csv(self) -> dict[str, np.ndarray]:
         """Lit la grille et en deduit relief, masques et tables de correspondance."""
@@ -243,8 +250,13 @@ class Geometry:
     # ------------------------------------------------------------------ proprietes
     @property
     def c_in(self) -> int:
-        """7 mesures + 1 disponibilite + 6 relief + 3 geometrie + 8 temps = 25 canaux."""
-        return N_SURF + 1 + self.static_2d.shape[0] + self.static_3d.shape[0] + N_TFEAT
+        """7 mesures + 1 disponibilite + 6 relief + 3 geometrie + 8 temps = 25 canaux ;
+        + 7 scalaires de forcage + u, v ERA5 aux noeuds = 34 avec paths.forcage_era5."""
+        n = N_SURF + 1 + self.static_2d.shape[0] + self.static_3d.shape[0] + N_TFEAT
+        if self.forcage is not None:
+            from .forcage import N_DENSE, N_SCAL
+            n += N_SCAL + N_DENSE
+        return n
 
     @property
     def shape(self) -> tuple[int, int, int]:

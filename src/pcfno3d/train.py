@@ -101,10 +101,34 @@ class Trainer:
                     f"train.init_from : architecture differente sur {diff} "
                     f"(checkpoint {[getattr(saved, n) for n in diff]}, "
                     f"config {[getattr(mine, n) for n in diff]})")
-        self.model.load_state_dict(ck["model"])
+        sd = dict(ck["model"])
+        notes = []
+        # entree elargie (forcage ERA5 : 25 -> 34 canaux) : les nouveaux canaux sont AJOUTES
+        # a la fin, les colonnes existantes de la premiere couche gardent leurs poids et les
+        # nouvelles partent de 0 (au depart, le modele voit ce qu'il voyait)
+        cle = "lift.0.weight"
+        w_old, w_new = sd.get(cle), self.model.state_dict()[cle]
+        if w_old is not None and w_old.shape != w_new.shape:
+            if w_old.shape[0] != w_new.shape[0] or w_old.shape[1] > w_new.shape[1]:
+                raise ValueError(f"train.init_from : {cle} {tuple(w_old.shape)} incompatible "
+                                 f"avec {tuple(w_new.shape)}")
+            neuf = torch.zeros_like(w_new)
+            neuf[:, :w_old.shape[1]] = w_old.to(neuf)
+            sd[cle] = neuf
+            notes.append(f"entree {w_old.shape[1]} -> {w_new.shape[1]} canaux (nouveaux a 0)")
+        # sortie residuelle depuis un modele qui ne l'etait pas : la derniere couche de u, v
+        # repart de 0, donc u, v = ERA5 au depart ; w garde ce qu'il a appris
+        avant = bool((ck.get("config") or {}).get("RESIDUEL_ERA5", False))
+        if self.cfg.model.residuel_era5 and not avant:
+            for nom in ("proj.2.weight", "proj.2.bias"):
+                sd[nom] = sd[nom].clone()
+                sd[nom][:2] = 0
+            notes.append("u, v : derniere couche a 0 (depart = ERA5)")
+        self.model.load_state_dict(sd)
         if self.verbose:
             print(f"affinage a partir de {path.name} "
-                  f"(epoque {ck.get('epoch', -1) + 1} du modele d'origine)")
+                  f"(epoque {ck.get('epoch', -1) + 1} du modele d'origine)"
+                  + (" ; " + " ; ".join(notes) if notes else ""))
 
     def _dso_selection(self) -> dict:
         """Score DSO sur la validation : le critere de selection de la v8."""
@@ -254,7 +278,8 @@ class Trainer:
             "model": self.ema_model.state_dict(), "epoch": epoch, "val_score": score,
             "config": {"WIDTH": m.width, "MODES": list(m.modes), "N_LAYERS": m.n_layers,
                        "PAD": list(m.pad), "PROJ_HIDDEN": m.proj_hidden, "C_IN": self.geom.c_in,
-                       "LOCAL_CONV": m.local_conv, "POOL_SURFACE": m.pool_surface},
+                       "LOCAL_CONV": m.local_conv, "POOL_SURFACE": m.pool_surface,
+                       "RESIDUEL_ERA5": m.residuel_era5},
         }
         payload.update(extra or {})
         self._save_atomic(self._best_work, payload)

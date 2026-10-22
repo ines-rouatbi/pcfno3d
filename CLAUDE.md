@@ -101,6 +101,23 @@ layer would leave the model blind with 3 stations). Gates before full generation
 stations ≤ ERA5 RMSE — passed 2026-10-21) and `scripts/brise_mer.py` (summer diurnal
 direction cycle at Tunis-Carthage and Nabeul, figure shown to Ines before generating).
 
+**Grand Tunis v2 (2026-10-22).** v1 (`runs/grand_tunis`, stopped at epoch 14/40) plateaued at
+R² u 0.78 / v 0.73; `scripts/diag_grand_tunis.py` on the 64 validation instants showed ERA5
+interpolated to the nodes alone gives 0.95 / 0.97 (alignment checks all OK, generator noise
+≤ 3 % of spatial variance): an input gap, not a bug. `paths.forcage_era5` (`pcfno3d.forcage`)
+adds 7 forcing scalars (ug, vg, shear u/v, veer, stability, land–sea ΔT) and u, v ERA5 at every
+node, computed exactly like the generator (`_era5_au_sol`, checked to 1e-5 m/s on the real
+grid) — 34 input channels, the new ones LAST. The ERA5 cells (2 × 14 × 4 × 4) ride in `tfeat`
+after the 8 time channels, so loaders keep their shape; `assemble_input` densifies them on the
+device. `model.residuel_era5`: u, v = ERA5 (last two input channels) + learned correction.
+`init_from` a 25-channel checkpoint keeps the old lift columns, zeroes the new ones and (for a
+residual model) the u, v rows of the last projection, so training starts at ERA5. Serving needs
+the instant's `timestamp`. Two modes: `grand_tunis_v2_colab.yaml` (real: ERA5 10 m + stations,
+from v1 `best.pt`) and `grand_tunis_v2_aneo_colab.yaml` (simulated dense ANEO network, from v7);
+notebooks from `scripts/make_grand_tunis_nb.py`. Also fixed that day: METAR u, v now filled on
+import for every non-calm report (`metar.py`), IGRA launch time of 00 UTC balloons dated the
+previous day (`igra_radiosondages.py`; matching was already on `temps`).
+
 `notebooks/archive/` holds the architectures explored and then dropped (FNO2D variants, U-Net/FNO,
 GNN, DeepONet, ResNet, ViT). They are history, not alternatives to maintain — do not "fix" them.
 

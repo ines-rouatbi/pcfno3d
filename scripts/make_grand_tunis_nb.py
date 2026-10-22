@@ -5,6 +5,8 @@
        notebooks/current/pcfno3d_grand_tunis_colab.ipynb             (entrainement, A100)
        notebooks/current/pcfno3d_grand_tunis_diagnostic_colab.ipynb  (diagnostic sur la
            validation, CPU : scripts/diag_grand_tunis.py)
+       notebooks/current/pcfno3d_grand_tunis_v2_colab.ipynb       (v2 mode reel, A100)
+       notebooks/current/pcfno3d_grand_tunis_v2_aneo_colab.ipynb  (v2 mode ANEO simule, A100)
 
 Tout passe par le Drive, dossier MyDrive/pcfno3d_grand_tunis/ :
     pcfno3d_code.zip           code (python scripts/package_for_colab.py)
@@ -264,7 +266,39 @@ OPTS = f"--set model.recalcul_activations={str(RECALCUL).lower()}"
 '''
 
 
-def entrainement() -> dict:
+V2 = {
+    "grand_tunis_v2_colab": ("v2, mode réel", """
+**v2, mode réel** : l'entrée de production (ERA5 10 m tous les 2,5 km + anémomètres) **enrichie
+du vent ERA5 à chaque nœud et du forçage de l'instant** (ug, vg, cisaillement, rotation,
+stabilité, contraste terre-mer) ; sortie u, v = ERA5 + correction apprise. Départ : `best.pt`
+de la v1 (`runs/grand_tunis/`), u, v de départ = ERA5 (R² 0,95 / 0,97 en validation). 20 époques.
+Résultats : `runs/grand_tunis_v2/`."""),
+    "grand_tunis_v2_aneo_colab": ("v2, mode ANEO simulé", """
+**v2, mode ANEO simulé** : entrée = réseau dense de capteurs à 10 m (couche de surface du jeu,
+masquée au hasard, comme la v7) + vent ERA5 à chaque nœud + forçage de l'instant ; sortie u, v =
+ERA5 + correction apprise. Départ : poids v7. 20 époques. Résultats : `runs/grand_tunis_v2_aneo/`."""),
+}
+
+
+def entrainement(conf: str = "grand_tunis_colab", run: str = "grand_tunis") -> dict:
+    nb = _entrainement()
+    if conf == "grand_tunis_colab":
+        return nb
+    titre, texte = V2[conf]
+    for c in nb["cells"]:
+        src = "".join(c["source"]).replace("grand_tunis_colab", conf)
+        src = src.replace('GT / "runs" / "grand_tunis"', f'GT / "runs" / "{run}"')
+        src = src.replace("`runs/grand_tunis/`", f"`runs/{run}/`")
+        src = src.replace("## 4. Entraînement (départ v7)", "## 4. Entraînement")
+        if src.startswith("# PC-FNO3D réel (Grand Tunis) — entraînement"):
+            src = (f"# PC-FNO3D réel (Grand Tunis) {titre} — entraînement (Colab, A100)\n"
+                   + texte + "\n\n**Environnement : GPU A100.** Reprise automatique : relancer "
+                   "**Tout exécuter** après une coupure reprend à la dernière copie sur le Drive.")
+        c["source"] = src.splitlines(True)
+    return nb
+
+
+def _entrainement() -> dict:
     return carnet([
         md("""
 # PC-FNO3D réel (Grand Tunis) — entraînement (Colab, A100)
@@ -362,6 +396,10 @@ def main() -> int:
     out = REPO / "notebooks" / "current"
     for nom, nb in (("pcfno3d_grand_tunis_generation_colab.ipynb", generation()),
                     ("pcfno3d_grand_tunis_colab.ipynb", entrainement()),
+                    ("pcfno3d_grand_tunis_v2_colab.ipynb",
+                     entrainement("grand_tunis_v2_colab", "grand_tunis_v2")),
+                    ("pcfno3d_grand_tunis_v2_aneo_colab.ipynb",
+                     entrainement("grand_tunis_v2_aneo_colab", "grand_tunis_v2_aneo")),
                     ("pcfno3d_grand_tunis_diagnostic_colab.ipynb", diagnostic())):
         (out / nom).write_text(json.dumps(nb, indent=1, ensure_ascii=False), encoding="utf-8")
         print(out / nom)

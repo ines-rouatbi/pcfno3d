@@ -51,9 +51,13 @@ class PCFNO3D(nn.Module):
 
     def __init__(self, cin: int, width: int, modes: tuple[int, int, int], n_layers: int,
                  pad: tuple[int, int, int], proj_hidden: int = 128,
-                 local: bool = False, recalcul: bool = False) -> None:
+                 local: bool = False, recalcul: bool = False,
+                 residuel: bool = False) -> None:
         super().__init__()
         self.pad = pad
+        # sortie u, v = (vent ERA5 au noeud, les 2 DERNIERS canaux d'entree, normalises comme
+        # la cible) + correction apprise ; w reste predit tel quel
+        self.residuel = residuel
         # recalcul des activations couche par couche a la retropropagation (memoire GPU des
         # grandes grilles, ex. Grand Tunis 12 x 560 x 680) : memes resultats, ~30 % plus lent
         self.recalcul = recalcul
@@ -78,6 +82,7 @@ class PCFNO3D(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         D, H, W = x.shape[-3:]
         pz, py, px = self.pad
+        era5 = x[:, -2:] if self.residuel else None
         x = self.lift(x)
         # zeros aux bords : limite la periodicite imposee par la FFT
         x = F.pad(x, (0, px, 0, py, 0, pz))
@@ -91,13 +96,19 @@ class PCFNO3D(nn.Module):
         # tete en fp32 : en bf16 la sortie est arrondie a quelques cm/s, et ce bruit passe
         # dans les differences centrees, creant un plancher sur le residu de masse (DSO2)
         with torch.autocast(device_type=x.device.type, enabled=False):
-            return self.proj(x.float())      # (B, 3, nz, ny, nx) : u, v, w normalises
+            out = self.proj(x.float())       # (B, 3, nz, ny, nx) : u, v, w normalises
+            if era5 is not None:
+                out = torch.cat([out[:, :2] + era5.float(), out[:, 2:]], dim=1)
+            return out
 
 
 def build_model(cfg: Config, c_in: int) -> PCFNO3D:
     m = cfg.model
+    if m.residuel_era5 and cfg.paths.forcage_era5 is None:
+        raise ValueError("model.residuel_era5 exige paths.forcage_era5 (vent ERA5 en entree)")
     return PCFNO3D(c_in, m.width, m.modes, m.n_layers, m.pad, m.proj_hidden,
-                   local=m.local_conv, recalcul=m.recalcul_activations)
+                   local=m.local_conv, recalcul=m.recalcul_activations,
+                   residuel=m.residuel_era5)
 
 
 def count_parameters(model: nn.Module) -> int:
@@ -113,7 +124,8 @@ def model_cfg_from_checkpoint(ckpt: dict) -> ModelCfg | None:
     return ModelCfg(width=saved["WIDTH"], modes=tuple(saved["MODES"]),
                     n_layers=saved["N_LAYERS"], pad=tuple(saved["PAD"]),
                     proj_hidden=saved["PROJ_HIDDEN"], local_conv=saved["LOCAL_CONV"],
-                    pool_surface=saved["POOL_SURFACE"])
+                    pool_surface=saved["POOL_SURFACE"],
+                    residuel_era5=bool(saved.get("RESIDUEL_ERA5", False)))
 
 
 def load_checkpoint(path: str | Path, device: torch.device | str = "cpu") -> dict:
@@ -128,7 +140,8 @@ def save_inference_checkpoint(path: str | Path, model: nn.Module, cfg: Config,
         "model": model.state_dict(),
         "config": {"WIDTH": m.width, "MODES": list(m.modes), "N_LAYERS": m.n_layers,
                    "PAD": list(m.pad), "PROJ_HIDDEN": m.proj_hidden, "C_IN": c_in,
-                   "LOCAL_CONV": m.local_conv, "POOL_SURFACE": m.pool_surface},
+                   "LOCAL_CONV": m.local_conv, "POOL_SURFACE": m.pool_surface,
+                   "RESIDUEL_ERA5": m.residuel_era5},
     }
     payload.update(extra or {})
     path = Path(path)

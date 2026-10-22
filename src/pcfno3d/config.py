@@ -56,6 +56,10 @@ class Paths:
     # None = run_dir/web. Sur Colab : le disque local, car 166 instants pesent ~1 Go et se
     # regenerent en ~1 min sur GPU ; inutile de les stocker sur le Drive.
     web_dir: Path | None = None
+    # Modele reel (Grand Tunis) : forcage_era5.csv (scripts/forcage_era5.py, le .npz a cote).
+    # Renseigne = le modele recoit aussi le vent ERA5 a chaque noeud et les 7 scalaires de
+    # forcage de l'instant (pcfno3d.forcage) : 34 canaux au lieu de 25. None = v7.
+    forcage_era5: Path | None = None
 
     def __post_init__(self) -> None:
         # un chemin relatif dans un YAML est relatif a la racine du depot, pas au cwd :
@@ -69,6 +73,8 @@ class Paths:
             self.local_dir = _resolve(self.local_dir)
         if self.web_dir is not None:
             self.web_dir = _resolve(self.web_dir)
+        if self.forcage_era5 is not None:
+            self.forcage_era5 = _resolve(self.forcage_era5)
 
     @property
     def web_root(self) -> Path:
@@ -133,6 +139,9 @@ class ModelCfg:
     local_conv: bool = True                     # branche convolutive locale 3x3x3
     pool_surface: bool = True                   # moyenne des capteurs par bloc stride x stride
     recalcul_activations: bool = False          # memoire GPU des grandes grilles (meme resultat)
+    # sortie u, v = vent ERA5 au noeud + correction apprise (exige paths.forcage_era5) : le
+    # modele part du niveau d'ERA5 (R2 0,95) au lieu de reconstruire la grande echelle
+    residuel_era5: bool = False
 
     def __post_init__(self) -> None:
         self.modes = tuple(int(m) for m in self.modes)      # type: ignore[assignment]
