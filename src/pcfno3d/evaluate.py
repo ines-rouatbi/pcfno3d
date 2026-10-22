@@ -122,8 +122,8 @@ class Evaluator:
 
         # DSO4 : temps de la VALEUR sur un instant reel (fiabilite differee) ; fiabilite
         # active : son delai est mesure sur les memes appels, publie a cote, sans verdict
-        S, hour, doy, _ = self.wf.surface_from_cache(te_s[0])
-        timing = self.wf.benchmark(S, hour, doy, n=20)
+        S, hour, doy, stamp = self.wf.surface_from_cache(te_s[0])
+        timing = self.wf.benchmark(S, hour, doy, n=20, timestamp=stamp)
 
         # DSO5 : robustesse a un reseau de capteurs degrade
         sub = syn_idx[np.unique(np.linspace(0, len(syn_idx) - 1,

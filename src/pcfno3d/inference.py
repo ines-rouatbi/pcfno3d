@@ -715,16 +715,19 @@ class WindFieldModel:
         return self.predict(S, hour, doy, timestamp=stamp, keep=keep, seed=seed, defer=defer)
 
     def benchmark(self, S: np.ndarray, hour: float, doy: int, n: int = 20,
-                  warmup: int = 3, reliability: bool | None = None) -> dict:
+                  warmup: int = 3, reliability: bool | None = None,
+                  timestamp: str | None = None) -> dict:
         """DSO4 — temps de la VALEUR par instant (passe servie seule : fiabilite differee).
 
         Fiabilite active : son delai est mesure a cote, sur les memes appels (`fiabilite` :
         moyenne, p95, max), pour information et SANS verdict DSO4."""
         for _ in range(warmup):
-            self.predict(S, hour, doy, mask_nan=False, reliability=reliability)
+            self.predict(S, hour, doy, timestamp=timestamp, mask_nan=False,
+                         reliability=reliability)
         times, rel = [], []
         for _ in range(n):
-            vol = self.predict(S, hour, doy, mask_nan=False, reliability=reliability)
+            vol = self.predict(S, hour, doy, timestamp=timestamp, mask_nan=False,
+                               reliability=reliability)
             times.append(vol.inference_s)
             if vol.reliability_state == FIABILITE_PRETE:
                 rel.append(vol.reliability_s)

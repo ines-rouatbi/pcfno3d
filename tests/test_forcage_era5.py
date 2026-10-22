@@ -164,3 +164,9 @@ def test_entrainement_puis_service_de_bout_en_bout(cfg_era5, index, tmp_path):
     S, hour, doy, _ = wf.surface_from_cache(stem)
     with pytest.raises(ValueError, match="timestamp"):
         wf.predict(S, hour, doy)                  # sans horodatage : pas de forcage
+
+
+    # l'evaluation complete (DSO1-DSO5, dont la mesure de temps DSO4) passe le forcage partout
+    from pcfno3d.evaluate import Evaluator
+    summary = Evaluator(c2, device="cpu", verbose=False).run()
+    assert summary
