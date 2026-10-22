@@ -91,7 +91,12 @@ def metar_vers_station(obs: dict) -> tuple[dict | None, str | None]:
     if vitesse == 0.0:
         ligne.update(wind_u_m_s=0.0, wind_v_m_s=0.0, wind_speed_m_s=0.0)
     elif isinstance(wdir, (int, float)) and not isinstance(wdir, bool):
-        ligne.update(wind_speed_m_s=round(vitesse, 3), wind_dir_deg=float(wdir) % 360.0)
+        # u, v aussi : les lecteurs qui ne prennent que les composantes ne doivent pas
+        # voir la station absente des qu'il y a du vent
+        rad = math.radians(float(wdir))
+        ligne.update(wind_speed_m_s=round(vitesse, 3), wind_dir_deg=float(wdir) % 360.0,
+                     wind_u_m_s=round(-vitesse * math.sin(rad), 3),
+                     wind_v_m_s=round(-vitesse * math.cos(rad), 3))
     else:
         return None, f"direction variable ({wdir}) avec {wspd} kt : direction inconnue"
     if obs.get("temp") is not None:

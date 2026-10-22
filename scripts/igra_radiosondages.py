@@ -47,6 +47,10 @@ def lire_igra(chemin: Path, debut: str, fin: str) -> pd.DataFrame:
                 rel = l[27:31]
                 lanc = (pd.Timestamp(an, mo, jo, int(rel[:2]), int(rel[2:]))
                         if rel[:2] != "99" and rel[2:] != "99" else pd.NaT)
+                # RELTIME n'a que l'heure : un ballon de 00 UTC lache a 22 h 30 l'a ete la
+                # VEILLE (sinon le lancement tomberait ~22 h apres l'heure nominale)
+                if pd.notna(lanc) and lanc - t > pd.Timedelta(hours=12):
+                    lanc -= pd.Timedelta(days=1)
                 tete = {"station": l[1:12], "temps": t, "lancement": lanc}
                 continue
             if not garder:
