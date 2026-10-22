@@ -1,8 +1,10 @@
-"""Fabrique les deux carnets Colab du modele reel (Grand Tunis).
+"""Fabrique les carnets Colab du modele reel (Grand Tunis).
 
     python scripts/make_grand_tunis_nb.py
     -> notebooks/current/pcfno3d_grand_tunis_generation_colab.ipynb  (jeu, environnement CPU)
        notebooks/current/pcfno3d_grand_tunis_colab.ipynb             (entrainement, A100)
+       notebooks/current/pcfno3d_grand_tunis_diagnostic_colab.ipynb  (diagnostic sur la
+           validation, CPU : scripts/diag_grand_tunis.py)
 
 Tout passe par le Drive, dossier MyDrive/pcfno3d_grand_tunis/ :
     pcfno3d_code.zip           code (python scripts/package_for_colab.py)
@@ -34,6 +36,8 @@ def carnet(cellules: list[dict], gpu: bool) -> dict:
     if gpu:
         meta["accelerator"] = "GPU"
         meta["colab"]["gpuType"] = "A100"
+    else:
+        meta["colab"]["machine_shape"] = "hm"         # CPU, memoire RAM elevee
     return {"nbformat": 4, "nbformat_minor": 0, "metadata": meta, "cells": cellules}
 
 
@@ -300,10 +304,65 @@ for f in sorted(RUN.iterdir()):
     ], gpu=True)
 
 
+DIAG = r'''
+# validation seulement : index de la partie 2 (train 2/2 + val) et fichiers des instants de val
+LOC = Path("/content/grand_tunis")
+CACHE, JEU = LOC / "cache", LOC / "jeu"
+CACHE.mkdir(parents=True, exist_ok=True)
+JEU.mkdir(parents=True, exist_ok=True)
+if (GT / "diag_grand_tunis.py").exists():           # script depose a part (plus recent que le zip)
+    shutil.copy2(GT / "diag_grand_tunis.py", CODE / "scripts" / "diag_grand_tunis.py")
+with zipfile.ZipFile(GT / "jeu.zip") as zf:
+    zf.extractall(JEU)
+import pandas as pd
+with zipfile.ZipFile(GT / "cache_partie_2.zip") as zf:
+    with zf.open("index_partie_2.csv") as f:
+        idx = pd.read_csv(f)
+    idx.to_csv(CACHE / "index.csv", index=False)
+    val = set(idx.loc[idx["split"] == "val", "stem"])
+    noms = [n for n in zf.namelist() if n.rsplit("_", 1)[0] in val]
+    zf.extractall(CACHE, members=noms)
+print(f"{len(val)} instants de validation, {len(noms)} fichiers")
+'''
+
+
+def diagnostic() -> dict:
+    return carnet([
+        md("""
+# PC-FNO3D réel (Grand Tunis) — diagnostic sur la validation (Colab, CPU)
+
+Avant toute relance de l'entraînement (plateau depuis l'époque 11) : sur les 64 instants de
+validation, R² et RMSE par niveau d'**ERA5 interpolé**, du **vent moyen du domaine** (oracle) et
+du **modèle** (`best.pt`) ; alignement entrée ERA5 / cible ; part de la variance de la cible due
+aux perturbations aléatoires du générateur (instants régénérés sans perturbation).
+
+**Environnement : CPU, mémoire RAM élevée.** Résultats : `MyDrive/pcfno3d_grand_tunis/diagnostic/`.
+"""),
+        md("## 1. Drive, code et données"),
+        code(COMMUN),
+        md("## 2. Instants de validation (partie 2)"),
+        code(DIAG),
+        md("## 3. Diagnostic"),
+        code('''
+SORTIE = Path("/content/diag")
+CKPT = Path("/content/best.pt")                     # copie locale : poids mappes en memoire
+shutil.copy2(GT / "runs" / "grand_tunis" / "best.pt", CKPT)
+lancer("diagnostic", f"python -u scripts/diag_grand_tunis.py -c grand_tunis_colab "
+                     f"--donnees {DON / 'grand_tunis'} --ckpt {CKPT} --sortie {SORTIE}")
+D = GT / "diagnostic"
+D.mkdir(exist_ok=True)
+for f in ("diagnostic.json", "alignement_par_instant.json", "r2_rmse_par_niveau.csv"):
+    shutil.copy2(SORTIE / f, D / f)
+print(sorted(p.name for p in D.iterdir()))
+'''),
+    ], gpu=False)
+
+
 def main() -> int:
     out = REPO / "notebooks" / "current"
     for nom, nb in (("pcfno3d_grand_tunis_generation_colab.ipynb", generation()),
-                    ("pcfno3d_grand_tunis_colab.ipynb", entrainement())):
+                    ("pcfno3d_grand_tunis_colab.ipynb", entrainement()),
+                    ("pcfno3d_grand_tunis_diagnostic_colab.ipynb", diagnostic())):
         (out / nom).write_text(json.dumps(nb, indent=1, ensure_ascii=False), encoding="utf-8")
         print(out / nom)
     return 0
