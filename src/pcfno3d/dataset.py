@@ -63,7 +63,13 @@ class ANEO3D(Dataset):
         S = np.load(self.cache_dir / f"{stem}_S.npy")
         # le cache du generateur reel stocke la cible en float16 (moitie du disque)
         Y = np.load(self.cache_dir / f"{stem}_Y.npy").astype(np.float32, copy=False)
-        if self.geom.cfg.mask.entree == "era5_stations":
+        cible = None
+        if self.geom.cfg.mask.entree == "era5_stations" and self.train and affinage_stations(self.geom.cfg):
+            # affinage sur les stations : vraies mesures en entree, une station en cible
+            from .stations_reelles import entree_affinage
+            S, sensor, cible = entree_affinage(S, self.cache_dir / f"{stem}_E.npy", self.geom,
+                                               rng, stem)
+        elif self.geom.cfg.mask.entree == "era5_stations":
             S, sensor = entree_era5_stations(S, self.cache_dir / f"{stem}_E.npy", self.geom,
                                              rng, self.train, keep=keep)
         elif not self.train and self.reseau is not None:
@@ -77,8 +83,15 @@ class ANEO3D(Dataset):
             # forcage ERA5 de l'instant : 7 scalaires + cellules u, v (pcfno3d.forcage)
             from .forcage import horodatage
             tfeat = np.concatenate([tfeat, self.geom.forcage.vecteur(horodatage(self.geom, stem))])
-        return (torch.from_numpy(S[:N_SURF]), torch.from_numpy(sensor.astype(np.float32)),
-                torch.from_numpy(tfeat), torch.from_numpy(Y), j)
+        out = (torch.from_numpy(S[:N_SURF]), torch.from_numpy(sensor.astype(np.float32)),
+               torch.from_numpy(tfeat), torch.from_numpy(Y), j)
+        # 6e element seulement a l'entrainement avec affinage (Trainer._epochs le lit)
+        return out if cible is None else out + (torch.from_numpy(cible),)
+
+
+def affinage_stations(cfg: Config) -> bool:
+    """Affinage sur les stations actif : poids > 0 et dossier d'observations renseigne."""
+    return cfg.loss.lambda_station > 0 and cfg.paths.stations_obs is not None
 
 
 def cellules_stations(geom: Geometry) -> np.ndarray:

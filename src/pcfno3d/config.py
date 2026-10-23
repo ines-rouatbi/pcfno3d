@@ -60,6 +60,9 @@ class Paths:
     # Renseigne = le modele recoit aussi le vent ERA5 a chaque noeud et les 7 scalaires de
     # forcage de l'instant (pcfno3d.forcage) : 34 canaux au lieu de 25. None = v7.
     forcage_era5: Path | None = None
+    # Affinage sur les stations (pcfno3d.stations_reelles) : dossier des metar_*.csv /
+    # synop_*.csv des anemometres du domaine. Utilise seulement si loss.lambda_station > 0.
+    stations_obs: Path | None = None
 
     def __post_init__(self) -> None:
         # un chemin relatif dans un YAML est relatif a la racine du depot, pas au cwd :
@@ -75,6 +78,8 @@ class Paths:
             self.web_dir = _resolve(self.web_dir)
         if self.forcage_era5 is not None:
             self.forcage_era5 = _resolve(self.forcage_era5)
+        if self.stations_obs is not None:
+            self.stations_obs = _resolve(self.stations_obs)
 
     @property
     def web_root(self) -> Path:
@@ -174,6 +179,12 @@ class TrainCfg:
     #   "dso"       : pire rapport mesure / seuil des DSO sur la validation — c'est le
     #                 critere qui correspond a l'objectif, la loss moyenne ne l'est pas.
     select_by: str = "val_score"
+    # Affinage sur les stations : codes des stations pouvant servir de CIBLE (None = toutes).
+    # Validation croisee spatiale : on en retire une, jugee ensuite sans avoir jamais ete cible.
+    stations_cibles: list[str] | None = None
+    # False : last.pt (~7 Go) reste sur le disque de travail et n'est pas recopie dans
+    # run_dir (Drive presque plein ; une coupure de session fait alors repartir de zero).
+    sync_last: bool = True
 
     def __post_init__(self) -> None:
         if self.select_by not in ("val_score", "dso"):
@@ -191,6 +202,9 @@ class LossCfg:
     lambda_grad: float = 0.15
     w_weight: float = 1.0
     w_level_max: float = 25.0     # plafond du poids de w par niveau
+    # Affinage sur les stations reelles (pcfno3d.stations_reelles.perte_station) : poids de
+    # l'erreur du vent a 10 m a la station cible contre la mesure. 0 = desactive.
+    lambda_station: float = 0.0
     # Poids de l'erreur de u et v PAR NIVEAU (une valeur par niveau, ou None).
     # La loss moyenne sur tous les noeuds ne correspond pas au DSO1, qui est un MAXIMUM
     # par niveau : la v7 echoue precisement aux niveaux hauts (650-1000 m) alors que la

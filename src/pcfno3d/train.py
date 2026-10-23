@@ -232,7 +232,7 @@ class Trainer:
             self._copy_atomic(self._best_work, self.cfg.paths.ckpt_best)
             self._best_dirty = False
             copied.append("best.pt")
-        if self._last_work.exists():
+        if self.cfg.train.sync_last and self._last_work.exists():
             self._copy_atomic(self._last_work, self.cfg.paths.ckpt_last)
             copied.append("last.pt")
         self.syncs.append({"raison": reason, "fichiers": copied})
@@ -329,17 +329,23 @@ class Trainer:
             self.model.train()
             phys_w = physics_weight(epoch, cfg.train.warmup_phys_epochs)
             t0 = time.time()
-            tr = {"total": 0.0, "data": 0.0, "mass": 0.0, "bc": 0.0}
+            tr = {"total": 0.0, "data": 0.0, "mass": 0.0, "bc": 0.0, "station": 0.0}
             loader = self.loaders["train"]
             self.optimizer.zero_grad(set_to_none=True)
 
-            for step, (s_raw, sensor, tfeat, y, _) in enumerate(loader):
+            for step, batch in enumerate(loader):
                 s_raw, sensor, tfeat, y = (t.to(self.device, non_blocking=True)
-                                           for t in (s_raw, sensor, tfeat, y))
+                                           for t in batch[:4])
                 with torch.autocast(device_type=self.device.type, dtype=self.amp_dtype,
                                     enabled=self.use_amp):
                     pred = self.model(assemble_input(s_raw, sensor, tfeat, self.geom, self.norm))
                 loss, parts = self.loss_fn(pred, y, phys_w)
+                if len(batch) > 5:
+                    # affinage : vent a 10 m a la station cible contre la vraie mesure
+                    from .stations_reelles import perte_station
+                    l_st = perte_station(pred, batch[5].to(self.device), self.norm)
+                    loss = loss + cfg.loss.lambda_station * l_st
+                    tr["station"] += float(l_st.item())
                 (loss / cfg.train.accum_steps).backward()
 
                 if (step + 1) % cfg.train.accum_steps == 0 or step + 1 == len(loader):
@@ -385,7 +391,9 @@ class Trainer:
 
             if self.verbose:
                 print(f"Ep {epoch + 1:3d}/{cfg.train.epochs} | phys={phys_w:.2f} | "
-                      f"train data={tr['data']:.4f} mass={tr['mass']:.2e} | "
+                      f"train data={tr['data']:.4f} mass={tr['mass']:.2e} "
+                      + (f"station={tr['station']:.3f} " if tr["station"] else "")
+                      + f"| "
                       f"val data={va['data']:.4f} mass={va['mass']:.2e} bc={va['bc']:.3f} "
                       f"grad={va['grad']:.3f} | R2 u={r2[0]:.3f} v={r2[1]:.3f} w={r2[2]:.3f} "
                       + (f"| DSO {dso_sel['score']:.3f} ({dso_sel['limitant']}, RMSE max "

@@ -172,18 +172,11 @@ def test_entrainement_puis_service_de_bout_en_bout(cfg_era5, index, tmp_path):
     assert summary
 
 
-def test_validation_reelle_de_bout_en_bout(cfg_era5, index, tmp_path):
-    """scripts/valider_grand_tunis_reel.py sur le mini-jeu : entree era5_stations avec des
-    mesures synthetiques aux 3 stations, un radiosondage ; bilans ecrits, sans NaN."""
-    import importlib.util
+def _jeu_reel(cfg_era5, index, tmp_path):
+    """Mini-jeu en mode era5_stations (3 stations, _E, forcage) + observations synthetiques
+    aux instants de test et d'entrainement ; renvoie (config, dossier des observations)."""
     import json
     import shutil
-    from pathlib import Path
-
-    repo = Path(__file__).resolve().parents[1]
-    spec = importlib.util.spec_from_file_location("valider", repo / "scripts" / "valider_grand_tunis_reel.py")
-    V = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(V)
 
     c = copy.deepcopy(cfg_era5)
     data = tmp_path / "jeu"
@@ -200,13 +193,10 @@ def test_validation_reelle_de_bout_en_bout(cfg_era5, index, tmp_path):
     for stem in index["stem"]:
         S = np.load(c.paths.cache_dir / f"{stem}_S.npy")
         np.save(c.paths.cache_dir / f"{stem}_E.npy", S[:2].astype(np.float16))
-    Trainer(c, device="cpu", verbose=False).fit()
-
     obs_dir = tmp_path / "obs"
     obs_dir.mkdir()
-    test = index[index["split"] == "test"]
     lignes, sondes = [], []
-    for t in pd.to_datetime(test["timestamp"]):
+    for t in pd.to_datetime(index["timestamp"]):
         for code in ("DTTA", "INM60729", "INM60728"):
             lignes.append({"station_id": code, "timestamp_utc": t.strftime("%Y-%m-%dT%H:%M:%SZ"),
                            "wind_speed_m_s": 4.0, "wind_dir_deg": 270.0,
@@ -217,7 +207,22 @@ def test_validation_reelle_de_bout_en_bout(cfg_era5, index, tmp_path):
                                "u": 5.0, "v": 1.0})
     pd.DataFrame(lignes).to_csv(obs_dir / "metar_2025.csv", index=False)
     pd.DataFrame(sondes).to_csv(obs_dir / "radiosondages_TSM00060715.csv", index=False)
+    return c, obs_dir
 
+
+def test_validation_reelle_de_bout_en_bout(cfg_era5, index, tmp_path):
+    """scripts/valider_grand_tunis_reel.py sur le mini-jeu : entree era5_stations avec des
+    mesures synthetiques aux 3 stations, un radiosondage ; bilans ecrits, sans NaN."""
+    import importlib.util
+    from pathlib import Path
+
+    repo = Path(__file__).resolve().parents[1]
+    spec = importlib.util.spec_from_file_location("valider", repo / "scripts" / "valider_grand_tunis_reel.py")
+    V = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(V)
+
+    c, obs_dir = _jeu_reel(cfg_era5, index, tmp_path)
+    Trainer(c, device="cpu", verbose=False).fit()
     resume = V.valider(c, obs_dir, "test", device="cpu")
     sortie = c.paths.run_dir / "validation_reelle" / "test"
     b = pd.read_csv(sortie / "stations_bilan.csv")
@@ -225,5 +230,29 @@ def test_validation_reelle_de_bout_en_bout(cfg_era5, index, tmp_path):
     assert set(b["source"]) == {"modele", "era5", "generateur"}
     assert b["rmse_vect"].notna().all()
     assert "stations" in resume
-    if sondes:
-        assert (sortie / "radiosondages_bilan.csv").exists()
+    assert (sortie / "radiosondages_bilan.csv").exists()
+
+
+def test_affinage_sur_les_stations(cfg_era5, index, tmp_path):
+    """Affinage : vraies mesures en entree, une station cible retiree de l'entree, terme de
+    perte a 10 m ; last.pt n'est pas recopie dans run_dir avec train.sync_last = false."""
+    from pcfno3d.dataset import ANEO3D
+    from pcfno3d.stations_reelles import N_CIBLE
+
+    c, obs_dir = _jeu_reel(cfg_era5, index, tmp_path)
+    c.apply_overrides({"paths.stations_obs": obs_dir, "loss.lambda_station": 0.5,
+                       "train.stations_cibles": ["DTTA", "INM60729"], "train.sync_last": False,
+                       "paths.local_dir": tmp_path / "local"})
+    g = Geometry(c)
+    train = index[index["split"] == "train"]
+    ds = ANEO3D(train["stem"].values, train["hour"].values, train["doy"].values, g, train=True,
+                n_samples=8)
+    item = ds[0]
+    assert len(item) == 6 and item[5].shape == (N_CIBLE,) and float(item[5][8]) == 1.0
+    cible = item[5].numpy()
+    assert (int(cible[4]), int(cible[5])) != g._cellules_codes["INM60728"]   # jamais cible
+    assert not item[1].numpy()[int(cible[4]), int(cible[5])] or         (int(cible[4]) % 3 == 1 and int(cible[5]) % 3 == 1)                # retiree de l'entree
+
+    hist = Trainer(c, device="cpu", verbose=False).fit()
+    assert hist and np.isfinite(hist[-1]["train"]["station"]) and hist[-1]["train"]["station"] > 0
+    assert c.paths.ckpt_best.exists() and not c.paths.ckpt_last.exists()

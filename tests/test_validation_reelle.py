@@ -86,3 +86,37 @@ def test_robustesse_dso5_retire_des_points_en_mode_reel(geom, monkeypatch, tmp_p
     assert (plein == idem).all() and plein.all()
     quart = entree_era5_stations(S, f, geom, np.random.default_rng(0), train=False, keep=0.25)[1]
     assert 0.1 < quart.mean() < 0.4
+
+
+def test_poids_10m_identiques_a_l_interpolation(geom):
+    """La combinaison lineaire de l'affinage donne le meme vent a 10 m que la validation."""
+    import torch
+
+    from pcfno3d.stations_reelles import perte_station, poids_10m, vent_a_hauteur
+
+    rng = np.random.default_rng(1)
+    u = rng.normal(size=geom.shape).astype(np.float32)
+    jj, ii = np.nonzero(geom.valid.any(axis=0))
+    h = np.asarray(geom.z_levels, float)[:, None, None] - geom.zt[None]
+    for iy, ix in list(zip(jj, ii))[:: max(len(jj) // 15, 1)]:
+        w = poids_10m(geom, iy, ix)
+        col = np.where(geom.valid[:, iy, ix], u[:, iy, ix], np.nan)
+        ref, _ = V.vent_a_hauteur(col, col, h[:, iy, ix], geom.z0[iy, ix])
+        if w is None:
+            assert math.isnan(ref)
+            continue
+        assert w[2] * u[w[0], iy, ix] + w[3] * u[w[1], iy, ix] == pytest.approx(ref, rel=1e-5, abs=1e-5)
+
+    # perte nulle si la prediction (en m/s) vaut la mesure ; derivable
+    class N:
+        y_mu = torch.zeros(3)
+        y_sd = torch.ones(3)
+    iy, ix = int(jj[0]), int(ii[0])
+    ka, kb, wa, wb = poids_10m(geom, iy, ix)
+    pred = torch.zeros((1, 3) + geom.shape, requires_grad=True)
+    cible = torch.tensor([[ka, kb, wa, wb, iy, ix, 0.0, 0.0, 1.0]])
+    assert float(perte_station(pred, cible, N)) == 0.0
+    cible[0, 6] = 2.0
+    l = perte_station(pred, cible, N)
+    l.backward()
+    assert float(l) > 0 and float(pred.grad.abs().sum()) > 0

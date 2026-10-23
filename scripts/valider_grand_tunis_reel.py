@@ -41,101 +41,10 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-CODES = {"DTTA": "Tunis-Carthage", "INM60729": "Zaghouan", "INM60728": "Nabeul"}
-FENETRE = pd.Timedelta(minutes=30)
-H_STATION = 10.0                       # hauteur des anemometres (m au-dessus du sol)
+from pcfno3d.stations_reelles import (CODES, H_STATION, cellules_codes,  # noqa: E402,F401
+                                     entree_reelle, lire_observations, obs_a, vent_a_hauteur)
+
 SITE_SONDE = "TSM00060715"             # radiosondage de Tunis-Carthage
-
-
-# ---------------------------------------------------------------------- observations
-def lire_observations(dossier: Path) -> pd.DataFrame:
-    """METAR + SYNOP des trois stations du domaine ; u, v recalcules s'ils manquent ; mois en
-    panne (vent nul a plus de 90 %) ecartes."""
-    fichiers = sorted(dossier.glob("metar_*.csv")) + sorted(dossier.glob("synop_*.csv"))
-    if not fichiers:
-        raise FileNotFoundError(f"aucun metar_*.csv / synop_*.csv dans {dossier}")
-    obs = pd.concat([pd.read_csv(f) for f in fichiers], ignore_index=True)
-    obs = obs[obs["station_id"].isin(list(CODES))].copy()
-    obs["t"] = pd.to_datetime(obs["timestamp_utc"], utc=True).dt.tz_localize(None)
-    rad = np.radians(obs["wind_dir_deg"])
-    calme = obs["wind_speed_m_s"] == 0
-    obs["wind_u_m_s"] = obs["wind_u_m_s"].fillna((-obs["wind_speed_m_s"] * np.sin(rad)).where(~calme, 0.0))
-    obs["wind_v_m_s"] = obs["wind_v_m_s"].fillna((-obs["wind_speed_m_s"] * np.cos(rad)).where(~calme, 0.0))
-    obs = obs.dropna(subset=["wind_u_m_s", "wind_v_m_s"])
-    mois = obs["t"].dt.to_period("M")
-    part = (obs["wind_speed_m_s"] > 0).groupby([obs["station_id"], mois]).transform("mean")
-    n = obs.groupby([obs["station_id"], mois])["t"].transform("size")
-    panne = (part < 0.1) & (n >= 20)
-    if panne.any():
-        ecart = obs[panne].groupby(["station_id", obs.loc[panne, "t"].dt.to_period("M")]).size()
-        print("mois ecartes (anemometre en panne) :", ", ".join(f"{s} {m}" for s, m in ecart.index))
-    return obs[~panne].sort_values("t").reset_index(drop=True)
-
-
-def obs_a(obs: pd.DataFrame, t: pd.Timestamp) -> dict[str, tuple[float, float]]:
-    """{code: (u, v)} : la mesure la plus proche de t a 30 min au plus, par station."""
-    fen = obs[(obs["t"] >= t - FENETRE) & (obs["t"] <= t + FENETRE)]
-    out = {}
-    for code, g in fen.groupby("station_id"):
-        r = g.iloc[int(np.argmin(np.abs((g["t"] - t).to_numpy())))]
-        out[code] = (float(r["wind_u_m_s"]), float(r["wind_v_m_s"]))
-    return out
-
-
-# ---------------------------------------------------------------------- entree et sortie
-def cellules_codes(geom) -> dict[str, tuple[int, int]]:
-    """{code: (iy, ix)} des stations du domaine (data_dir/stations.json du generateur)."""
-    st = json.loads((geom.cfg.paths.data_dir / "stations.json").read_text(encoding="utf-8"))
-    out = {}
-    for s in st:
-        code = ("DTTA" if "DTTA" in s["nom"] else "INM60729" if "60729" in s["nom"]
-                else "INM60728" if "60728" in s["nom"] else None)
-        if code:
-            out[code] = (int(s["iy"]), int(s["ix"]))
-    return out
-
-
-def entree_reelle(S: np.ndarray, E: np.ndarray, geom, cellules: dict, mesures: dict,
-                  exclue: str | None = None) -> tuple[np.ndarray, np.ndarray]:
-    """Entree de production avec les VRAIES mesures (meme regle que
-    pcfno3d.dataset.entree_era5_stations en evaluation) : ERA5 10 m sur le reseau regulier,
-    les stations mesurees a leur cellule (une station prime sur le pseudo-capteur), w = 0.
-    `exclue` : station retiree de l'entree (sa cellule redevient ERA5 si elle est sur le
-    reseau, sinon sans capteur, comme une station absente a l'entrainement)."""
-    k = max(int(round(geom.cfg.mask.pas_era5_m / geom.dx)), 1)
-    reseau = np.zeros(S.shape[1:], dtype=bool)
-    reseau[k // 2::k, k // 2::k] = True
-    S = S.copy()
-    S[0] = np.where(reseau, E[0], S[0])
-    S[1] = np.where(reseau, E[1], S[1])
-    S[2] = 0.0
-    capteur = reseau.copy()
-    for code, (iy, ix) in cellules.items():
-        if code == exclue or code not in mesures:
-            continue
-        S[0, iy, ix], S[1, iy, ix] = mesures[code]
-        capteur[iy, ix] = True
-    return S, capteur & np.isfinite(S[:7]).all(axis=0)
-
-
-def vent_a_hauteur(u: np.ndarray, v: np.ndarray, h_noeuds: np.ndarray, z0: float,
-                   h: float = H_STATION) -> tuple[float, float]:
-    """u, v d'une colonne (NaN = noeud sous le relief) a h metres au-dessus du sol :
-    interpolation entre noeuds si h est encadre, sinon profil logarithmique depuis le noeud
-    valide le plus bas (z0 de la maille)."""
-    ok = np.isfinite(u) & np.isfinite(v) & np.isfinite(h_noeuds)
-    if not ok.any():
-        return math.nan, math.nan
-    hh, uu, vv = h_noeuds[ok], u[ok], v[ok]
-    o = np.argsort(hh)
-    hh, uu, vv = hh[o], uu[o], vv[o]
-    if hh[0] <= h <= hh[-1]:
-        return float(np.interp(h, hh, uu)), float(np.interp(h, hh, vv))
-    if h < hh[0]:
-        z0 = max(float(z0), 1e-4)
-        f = math.log(h / z0) / math.log(hh[0] / z0)
-        return float(uu[0] * f), float(vv[0] * f)
-    return math.nan, math.nan
 
 
 def direction(u, v):

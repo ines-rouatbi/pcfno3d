@@ -46,7 +46,9 @@ def carnet(cellules: list[dict], gpu: bool) -> dict:
 
 COMMUN = r'''
 from google.colab import drive
-drive.mount("/content/drive")
+import os as _os
+if not _os.path.isdir("/content/drive/MyDrive"):   # deja monte (panneau Fichiers) : ne pas redemander
+    drive.mount("/content/drive")
 
 import json, os, shutil, subprocess, sys, time, zipfile
 from pathlib import Path
@@ -457,6 +459,61 @@ finally:
     ], gpu=True)
 
 
+V3 = ("grand_tunis_v3_stations", "grand_tunis_v3_cv_sans_dtta", "grand_tunis_v3_cv_sans_zaghouan",
+      "grand_tunis_v3_cv_sans_nabeul")
+
+OBS = r'''
+# observations reelles du domaine (affinage et jugement)
+OBS = Path("/content/obs")
+with zipfile.ZipFile(GT / "grand_tunis_obs.zip") as zf:
+    zf.extractall(OBS)
+print(sorted(p.name for p in OBS.iterdir()))
+'''
+
+
+def affinage() -> dict:
+    """v3 : affinage sur les stations (modele final, puis 3 plis de validation croisee spatiale),
+    chacun entraine, evalue sur le test genere, puis juge sur les VRAIES mesures."""
+    mem = MEM.replace("configs/grand_tunis_colab.yaml", "configs/grand_tunis_v3_stations_colab.yaml")
+    chaine = '''
+from google.colab import runtime
+import traceback
+try:
+    for run in V3:
+        conf = run + "_colab"
+        for nom, cmd in ((f"entrainer_{run}", f"python -u -m pcfno3d -c {conf} {OPTS} train"),
+                         (f"evaluer_{run}", f"python -u -m pcfno3d -c {conf} {OPTS} evaluate"),
+                         (f"valider_{run}", f"python -u scripts/valider_grand_tunis_reel.py -c {conf} --obs {OBS}")):
+            try:
+                lancer(nom, cmd)
+            except Exception:
+                traceback.print_exc()
+finally:
+    runtime.unassign()
+'''
+    return carnet([
+        md("""
+# PC-FNO3D réel (Grand Tunis) v3 — affinage sur les stations (Colab, A100)
+
+Depuis la v2 prolongée : à chaque instant d'entraînement, une station mesurée est tirée comme
+**cible** et retirée de l'entrée ; son vent à 10 m prédit est rapproché de la **vraie mesure**
+(`loss.lambda_station`), la vérité générée reste la cible partout ailleurs. Quatre runs, 10
+époques chacun : le **modèle final** (3 stations cibles), puis **3 plis de validation croisée**
+où une station n'est jamais cible — c'est elle qui juge honnêtement le gain. Chaque run est
+évalué sur le test généré puis sur les vraies mesures. Seul `best.pt` va sur le Drive
+(`train.sync_last: false`). La session s'arrête à la fin.
+"""),
+        md("## 1. Drive, code et données"),
+        code(COMMUN),
+        md("## 2. Cache (3 parties) et observations"),
+        code(ENT.replace("grand_tunis_colab", "grand_tunis_v3_stations_colab") + OBS),
+        md("## 3. Mémoire du GPU"),
+        code(mem),
+        md("## 4. Affinage, test, vraies mesures (4 runs), puis fin de la session"),
+        code(f"V3 = {V3!r}" + chr(10) + chaine),
+    ], gpu=True)
+
+
 def main() -> int:
     out = REPO / "notebooks" / "current"
     for nom, nb in (("pcfno3d_grand_tunis_generation_colab.ipynb", generation()),
@@ -468,7 +525,8 @@ def main() -> int:
                     ("pcfno3d_grand_tunis_v2_aneo_colab.ipynb",
                      entrainement("grand_tunis_v2_aneo_colab", "grand_tunis_v2_aneo")),
                     ("pcfno3d_grand_tunis_diagnostic_colab.ipynb", diagnostic()),
-                    ("pcfno3d_grand_tunis_validation_colab.ipynb", validation())):
+                    ("pcfno3d_grand_tunis_validation_colab.ipynb", validation()),
+                    ("pcfno3d_grand_tunis_v3_colab.ipynb", affinage())):
         (out / nom).write_text(json.dumps(nb, indent=1, ensure_ascii=False), encoding="utf-8")
         print(out / nom)
     return 0
