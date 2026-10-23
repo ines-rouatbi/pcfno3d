@@ -129,7 +129,16 @@ global RMSE u 0.377 / v 0.371 m/s, per-level RMSE ≤ 0.42 from 75 to 1000 m and
 (still > 1e-4), DSO3 0.82. `grand_tunis_v2_aneo` (simulated dense ANEO network, from v7, 20
 epochs) is WORSE than the real mode: global 0.548 / 0.514, per-level up to 0.67, DSO2 2.33e-4 —
 the dense synthetic surface layer does not beat ERA5 profile + 3 stations once the ERA5 profile
-is an input. Drive storage reached 91 % (each run keeps a ~7 GB `last.pt`). Also fixed that day: METAR u, v now filled on
+is an input. Drive storage reached 91 % (each run keeps a ~7 GB `last.pt`). **Validation on REAL
+measurements (2026-10-23, `scripts/valider_grand_tunis_reel.py`, v2_long, 180 test instants, real
+anemometers as input, each station left out when judged, 10 m wind):** vector RMSE model / ERA5 10 m /
+generator surface = Nabeul 2.42 / 2.57 / 2.52, Tunis-Carthage 2.70 / 2.81 / 2.63, Zaghouan 2.28 /
+2.16 / 2.14 m/s; direction MAE 27–38° for all three sources. At the stations the model is at ERA5's
+level (a few % better at two of three): it reproduces the generator, whose own error against the
+stations is the same — the limit is the training truth, not the network. Radiosondes Tunis-Carthage
+(only 9–11 soundings per 250 m layer on the test blocks): model better than ERA5 in every layer
+0–1000 m (vector RMSE 1.95–2.34 vs 2.07–2.54 m/s) with a smaller speed bias near the ground (0.58 vs
+1.04 m/s below 250 m). Also fixed that day: METAR u, v now filled on
 import for every non-calm report (`metar.py`), IGRA launch time of 00 UTC balloons dated the
 previous day (`igra_radiosondages.py`; matching was already on `temps`).
 
