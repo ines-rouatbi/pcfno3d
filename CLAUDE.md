@@ -122,7 +122,14 @@ below 75 m and at 400–500 m), DSO2 mass 1.77e-4 (> 1e-4: ERA5 added in the res
 divergence-free), DSO3 roughness 0.76 (too smooth). The DSO5 sweep is meaningless in
 `era5_stations` mode (`keep` is ignored: identical rows) — robustness there means dropping
 stations / ERA5 points, still to write. Validation against real stations and radiosondes still to
-do. Also fixed that day: METAR u, v now filled on
+do. **Night of 22→23/10 (same Colab session, test = 180 synoptic instants):**
+`grand_tunis_v2_long` (v2 + 40 epochs at LR 1e-4, `runs/grand_tunis_v2_long`) is the best model:
+global RMSE u 0.377 / v 0.371 m/s, per-level RMSE ≤ 0.42 from 75 to 1000 m and 0.53 / 0.51 at 25 m
+(only miss of the per-level 0.5 criterion), R² u, v ≥ 0.98, direction MAE 3.3°, DSO2 1.31e-4
+(still > 1e-4), DSO3 0.82. `grand_tunis_v2_aneo` (simulated dense ANEO network, from v7, 20
+epochs) is WORSE than the real mode: global 0.548 / 0.514, per-level up to 0.67, DSO2 2.33e-4 —
+the dense synthetic surface layer does not beat ERA5 profile + 3 stations once the ERA5 profile
+is an input. Drive storage reached 91 % (each run keeps a ~7 GB `last.pt`). Also fixed that day: METAR u, v now filled on
 import for every non-calm report (`metar.py`), IGRA launch time of 00 UTC balloons dated the
 previous day (`igra_radiosondages.py`; matching was already on `temps`).
 
