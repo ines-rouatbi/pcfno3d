@@ -205,6 +205,9 @@ class LossCfg:
     # Affinage sur les stations reelles (pcfno3d.stations_reelles.perte_station) : poids de
     # l'erreur du vent a 10 m a la station cible contre la mesure. 0 = desactive.
     lambda_station: float = 0.0
+    # Poids de la VITESSE par station dans ce terme (1 par defaut) : 0 = direction seule, pour
+    # une station abritee dont la vitesse n'est pas representative (Nabeul, INM60728).
+    poids_vitesse_station: dict[str, float] | None = None
     # Poids de l'erreur de u et v PAR NIVEAU (une valeur par niveau, ou None).
     # La loss moyenne sur tous les noeuds ne correspond pas au DSO1, qui est un MAXIMUM
     # par niveau : la v7 echoue precisement aux niveaux hauts (650-1000 m) alors que la

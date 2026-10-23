@@ -514,6 +514,70 @@ où une station n'est jamais cible — c'est elle qui juge honnêtement le gain.
     ], gpu=True)
 
 
+def suite_v3() -> dict:
+    """Apres les plis : bilan et regle de livraison, cartes v3 - v2, puis (seulement si les plis
+    montrent un gain) v3b = modele final avec Nabeul en direction seule."""
+    suite = '''
+from google.colab import runtime
+import traceback
+RUNS = GT / "runs"
+CARTES = RUNS / "comparaisons"
+def essai(nom, cmd):
+    try:
+        lancer(nom, cmd)
+        return 0
+    except Exception as e:
+        print(e)
+        return 1
+try:
+    # 1. plis : la station jamais cible juge ; code 0 = gain (v3 livrable), 3 = la v2 reste livree
+    p = subprocess.run(f"python -u scripts/bilan_plis_grand_tunis.py --runs {RUNS}", shell=True,
+                       cwd="/content/PFE")
+    gain = p.returncode == 0
+    print("GAIN AUX STATIONS JAMAIS VUES :", gain)
+    # 2. cartes de l'ecart v3 - v2 a 10 m et 100 m
+    essai("cartes_v3", f"python -u scripts/comparer_modeles_grand_tunis.py --conf-a grand_tunis_v2_long_colab "
+                       f"--conf-b grand_tunis_v3_stations_colab --obs {OBS} --sortie {CARTES}")
+    # 3. v3b (Nabeul en direction seule), seulement si les plis montrent un gain
+    if gain:
+        conf = "grand_tunis_v3b_stations_colab"
+        essai("entrainer_v3b", f"python -u -m pcfno3d -c {conf} {OPTS} train")
+        essai("evaluer_v3b", f"python -u -m pcfno3d -c {conf} {OPTS} evaluate")
+        essai("valider_v3b", f"python -u scripts/valider_grand_tunis_reel.py -c {conf} --obs {OBS}")
+        essai("cartes_v3b", f"python -u scripts/comparer_modeles_grand_tunis.py --conf-a grand_tunis_v2_long_colab "
+                            f"--conf-b {conf} --obs {OBS} --sortie {CARTES}")
+    else:
+        print("pas de gain aux stations jamais vues : la v2 reste le modele livre, pas de v3b")
+finally:
+    runtime.unassign()
+'''
+    mem = MEM.replace("configs/grand_tunis_colab.yaml", "configs/grand_tunis_v3b_stations_colab.yaml")
+    return carnet([
+        md("""
+# PC-FNO3D réel (Grand Tunis) — suite de la v3 : plis, cartes, Nabeul (Colab, A100)
+
+1. **Bilan des 3 plis** de validation croisée (`scripts/bilan_plis_grand_tunis.py`) : erreur à la
+   station jamais cible, à côté de la v2 et d'ERA5. Règle : la v3 n'est livrée que si les plis
+   montrent un gain aux stations jamais vues ; sinon la v2 reste livrée.
+2. **Cartes de l'écart v3 − v2** à 10 m et 100 m (`scripts/comparer_modeles_grand_tunis.py`) :
+   pas de taches autour des stations ?
+3. **Seulement si gain** : v3b = modèle final avec **Nabeul en direction seule**
+   (`loss.poids_vitesse_station`), entraîné, évalué, jugé sur les vraies mesures, cartes.
+
+Résultats : `runs/bilan_plis_v3.*`, `runs/comparaisons/`, `runs/grand_tunis_v3b_stations/`.
+La session s'arrête à la fin.
+"""),
+        md("## 1. Drive, code et données"),
+        code(COMMUN),
+        md("## 2. Cache (3 parties) et observations"),
+        code(ENT.replace("grand_tunis_colab", "grand_tunis_v3b_stations_colab") + OBS),
+        md("## 3. Mémoire du GPU"),
+        code(mem),
+        md("## 4. Plis, cartes, v3b si gain, puis fin de la session"),
+        code(suite),
+    ], gpu=True)
+
+
 def main() -> int:
     out = REPO / "notebooks" / "current"
     for nom, nb in (("pcfno3d_grand_tunis_generation_colab.ipynb", generation()),
@@ -526,7 +590,8 @@ def main() -> int:
                      entrainement("grand_tunis_v2_aneo_colab", "grand_tunis_v2_aneo")),
                     ("pcfno3d_grand_tunis_diagnostic_colab.ipynb", diagnostic()),
                     ("pcfno3d_grand_tunis_validation_colab.ipynb", validation()),
-                    ("pcfno3d_grand_tunis_v3_colab.ipynb", affinage())):
+                    ("pcfno3d_grand_tunis_v3_colab.ipynb", affinage()),
+                    ("pcfno3d_grand_tunis_v3_suite_colab.ipynb", suite_v3())):
         (out / nom).write_text(json.dumps(nb, indent=1, ensure_ascii=False), encoding="utf-8")
         print(out / nom)
     return 0

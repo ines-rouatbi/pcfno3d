@@ -25,7 +25,7 @@ import pandas as pd
 CODES = {"DTTA": "Tunis-Carthage", "INM60729": "Zaghouan", "INM60728": "Nabeul"}
 FENETRE = pd.Timedelta(minutes=30)
 H_STATION = 10.0                       # hauteur des anemometres (m au-dessus du sol)
-N_CIBLE = 9                            # k_a, k_b, w_a, w_b, iy, ix, u, v, presente
+N_CIBLE = 10                           # k_a, k_b, w_a, w_b, iy, ix, u, v, presente, poids vitesse
 
 
 # ---------------------------------------------------------------------- observations
@@ -166,7 +166,9 @@ def entree_affinage(S: np.ndarray, chemin_e, geom, rng: np.random.Generator,
     """Entree d'entrainement de l'affinage : une station mesuree (parmi `train.stations_cibles`)
     tiree comme cible et retiree de l'entree ; les autres stations mesurees en entree, chacune
     avec la probabilite `mask.p_station` ; ERA5 10 m sur un reseau au decalage aleatoire.
-    Renvoie (S, capteur, cible) ; cible (N_CIBLE,) = k_a, k_b, w_a, w_b, iy, ix, u, v, presente."""
+    Renvoie (S, capteur, cible) ; cible (N_CIBLE,) = k_a, k_b, w_a, w_b, iy, ix, u, v, presente,
+    poids de la vitesse (`loss.poids_vitesse_station`, 1 par defaut ; 0 = direction seule, la
+    cible est alors ecartee si le vent mesure est sous 1 m/s : direction non definie)."""
     cfg = geom.cfg
     k = max(int(round(cfg.mask.pas_era5_m / geom.dx)), 1)
     mesures = table_stations(geom).get(str(stem), {})
@@ -183,14 +185,19 @@ def entree_affinage(S: np.ndarray, chemin_e, geom, rng: np.random.Generator,
     if cible is not None and cible in cellules:
         iy, ix = cellules[cible]
         w = poids_10m(geom, iy, ix)
-        if w is not None:
-            vec[:] = (*w, iy, ix, *mesures[cible], 1.0)
+        pv = float((cfg.loss.poids_vitesse_station or {}).get(cible, 1.0))
+        vitesse = math.hypot(*mesures[cible])
+        if w is not None and (pv >= 1.0 or vitesse >= 1.0):
+            vec[:] = (*w, iy, ix, *mesures[cible], 1.0, pv)
     return S_in, capteur, vec
 
 
 def perte_station(pred, cible, norm):
     """Erreur quadratique (normalisee par l'ecart-type de la cible) entre le vent a 10 m predit
     aux stations cibles et la mesure, moyenne sur les exemples du lot qui ont une cible.
+    Poids de la vitesse pv (colonne 9) : la cible est pv * mesure + (1 - pv) * |prediction| *
+    direction mesuree ; pv = 0 ne juge que la DIRECTION (station abritee dont la vitesse n'est
+    pas representative du vent alentour, ex. Nabeul).
     pred (B, 3, nz, ny, nx) normalise ; cible (B, N_CIBLE)."""
     import torch
 
@@ -201,11 +208,18 @@ def perte_station(pred, cible, norm):
     ka, kb = cible[:, 0].long(), cible[:, 1].long()
     iy, ix = cible[:, 4].long(), cible[:, 5].long()
     wa, wb = cible[:, 2], cible[:, 3]
-    err = 0.0
+    pv = cible[:, 9]
+    p10 = []
     for c in (0, 1):
         sd, mu = norm.y_sd[c], norm.y_mu[c]
         va = pred[b, c, ka, iy, ix].float() * sd + mu
         vb = pred[b, c, kb, iy, ix].float() * sd + mu
-        e = (wa * va + wb * vb - cible[:, 6 + c]) / sd
-        err = err + e ** 2
+        p10.append(wa * va + wb * vb)
+    vit_p = torch.sqrt(p10[0] ** 2 + p10[1] ** 2 + 1e-6)
+    vit_o = torch.sqrt(cible[:, 6] ** 2 + cible[:, 7] ** 2).clamp_min(1e-6)
+    err = 0.0
+    for c in (0, 1):
+        o = cible[:, 6 + c]
+        visee = pv * o + (1.0 - pv) * vit_p * o / vit_o
+        err = err + ((p10[c] - visee) / norm.y_sd[c]) ** 2
     return (ok * err).sum() / (2.0 * ok.sum())

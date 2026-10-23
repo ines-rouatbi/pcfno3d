@@ -114,9 +114,66 @@ def test_poids_10m_identiques_a_l_interpolation(geom):
     iy, ix = int(jj[0]), int(ii[0])
     ka, kb, wa, wb = poids_10m(geom, iy, ix)
     pred = torch.zeros((1, 3) + geom.shape, requires_grad=True)
-    cible = torch.tensor([[ka, kb, wa, wb, iy, ix, 0.0, 0.0, 1.0]])
+    cible = torch.tensor([[ka, kb, wa, wb, iy, ix, 0.0, 0.0, 1.0, 1.0]])
     assert float(perte_station(pred, cible, N)) == 0.0
     cible[0, 6] = 2.0
     l = perte_station(pred, cible, N)
     l.backward()
     assert float(l) > 0 and float(pred.grad.abs().sum()) > 0
+
+    # direction seule (pv = 0) : bonne direction, vitesse double -> aucune erreur ; avec la
+    # vitesse (pv = 1) -> erreur
+    with torch.no_grad():
+        p = torch.zeros((1, 3) + geom.shape)
+        p[0, 0] = 4.0 / max(wa + wb, 1e-6)          # u predit a 10 m = 4 m/s partout
+    cible = torch.tensor([[ka, kb, wa, wb, iy, ix, 2.0, 0.0, 1.0, 0.0]])
+    assert float(perte_station(p, cible, N)) == pytest.approx(0.0, abs=1e-6)
+    cible[0, 9] = 1.0
+    assert float(perte_station(p, cible, N)) > 0.5
+    cible[0, 9] = 0.0
+    cible[0, 6], cible[0, 7] = 0.0, 2.0              # direction fausse (90 deg) -> erreur
+    assert float(perte_station(p, cible, N)) > 0.5
+
+
+def test_champ_agl_identique_a_poids_10m(geom):
+    """Carte a 10 m de scripts/comparer_modeles_grand_tunis.py = combinaison de l'affinage."""
+    from pcfno3d.stations_reelles import poids_10m
+
+    spec = importlib.util.spec_from_file_location("comparer", REPO / "scripts" / "comparer_modeles_grand_tunis.py")
+    C = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(C)
+    u = np.where(geom.valid, np.random.default_rng(2).normal(size=geom.shape), np.nan)
+    carte, _ = C.champ_agl(u, u, geom, 10.0)
+    for iy in range(geom.ny):
+        for ix in range(geom.nx):
+            w = poids_10m(geom, iy, ix)
+            if w is None:
+                assert np.isnan(carte[iy, ix])
+            else:
+                assert carte[iy, ix] == pytest.approx(w[2] * u[w[0], iy, ix] + w[3] * u[w[1], iy, ix],
+                                                      rel=1e-6, abs=1e-6)
+
+
+def test_bilan_plis_et_regle_de_livraison(tmp_path):
+    spec = importlib.util.spec_from_file_location("plis", REPO / "scripts" / "bilan_plis_grand_tunis.py")
+    B = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(B)
+
+    def ecrire(run, valeurs):
+        d = tmp_path / run / "validation_reelle" / "test"
+        d.mkdir(parents=True)
+        lignes = [{"station": s, "source": src, "rmse_vect": x, "biais_vitesse": 0.0}
+                  for s, par_src in valeurs.items() for src, x in par_src.items()]
+        pd.DataFrame(lignes).to_csv(d / "stations_bilan.csv", index=False)
+
+    stations = ("Tunis-Carthage", "Zaghouan", "Nabeul")
+    ecrire(B.REFERENCE, {s: {"modele": 2.5, "era5": 2.6} for s in stations})
+    with pytest.raises(FileNotFoundError):
+        B.bilan(tmp_path / "rien")
+    t, d = B.bilan(tmp_path)
+    assert not d["plis_complets"]
+    for pli, s in B.PLIS.items():
+        ecrire(pli, {s: {"modele": 2.0 if s != "Nabeul" else 2.7}})
+    t, d = B.bilan(tmp_path)
+    assert d["plis_complets"] and d["stations_en_progres"] == 2 and d["gain"]
+    assert d["modele_livre"].startswith("v3")
