@@ -41,16 +41,16 @@ def colonne_aux_hauteurs(h_noeuds: np.ndarray, u: np.ndarray, v: np.ndarray,
             np.interp(h_cibles, h, vv, left=np.nan, right=np.nan))
 
 
-def bilan(paires: pd.DataFrame) -> pd.DataFrame:
-    """Par site et tranche de hauteur : n, erreur vectorielle RMS et biais de vitesse du
-    modele et d'ERA5, tous deux contre le ballon."""
+def bilan(paires: pd.DataFrame, sources: tuple[str, ...] = ("modele", "era5")) -> pd.DataFrame:
+    """Par site et tranche de hauteur : n, erreur vectorielle RMS et biais de vitesse de
+    chaque source (colonnes u_<source>, v_<source>), toutes contre le ballon."""
     p = paires.copy()
     p["tranche"] = pd.cut(p["h_agl_m"], TRANCHES)
     lignes = []
     for (site, tr), g in p.groupby(["site", "tranche"], observed=True):
         ligne = {"site": site, "tranche_m": str(tr), "n": len(g),
                  "radiosondages": g["temps"].nunique()}
-        for src in ("modele", "era5"):
+        for src in sources:
             du, dv = g[f"u_{src}"] - g["u_obs"], g[f"v_{src}"] - g["v_obs"]
             ligne[f"rmse_vect_{src}"] = float(np.sqrt(np.mean(du ** 2 + dv ** 2)))
             ligne[f"biais_vitesse_{src}"] = float(np.mean(

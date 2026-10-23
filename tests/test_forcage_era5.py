@@ -170,3 +170,60 @@ def test_entrainement_puis_service_de_bout_en_bout(cfg_era5, index, tmp_path):
     from pcfno3d.evaluate import Evaluator
     summary = Evaluator(c2, device="cpu", verbose=False).run()
     assert summary
+
+
+def test_validation_reelle_de_bout_en_bout(cfg_era5, index, tmp_path):
+    """scripts/valider_grand_tunis_reel.py sur le mini-jeu : entree era5_stations avec des
+    mesures synthetiques aux 3 stations, un radiosondage ; bilans ecrits, sans NaN."""
+    import importlib.util
+    import json
+    import shutil
+    from pathlib import Path
+
+    repo = Path(__file__).resolve().parents[1]
+    spec = importlib.util.spec_from_file_location("valider", repo / "scripts" / "valider_grand_tunis_reel.py")
+    V = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(V)
+
+    c = copy.deepcopy(cfg_era5)
+    data = tmp_path / "jeu"
+    shutil.copytree(c.paths.data_dir, data)
+    c.apply_overrides({"paths.data_dir": data, "paths.run_dir": tmp_path / "run",
+                       "mask.entree": "era5_stations", "mask.pas_era5_m": 3 * Geometry(c).dx,
+                       "model.residuel_era5": True})
+    g = Geometry(c)
+    jj, ii = np.nonzero(g.valid.any(axis=0))
+    cells = [(int(jj[k]), int(ii[k])) for k in (0, len(jj) // 2, len(jj) - 1)]
+    noms = ["DTTA Tunis-Carthage", "Zaghouan (INM 60729)", "Nabeul (INM 60728)"]
+    (data / "stations.json").write_text(json.dumps(
+        [{"nom": n, "iy": a, "ix": b} for n, (a, b) in zip(noms, cells)]), encoding="utf-8")
+    for stem in index["stem"]:
+        S = np.load(c.paths.cache_dir / f"{stem}_S.npy")
+        np.save(c.paths.cache_dir / f"{stem}_E.npy", S[:2].astype(np.float16))
+    Trainer(c, device="cpu", verbose=False).fit()
+
+    obs_dir = tmp_path / "obs"
+    obs_dir.mkdir()
+    test = index[index["split"] == "test"]
+    lignes, sondes = [], []
+    for t in pd.to_datetime(test["timestamp"]):
+        for code in ("DTTA", "INM60729", "INM60728"):
+            lignes.append({"station_id": code, "timestamp_utc": t.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                           "wind_speed_m_s": 4.0, "wind_dir_deg": 270.0,
+                           "wind_u_m_s": 4.0, "wind_v_m_s": 0.0})
+        if t.hour in (0, 12):
+            for h in (50.0, 200.0, 600.0):
+                sondes.append({"temps": t.strftime("%Y-%m-%dT%H:%M:%SZ"), "h_agl_m": h,
+                               "u": 5.0, "v": 1.0})
+    pd.DataFrame(lignes).to_csv(obs_dir / "metar_2025.csv", index=False)
+    pd.DataFrame(sondes).to_csv(obs_dir / "radiosondages_TSM00060715.csv", index=False)
+
+    resume = V.valider(c, obs_dir, "test", device="cpu")
+    sortie = c.paths.run_dir / "validation_reelle" / "test"
+    b = pd.read_csv(sortie / "stations_bilan.csv")
+    assert set(b["station"]) == {"Tunis-Carthage", "Zaghouan", "Nabeul"}
+    assert set(b["source"]) == {"modele", "era5", "generateur"}
+    assert b["rmse_vect"].notna().all()
+    assert "stations" in resume
+    if sondes:
+        assert (sortie / "radiosondages_bilan.csv").exists()

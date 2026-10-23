@@ -7,6 +7,7 @@
            validation, CPU : scripts/diag_grand_tunis.py)
        notebooks/current/pcfno3d_grand_tunis_v2_colab.ipynb       (v2 mode reel, A100)
        notebooks/current/pcfno3d_grand_tunis_v2_aneo_colab.ipynb  (v2 mode ANEO simule, A100)
+       notebooks/current/pcfno3d_grand_tunis_validation_colab.ipynb (vraies mesures, A100)
 
 Tout passe par le Drive, dossier MyDrive/pcfno3d_grand_tunis/ :
     pcfno3d_code.zip           code (python scripts/package_for_colab.py)
@@ -395,6 +396,67 @@ print(sorted(p.name for p in D.iterdir()))
     ], gpu=False)
 
 
+VALID = r'''
+# instants de TEST des 3 parties (S, Y, E) + index fusionne ; observations reelles du domaine
+LOC = Path("/content/grand_tunis")
+CACHE, JEU = LOC / "cache", LOC / "jeu"
+CACHE.mkdir(parents=True, exist_ok=True)
+JEU.mkdir(parents=True, exist_ok=True)
+with zipfile.ZipFile(GT / "jeu.zip") as zf:
+    zf.extractall(JEU)
+import pandas as pd
+index, n = [], 0
+for k in (1, 2, 3):
+    with zipfile.ZipFile(GT / f"cache_partie_{k}.zip") as zf:
+        with zf.open(f"index_partie_{k}.csv") as f:
+            idx = pd.read_csv(f)
+        index.append(idx)
+        test = set(idx.loc[idx["split"] == "test", "stem"])
+        noms = [x for x in zf.namelist() if x.rsplit("_", 1)[0] in test]
+        zf.extractall(CACHE, members=noms)
+        n += len(noms)
+pd.concat(index).drop_duplicates("stem").to_csv(CACHE / "index.csv", index=False)
+OBS = Path("/content/obs")
+with zipfile.ZipFile(GT / "grand_tunis_obs.zip") as zf:
+    zf.extractall(OBS)
+print(f"{n} fichiers de test ; observations : {sorted(p.name for p in OBS.iterdir())}")
+'''
+
+
+def validation() -> dict:
+    return carnet([
+        md("""
+# PC-FNO3D réel (Grand Tunis) — validation sur de VRAIES mesures (Colab, GPU)
+
+Sur les 180 instants de test (2022) : entrée de production avec les **vrais** anémomètres
+(METAR Tunis-Carthage, SYNOP Zaghouan et Nabeul), chaque station **retirée de l'entrée** quand
+on la juge ; vent à 10 m contre la mesure, comparé à ERA5 et au générateur ; profils contre les
+**radiosondages** de Tunis-Carthage (0–1 000 m). Modèles : v2 prolongé, puis v2.
+`scripts/valider_grand_tunis_reel.py`. La session s'arrête à la fin.
+
+Sur le Drive : `grand_tunis_obs.zip` (python scripts/package_grand_tunis_colab.py).
+Résultats : `runs/<modèle>/validation_reelle/test/`.
+"""),
+        md("## 1. Drive, code et données"),
+        code(COMMUN),
+        md("## 2. Instants de test et observations"),
+        code(VALID),
+        md("## 3. Validation (v2 prolongé, puis v2), puis fin de la session"),
+        code('''
+from google.colab import runtime
+try:
+    for conf, run in (("grand_tunis_v2_long_colab", "grand_tunis_v2_long"),
+                      ("grand_tunis_v2_colab", "grand_tunis_v2")):
+        try:
+            lancer(f"valider_{run}", f"python -u scripts/valider_grand_tunis_reel.py -c {conf} --obs {OBS}")
+        except Exception as e:
+            print(e)
+finally:
+    runtime.unassign()
+'''),
+    ], gpu=True)
+
+
 def main() -> int:
     out = REPO / "notebooks" / "current"
     for nom, nb in (("pcfno3d_grand_tunis_generation_colab.ipynb", generation()),
@@ -405,7 +467,8 @@ def main() -> int:
                      entrainement("grand_tunis_v2_long_colab", "grand_tunis_v2_long")),
                     ("pcfno3d_grand_tunis_v2_aneo_colab.ipynb",
                      entrainement("grand_tunis_v2_aneo_colab", "grand_tunis_v2_aneo")),
-                    ("pcfno3d_grand_tunis_diagnostic_colab.ipynb", diagnostic())):
+                    ("pcfno3d_grand_tunis_diagnostic_colab.ipynb", diagnostic()),
+                    ("pcfno3d_grand_tunis_validation_colab.ipynb", validation())):
         (out / nom).write_text(json.dumps(nb, indent=1, ensure_ascii=False), encoding="utf-8")
         print(out / nom)
     return 0

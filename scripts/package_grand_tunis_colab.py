@@ -50,6 +50,26 @@ def main() -> int:
         n += ajouter(zf, (base / "igra").glob("*.csv"), base / "igra", "igra")
     print(f"{don} : {n} fichiers, {don.stat().st_size / 1e6:.0f} Mo")
 
+    # observations reelles du domaine seulement (validation : scripts/valider_grand_tunis_reel.py),
+    # quelques Mo : METAR / SYNOP des 3 stations, radiosondages de Tunis-Carthage
+    import io
+
+    import pandas as pd
+    obs = out / "grand_tunis_obs.zip"
+    with zipfile.ZipFile(obs, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6) as zf:
+        n = 0
+        for f in sorted((base / "metar" / "historique").glob("metar_*.csv")) + sorted((base / "isd").glob("synop_*.csv")):
+            d = pd.read_csv(f)
+            d = d[d["station_id"].isin(["DTTA", "INM60729", "INM60728"])]
+            if len(d):
+                zf.writestr(f.name, d.to_csv(index=False))
+                n += 1
+        f = base / "igra" / "radiosondages_TSM00060715.csv"
+        if f.exists():
+            zf.write(f, f.name)
+            n += 1
+    print(f"{obs} : {n} fichiers, {obs.stat().st_size / 1e6:.1f} Mo")
+
     src = out / "grand_tunis_sources.zip"
     with zipfile.ZipFile(src, "w", compression=zipfile.ZIP_STORED) as zf:
         e = base / "era5" / "tunisie"
