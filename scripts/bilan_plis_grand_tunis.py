@@ -6,9 +6,10 @@ juge si l'affinage ameliore le champ au-dela des emplacements appris. On la comp
 station, a la v2 (avant affinage) et a ERA5.
 
 Regle de livraison (decision du 2026-10-23) : la v3 n'est livree que si les plis montrent un gain
-aux stations jamais vues ; sinon la v2 reste le modele livre. Ici : gain = erreur vectorielle
-moyenne des 3 stations jamais vues inferieure a celle de la v2, et au moins 2 stations sur 3 en
-progres.
+aux stations jamais vues ; sinon la v2 reste le modele livre. Ici, un gain doit depasser le bruit
+(~170 instants par station) : erreur vectorielle moyenne des 3 stations jamais vues au moins
+GAIN_MOYEN plus basse que celle de la v2, et au moins 2 stations sur 3 en progres d'au moins
+GAIN_STATION.
 
     python scripts/bilan_plis_grand_tunis.py --runs /content/drive/MyDrive/pcfno3d_grand_tunis/runs
 
@@ -25,6 +26,8 @@ import pandas as pd
 PLIS = {"grand_tunis_v3_cv_sans_dtta": "Tunis-Carthage",
         "grand_tunis_v3_cv_sans_zaghouan": "Zaghouan",
         "grand_tunis_v3_cv_sans_nabeul": "Nabeul"}
+GAIN_MOYEN = 0.05                      # -5 % en moyenne sur les stations jamais vues
+GAIN_STATION = 0.03                    # -3 % a une station pour la compter en progres
 REFERENCE = "grand_tunis_v2_long"
 FINAL = "grand_tunis_v3_stations"
 
@@ -58,9 +61,12 @@ def bilan(runs: Path) -> tuple[pd.DataFrame, dict]:
         })
     t = pd.DataFrame(lignes)
     complet = t["pli_rmse_vect"].notna().all()
-    progres = int((t["pli_rmse_vect"] < t["v2_rmse_vect"]).sum())
-    gain = bool(complet and t["pli_rmse_vect"].mean() < t["v2_rmse_vect"].mean() and progres >= 2)
+    t["gain_relatif"] = 1.0 - t["pli_rmse_vect"] / t["v2_rmse_vect"]
+    progres = int((t["gain_relatif"] >= GAIN_STATION).sum())
+    gain_moyen = 1.0 - t["pli_rmse_vect"].mean() / t["v2_rmse_vect"].mean()
+    gain = bool(complet and gain_moyen >= GAIN_MOYEN and progres >= 2)
     decision = {"plis_complets": bool(complet), "stations_en_progres": progres,
+                "gain_moyen_relatif": float(gain_moyen),
                 "moyenne_plis": float(t["pli_rmse_vect"].mean()),
                 "moyenne_v2": float(t["v2_rmse_vect"].mean()),
                 "moyenne_era5": float(t["era5_rmse_vect"].mean()),

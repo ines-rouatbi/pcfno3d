@@ -177,3 +177,13 @@ def test_bilan_plis_et_regle_de_livraison(tmp_path):
     t, d = B.bilan(tmp_path)
     assert d["plis_complets"] and d["stations_en_progres"] == 2 and d["gain"]
     assert d["modele_livre"].startswith("v3")
+    # gains dans le bruit (-0,4 % et -1,5 %) : pas de gain, la v2 reste livree
+    for pli, s in B.PLIS.items():
+        ecrire_bis = tmp_path / pli / "validation_reelle" / "test" / "stations_bilan.csv"
+        ecrire_bis.unlink()
+        (tmp_path / pli / "validation_reelle" / "test").rmdir()
+        (tmp_path / pli / "validation_reelle").rmdir()
+        (tmp_path / pli).rmdir()
+        ecrire(pli, {s: {"modele": {"Tunis-Carthage": 2.46, "Zaghouan": 2.49, "Nabeul": 2.8}[s]}})
+    t, d = B.bilan(tmp_path)
+    assert not d["gain"] and d["modele_livre"].startswith("v2")
