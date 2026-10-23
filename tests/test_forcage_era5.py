@@ -251,7 +251,9 @@ def test_affinage_sur_les_stations(cfg_era5, index, tmp_path):
     assert len(item) == 6 and item[5].shape == (N_CIBLE,) and float(item[5][8]) == 1.0
     cible = item[5].numpy()
     assert (int(cible[4]), int(cible[5])) != g._cellules_codes["INM60728"]   # jamais cible
-    assert not item[1].numpy()[int(cible[4]), int(cible[5])] or         (int(cible[4]) % 3 == 1 and int(cible[5]) % 3 == 1)                # retiree de l'entree
+    iy, ix = int(cible[4]), int(cible[5])
+    # la MESURE de la cible n'est pas en entree (sa cellule peut etre un pseudo-capteur ERA5)
+    assert not item[1].numpy()[iy, ix] or float(item[0][0, iy, ix]) != 4.0
 
     hist = Trainer(c, device="cpu", verbose=False).fit()
     assert hist and np.isfinite(hist[-1]["train"]["station"]) and hist[-1]["train"]["station"] > 0
