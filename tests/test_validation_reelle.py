@@ -69,3 +69,20 @@ def test_observations_mois_en_panne_ecartes(tmp_path):
     assert obs["wind_u_m_s"].iloc[0] == pytest.approx(-3.0)        # vent d'est : u < 0
     m = V.obs_a(obs, pd.Timestamp("2021-07-05 00:10"))
     assert m["INM60728"][0] == pytest.approx(-3.0)
+
+
+def test_robustesse_dso5_retire_des_points_en_mode_reel(geom, monkeypatch, tmp_path):
+    """era5_stations : keep < 1 retire des pseudo-capteurs ERA5 et des stations en evaluation ;
+    keep = 1 donne exactement l'entree complete (DSO1 inchange) ; sans effet a l'entrainement."""
+    from pcfno3d.dataset import entree_era5_stations
+
+    monkeypatch.setattr(geom.cfg.mask, "pas_era5_m", geom.dx)          # un point par noeud
+    monkeypatch.setattr(geom, "_cellules_stations", np.array([[1, 1], [2, 3]]), raising=False)
+    S = np.zeros((8,) + geom.shape[1:], np.float32)
+    f = tmp_path / "x_E.npy"
+    np.save(f, np.ones((2,) + geom.shape[1:], np.float16))
+    plein = entree_era5_stations(S, f, geom, np.random.default_rng(0), train=False)[1]
+    idem = entree_era5_stations(S, f, geom, np.random.default_rng(0), train=False, keep=1.0)[1]
+    assert (plein == idem).all() and plein.all()
+    quart = entree_era5_stations(S, f, geom, np.random.default_rng(0), train=False, keep=0.25)[1]
+    assert 0.1 < quart.mean() < 0.4

@@ -65,7 +65,7 @@ class ANEO3D(Dataset):
         Y = np.load(self.cache_dir / f"{stem}_Y.npy").astype(np.float32, copy=False)
         if self.geom.cfg.mask.entree == "era5_stations":
             S, sensor = entree_era5_stations(S, self.cache_dir / f"{stem}_E.npy", self.geom,
-                                             rng, self.train)
+                                             rng, self.train, keep=keep)
         elif not self.train and self.reseau is not None:
             sensor = (S[7] > 0.5) & self.reseau
         elif not self.train and self.spacing_m:
@@ -97,12 +97,16 @@ def cellules_stations(geom: Geometry) -> np.ndarray:
 
 
 def entree_era5_stations(S: np.ndarray, chemin_e, geom: Geometry, rng: np.random.Generator,
-                         train: bool) -> tuple[np.ndarray, np.ndarray]:
+                         train: bool, keep: float = 1.0) -> tuple[np.ndarray, np.ndarray]:
     """Entree de production du modele reel : vent ERA5 a 10 m sur un reseau regulier (tous
     les `mask.pas_era5_m`) + les stations reelles (valeur du cache = verite generee au point).
 
     T, rho, HR, p des pseudo-capteurs restent ceux de la couche de surface du cache (grande
-    echelle) ; w = 0 partout (ni ERA5 a 10 m ni un anemometre ne le donnent)."""
+    echelle) ; w = 0 partout (ni ERA5 a 10 m ni un anemometre ne le donnent).
+
+    keep (evaluation seulement, robustesse DSO5) : part des points d'entree gardes, chaque
+    pseudo-capteur ERA5 et chaque station tire independamment. 1 = entree complete (DSO1) ;
+    sans effet a l'entrainement, ou l'entree est tiree comme ci-dessus."""
     m = geom.cfg.mask
     E = np.load(chemin_e).astype(np.float32)
     k = max(int(round(m.pas_era5_m / geom.dx)), 1)
@@ -113,6 +117,9 @@ def entree_era5_stations(S: np.ndarray, chemin_e, geom: Geometry, rng: np.random
     for iy, ix in cellules_stations(geom):
         if not train or rng.random() < m.p_station:
             st[iy, ix] = True
+    if not train and keep < 1.0:
+        reseau &= rng.random(reseau.shape) < keep
+        st &= rng.random(st.shape) < keep
     era5 = reseau & ~st                         # une station prime sur le pseudo-capteur
     S = S.copy()
     S[0] = np.where(era5, E[0], S[0])
