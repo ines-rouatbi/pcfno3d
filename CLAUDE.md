@@ -149,6 +149,11 @@ at the target locations, not a better field between stations. Delivery rule (Ine
 `scripts/bilan_plis_grand_tunis.py`: ≥ 5 % mean gain and ≥ 3 % at 2 of 3 never-seen stations):
 **v2_long stays the delivered model**; v3b (Nabeul direction-only, `loss.poids_vitesse_station`)
 is not trained. The 3D field is unharmed by the fine-tuning (generated test identical to v2).
+Maps v3 − v2 (`scripts/comparer_modeles_grand_tunis.py`, 30 test instants, `runs/comparaisons/`)
+show the site correction as **spots around the stations**: mean vector difference at 10 m AGL
+0.82 / 0.66 m/s within 1 km of Tunis-Carthage / Zaghouan, 0.3–0.4 at 1–3 km, 0.12 at 3–10 km,
+0.07 beyond (domain 0.075); speed lowered by 0.37 m/s near those two and 0.97 m/s near Nabeul; at
+100 m AGL only 0.15–0.26 m/s near the stations (domain 0.057).
 Also fixed that day: METAR u, v now filled on
 import for every non-calm report (`metar.py`), IGRA launch time of 00 UTC balloons dated the
 previous day (`igra_radiosondages.py`; matching was already on `temps`).
