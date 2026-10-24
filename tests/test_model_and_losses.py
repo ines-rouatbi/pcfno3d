@@ -93,3 +93,18 @@ def test_entree_masquee_la_ou_il_n_y_a_pas_de_capteur(cfg, geom, index, norm):
     if hole.any():
         # les 7 canaux de mesure sont a zero la ou le capteur est masque
         assert np.allclose(x[0, :7, 0][:, hole].numpy(), 0.0)
+
+
+def test_w_par_continuite_annule_le_residu_de_masse(geom):
+    """Geometry.w_continuite : residu de continuite nul la ou DSO2 est mesure, condition
+    cinematique au premier noeud de chaque colonne, 0 sous le relief."""
+    g = torch.Generator().manual_seed(0)
+    u = torch.randn((2,) + geom.shape, generator=g) * 5
+    v = torch.randn((2,) + geom.shape, generator=g) * 5
+    rho = geom.rho_standard()
+    w = geom.w_continuite(u, v)
+    r = geom.mass_residual(rho.expand_as(u), u, v, w)
+    assert float(r[:, geom.mass_mask_t].abs().max()) < 1e-5
+    w_bc = (u * geom.dzt_dx_t + v * geom.dzt_dy_t)[:, geom.first_valid_t]
+    torch.testing.assert_close(w[:, geom.first_valid_t], w_bc, atol=1e-5, rtol=1e-5)
+    assert float(w[:, ~geom.valid_t].abs().max()) == 0.0

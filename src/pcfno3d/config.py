@@ -284,6 +284,10 @@ class InferenceCfg:
     tta: int = 1
     tta_keep: float = 0.7
     reliability: Path | str | None = None
+    # w recalcule par CONTINUITE a partir de u, v predits (Geometry.w_continuite) : meme
+    # schema discret que le residu de masse (DSO2), condition cinematique au pied de chaque
+    # colonne, densite de l'atmosphere standard. False = w du reseau, comme la v7.
+    w_continuite: bool = False
 
     def __post_init__(self) -> None:
         self.tta = int(self.tta)

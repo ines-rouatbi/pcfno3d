@@ -315,6 +315,40 @@ class Geometry:
         return (rw[:, 1:] - rw[:, :-1]) / self.dz_t[None, :, None, None] \
             + 0.5 * (d[:, 1:] + d[:, :-1])
 
+    def rho_standard(self) -> torch.Tensor:
+        """Densite de l'atmosphere standard aux noeuds (nz, ny, nx), sur le peripherique."""
+        cache = getattr(self, "_rho_std", None)
+        if cache is None or cache.device != self.device:
+            z = np.asarray(self.z_levels, float)
+            t_c = 15.0 - 0.0065 * z
+            p = 101325.0 * (1.0 - 2.25577e-5 * z) ** 5.25588
+            rho = p / (287.05 * (t_c + 273.15))
+            cache = torch.tensor(np.broadcast_to(rho[:, None, None], self.shape).copy(),
+                                 dtype=torch.float32, device=self.device)
+            self._rho_std = cache
+        return cache
+
+    def w_continuite(self, u: torch.Tensor, v: torch.Tensor,
+                     rho: torch.Tensor | None = None) -> torch.Tensor:
+        """w (B, nz, ny, nx) qui annule EXACTEMENT le residu de continuite de `mass_residual`
+        pour u, v donnes : au premier noeud valide de chaque colonne, la condition cinematique
+        w = u dzt/dx + v dzt/dy ; au-dessus, rho w[k+1] = rho w[k] - dz_k (D[k] + D[k+1]) / 2.
+        Sous le relief, w vaut 0. rho : densite (B, nz, ny, nx) ou (nz, ny, nx) ; defaut =
+        atmosphere standard."""
+        rho = self.rho_standard() if rho is None else rho
+        rho = rho.expand_as(u)
+        d = self.grad1d(rho * u, self.dx, -1) + self.grad1d(rho * v, self.dy, -2)
+        valid = self.valid_t
+        first = self.first_valid_t
+        w_bc = u * self.dzt_dx_t + v * self.dzt_dy_t
+        rw = torch.where(first, rho * w_bc, torch.zeros_like(u))
+        couches = [rw[:, 0]]
+        for k in range(self.nz - 1):
+            suite = couches[k] - self.dz_t[k] * 0.5 * (d[:, k] + d[:, k + 1])
+            # au-dessus d'un noeud valide : continuite ; sinon (premier noeud ou sous le relief)
+            couches.append(torch.where(valid[k + 1] & valid[k], suite, rw[:, k + 1]))
+        return torch.stack(couches, dim=1) / rho
+
     def to(self, device: torch.device | str) -> "Geometry":
         self.device = torch.device(device)
         self._to_torch()

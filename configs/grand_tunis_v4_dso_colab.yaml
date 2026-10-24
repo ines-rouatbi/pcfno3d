@@ -1,0 +1,84 @@
+# PC-FNO3D reel (Grand Tunis) v4 : AFFINAGE SUR LES DSO depuis la v2 prolongee (demande d'Ines,
+# 2026-10-24 : tous les DSO doivent etre atteints). La v2 manque DSO1 (RMSE 0,53 / 0,51 a 25 m ;
+# R2 de w 0,90-0,97), DSO2 (1,31e-4) et DSO3 (0,82). Leviers : selection du checkpoint sur le
+# score DSO de la validation, poids u, v par niveau (`pcfno3d dso-weights` sur la VALIDATION de
+# la v2, passe par --set loss.uv_level_weight=...), plus de poids sur la masse, les gradients et w,
+# et w recalcule par continuite a la sortie (inference.w_continuite).
+name: grand_tunis_v4_dso
+
+paths:
+  data_dir: /content/grand_tunis/jeu
+  cache_dir: /content/grand_tunis/cache
+  run_dir: /content/drive/MyDrive/pcfno3d_grand_tunis/runs/grand_tunis_v4_dso
+  # profil ERA5 aux noeuds + forcage de l'instant (pcfno3d.forcage), maj_* du Drive appliques
+  forcage_era5: /content/donnees/grand_tunis/forcage_era5.csv
+  cache_mirror: null
+  local_dir: /content/run_local_grand_tunis_v4_dso
+  web_dir: /content/grand_tunis/web
+
+model:                      # architecture v7 exacte : les poids v7 servent de depart
+  width: 48
+  modes: [6, 32, 32]
+  n_layers: 4
+  pad: [4, 8, 8]
+  proj_hidden: 128
+  local_conv: true
+  pool_surface: true
+  recalcul_activations: false   # le carnet passe a true si la memoire du GPU ne suffit pas
+  residuel_era5: true       # u, v = ERA5 au noeud + correction apprise
+
+train:
+  epochs: 15
+  steps_per_epoch: 200
+  val_samples: 64
+  batch_size: 1
+  accum_steps: 2
+  lr: 5.0e-5                # affinage depuis la v2 prolongee
+  weight_decay: 1.0e-4
+  warmup_phys_epochs: 3
+  num_workers: 4
+  ema_decay: 0.999
+  grad_clip: 1.0
+  save_every: 5
+  seed: 42
+  init_from: /content/drive/MyDrive/pcfno3d_grand_tunis/runs/grand_tunis_v2_long/best.pt
+  sync_last: false          # Drive presque plein : seul best.pt est recopie
+  select_by: dso            # meilleur checkpoint = pire rapport mesure / seuil des DSO (validation)
+
+loss:
+  lambda_mass: 5.0          # DSO2 : residu de masse 1,31e-4 en v2 (seuil 1e-4)
+  mass_ref: 5.0e-7          # comme la v7 : la verite generee conserve la masse au meme schema
+  lambda_bc: 0.1
+  lambda_smooth: 0.0
+  lambda_grad: 0.5          # DSO3 : champ trop lisse en v2 (rugosite 0,82)
+  w_weight: 2.0             # DSO1 : R2 de w 0,90-0,97 en v2 (seuil 0,95)
+  w_level_max: 25.0
+
+mask:
+  entree: era5_stations     # ERA5 10 m tous les 2,5 km + anemometres reels (production)
+  pas_era5_m: 2500.0
+  p_station: 0.8
+  keep_train: [0.2, 1.0]
+  keep_eval: 1.0
+
+dso:
+  rmse: 0.5
+  r2: 0.95
+  r2_all: 0.95
+  mass_rms: 1.0e-4
+  roughness_range: [0.9, 1.1]
+  time_s: 1.0
+  rmse_25pct: 0.7
+  min_level_cover: 0.05
+
+terrain_smooth_m: 300.0
+f_coriolis: 8.705e-5
+
+real:
+  origin_lat: 36.395
+  origin_lon: 10.04
+  rotation_deg: 0.0
+  origin_assumed: false
+
+inference:
+  w_continuite: true        # w recalcule par continuite (DSO2 nul par construction)

@@ -68,6 +68,8 @@ def measure(net: torch.nn.Module, loader, geom: Geometry, norm: Normalizer,
         with torch.autocast(device_type=device.type, dtype=amp_dtype, enabled=use_amp):
             pred = net(assemble_input(s_raw, sensor, tfeat, geom, norm))
         u, v, w = norm.denorm(pred.float())
+        if geom.cfg.inference.w_continuite:
+            w = geom.w_continuite(u, v)          # meme sortie que le service
         for k in range(geom.nz):
             for c, p in enumerate((u, v, w)):
                 # noeuds valides ET connus (cible partielle : NaN = pas d'observation)

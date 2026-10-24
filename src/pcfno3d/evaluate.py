@@ -65,6 +65,8 @@ class Evaluator:
         # sous-dossier propre au paquet : le notebook v7 ecrit deja run_dir/eval_<modele>,
         # et ces resultats sont la REFERENCE a laquelle on compare le paquet. Les ecraser
         # detruirait precisement ce qu'on cherche a verifier.
+        if cfg.inference.w_continuite:
+            suffix += "_wcont"                   # w par continuite : ne remplace pas l'evaluation brute
         self.out_dir = (cfg.paths.run_dir / EVAL_NAMESPACE
                         / f"{self.wf.checkpoint_path.stem}{suffix}")
         self.out_dir.mkdir(parents=True, exist_ok=True)
@@ -91,7 +93,10 @@ class Evaluator:
             with torch.autocast(device_type=device.type, dtype=self.wf.amp_dtype,
                                 enabled=self.wf.use_amp):
                 pred = self.wf.model(assemble_input(s_raw, sensor, tfeat, geom, norm))
-        return norm.denorm(pred.float())
+        u, v, w = norm.denorm(pred.float())
+        if self.cfg.inference.w_continuite:
+            w = geom.w_continuite(u, v)
+        return [u, v, w]
 
     # ------------------------------------------------------------------ campagne
     def run(self) -> dict:

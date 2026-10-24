@@ -756,6 +756,55 @@ volumes 3D, démarrage). Laisse ensuite l'onglet ouvert : le service vit tant qu
     ], gpu=True)
 
 
+def v4_dso() -> dict:
+    """v4 : tous les DSO (demande d'Ines, 2026-10-24). Mesure d'abord la v2 prolongee (brute et avec
+    w par continuite, robustesse DSO5 corrigee), puis poids par niveau sur la validation, affinage
+    selectionne sur le score DSO, test (avec et sans w par continuite), vraies mesures."""
+    chaine = r'''
+from google.colab import runtime
+import traceback
+V2, V4 = "grand_tunis_v2_long_colab", "grand_tunis_v4_dso_colab"
+POIDS = GT / "runs" / "grand_tunis_v4_dso" / "uv_level_weight.json"
+etapes = (
+    ("evaluer_v2_brut", f"python -u -m pcfno3d -c {V2} {OPTS} evaluate"),
+    ("evaluer_v2_wcont", f"python -u -m pcfno3d -c {V2} {OPTS} --set inference.w_continuite=true evaluate"),
+    ("poids_v4", f"python -u -m pcfno3d -c {V2} {OPTS} dso-weights --out {POIDS}"),
+    ("entrainer_v4", f"python -u -m pcfno3d -c {V4} {OPTS} --set loss.uv_level_weight={POIDS} train"),
+    ("evaluer_v4_wcont", f"python -u -m pcfno3d -c {V4} {OPTS} evaluate"),
+    ("evaluer_v4_brut", f"python -u -m pcfno3d -c {V4} {OPTS} --set inference.w_continuite=false evaluate"),
+    ("valider_v4", f"python -u scripts/valider_grand_tunis_reel.py -c {V4} --obs {OBS}"),
+)
+try:
+    for nom, cmd in etapes:
+        try:
+            lancer(nom, cmd)
+        except Exception:
+            traceback.print_exc()
+finally:
+    runtime.unassign()
+'''
+    mem = MEM.replace("configs/grand_tunis_colab.yaml", "configs/grand_tunis_v4_dso_colab.yaml")
+    return carnet([
+        md("""
+# PC-FNO3D réel (Grand Tunis) v4 — affinage sur les DSO (Colab, A100)
+
+Objectif : **tous les DSO**. La v2 prolongée manque DSO1 (25 m ; R² de w), DSO2 (masse) et DSO3
+(rugosité). Étapes : (1) re-mesure de la v2 (DSO5 corrigé) brute et avec **w recalculé par
+continuité** ; (2) poids u, v par niveau mesurés sur la **validation** ; (3) affinage 15 époques
+sélectionné sur le **score DSO** de la validation (masse ×5, gradients 0,5, w ×2) ; (4) test avec et
+sans w par continuité ; (5) vraies mesures. Seul `best.pt` va sur le Drive. La session s'arrête à la fin.
+"""),
+        md("## 1. Drive, code et données"),
+        code(COMMUN),
+        md("## 2. Cache (3 parties) et observations"),
+        code(ENT.replace("grand_tunis_colab", "grand_tunis_v4_dso_colab") + OBS),
+        md("## 3. Mémoire du GPU"),
+        code(mem),
+        md("## 4. v2 re-mesurée, poids, affinage v4, test, vraies mesures, puis fin de la session"),
+        code(chaine),
+    ], gpu=True)
+
+
 def main() -> int:
     out = REPO / "notebooks" / "current"
     for nom, nb in (("pcfno3d_grand_tunis_generation_colab.ipynb", generation()),
@@ -771,7 +820,8 @@ def main() -> int:
                     ("pcfno3d_grand_tunis_v3_colab.ipynb", affinage()),
                     ("pcfno3d_grand_tunis_v3_suite_colab.ipynb", suite_v3()),
                     ("pcfno3d_grand_tunis_v3b_colab.ipynb", v3b()),
-                    ("pcfno3d_grand_tunis_atom_colab.ipynb", service_v2())):
+                    ("pcfno3d_grand_tunis_atom_colab.ipynb", service_v2()),
+                    ("pcfno3d_grand_tunis_v4_dso_colab.ipynb", v4_dso())):
         (out / nom).write_text(json.dumps(nb, indent=1, ensure_ascii=False), encoding="utf-8")
         print(out / nom)
     return 0

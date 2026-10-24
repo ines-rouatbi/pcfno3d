@@ -557,7 +557,10 @@ class WindFieldModel:
             pred = ensemble_forward(self.model, geom, self.norm, s_t, m_t, hour, doy, k=k,
                                     keep=k_keep, seed=seed, amp_dtype=self.amp_dtype,
                                     use_amp=self.use_amp, tfeat=t_t)
-            u, v, w = (a[0].float().cpu().numpy() for a in self.norm.denorm(pred.float()))
+            u_t, v_t, w_t = self.norm.denorm(pred.float())
+            if self.cfg.inference.w_continuite:
+                w_t = geom.w_continuite(u_t, v_t)
+            u, v, w = (a[0].float().cpu().numpy() for a in (u_t, v_t, w_t))
             if self.device.type == "cuda":
                 torch.cuda.synchronize()
             elapsed = time.perf_counter() - t0
