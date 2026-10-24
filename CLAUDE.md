@@ -138,7 +138,18 @@ level (a few % better at two of three): it reproduces the generator, whose own e
 stations is the same — the limit is the training truth, not the network. Radiosondes Tunis-Carthage
 (only 9–11 soundings per 250 m layer on the test blocks): model better than ERA5 in every layer
 0–1000 m (vector RMSE 1.95–2.34 vs 2.07–2.54 m/s) with a smaller speed bias near the ground (0.58 vs
-1.04 m/s below 250 m). Also fixed that day: METAR u, v now filled on
+1.04 m/s below 250 m). **v3 = fine-tuning on the real stations (2026-10-23/24,
+`pcfno3d.stations_reelles`, `loss.lambda_station` 0.5, 10 epochs from v2_long):** the final model
+(all 3 stations as targets) looked spectacular at Tunis-Carthage 1.99 and Zaghouan 1.74 m/s (v2
+2.70 / 2.28) but worse at Nabeul 2.70 (bias −1.47: the sheltered station reads too little wind and
+the model followed it). The **spatial cross-validation** decides: with the judged station NEVER a
+target, Tunis-Carthage 2.66, Zaghouan 2.27, Nabeul 2.41 vs v2 2.70 / 2.28 / 2.42 — −1.5 / −0.4 /
+−0.5 %, inside the noise (~170 instants per station). The v3 gain is a **site correction** learned
+at the target locations, not a better field between stations. Delivery rule (Ines, 2026-10-23,
+`scripts/bilan_plis_grand_tunis.py`: ≥ 5 % mean gain and ≥ 3 % at 2 of 3 never-seen stations):
+**v2_long stays the delivered model**; v3b (Nabeul direction-only, `loss.poids_vitesse_station`)
+is not trained. The 3D field is unharmed by the fine-tuning (generated test identical to v2).
+Also fixed that day: METAR u, v now filled on
 import for every non-calm report (`metar.py`), IGRA launch time of 00 UTC balloons dated the
 previous day (`igra_radiosondages.py`; matching was already on `temps`).
 
