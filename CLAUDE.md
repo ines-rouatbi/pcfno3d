@@ -155,6 +155,21 @@ validation; done by the serving notebook). v3/fold/v3b results and the compariso
 the report; their best.pt are deleted except the fold without Nabeul. Nabeul 2023–2024 measurements
 are excluded (`stations_reelles.EXCLUSIONS`, on top of the detected outage months). Next: plug the
 ATOM Wind front-end on the API with v2, then the OS6 plan on Grand Tunis. The 3D field is unharmed by the fine-tuning (generated test identical to v2).
+**v4 (DSO fine-tuning, accepted by Ines 2026-10-24 with rules):** `configs/grand_tunis_v4_dso_colab.yaml`,
+`notebooks/current/pcfno3d_grand_tunis_v4_dso_colab.ipynb` (not run yet: Colab only on "start
+execution"). w is recomputed by continuity (`inference.w_continuite`, `Geometry.w_continuite`) in
+the served pass, the evaluation, `dso.measure` AND every masked-ensemble pass (`_members`, so DSO6
+judges the served w); DSO2 with it is reported as "guaranteed by construction" (measured value
+shown, with the truth density). Evaluation tables now carry the per-level DSO3 (`rugosite`). The
+test is read once (steps skip when their outputs exist); the old v2 evaluation is kept as
+`eval_pcfno3d/best*_avant_v4`. `scripts/decision_v4_grand_tunis.py` (rule fixed before the v4 test:
+v4 delivered only if no worse than v2 on DSO1, DSO4, DSO5, real stations/radiosondes, 1 % RMSE
+tolerance, no station > 3 % worse; else v2 with w by continuity; exit 0 / 3 / 2) writes
+`runs/decision_v4.json`, `comparaison_v2_v4_par_niveau.csv`, `rapport_v4.md`. DSO6 (masking ensemble,
+calibration on validation, 80 % coverage + Spearman on test) then runs on the retained model without
+retraining. After that, no more training. The serving notebook copies the model named by
+`decision_v4.json` (default v2_long) to v9_production, serves with `w_continuite: true`, and asks for
+an L4 GPU (A100 if unavailable or out of memory).
 Maps v3 − v2 (`scripts/comparer_modeles_grand_tunis.py`, 30 test instants, `runs/comparaisons/`)
 show the site correction as **spots around the stations**: mean vector difference at 10 m AGL
 0.82 / 0.66 m/s within 1 km of Tunis-Carthage / Zaghouan, 0.3–0.4 at 1–3 km, 0.12 at 3–10 km,

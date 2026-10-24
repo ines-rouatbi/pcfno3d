@@ -78,3 +78,6 @@ real:
   origin_lon: 10.04
   rotation_deg: 0.0
   origin_assumed: false
+
+inference:
+  w_continuite: true        # w recalcule par continuite (decision d'Ines, 2026-10-24)

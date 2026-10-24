@@ -428,7 +428,14 @@ def metriques_loader(loader, stems, geom, stamp_of: dict, predicteurs: dict,
     acc = {n: {c: {k: np.zeros(4) for k in range(nz)} for c in "uvw"}   # n, sse, sum, sum2
            for n in predicteurs}
     spd_sum = np.zeros(nz)
+    rug = {n: np.zeros((nz, 2)) for n in predicteurs}      # DSO3 par niveau : n, somme rapports
     per_instant: dict[str, list[dict]] = {n: [] for n in predicteurs}
+
+    def rugosite_k(a: torch.Tensor, k: int) -> torch.Tensor:
+        # meme formule que PhysicsLoss.roughness, restreinte au niveau k
+        gx = (a[0, k, :, 1:] - a[0, k, :, :-1]).abs()[geom.grad_mask_x_t[k]]
+        gy = (a[0, k, 1:, :] - a[0, k, :-1, :]).abs()[geom.grad_mask_y_t[k]]
+        return gx.mean() + gy.mean()
 
     for s_raw, sensor, tfeat, y, j in loader:
         s_raw, sensor, tfeat, y = (t.to(device) for t in (s_raw, sensor, tfeat, y))
@@ -469,6 +476,11 @@ def metriques_loader(loader, stems, geom, stamp_of: dict, predicteurs: dict,
             r = geom.mass_residual(y[:, 3], u, v, w)
             row["mass_rms"] = torch.sqrt((r[:, geom.mass_mask_t] ** 2).mean()).item()
             row["roughness_ratio"] = roughness_ratio(u, v, y).item()
+            if bool(torch.isfinite(y[:, :2]).all()):          # verite complete seulement
+                for k in range(nz):
+                    if geom.grad_mask_x_t[k].any() and geom.grad_mask_y_t[k].any():
+                        r_k = (rugosite_k(u, k) + rugosite_k(v, k))                             / (rugosite_k(y[:, 0], k) + rugosite_k(y[:, 1], k))
+                        rug[nom][k] += (1.0, r_k.item())
             per_instant[nom].append(row)
 
     out = {}
@@ -484,6 +496,9 @@ def metriques_loader(loader, stems, geom, stamp_of: dict, predicteurs: dict,
                 sst = st2 - st ** 2 / n
                 rec[f"rmse_{c}"] = float(np.sqrt(sse / n))
                 rec[f"r2_{c}"] = float(1 - sse / sst) if sst > 0 else float("nan")
+            # DSO3 du niveau : moyenne sur les instants du rapport de rugosite du niveau
+            n_r, s_r = rug[nom][k]
+            rec["rugosite"] = float(s_r / n_r) if n_r else float("nan")
             levels.append(rec)
         out[nom] = (pd.DataFrame(levels), pd.DataFrame(per_instant[nom]))
     return out

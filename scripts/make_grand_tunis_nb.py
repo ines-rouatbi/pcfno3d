@@ -33,12 +33,12 @@ def code(texte: str) -> dict:
             "source": texte.strip("\n").splitlines(True)}
 
 
-def carnet(cellules: list[dict], gpu: bool) -> dict:
+def carnet(cellules: list[dict], gpu: bool, gpu_type: str = "A100") -> dict:
     meta = {"kernelspec": {"display_name": "Python 3", "name": "python3"},
             "language_info": {"name": "python"}, "colab": {"provenance": []}}
     if gpu:
         meta["accelerator"] = "GPU"
-        meta["colab"]["gpuType"] = "A100"
+        meta["colab"]["gpuType"] = gpu_type
     else:
         meta["colab"]["machine_shape"] = "hm"         # CPU, memoire RAM elevee
     return {"nbformat": 4, "nbformat_minor": 0, "metadata": meta, "cells": cellules}
@@ -631,22 +631,29 @@ def service_v2() -> dict:
 !pip install -q fastapi uvicorn python-multipart httpx mcp==2.3.0 2>&1 | tail -2
 '''
     production = r'''
-# modele livre (decision d'Ines, 2026-10-24) : la v2 prolongee copiee dans runs/grand_tunis_v9_production
-# (poids, statistiques, historique, evaluations, validation reelle, figures) ; une seule fois
+# modele livre (decision d'Ines, 2026-10-24) copie dans runs/grand_tunis_v9_production (poids,
+# statistiques, historique, evaluations, validation reelle, fiabilite, figures) ; une seule fois.
+# La v4 (affinage DSO) remplace la v2 prolongee SEULEMENT si runs/decision_v4.json le dit (regle :
+# au moins aussi bonne sur DSO1, DSO4, DSO5 et les vraies mesures) ; w par continuite dans les deux cas.
 RUNS = GT / "runs"
-SRC, PROD = RUNS / "grand_tunis_v2_long", RUNS / "grand_tunis_v9_production"
+DECISION = RUNS / "decision_v4.json"
+livre = json.loads(DECISION.read_text())["modele_livre"] if DECISION.exists() else "grand_tunis_v2_long"
+SRC, PROD = RUNS / livre, RUNS / "grand_tunis_v9_production"
+print("modele livre :", livre, "(decision_v4.json)" if DECISION.exists() else "(pas de decision v4 : v2)")
+if (PROD / "PROVENANCE.txt").exists() and livre not in (PROD / "PROVENANCE.txt").read_text():
+    raise RuntimeError(f"{PROD} contient un autre modele que {livre} : verifie avant de le remplacer")
 if not (PROD / "best.pt").exists():
     PROD.mkdir(parents=True, exist_ok=True)
     for nom in ("norm_stats.json", "history.json", "best.pt"):
         shutil.copy2(SRC / nom, PROD / nom)
-    for d in ("eval_pcfno3d", "validation_reelle", "figures"):
+    for d in ("eval_pcfno3d", "validation_reelle", "fiabilite_pcfno3d", "figures"):
         if (SRC / d).exists():
             shutil.copytree(SRC / d, PROD / d, dirs_exist_ok=True)
     (PROD / "PROVENANCE.txt").write_text(
-        "Copie de runs/grand_tunis_v2_long : PC-FNO3D Grand Tunis v2 prolongee (20 + 40 epoques), "
-        "le modele livre (decision d'Ines, 2026-10-24). Les affinages sur les stations (v3, v3b) sont "
-        "ecartes : correction de site autour des stations, pas de gain aux stations jamais vues.",
-        encoding="utf-8")
+        f"Copie de runs/{livre} : le modele livre PC-FNO3D Grand Tunis, servi avec w recalcule par "
+        "continuite (decision d'Ines, 2026-10-24 ; runs/decision_v4.json et rapport_v4.md). Les "
+        "affinages sur les stations (v3, v3b) sont ecartes : correction de site autour des stations, "
+        "pas de gain aux stations jamais vues.", encoding="utf-8")
 # affinages v3 : resultats gardes pour le rapport, poids supprimes sauf le pli sans Nabeul
 for run in ("grand_tunis_v3_stations", "grand_tunis_v3_cv_sans_dtta", "grand_tunis_v3_cv_sans_zaghouan",
             "grand_tunis_v3b_stations"):
@@ -688,7 +695,7 @@ with urllib.request.urlopen(req, timeout=60) as r:
     sante = json.loads(r.read().decode())
 print(json.dumps(sante, ensure_ascii=False, indent=1))
 assert sante["status"] == "ok", "le service ne repond pas correctement par le tunnel"
-print(f"\nEN LIGNE : https://{HOTE} (v2 prolongee Grand Tunis) — previens Rayen (sans coller de cle).")
+print(f"\nEN LIGNE : https://{HOTE} ({livre}, Grand Tunis) — previens Rayen (sans coller de cle).")
 '''
     vie = '''
 try:
@@ -719,7 +726,8 @@ else:
         md("""
 # PC-FNO3D réel (Grand Tunis) — le modèle livré en ligne (atom.zelqane.com)
 
-Sert le **modèle livré**, la v2 prolongée, copiée dans `runs/grand_tunis_v9_production` à l'adresse fixe :
+Sert le **modèle livré** (la v2 prolongée, ou la v4 si `runs/decision_v4.json` la retient), avec
+w recalculé par continuité, copié dans `runs/grand_tunis_v9_production`, à l'adresse fixe :
 
 ```
 navigateur / vue 3D --> atom.zelqane.com (Worker de Rayen, clé injectée côté serveur)
@@ -734,6 +742,9 @@ instants de test 2022 du cache.
 **Avant la première exécution** : secret Colab `TUNNEL_CRED_CONTENTS` (identifiants du tunnel
 `atom`, remis par Rayen de la main à la main), avec « Accès au notebook ». La clé d'API n'est
 présente que par son **empreinte**.
+
+**GPU** : le carnet demande un **L4** (24 Go, devrait suffire pour servir : non encore essayé) ; si Colab n'en donne pas, ou en
+cas de manque de mémoire, Exécution > Modifier le type d'exécution > **A100**.
 
 **Exécution** : GPU, puis **Tout exécuter** (~20 min : code, données, instants de test,
 volumes 3D, démarrage). Laisse ensuite l'onglet ouvert : le service vit tant que la session vit.
@@ -753,7 +764,7 @@ volumes 3D, démarrage). Laisse ensuite l'onglet ouvert : le service vit tant qu
         md("## 7. Garder en vie"),
         code(vie),
         code(arret),
-    ], gpu=True)
+    ], gpu=True, gpu_type="L4")
 
 
 def v4_dso() -> dict:
@@ -763,23 +774,70 @@ def v4_dso() -> dict:
     chaine = r'''
 from google.colab import runtime
 import traceback
+RUNS = GT / "runs"
 V2, V4 = "grand_tunis_v2_long_colab", "grand_tunis_v4_dso_colab"
-POIDS = GT / "runs" / "grand_tunis_v4_dso" / "uv_level_weight.json"
+R2, R4 = RUNS / "grand_tunis_v2_long", RUNS / "grand_tunis_v4_dso"
+POIDS = R4 / "uv_level_weight.json"
+WCONT = "--set inference.w_continuite=true"
+
+# l'evaluation de la v2 faite avec le code d'avant (DSO5 mal mesure) reste pour le rapport
+for d in ("best", "best_wcont"):
+    a = R2 / "eval_pcfno3d" / d
+    if a.exists() and not a.with_name(d + "_avant_v4").exists():
+        shutil.copytree(a, a.with_name(d + "_avant_v4"))
+
+def evalue(run, dossier):                    # le test n'est calcule qu'UNE fois (code actuel :
+    f = run / "eval_pcfno3d" / dossier / "test_par_niveau_synoptique.csv"   # colonne rugosite)
+    return f.exists() and "rugosite" in f.read_text().splitlines()[0]
+
+def entraine():                              # les 15 epoques de la v4 sont deja faites
+    h = R4 / "history.json"
+    return h.exists() and any(r.get("epoch") == 14 for r in json.loads(h.read_text()))
+
 etapes = (
-    ("evaluer_v2_brut", f"python -u -m pcfno3d -c {V2} {OPTS} evaluate"),
-    ("evaluer_v2_wcont", f"python -u -m pcfno3d -c {V2} {OPTS} --set inference.w_continuite=true evaluate"),
-    ("poids_v4", f"python -u -m pcfno3d -c {V2} {OPTS} dso-weights --out {POIDS}"),
-    ("entrainer_v4", f"python -u -m pcfno3d -c {V4} {OPTS} --set loss.uv_level_weight={POIDS} train"),
-    ("evaluer_v4_wcont", f"python -u -m pcfno3d -c {V4} {OPTS} evaluate"),
-    ("evaluer_v4_brut", f"python -u -m pcfno3d -c {V4} {OPTS} --set inference.w_continuite=false evaluate"),
-    ("valider_v4", f"python -u scripts/valider_grand_tunis_reel.py -c {V4} --obs {OBS}"),
+    ("evaluer_v2_brut", f"python -u -m pcfno3d -c {V2} {OPTS} evaluate", lambda: evalue(R2, "best")),
+    ("evaluer_v2_wcont", f"python -u -m pcfno3d -c {V2} {OPTS} {WCONT} evaluate", lambda: evalue(R2, "best_wcont")),
+    ("poids_v4", f"python -u -m pcfno3d -c {V2} {OPTS} dso-weights --out {POIDS}", POIDS.exists),
+    ("entrainer_v4", f"python -u -m pcfno3d -c {V4} {OPTS} --set loss.uv_level_weight={POIDS} train", entraine),
+    ("evaluer_v4_wcont", f"python -u -m pcfno3d -c {V4} {OPTS} evaluate", lambda: evalue(R4, "best_wcont")),
+    ("evaluer_v4_brut", f"python -u -m pcfno3d -c {V4} {OPTS} --set inference.w_continuite=false evaluate", lambda: evalue(R4, "best")),
+    ("valider_v4", f"python -u scripts/valider_grand_tunis_reel.py -c {V4} --obs {OBS}",
+     lambda: (R4 / "validation_reelle" / "test" / "stations_bilan.csv").exists()),
 )
 try:
-    for nom, cmd in etapes:
+    for nom, cmd, fait in etapes:
+        if fait():
+            print(f"[{nom}] deja fait : saute")
+            continue
         try:
             lancer(nom, cmd)
         except Exception:
             traceback.print_exc()
+
+    # decision (regle d'Ines) : la v4 seulement si au moins aussi bonne que la v2 sur DSO1, DSO4,
+    # DSO5 et les vraies mesures ; sinon la v2 avec w par continuite. Plus aucun entrainement.
+    DEC = "python -u scripts/decision_v4_grand_tunis.py --runs " + str(RUNS)
+    code_dec = subprocess.run(DEC, shell=True, cwd="/content/PFE").returncode
+    if code_dec not in (0, 3):
+        raise RuntimeError(f"decision impossible (code {code_dec}) : evaluations incompletes")
+    conf, run, opts = (V4, R4, OPTS) if code_dec == 0 else (V2, R2, OPTS + " " + WCONT)
+    print("modele retenu :", run.name, "(w par continuite)")
+
+    # DSO6 sur le modele retenu, SANS reentrainement : ensemble par masquage, calibration sur la
+    # validation, puis couverture 80 % et correlation incertitude / erreur sur le test (une fois)
+    CAL = run / "fiabilite_pcfno3d" / "best_wcont" / "calibration_validation.json"
+    D6 = run / "eval_pcfno3d" / "best_wcont" / "dso6_modele_livre.json"
+    if not CAL.exists():
+        lancer("calibrer_dso6", f"python -u -m pcfno3d -c {conf} {opts} calibrate-reliability --out {CAL}")
+    if not D6.exists():
+        try:
+            lancer("dso6", f"python -u -m pcfno3d -c {conf} {opts} dso6 --calibration {CAL} --out {D6}")
+        except RuntimeError as exc:          # code 3 = NON CONFORME : le verdict est ecrit
+            print(exc)
+    subprocess.run(DEC + f" --dso6 {D6}", shell=True, cwd="/content/PFE")
+    print("rapport ->", RUNS / "rapport_v4.md", "| decision ->", RUNS / "decision_v4.json")
+except Exception:
+    traceback.print_exc()
 finally:
     runtime.unassign()
 '''
@@ -792,7 +850,14 @@ Objectif : **tous les DSO**. La v2 prolongée manque DSO1 (25 m ; R² de w), DSO
 (rugosité). Étapes : (1) re-mesure de la v2 (DSO5 corrigé) brute et avec **w recalculé par
 continuité** ; (2) poids u, v par niveau mesurés sur la **validation** ; (3) affinage 15 époques
 sélectionné sur le **score DSO** de la validation (masse ×5, gradients 0,5, w ×2) ; (4) test avec et
-sans w par continuité ; (5) vraies mesures. Seul `best.pt` va sur le Drive. La session s'arrête à la fin.
+sans w par continuité ; (5) vraies mesures ; (6) **décision** (`scripts/decision_v4_grand_tunis.py`,
+règle fixée avant le test) : la v4 n'est livrée que si elle est au moins aussi bonne que la v2 sur
+DSO1, DSO4, DSO5 et les vraies mesures, sinon la v2 avec w par continuité ; (7) **DSO6** sur le modèle
+retenu, sans réentraînement (ensemble par masquage, calibration sur la validation, couverture 80 % et
+corrélation incertitude / erreur sur le test). Le test n'est lu qu'une fois : une étape déjà faite est
+sautée. Rapport : `runs/rapport_v4.md` (DSO1 et DSO3 niveau par niveau v2 / v4, R² de w avec et sans
+continuité, DSO2 « garanti par construction »). Seul `best.pt` va sur le Drive. La session s'arrête
+à la fin. Après ça, plus aucun entraînement.
 """),
         md("## 1. Drive, code et données"),
         code(COMMUN),
@@ -800,7 +865,7 @@ sans w par continuité ; (5) vraies mesures. Seul `best.pt` va sur le Drive. La 
         code(ENT.replace("grand_tunis_colab", "grand_tunis_v4_dso_colab") + OBS),
         md("## 3. Mémoire du GPU"),
         code(mem),
-        md("## 4. v2 re-mesurée, poids, affinage v4, test, vraies mesures, puis fin de la session"),
+        md("## 4. v2 re-mesurée, poids, affinage v4, test, vraies mesures, décision, DSO6, fin de la session"),
         code(chaine),
     ], gpu=True)
 

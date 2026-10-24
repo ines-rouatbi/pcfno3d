@@ -710,8 +710,11 @@ class WindFieldModel:
                                         enabled=self.use_amp):
                         pred = self.model(assemble_input(s_t.expand(len(part), -1, -1, -1),
                                                          m_t, t_t, geom, self.norm)).float()
-                    uvw = [a.float().cpu().numpy() for a in self.norm.denorm(pred.float())]
-                    del pred
+                    u_t, v_t, w_t = self.norm.denorm(pred.float())
+                    if self.cfg.inference.w_continuite:
+                        w_t = geom.w_continuite(u_t, v_t)    # comme la passe servie (DSO6 de w)
+                    uvw = [a.float().cpu().numpy() for a in (u_t, v_t, w_t)]
+                    del pred, u_t, v_t, w_t
             except torch.cuda.OutOfMemoryError:
                 if lot == 1:
                     raise
