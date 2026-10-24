@@ -487,7 +487,32 @@ class WindFieldModel:
             raise KeyError(f"instant {stem} absent de {self.cfg.paths.index_csv}")
         row = rows.iloc[0]
         S = np.load(self.cfg.paths.cache_dir / f"{stem}_S.npy")
+        if self.cfg.mask.entree == "era5_stations":
+            S = self._entree_production(S, stem, str(row["timestamp"]))
         return S, float(row["hour"]), int(row["doy"]), str(row["timestamp"])
+
+    def _entree_production(self, S: np.ndarray, stem: str, stamp: str) -> np.ndarray:
+        """Modele reel (mask.entree = era5_stations) : l'entree de PRODUCTION, pas la couche de
+        surface generee du cache — ERA5 10 m (_E du cache) sur le reseau regulier + les
+        stations, avec leurs VRAIES mesures si paths.stations_obs est renseigne (sinon la
+        valeur du cache a leur cellule, comme l'evaluation). S[7] devient le masque des
+        capteurs : predict() garde alors exactement ces points."""
+        E_path = self.cfg.paths.cache_dir / f"{stem}_E.npy"
+        if self.cfg.paths.stations_obs is not None:
+            from .stations_reelles import cellules_codes, entree_reelle, lire_observations, obs_a
+            obs = getattr(self, "_obs_stations", None)
+            if obs is None:
+                obs = self._obs_stations = lire_observations(self.cfg.paths.stations_obs, verbose=False)
+            E = np.load(E_path).astype(np.float32)
+            S_in, capteur = entree_reelle(S, E, self.geom, cellules_codes(self.geom),
+                                          obs_a(obs, pd.Timestamp(stamp)))
+        else:
+            from .dataset import entree_era5_stations
+            S_in, capteur = entree_era5_stations(S, E_path, self.geom, np.random.default_rng(0),
+                                                 train=False)
+        S_in = S_in.copy()
+        S_in[7] = capteur.astype(S_in.dtype)
+        return S_in
 
     # ------------------------------------------------------------------ inference
     @torch.no_grad()

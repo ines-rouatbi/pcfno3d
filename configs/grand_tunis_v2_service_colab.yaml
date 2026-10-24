@@ -1,0 +1,80 @@
+# PC-FNO3D reel (Grand Tunis) v2 prolongee — SERVICE de l'application (atom.zelqane.com).
+# Meme modele que grand_tunis_v2_long_colab.yaml (le modele livre : runs/grand_tunis_v2_long/best.pt et
+# norm_stats.json, lus sur le Drive). Entree de production : ERA5 10 m sur le reseau regulier + les
+# VRAIES mesures des stations (paths.stations_obs), forcage ERA5 de l'instant. Les instants servis sont
+# ceux du cache (test 2022) ; carnet notebooks/current/pcfno3d_grand_tunis_atom_colab.ipynb.
+name: grand_tunis_v2_service
+
+paths:
+  data_dir: /content/grand_tunis/jeu
+  cache_dir: /content/grand_tunis/cache
+  run_dir: /content/drive/MyDrive/pcfno3d_grand_tunis/runs/grand_tunis_v2_long
+  # profil ERA5 aux noeuds + forcage de l'instant (pcfno3d.forcage), maj_* du Drive appliques
+  forcage_era5: /content/donnees/grand_tunis/forcage_era5.csv
+  stations_obs: /content/obs          # vraies mesures des 3 stations en entree (grand_tunis_obs.zip)
+  cache_mirror: null
+  local_dir: /content/run_local_grand_tunis_v2_long
+  web_dir: /content/grand_tunis/web
+
+model:                      # architecture v7 exacte : les poids v7 servent de depart
+  width: 48
+  modes: [6, 32, 32]
+  n_layers: 4
+  pad: [4, 8, 8]
+  proj_hidden: 128
+  local_conv: true
+  pool_surface: true
+  recalcul_activations: false   # le carnet passe a true si la memoire du GPU ne suffit pas
+  residuel_era5: true       # u, v = ERA5 au noeud + correction apprise
+
+train:
+  epochs: 40
+  steps_per_epoch: 200
+  val_samples: 64
+  batch_size: 1
+  accum_steps: 2
+  lr: 1.0e-4                # deja au niveau de la v2 : pas plus petit
+  weight_decay: 1.0e-4
+  warmup_phys_epochs: 3
+  num_workers: 4
+  ema_decay: 0.999
+  grad_clip: 1.0
+  save_every: 5
+  seed: 42
+  init_from: /content/drive/MyDrive/pcfno3d_grand_tunis/runs/grand_tunis_v2/best.pt
+  select_by: val_score
+
+loss:
+  lambda_mass: 1.0
+  mass_ref: 5.0e-7          # comme la v7 : la verite generee conserve la masse au meme schema
+  lambda_bc: 0.1
+  lambda_smooth: 0.0
+  lambda_grad: 0.15
+  w_weight: 1.0
+  w_level_max: 25.0
+
+mask:
+  entree: era5_stations     # ERA5 10 m tous les 2,5 km + anemometres reels (production)
+  pas_era5_m: 2500.0
+  p_station: 0.8
+  keep_train: [0.2, 1.0]
+  keep_eval: 1.0
+
+dso:
+  rmse: 0.5
+  r2: 0.95
+  r2_all: 0.95
+  mass_rms: 1.0e-4
+  roughness_range: [0.9, 1.1]
+  time_s: 1.0
+  rmse_25pct: 0.7
+  min_level_cover: 0.05
+
+terrain_smooth_m: 300.0
+f_coriolis: 8.705e-5
+
+real:
+  origin_lat: 36.395
+  origin_lon: 10.04
+  rotation_deg: 0.0
+  origin_assumed: false

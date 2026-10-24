@@ -258,3 +258,29 @@ def test_affinage_sur_les_stations(cfg_era5, index, tmp_path):
     hist = Trainer(c, device="cpu", verbose=False).fit()
     assert hist and np.isfinite(hist[-1]["train"]["station"]) and hist[-1]["train"]["station"] > 0
     assert c.paths.ckpt_best.exists() and not c.paths.ckpt_last.exists()
+
+
+def test_service_entree_de_production_en_mode_reel(cfg_era5, index, tmp_path):
+    """era5_stations : surface_from_cache donne l'entree de production (ERA5 10 m sur le reseau
+    + stations, vraies mesures si paths.stations_obs), pas la couche de surface generee."""
+    from pcfno3d.dataset import entree_era5_stations
+    from pcfno3d.inference import WindFieldModel
+
+    c, obs_dir = _jeu_reel(cfg_era5, index, tmp_path)
+    Trainer(c, device="cpu", verbose=False).fit()
+    wf = WindFieldModel(c, device="cpu", verbose=False)
+    stem = index[index["split"] == "test"]["stem"].iloc[0]
+    S, hour, doy, ts = wf.surface_from_cache(stem)
+    brut = np.load(c.paths.cache_dir / f"{stem}_S.npy")
+    _, attendu = entree_era5_stations(brut, c.paths.cache_dir / f"{stem}_E.npy", wf.geom,
+                                      np.random.default_rng(0), train=False)
+    assert ((S[7] > 0.5) == attendu).all() and attendu.sum() < attendu.size
+    assert np.isfinite(wf.predict_stem(stem).u[wf.geom.valid]).all()
+
+    c2 = copy.deepcopy(c)
+    c2.apply_overrides({"paths.stations_obs": obs_dir})
+    wf2 = WindFieldModel(c2, device="cpu", verbose=False)
+    S2, *_ = wf2.surface_from_cache(stem)
+    from pcfno3d.stations_reelles import cellules_codes
+    iy, ix = cellules_codes(wf2.geom)["DTTA"]
+    assert S2[7, iy, ix] == 1.0 and S2[0, iy, ix] == pytest.approx(4.0)   # vraie mesure

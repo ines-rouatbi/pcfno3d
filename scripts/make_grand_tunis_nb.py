@@ -622,6 +622,112 @@ va sur le Drive. La session s'arrête à la fin.
     ], gpu=True)
 
 
+def service_v2() -> dict:
+    """Le modele LIVRE (v2 prolongee) servi a l'application, a l'adresse fixe atom.zelqane.com
+    (tunnel nomme `atom`, Worker de Rayen) — meme schema que pcfno3d_atom_colab.ipynb (v7)."""
+    conf = "grand_tunis_v2_service_colab"
+    installe = '''
+# le service web : aucune de ces bibliotheques ne touche a numpy
+!pip install -q fastapi uvicorn python-multipart httpx mcp==2.3.0 2>&1 | tail -2
+'''
+    exporte = f'''
+# volumes 3D de la vue de Rayen (/api/export/<instant>/...) : un pas sur deux a l'horizontale
+lancer("export_web", "python -u -m pcfno3d -c {conf} export-web --split test --stride 2")
+'''
+    sert = f'''
+from google.colab import userdata
+from service.colab import serve_public
+
+TUNNEL_ID = "e552f718-2478-4fe3-82b4-8d33a4b9eb6e"
+HOTE = "atom-origin.zelqane.com"
+CLE_NOM = "atom-worker"                      # la cle de lecture du Worker de Rayen
+CLE_EMPREINTE = "ce7965c54284eb6d1a274119839a71d9785731609d04b17bd08fb6da7d2c30fd"
+
+try:
+    identifiants = userdata.get("TUNNEL_CRED_CONTENTS")
+except Exception as exc:                     # secret absent, ou acces non accorde
+    raise RuntimeError(
+        "secret Colab TUNNEL_CRED_CONTENTS introuvable ou non autorise : panneau de gauche, "
+        "icone cle, ajoute-le (contenu remis par Rayen) et active « Acces au notebook ».") from None
+
+info = serve_public(config="{conf}", key_name=CLE_NOM, scope="read", key_hash=CLE_EMPREINTE,
+                    quota_minute=1200,
+                    named_tunnel={{"id": TUNNEL_ID, "hostname": HOTE, "credentials": identifiants}})
+del identifiants
+'''
+    verifie = r'''
+import urllib.request
+req = urllib.request.Request(f"https://{HOTE}/api/health", headers={"User-Agent": "pcfno3d-colab/1.0"})
+with urllib.request.urlopen(req, timeout=60) as r:
+    sante = json.loads(r.read().decode())
+print(json.dumps(sante, ensure_ascii=False, indent=1))
+assert sante["status"] == "ok", "le service ne repond pas correctement par le tunnel"
+print(f"\nEN LIGNE : https://{HOTE} (v2 prolongee Grand Tunis) — previens Rayen (sans coller de cle).")
+'''
+    vie = '''
+try:
+    while True:
+        tunnel_ok = info["tunnel"].alive
+        service_ok = info["process"].poll() is None
+        print(time.strftime("%H:%M"), "| tunnel", "ok" if tunnel_ok else "ARRETE",
+              "| service", "ok" if service_ok else "ARRETE", flush=True)
+        if not (tunnel_ok and service_ok):
+            print("journaux :", info["log_path"], "et", info["tunnel"].log_path)
+            break
+        time.sleep(600)
+except KeyboardInterrupt:
+    print("surveillance arretee — le service tourne toujours")
+'''
+    arret = '''
+# Garde-fou : « Tout executer » atteint aussi cette cellule des que la surveillance s'arrete.
+# Mets ARRETER = True pour couper volontairement.
+ARRETER = False
+if ARRETER:
+    from service.colab import stop
+    stop(info)
+    print("service et tunnel arretes : atom.zelqane.com repasse en « endormi »")
+else:
+    print("service laisse en marche (ARRETER = False)")
+'''
+    return carnet([
+        md("""
+# PC-FNO3D réel (Grand Tunis) — le modèle livré en ligne (atom.zelqane.com)
+
+Sert la **v2 prolongée** (`runs/grand_tunis_v2_long/best.pt`, le modèle livré) à l'adresse fixe :
+
+```
+navigateur / vue 3D --> atom.zelqane.com (Worker de Rayen, clé injectée côté serveur)
+                    --> atom-origin.zelqane.com (tunnel nommé, URL fixe)
+                    --> CE carnet : cloudflared --> service sur 127.0.0.1:8000 (GPU)
+```
+
+Entrée de production : ERA5 10 m sur le réseau régulier + les **vraies mesures** des 3 stations
+(Tunis-Carthage, Zaghouan, Nabeul) + le forçage ERA5 de l'instant. Instants servis : les 180
+instants de test 2022 du cache.
+
+**Avant la première exécution** : secret Colab `TUNNEL_CRED_CONTENTS` (identifiants du tunnel
+`atom`, remis par Rayen de la main à la main), avec « Accès au notebook ». La clé d'API n'est
+présente que par son **empreinte**.
+
+**Exécution** : GPU, puis **Tout exécuter** (~20 min : code, données, instants de test,
+volumes 3D, démarrage). Laisse ensuite l'onglet ouvert : le service vit tant que la session vit.
+"""),
+        md("## 1. Drive, code et données"),
+        code(COMMUN + installe),
+        md("## 2. Instants de test (cache) et vraies mesures des stations"),
+        code(VALID),
+        md("## 3. Volumes 3D pour la visualisation"),
+        code(exporte),
+        md("## 4. Démarrer le service derrière le tunnel nommé"),
+        code(sert),
+        md("## 5. Vérifier de l'extérieur"),
+        code(verifie),
+        md("## 6. Garder en vie"),
+        code(vie),
+        code(arret),
+    ], gpu=True)
+
+
 def main() -> int:
     out = REPO / "notebooks" / "current"
     for nom, nb in (("pcfno3d_grand_tunis_generation_colab.ipynb", generation()),
@@ -636,7 +742,8 @@ def main() -> int:
                     ("pcfno3d_grand_tunis_validation_colab.ipynb", validation()),
                     ("pcfno3d_grand_tunis_v3_colab.ipynb", affinage()),
                     ("pcfno3d_grand_tunis_v3_suite_colab.ipynb", suite_v3()),
-                    ("pcfno3d_grand_tunis_v3b_colab.ipynb", v3b())):
+                    ("pcfno3d_grand_tunis_v3b_colab.ipynb", v3b()),
+                    ("pcfno3d_grand_tunis_atom_colab.ipynb", service_v2())):
         (out / nom).write_text(json.dumps(nb, indent=1, ensure_ascii=False), encoding="utf-8")
         print(out / nom)
     return 0

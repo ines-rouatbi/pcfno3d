@@ -154,7 +154,7 @@ show the site correction as **spots around the stations**: mean vector differenc
 0.82 / 0.66 m/s within 1 km of Tunis-Carthage / Zaghouan, 0.3–0.4 at 1–3 km, 0.12 at 3–10 km,
 0.07 beyond (domain 0.075); speed lowered by 0.37 m/s near those two and 0.97 m/s near Nabeul; at
 100 m AGL only 0.15–0.26 m/s near the stations (domain 0.057).
-Also fixed that day: METAR u, v now filled on
+**Serving the delivered model (2026-10-24):** `configs/grand_tunis_v2_service_colab.yaml` + `notebooks/current/pcfno3d_grand_tunis_atom_colab.ipynb` serve v2_long on atom.zelqane.com (same named tunnel / key fingerprint as the v7 notebook). In `era5_stations` mode `WindFieldModel.surface_from_cache` now builds the PRODUCTION input (ERA5 10 m lattice from `_E` + stations, real METAR/SYNOP if `paths.stations_obs`) and puts that mask in `S[7]` — before, the service fed the generated dense surface layer, an input the real model never saw. CSV uploads and `/api/reconstruct/stations` still lack the ERA5 lattice for this model (cached test instants only). Also fixed that day: METAR u, v now filled on
 import for every non-calm report (`metar.py`), IGRA launch time of 00 UTC balloons dated the
 previous day (`igra_radiosondages.py`; matching was already on `temps`).
 
