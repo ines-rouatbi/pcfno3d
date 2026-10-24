@@ -116,7 +116,9 @@ def test_regle_de_livraison(tmp_path, v4, stations_v4, attendu):
     assert dec["dso2_w_continuite"] == "garanti par construction"
     t = pd.read_csv(tmp_path / "comparaison_v2_v4_par_niveau.csv")
     assert {"r2_w_reseau_v2", "r2_w_continuite_v4", "rugosite_v4"} <= set(t.columns)
-    assert "garanti par construction" in (tmp_path / "rapport_v4.md").read_text(encoding="utf-8")
+    texte = (tmp_path / "rapport_v4.md").read_text(encoding="utf-8")
+    assert "garanti par construction" in texte and "NON utilisees pour decider" in texte
+    assert "variantes_proposees" in dec and dec["variantes_proposees"]["v2"]["dso3_previsible"] is None
 
 
 def test_evaluations_incompletes(tmp_path):

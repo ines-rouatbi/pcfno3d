@@ -25,6 +25,10 @@ TOL = 1 % couvre les arrondis et la variabilite de la mesure du temps, pas un re
     python scripts/decision_v4_grand_tunis.py --runs /content/drive/MyDrive/pcfno3d_grand_tunis/runs
     python scripts/decision_v4_grand_tunis.py --runs ... --dso6 <verdict dso6 du modele retenu>
 
+Variantes PROPOSEES (DSO1 sur le R2 de u et v seulement, w a part ; DSO3 sur la partie previsible
+de la verite, scripts/dso_variantes_grand_tunis.py) : publiees dans le rapport, jamais lues par la
+decision tant que l'encadrant ne les a pas validees.
+
 Sortie (dans --runs) : decision_v4.json, comparaison_v2_v4_par_niveau.csv, rapport_v4.md.
 Code de sortie : 0 = v4 livree, 3 = v2 livree (w par continuite), 2 = evaluations incompletes.
 """
@@ -139,11 +143,37 @@ def decider(s2: dict, s4: dict, lv2: pd.DataFrame, lv4: pd.DataFrame,
                            "station_relative": TOL_STATION}}
 
 
+STATUT_VARIANTES = ("proposees, NON utilisees pour decider (en attente de validation par "
+                    "l'encadrant)")
+
+
+def variantes(runs: Path, ev: dict, lv: dict) -> dict:
+    """DSO1 sur le R2 de u et v seulement (w rapporte a part) et DSO3 sur la partie previsible
+    de la verite (scripts/dso_variantes_grand_tunis.py), pour la v2 et la v4 (forme livree).
+    Calculees et publiees ; la decision ne les lit pas."""
+    out = {"statut": STATUT_VARIANTES}
+    for nom, run, cle in (("v2", V2, "v2c"), ("v4", V4, "v4c")):
+        e = evalues(lv[cle])
+        f = runs / run / "eval_pcfno3d" / "best_wcont" / "dso3_previsible.json"
+        d3 = json.loads(f.read_text(encoding="utf-8")) if f.exists() else None
+        out[nom] = {
+            "dso1_uv_conforme": bool(ev[cle]["dso1_rmse"] and ev[cle]["dso1_r2"]),
+            "pire_r2_uv": float(e[["r2_u", "r2_v"]].min().min()),
+            "r2_w_par_niveau": {int(z): float(r) for z, r in zip(e["z_m"], e["r2_w"])},
+            "dso3_verite": ev[cle]["dso3_rugosite"],
+            "dso3_previsible": None if d3 is None else d3["dso3_rugosite_previsible"],
+            "dso3_previsible_conforme": None if d3 is None else d3["dso3_previsible_conforme"],
+            "verite_sur_previsible": None if d3 is None else d3["verite_sur_previsible"],
+        }
+    return out
+
+
 def dso2(s: dict) -> float:
     return float(s["dso2_rms_moyen"])
 
 
-def rapport(t: pd.DataFrame, ev: dict, dec: dict, dso6: dict | None) -> str:
+def rapport(t: pd.DataFrame, ev: dict, dec: dict, dso6: dict | None,
+            var: dict | None = None) -> str:
     f = lambda x: "—" if pd.isna(x) else f"{x:.3f}"            # noqa: E731
     L = ["# v2 contre v4 — Grand Tunis (test synoptique, calcule une seule fois)", "",
          f"**Decision : {dec['texte']}.** Apres ca, plus aucun entrainement.", "",
@@ -190,6 +220,25 @@ def rapport(t: pd.DataFrame, ev: dict, dec: dict, dso6: dict | None) -> str:
               "| Spearman incertitude / erreur | " + " | ".join(
                   f(g.get(f"spearman_{c}")) for c in ("u", "v", "w", "speed")) + " |", "",
               f"DSO6 : **{'CONFORME' if dso6.get('dso6_conforme') else 'NON CONFORME'}**"]
+    if var is not None:
+        def cellule(m: str, cle: str) -> str:
+            x = var[m][cle]
+            return "non calcule" if x is None else f(x)
+        L += ["", f"## Variantes {var['statut']}", "",
+              "| | v2 | v4 |", "|---|---|---|",
+              "| DSO1 u, v (RMSE et R2 de u, v par niveau) | " + " | ".join(
+                  "conforme" if var[m]["dso1_uv_conforme"] else "non conforme"
+                  for m in ("v2", "v4")) + " |",
+              "| pire R2 u, v par niveau | " + " | ".join(
+                  cellule(m, "pire_r2_uv") for m in ("v2", "v4")) + " |",
+              "| DSO3 sur la verite (officiel) | " + " | ".join(
+                  cellule(m, "dso3_verite") for m in ("v2", "v4")) + " |",
+              "| DSO3 sur la partie previsible | " + " | ".join(
+                  cellule(m, "dso3_previsible") for m in ("v2", "v4")) + " |",
+              "| rugosite verite / previsible | " + " | ".join(
+                  cellule(m, "verite_sur_previsible") for m in ("v2", "v4")) + " |", "",
+              "R2 de w, rapporte a part dans la variante DSO1 : tableau « R2 de w par niveau » "
+              "ci-dessus. Aucun bruit n'est ajoute aux predictions."]
     return "\n".join(L) + "\n"
 
 
@@ -217,6 +266,8 @@ def main() -> int:
     dec = decider(ev["v2c"], ev["v4c"], lv["v2c"], lv["v4c"], st2, st4, rs2, rs4)
     dec["dso2_residu_masse"] = {k: dso2(ev[k]) for k in ev}
     dec["dso2_w_continuite"] = "garanti par construction"
+    var = variantes(runs, ev, lv)                # publiees, jamais lues par `decider`
+    dec["variantes_proposees"] = var
     dso6 = json.loads(Path(args.dso6).read_text(encoding="utf-8")) if args.dso6 else None
     if dso6 is not None:
         dec["dso6"] = {k: dso6.get(k) for k in ("modele", "dso6_conforme", "global",
@@ -224,7 +275,7 @@ def main() -> int:
     t.to_csv(runs / "comparaison_v2_v4_par_niveau.csv", index=False)
     (runs / "decision_v4.json").write_text(json.dumps(dec, indent=2, ensure_ascii=False),
                                            encoding="utf-8")
-    texte = rapport(t, ev, dec, dso6)
+    texte = rapport(t, ev, dec, dso6, var)
     (runs / "rapport_v4.md").write_text(texte, encoding="utf-8")
     print(texte)
     return 0 if dec["v4_livree"] else 3

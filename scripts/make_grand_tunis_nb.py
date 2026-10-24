@@ -803,6 +803,12 @@ etapes = (
     ("evaluer_v4_brut", f"python -u -m pcfno3d -c {V4} {OPTS} --set inference.w_continuite=false evaluate", lambda: evalue(R4, "best")),
     ("valider_v4", f"python -u scripts/valider_grand_tunis_reel.py -c {V4} --obs {OBS}",
      lambda: (R4 / "validation_reelle" / "test" / "stations_bilan.csv").exists()),
+    # variantes PROPOSEES (DSO3 sur la partie previsible de la verite) : publiees dans le
+    # rapport, jamais lues par la decision tant que l'encadrant ne les a pas validees
+    ("variantes_v2", f"python -u scripts/dso_variantes_grand_tunis.py -c {V2} --donnees {DON / 'grand_tunis'} --w-continuite",
+     lambda: (R2 / "eval_pcfno3d" / "best_wcont" / "dso3_previsible.json").exists()),
+    ("variantes_v4", f"python -u scripts/dso_variantes_grand_tunis.py -c {V4} --donnees {DON / 'grand_tunis'} --w-continuite",
+     lambda: (R4 / "eval_pcfno3d" / "best_wcont" / "dso3_previsible.json").exists()),
 )
 try:
     for nom, cmd, fait in etapes:
@@ -856,7 +862,10 @@ DSO1, DSO4, DSO5 et les vraies mesures, sinon la v2 avec w par continuité ; (7)
 retenu, sans réentraînement (ensemble par masquage, calibration sur la validation, couverture 80 % et
 corrélation incertitude / erreur sur le test). Le test n'est lu qu'une fois : une étape déjà faite est
 sautée. Rapport : `runs/rapport_v4.md` (DSO1 et DSO3 niveau par niveau v2 / v4, R² de w avec et sans
-continuité, DSO2 « garanti par construction »). Seul `best.pt` va sur le Drive. La session s'arrête
+continuité, DSO2 « garanti par construction »). **Variantes proposées**, calculées mais jamais
+utilisées pour décider tant que l'encadrant ne les a pas validées : DSO3 sur la partie prévisible de
+la vérité (instants régénérés sans les perturbations aléatoires du générateur) et DSO1 sur le R² de
+u et v seulement, w rapporté à part. Aucun bruit n'est ajouté aux prédictions. Seul `best.pt` va sur le Drive. La session s'arrête
 à la fin. Après ça, plus aucun entraînement.
 """),
         md("## 1. Drive, code et données"),
