@@ -187,3 +187,17 @@ def test_bilan_plis_et_regle_de_livraison(tmp_path):
         ecrire(pli, {s: {"modele": {"Tunis-Carthage": 2.46, "Zaghouan": 2.49, "Nabeul": 2.8}[s]}})
     t, d = B.bilan(tmp_path)
     assert not d["gain"] and d["modele_livre"].startswith("v2")
+
+
+def test_nabeul_2023_2024_ecarte(tmp_path):
+    t = pd.date_range("2022-12-01", "2025-02-28", freq="7D")
+    lignes = [{"station_id": c, "timestamp_utc": x.strftime("%Y-%m-%dT%H:%M:%SZ"), "wind_speed_m_s": 3.0,
+               "wind_dir_deg": 90.0, "wind_u_m_s": np.nan, "wind_v_m_s": np.nan}
+              for x in t for c in ("INM60728", "INM60729")]
+    pd.DataFrame(lignes).to_csv(tmp_path / "synop_x.csv", index=False)
+    obs = V.lire_observations(tmp_path, verbose=False) if "verbose" in V.lire_observations.__code__.co_varnames         else V.lire_observations(tmp_path)
+    nab = obs[obs["station_id"] == "INM60728"]["t"]
+    assert not ((nab >= "2023-01-01") & (nab < "2025-01-01")).any()
+    assert (nab < "2023-01-01").any() and (nab >= "2025-01-01").any()
+    zag = obs[obs["station_id"] == "INM60729"]["t"]
+    assert ((zag >= "2023-01-01") & (zag < "2025-01-01")).any()        # Zaghouan intact

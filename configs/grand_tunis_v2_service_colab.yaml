@@ -1,6 +1,6 @@
 # PC-FNO3D reel (Grand Tunis) v2 prolongee — SERVICE de l'application (atom.zelqane.com).
-# Meme modele que grand_tunis_v2_long_colab.yaml (le modele livre : runs/grand_tunis_v2_long/best.pt et
-# norm_stats.json, lus sur le Drive). Entree de production : ERA5 10 m sur le reseau regulier + les
+# Meme modele que grand_tunis_v2_long_colab.yaml : le modele LIVRE, copie (best.pt, norm_stats.json,
+# evaluations, validation reelle) dans runs/grand_tunis_v9_production (decision d'Ines, 2026-10-24). Entree de production : ERA5 10 m sur le reseau regulier + les
 # VRAIES mesures des stations (paths.stations_obs), forcage ERA5 de l'instant. Les instants servis sont
 # ceux du cache (test 2022) ; carnet notebooks/current/pcfno3d_grand_tunis_atom_colab.ipynb.
 name: grand_tunis_v2_service
@@ -8,7 +8,7 @@ name: grand_tunis_v2_service
 paths:
   data_dir: /content/grand_tunis/jeu
   cache_dir: /content/grand_tunis/cache
-  run_dir: /content/drive/MyDrive/pcfno3d_grand_tunis/runs/grand_tunis_v2_long
+  run_dir: /content/drive/MyDrive/pcfno3d_grand_tunis/runs/grand_tunis_v9_production   # copie de la v2 prolongee
   # profil ERA5 aux noeuds + forcage de l'instant (pcfno3d.forcage), maj_* du Drive appliques
   forcage_era5: /content/donnees/grand_tunis/forcage_era5.csv
   stations_obs: /content/obs          # vraies mesures des 3 stations en entree (grand_tunis_obs.zip)

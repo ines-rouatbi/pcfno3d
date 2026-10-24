@@ -630,6 +630,32 @@ def service_v2() -> dict:
 # le service web : aucune de ces bibliotheques ne touche a numpy
 !pip install -q fastapi uvicorn python-multipart httpx mcp==2.3.0 2>&1 | tail -2
 '''
+    production = r'''
+# modele livre (decision d'Ines, 2026-10-24) : la v2 prolongee copiee dans runs/grand_tunis_v9_production
+# (poids, statistiques, historique, evaluations, validation reelle, figures) ; une seule fois
+RUNS = GT / "runs"
+SRC, PROD = RUNS / "grand_tunis_v2_long", RUNS / "grand_tunis_v9_production"
+if not (PROD / "best.pt").exists():
+    PROD.mkdir(parents=True, exist_ok=True)
+    for nom in ("norm_stats.json", "history.json", "best.pt"):
+        shutil.copy2(SRC / nom, PROD / nom)
+    for d in ("eval_pcfno3d", "validation_reelle", "figures"):
+        if (SRC / d).exists():
+            shutil.copytree(SRC / d, PROD / d, dirs_exist_ok=True)
+    (PROD / "PROVENANCE.txt").write_text(
+        "Copie de runs/grand_tunis_v2_long : PC-FNO3D Grand Tunis v2 prolongee (20 + 40 epoques), "
+        "le modele livre (decision d'Ines, 2026-10-24). Les affinages sur les stations (v3, v3b) sont "
+        "ecartes : correction de site autour des stations, pas de gain aux stations jamais vues.",
+        encoding="utf-8")
+# affinages v3 : resultats gardes pour le rapport, poids supprimes sauf le pli sans Nabeul
+for run in ("grand_tunis_v3_stations", "grand_tunis_v3_cv_sans_dtta", "grand_tunis_v3_cv_sans_zaghouan",
+            "grand_tunis_v3b_stations"):
+    f = RUNS / run / "best.pt"
+    if f.exists():
+        f.unlink()
+        print("supprime :", f)
+print("production :", sorted(p.name for p in PROD.iterdir()))
+'''
     exporte = f'''
 # volumes 3D de la vue de Rayen (/api/export/<instant>/...) : un pas sur deux a l'horizontale
 lancer("export_web", "python -u -m pcfno3d -c {conf} export-web --split test --stride 2")
@@ -693,7 +719,7 @@ else:
         md("""
 # PC-FNO3D réel (Grand Tunis) — le modèle livré en ligne (atom.zelqane.com)
 
-Sert la **v2 prolongée** (`runs/grand_tunis_v2_long/best.pt`, le modèle livré) à l'adresse fixe :
+Sert le **modèle livré**, la v2 prolongée, copiée dans `runs/grand_tunis_v9_production` à l'adresse fixe :
 
 ```
 navigateur / vue 3D --> atom.zelqane.com (Worker de Rayen, clé injectée côté serveur)
@@ -714,15 +740,17 @@ volumes 3D, démarrage). Laisse ensuite l'onglet ouvert : le service vit tant qu
 """),
         md("## 1. Drive, code et données"),
         code(COMMUN + installe),
-        md("## 2. Instants de test (cache) et vraies mesures des stations"),
+        md("## 2. Modèle livré dans runs/grand_tunis_v9_production"),
+        code(production),
+        md("## 3. Instants de test (cache) et vraies mesures des stations"),
         code(VALID),
-        md("## 3. Volumes 3D pour la visualisation"),
+        md("## 4. Volumes 3D pour la visualisation"),
         code(exporte),
-        md("## 4. Démarrer le service derrière le tunnel nommé"),
+        md("## 5. Démarrer le service derrière le tunnel nommé"),
         code(sert),
-        md("## 5. Vérifier de l'extérieur"),
+        md("## 6. Vérifier de l'extérieur"),
         code(verifie),
-        md("## 6. Garder en vie"),
+        md("## 7. Garder en vie"),
         code(vie),
         code(arret),
     ], gpu=True)

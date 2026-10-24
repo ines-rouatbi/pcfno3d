@@ -25,13 +25,16 @@ import pandas as pd
 CODES = {"DTTA": "Tunis-Carthage", "INM60729": "Zaghouan", "INM60728": "Nabeul"}
 FENETRE = pd.Timedelta(minutes=30)
 H_STATION = 10.0                       # hauteur des anemometres (m au-dessus du sol)
+# periodes ecartees a la main (decision d'Ines, 2026-10-24) : Nabeul 2023-2024, mesures non
+# representatives du vent alentour (station abritee) en plus des mois en panne detectes
+EXCLUSIONS = {"INM60728": (("2023-01-01", "2025-01-01"),)}
 N_CIBLE = 10                           # k_a, k_b, w_a, w_b, iy, ix, u, v, presente, poids vitesse
 
 
 # ---------------------------------------------------------------------- observations
 def lire_observations(dossier: Path, verbose: bool = True) -> pd.DataFrame:
     """METAR + SYNOP des trois stations du domaine ; u, v recalcules s'ils manquent ; mois en
-    panne (vent nul a plus de 90 %, au moins 20 mesures) ecartes."""
+    panne (vent nul a plus de 90 %, au moins 20 mesures) et periodes de EXCLUSIONS ecartes."""
     dossier = Path(dossier)
     fichiers = sorted(dossier.glob("metar_*.csv")) + sorted(dossier.glob("synop_*.csv"))
     if not fichiers:
@@ -48,6 +51,9 @@ def lire_observations(dossier: Path, verbose: bool = True) -> pd.DataFrame:
     part = (obs["wind_speed_m_s"] > 0).groupby([obs["station_id"], mois]).transform("mean")
     n = obs.groupby([obs["station_id"], mois])["t"].transform("size")
     panne = (part < 0.1) & (n >= 20)
+    for code, periodes in EXCLUSIONS.items():
+        for debut, fin in periodes:
+            panne |= (obs["station_id"] == code) & (obs["t"] >= pd.Timestamp(debut)) & (obs["t"] < pd.Timestamp(fin))
     if panne.any() and verbose:
         ecart = obs[panne].groupby(["station_id", obs.loc[panne, "t"].dt.to_period("M")]).size()
         print("mois ecartes (anemometre en panne) :", ", ".join(f"{s} {m}" for s, m in ecart.index))

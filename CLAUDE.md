@@ -147,8 +147,14 @@ target, Tunis-Carthage 2.66, Zaghouan 2.27, Nabeul 2.41 vs v2 2.70 / 2.28 / 2.42
 −0.5 %, inside the noise (~170 instants per station). The v3 gain is a **site correction** learned
 at the target locations, not a better field between stations. Delivery rule (Ines, 2026-10-23,
 `scripts/bilan_plis_grand_tunis.py`: ≥ 5 % mean gain and ≥ 3 % at 2 of 3 never-seen stations):
-**v2_long stays the delivered model**; v3b (Nabeul direction-only, `loss.poids_vitesse_station`)
-is not trained. The 3D field is unharmed by the fine-tuning (generated test identical to v2).
+**v2_long stays the delivered model**. v3b (Nabeul direction-only, `loss.poids_vitesse_station`),
+trained on request, is discarded too: Nabeul 2.79, Tunis-Carthage 1.99, Zaghouan 1.75 m/s — the
+same site correction. **Final decision (Ines, 2026-10-24): end of training; the delivered model is
+v2_long, copied to `runs/grand_tunis_v9_production`** (best.pt, norm_stats, evaluations, real
+validation; done by the serving notebook). v3/fold/v3b results and the comparison maps are kept for
+the report; their best.pt are deleted except the fold without Nabeul. Nabeul 2023–2024 measurements
+are excluded (`stations_reelles.EXCLUSIONS`, on top of the detected outage months). Next: plug the
+ATOM Wind front-end on the API with v2, then the OS6 plan on Grand Tunis. The 3D field is unharmed by the fine-tuning (generated test identical to v2).
 Maps v3 − v2 (`scripts/comparer_modeles_grand_tunis.py`, 30 test instants, `runs/comparaisons/`)
 show the site correction as **spots around the stations**: mean vector difference at 10 m AGL
 0.82 / 0.66 m/s within 1 km of Tunis-Carthage / Zaghouan, 0.3–0.4 at 1–3 km, 0.12 at 3–10 km,
