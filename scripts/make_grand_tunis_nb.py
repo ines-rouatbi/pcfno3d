@@ -578,6 +578,50 @@ La session s'arrête à la fin.
     ], gpu=True)
 
 
+def v3b() -> dict:
+    """v3b demandee par Ines (2026-10-24) malgre l'absence de gain aux plis : modele final avec
+    Nabeul en direction seule ; entrainement, test genere, vraies mesures, cartes v3b - v2."""
+    chaine = '''
+from google.colab import runtime
+import traceback
+conf = "grand_tunis_v3b_stations_colab"
+CARTES = GT / "runs" / "comparaisons"
+try:
+    for nom, cmd in (("entrainer_v3b", f"python -u -m pcfno3d -c {conf} {OPTS} train"),
+                     ("evaluer_v3b", f"python -u -m pcfno3d -c {conf} {OPTS} evaluate"),
+                     ("valider_v3b", f"python -u scripts/valider_grand_tunis_reel.py -c {conf} --obs {OBS}"),
+                     ("cartes_v3b", f"python -u scripts/comparer_modeles_grand_tunis.py --conf-a grand_tunis_v2_long_colab "
+                                    f"--conf-b {conf} --obs {OBS} --sortie {CARTES}")):
+        try:
+            lancer(nom, cmd)
+        except Exception:
+            traceback.print_exc()
+finally:
+    runtime.unassign()
+'''
+    mem = MEM.replace("configs/grand_tunis_colab.yaml", "configs/grand_tunis_v3b_stations_colab.yaml")
+    return carnet([
+        md("""
+# PC-FNO3D réel (Grand Tunis) v3b — affinage sur les stations, Nabeul en direction seule (Colab, A100)
+
+Comme la v3 finale (les 3 stations cibles, 10 époques depuis la v2 prolongée), mais **Nabeul ne
+compte que par sa direction** (`loss.poids_vitesse_station`) : station abritée, sa vitesse n'est
+pas représentative. Les plis de validation croisée ont montré que l'affinage reste une correction
+locale aux stations : la v2 prolongée reste le modèle livré ; la v3b documente l'effet de la
+correction de Nabeul. Entraînement, test généré, vraies mesures, cartes v3b − v2 ; seul `best.pt`
+va sur le Drive. La session s'arrête à la fin.
+"""),
+        md("## 1. Drive, code et données"),
+        code(COMMUN),
+        md("## 2. Cache (3 parties) et observations"),
+        code(ENT.replace("grand_tunis_colab", "grand_tunis_v3b_stations_colab") + OBS),
+        md("## 3. Mémoire du GPU"),
+        code(mem),
+        md("## 4. v3b : entraînement, test, vraies mesures, cartes, puis fin de la session"),
+        code(chaine),
+    ], gpu=True)
+
+
 def main() -> int:
     out = REPO / "notebooks" / "current"
     for nom, nb in (("pcfno3d_grand_tunis_generation_colab.ipynb", generation()),
@@ -591,7 +635,8 @@ def main() -> int:
                     ("pcfno3d_grand_tunis_diagnostic_colab.ipynb", diagnostic()),
                     ("pcfno3d_grand_tunis_validation_colab.ipynb", validation()),
                     ("pcfno3d_grand_tunis_v3_colab.ipynb", affinage()),
-                    ("pcfno3d_grand_tunis_v3_suite_colab.ipynb", suite_v3())):
+                    ("pcfno3d_grand_tunis_v3_suite_colab.ipynb", suite_v3()),
+                    ("pcfno3d_grand_tunis_v3b_colab.ipynb", v3b())):
         (out / nom).write_text(json.dumps(nb, indent=1, ensure_ascii=False), encoding="utf-8")
         print(out / nom)
     return 0
