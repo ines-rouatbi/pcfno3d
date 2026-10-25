@@ -25,7 +25,11 @@ async function get(path, ms = 90000){
   try {
     const r = await fetch(`${BASE}/api${path}`, { headers: h, signal: ctl.signal });
     if(r.status === 401 || r.status === 403){ const e = new Error("clé d'API refusée ou absente"); e.auth = true; throw e; }
-    if(!r.ok){ let d = ""; try { d = (await r.json()).detail || ""; } catch(e) {} throw new Error(`${path} : ${r.status} ${d}`); }
+    if(!r.ok){
+      // 503 du Worker atom.zelqane.com quand le Colab dort : {error, message, detail}
+      let d = ""; try { const j = await r.json(); d = j.message || j.detail || ""; } catch(e) {}
+      throw new Error(r.status === 503 && d ? d : `${path} : ${r.status} ${d}`);
+    }
     return await r.json();
   } finally { clearTimeout(t); }
 }
