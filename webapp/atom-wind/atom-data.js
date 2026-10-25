@@ -31,6 +31,9 @@ async function get(path, ms = 90000){
       throw new Error(r.status === 503 && d ? d : `${path} : ${r.status} ${d}`);
     }
     return await r.json();
+  } catch(e){
+    if(e.name === "AbortError") throw new Error("le service PC-FNO3D ne répond pas (Colab endormi ?)");
+    throw e;
   } finally { clearTimeout(t); }
 }
 
@@ -178,7 +181,19 @@ function journeeParDefaut(){
   return pool.slice().sort((a, b) => b.instants.length - a.instants.length)[0].date;
 }
 
+function chargement(msg){
+  let el = document.getElementById("aw-chargement");
+  if(!el){
+    el = document.createElement("div"); el.id = "aw-chargement"; el.setAttribute("role", "status");
+    el.style.cssText = "position:fixed;inset:0;z-index:9999;display:flex;flex-direction:column;gap:14px;"
+      + "align-items:center;justify-content:center;background:#0f1a22;color:#e8f1f5;"
+      + "font:16px/1.4 system-ui,sans-serif;text-align:center;padding:24px";
+    document.body.appendChild(el);
+  }
+  el.innerHTML = `<div style="font-size:22px;font-weight:700">ATOM Wind</div><div>${msg}</div>`;
+}
 function lancerPage(){
+  const ov = document.getElementById("aw-chargement"); if(ov) ov.remove();
   const s = document.getElementById("atom-main"), x = document.createElement("script");
   x.textContent = s.textContent; document.body.appendChild(x);
   banniere();
@@ -187,16 +202,19 @@ function lancerPage(){
 }
 
 async function demarrer(){
+  chargement("Connexion au modèle PC-FNO3D…");
   try {
-    A.grille = await get("/atom-wind/grille");
+    A.grille = await get("/atom-wind/grille", 20000);
     A.z0 = Float32Array.from(A.grille.z0_m.flat());
-    A.jours = (await get("/atom-wind/jours")).jours;
+    A.jours = (await get("/atom-wind/jours", 20000)).jours;
     if(!A.jours.length) throw new Error("aucune journée servie");
     try { const p = await get("/atom-wind/reseau-aneo", 20000);
           A.plan = p.features.filter(f => f.properties.type === "capteur ANEO propose")
                              .map(f => ({ lat: f.geometry.coordinates[1], lon: f.geometry.coordinates[0], ...f.properties })); }
     catch(e){ A.plan = null; }
-    await chargerJour(journeeParDefaut());
+    const jd = journeeParDefaut();
+    chargement(`Calcul du vent du ${fmtDate(jd)} par le modèle (jusqu'à une minute au premier chargement)…`);
+    await chargerJour(jd);
   } catch(e){
     A.erreur = e; A.grille = null; A.jour = null; A.ventV = null;   // tout ou rien : journée d'exemple
     console.warn("ATOM Wind : API PC-FNO3D indisponible, journée d'exemple", e);
