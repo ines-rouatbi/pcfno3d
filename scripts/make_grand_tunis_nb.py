@@ -696,6 +696,8 @@ with urllib.request.urlopen(req, timeout=60) as r:
 print(json.dumps(sante, ensure_ascii=False, indent=1))
 assert sante["status"] == "ok", "le service ne repond pas correctement par le tunnel"
 print(f"\nEN LIGNE : https://{HOTE} ({livre}, Grand Tunis) — previens Rayen (sans coller de cle).")
+print(f"Front-end ATOM Wind : https://{HOTE}/app/atom-wind/ (la cle d'API se saisit dans le bandeau) ;"
+      " routes /api/atom-wind/grille, /jours, /jour?date=..., /reseau-aneo (plan OS6).")
 '''
     vie = '''
 try:
@@ -879,6 +881,61 @@ u et v seulement, w rapporté à part. Aucun bruit n'est ajouté aux prédiction
     ], gpu=True)
 
 
+def os6_reseau() -> dict:
+    """OS6 : plan de deploiement du reseau ANEO (OSSE) sur le modele LIVRE (decision_v4.json),
+    sans entrainement. Placement glouton sur la validation, courbe sur le test, plan S18."""
+    chaine = r'''
+from google.colab import runtime
+import traceback
+RUNS = GT / "runs"
+DECISION = RUNS / "decision_v4.json"
+livre = json.loads(DECISION.read_text())["modele_livre"] if DECISION.exists() else "grand_tunis_v2_long"
+CONF = {"grand_tunis_v4_dso": "grand_tunis_v4_dso_colab",
+        "grand_tunis_v2_long": "grand_tunis_v2_long_colab"}[livre]
+SORTIE = RUNS / "os6_reseau_aneo"
+CONTRAINTES = GT / "os6_contraintes.json"      # zones exclues, budget... (facultatif, depose sur le Drive)
+print("modele livre :", livre, "| contraintes :", CONTRAINTES if CONTRAINTES.exists() else "par defaut")
+try:
+    lancer("os6_reseau_aneo",
+           f"python -u scripts/os6_reseau_aneo.py -c {CONF} --set inference.w_continuite=true "
+           f"--sortie {SORTIE} --n-val 24 --lot 4"
+           + (f" --contraintes {CONTRAINTES}" if CONTRAINTES.exists() else ""))
+    print(json.dumps({k: v for k, v in json.loads((SORTIE / "os6.json").read_text()).items()
+                      if k in ("nombre_recommande", "candidats", "capteurs_places", "reseau_actuel",
+                               "comparaison_net1")}, indent=1, ensure_ascii=False))
+except Exception:
+    traceback.print_exc()
+finally:
+    runtime.unassign()
+'''
+    return carnet([
+        md("""
+# PC-FNO3D réel (Grand Tunis) — OS6 : plan de déploiement du réseau ANEO (Colab, L4)
+
+Expériences de simulation de systèmes d'observation (OSSE) sur le **modèle livré** (celui que
+désigne `runs/decision_v4.json`, w par continuité), **sans entraînement** : un capteur ANEO simulé
+est une maille où le modèle voit la vérité de surface du cache, comme une station réelle.
+
+1. emplacements candidats (terre ferme, altitude ≤ 650 m, pente ≤ 20°, à 1 km du bord, à 1 km des
+   stations et entre capteurs ; zones exclues de `os6_contraintes.json` s'il est déposé sur le Drive) ;
+2. placement glouton sur la **validation** : 5 capteurs par étape là où l'erreur résiduelle est la
+   plus forte, gain mesuré à chaque étape (jusqu'à 200) ;
+3. courbe de dimensionnement sur le **test** (une fois) : optimisé, grille régulière, hasard, à nombre
+   égal ; nombre minimal pour un pire RMSE de niveau ≤ 0,5 m/s ;
+4. plan S18 : `runs/os6_reseau_aneo/plan_aneo.csv`, `.geojson`, `carte.png`, `courbe.png`, `os6.json`.
+
+Le front-end ATOM Wind lit le plan (`/api/atom-wind/reseau-aneo`) au prochain démarrage du service.
+Reprise : une étape déjà écrite (placement, courbe) est relue. La session s'arrête à la fin.
+"""),
+        md("## 1. Drive, code et données"),
+        code(COMMUN),
+        md("## 2. Cache (3 parties)"),
+        code(ENT.replace("grand_tunis_colab", "grand_tunis_v2_long_colab")),
+        md("## 3. Placement, courbe, plan — puis fin de la session"),
+        code(chaine),
+    ], gpu=True, gpu_type="L4")
+
+
 def main() -> int:
     out = REPO / "notebooks" / "current"
     for nom, nb in (("pcfno3d_grand_tunis_generation_colab.ipynb", generation()),
@@ -895,7 +952,8 @@ def main() -> int:
                     ("pcfno3d_grand_tunis_v3_suite_colab.ipynb", suite_v3()),
                     ("pcfno3d_grand_tunis_v3b_colab.ipynb", v3b()),
                     ("pcfno3d_grand_tunis_atom_colab.ipynb", service_v2()),
-                    ("pcfno3d_grand_tunis_v4_dso_colab.ipynb", v4_dso())):
+                    ("pcfno3d_grand_tunis_v4_dso_colab.ipynb", v4_dso()),
+                    ("pcfno3d_grand_tunis_os6_colab.ipynb", os6_reseau())):
         (out / nom).write_text(json.dumps(nb, indent=1, ensure_ascii=False), encoding="utf-8")
         print(out / nom)
     return 0

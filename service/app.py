@@ -49,7 +49,7 @@ from fastapi import (APIRouter, Depends, FastAPI, File, HTTPException, Query, Re
                      UploadFile)
 from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
 from fastapi.security import APIKeyHeader
 from fastapi.staticfiles import StaticFiles
 from mcp.server.transport_security import TransportSecuritySettings
@@ -876,6 +876,96 @@ def wind_farm(stem: str | None = None,
 def dso(_: ApiKeyRecord | None = Depends(require_read)) -> dict:
     """Dernier verdict DSO1-DSO5 archive, ou l'absence d'evaluation, sans rien inventer."""
     return mcp_server.dso_report()
+
+
+# ---------------------------------------------------------------- front-end ATOM Wind
+_ATOM_LOCK = threading.Lock()
+_ATOM_JOURS_MAX = 6                     # journees gardees en memoire (quelques Mo chacune)
+
+
+def _gzip_json(data: dict) -> Response:
+    import gzip
+    import json as _json
+    corps = gzip.compress(_json.dumps(data, ensure_ascii=False, separators=(",", ":"))
+                          .encode("utf-8"), compresslevel=5)
+    return Response(corps, media_type="application/json",
+                    headers={"Content-Encoding": "gzip", "Vary": "Accept-Encoding"})
+
+
+def _atom_jours(wf: WindFieldModel) -> list[dict]:
+    from pcfno3d import atom_wind
+    from pcfno3d.cache import load_index
+    j = STATE.get("atom_jours")
+    if j is None:
+        try:
+            j = atom_wind.jours(load_index(wf.cfg), split="test")
+        except FileNotFoundError as exc:
+            raise HTTPException(404, str(exc)) from exc
+        STATE["atom_jours"] = j
+    return j
+
+
+@router.get("/atom-wind/grille", tags=["atom-wind"])
+def atom_grille(_: ApiKeyRecord | None = Depends(require_read)) -> Response:
+    """Relief, eau, z0 et stations sur la grille de 500 m du front-end ATOM Wind."""
+    from pcfno3d import atom_wind
+    from pcfno3d.realdata import GeoRef
+    wf = model()
+    try:
+        georef = GeoRef.from_cfg(wf.cfg)
+    except ValueError:
+        georef = None
+    g = STATE.get("atom_grille")
+    if g is None:
+        g = atom_wind.grille(wf.geom, georef, wf.cfg)
+        g["modele"] = wf.checkpoint_path.name
+        g["configuration"] = wf.cfg.name
+        STATE["atom_grille"] = g
+    return _gzip_json(g)
+
+
+@router.get("/atom-wind/jours", tags=["atom-wind"])
+def atom_jours(_: ApiKeyRecord | None = Depends(require_read)) -> dict:
+    """Les journees servies (instants de test du cache), en heure locale de Tunis (UTC+1)."""
+    wf = model()
+    return {"modele": wf.checkpoint_path.name, "jours": _atom_jours(wf)}
+
+
+@router.get("/atom-wind/jour", tags=["atom-wind"])
+def atom_jour(date: str = Query(..., pattern=r"^\d{4}-\d{2}-\d{2}$"),
+              _: ApiKeyRecord | None = Depends(require_read)) -> Response:
+    """Vent u, v aux hauteurs AGL de chaque instant d'une journee (grille de 500 m, int16 en
+    cm/s, base64), + sigma de la vitesse si la fiabilite (M2) est active."""
+    from pcfno3d import atom_wind
+    wf = model()
+    j = next((d for d in _atom_jours(wf) if d["date"] == date), None)
+    if j is None:
+        raise HTTPException(404, f"aucun instant servi le {date}")
+    cache = STATE.setdefault("atom_jour", {})
+    out = cache.get(date)
+    if out is None:
+        with _ATOM_LOCK:
+            out = cache.get(date)
+            if out is None:
+                fiab = None
+                if wf.cfg.inference.reliability is not None:
+                    fiab = lambda vol: atom_wind.sigma_agl(vol, wf.geom)  # noqa: E731
+                out = atom_wind.jour(wf.predict_stem, wf.geom, j, fiab)
+                out["modele"] = wf.checkpoint_path.name
+                while len(cache) >= _ATOM_JOURS_MAX:
+                    cache.pop(next(iter(cache)))
+                cache[date] = out
+    return _gzip_json(out)
+
+
+@router.get("/atom-wind/reseau-aneo", tags=["atom-wind"])
+def atom_reseau(_: ApiKeyRecord | None = Depends(require_read)):
+    """Plan de deploiement ANEO (OS6, scripts/os6_reseau_aneo.py) en GeoJSON, s'il existe."""
+    from pcfno3d import atom_wind
+    f = atom_wind.plan_aneo(model().cfg.paths.run_dir)
+    if f is None:
+        raise HTTPException(404, "plan OS6 non calcule (scripts/os6_reseau_aneo.py)")
+    return FileResponse(f, media_type="application/geo+json")
 
 
 @router.get("/export/{stem}/manifest.json", tags=["donnees"])

@@ -170,6 +170,32 @@ calibration on validation, 80 % coverage + Spearman on test) then runs on the re
 retraining. After that, no more training. The serving notebook copies the model named by
 `decision_v4.json` (default v2_long) to v9_production, serves with `w_continuite: true`, and asks for
 an L4 GPU (A100 if unavailable or out of memory).
+Proposed DSO variants (Ines, 2026-10-24; reported, NOT used for the decision until the
+supervisor validates them): DSO3 against the predictable part of the truth
+(`scripts/dso_variantes_grand_tunis.py`: test instants regenerated with the generator's A_ROT/A_DIV
+perturbations off, same forcing and seed, via `scripts/diag_grand_tunis.py`; replicas with the
+original seed check the regeneration), and DSO1 on u, v R² only with w reported apart.
+**ATOM Wind front-end (2026-10-25).** Ines's mockup (`docs/atom_wind/atom_wind_maquette.html`, one
+HTML file whose wind came from an in-page sea-breeze formula) is the SOURCE; `scripts/build_atom_wind.py`
+adds anchors (fails if one is missing) and writes `webapp/atom-wind/index.html`, served at
+`/app/atom-wind/`. `webapp/atom-wind/atom-data.js` loads, before the page script, `/api/atom-wind/grille`
+(real terrain, water from z0 < 0.001, z0, stations on the page's 500 m grid), `/jours` (test instants
+grouped by Tunis local day, UTC+1), `/jour?date=` (u, v at AGL heights 10–1000 m, 500 m blocks, int16
+cm/s base64, gzip; + σ speed if `inference.reliability` is set) and `/reseau-aneo` (OS6 GeoJSON);
+hours between model outputs are interpolated linearly. `pcfno3d.atom_wind.champ_agl` is shared with
+`scripts/comparer_modeles_grand_tunis.py`. Without the API the page keeps its example day and says so;
+a 401 shows a key field (localStorage `pcfno3d.apikey`, never in the URL). The reliability view says
+whether σ is the calibrated model σ or the page's distance heuristic, and whether the ANEO network is
+the OS6 plan or the page's example layout. The real-validation table in the page is static (v2 values).
+**OS6 (2026-10-25)** — `pcfno3d.os6` + `scripts/os6_reseau_aneo.py` + notebook
+`pcfno3d_grand_tunis_os6_colab.ipynb` (L4, delivered model from `decision_v4.json`, no training): OSSE
+where an ANEO sensor is a cell whose cache surface truth (10 m mast on the real grid, noise included)
+joins the production input like a station. Candidates (land z0 ≥ 0.005, ≤ 650 m, slope ≤ 20°, 1 km
+from border/stations/each other, optional lat/lon exclusion polygons in `os6_contraintes.json` — none
+invented); greedy placement on VALIDATION (5 per step at the max of the smoothed residual error,
+re-run, gain per step); sizing curve on TEST once (optimised vs regular grid vs random ×3, 10–200
+sensors; recommended = smallest N with worst-level RMSE ≤ dso.rmse); plan S18 CSV/GeoJSON/map. Limit:
+the delivered model was trained with ERA5 + 3 stations, so the gain is that of the CURRENT model.
 Maps v3 − v2 (`scripts/comparer_modeles_grand_tunis.py`, 30 test instants, `runs/comparaisons/`)
 show the site correction as **spots around the stations**: mean vector difference at 10 m AGL
 0.82 / 0.66 m/s within 1 km of Tunis-Carthage / Zaghouan, 0.3–0.4 at 1–3 km, 0.12 at 3–10 km,

@@ -1,0 +1,1426 @@
+<title>ATOM Wind</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Atkinson+Hyperlegible:wght@400;700&family=IBM+Plex+Mono:wght@500&display=swap">
+<style>
+/* Mise en page : une barre d'outils fixe, puis un espace de travail carte + panneau de décision ; une seule couleur d'accent (bleu de mer), les couleurs de décision restent sémantiques */
+:root{
+  --bg:#eef3f2; --surface:#ffffff; --surface-2:#f6f9f8; --ink:#14232b; --muted:#56666d; --line:#d5e0de;
+  --accent:#0a6e7d; --accent-ink:#ffffff; --sand:#c4842f;
+  --go:#1f9d55; --go-soft:#dff3e7; --warn:#d98a00; --warn-soft:#fdf0d5; --stop:#d23a3a; --stop-soft:#fbe1df; --info:#3a6fd2; --info-soft:#e2ebfb;
+  --land-lo:#dfe8d4; --land-hi:#a99a7c; --water:#a9d3e3; --lake:#c2dde4; --urban:#cfcac2;
+  --f-display:"Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --f-body:"Atkinson Hyperlegible", "Segoe UI", system-ui, sans-serif;
+  --f-data:"IBM Plex Mono", ui-monospace, "Consolas", monospace;
+  --r:14px; --shadow:0 1px 2px rgba(20,35,43,.06), 0 8px 24px rgba(20,35,43,.07);
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0d171c; --surface:#14232b; --surface-2:#1a2c35; --ink:#e7f0ef; --muted:#9db0b3; --line:#28404a;
+  --accent:#3fb7c6; --accent-ink:#06222a; --sand:#e0a457;
+  --go:#3cc77a; --go-soft:#143525; --warn:#f2b23c; --warn-soft:#3a2d10; --stop:#ff6b62; --stop-soft:#3d1c1b; --info:#7aa5ff; --info-soft:#1b2a47;
+  --land-lo:#2b3a2e; --land-hi:#6e6250; --water:#123b4d; --lake:#1b4250; --urban:#3a3a3d;
+  --shadow:0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.25); color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0d171c; --surface:#14232b; --surface-2:#1a2c35; --ink:#e7f0ef; --muted:#9db0b3; --line:#28404a;
+  --accent:#3fb7c6; --accent-ink:#06222a; --sand:#e0a457;
+  --go:#3cc77a; --go-soft:#143525; --warn:#f2b23c; --warn-soft:#3a2d10; --stop:#ff6b62; --stop-soft:#3d1c1b; --info:#7aa5ff; --info-soft:#1b2a47;
+  --land-lo:#2b3a2e; --land-hi:#6e6250; --water:#123b4d; --lake:#1b4250; --urban:#3a3a3d;
+  --shadow:0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.25); color-scheme:dark}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{min-height:100%}
+body{background:var(--bg); color:var(--ink); font:16px/1.5 var(--f-body); padding-left:max(16px, env(safe-area-inset-left,0px)); padding-right:max(16px, env(safe-area-inset-right,0px)); padding-block:0 32px}
+body::before{content:""; position:fixed; inset:0 0 auto; height:env(safe-area-inset-top,0px); z-index:10; background:var(--bg)}
+h1,h2,h3{font-family:var(--f-display); text-wrap:balance; margin:0; line-height:1.15}
+button,select,input{font:inherit; color:inherit}
+:focus-visible{outline:3px solid var(--accent); outline-offset:2px; border-radius:8px}
+.wrap{max-width:1280px; margin:0 auto; display:grid; gap:16px}
+
+/* barre du haut */
+.top{position:sticky; top:env(safe-area-inset-top,0px); z-index:9; background:var(--bg); padding-block:12px 10px; display:grid; gap:10px; border-bottom:1px solid var(--line)}
+.row{display:flex; gap:12px; align-items:center; flex-wrap:wrap}
+.brand{display:flex; gap:10px; align-items:center; margin-right:auto}
+.brand b{font-family:var(--f-display); font-size:22px; font-weight:800; letter-spacing:-.01em}
+.brand small{display:block; color:var(--muted); font-size:13px; line-height:1.2}
+.fresh{display:flex; gap:8px; align-items:center; font-size:14px; color:var(--muted)}
+.dot{width:9px; height:9px; border-radius:50%; background:var(--go); box-shadow:0 0 0 0 var(--go); animation:pulse 2s infinite}
+@keyframes pulse{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--go) 60%,transparent)}100%{box-shadow:0 0 0 10px transparent}}
+.seg{display:inline-flex; background:var(--surface); border:1px solid var(--line); border-radius:999px; padding:3px}
+.seg button{border:0; background:none; padding:5px 12px; border-radius:999px; cursor:pointer; font-size:14px}
+.seg button[aria-pressed="true"]{background:var(--accent); color:var(--accent-ink); font-weight:700}
+.seg button[disabled]{opacity:.45; cursor:not-allowed}
+nav.tabs{display:flex; gap:6px; overflow-x:auto; scrollbar-width:none}
+nav.tabs a{flex:none; text-decoration:none; color:var(--ink); padding:8px 14px; border-radius:999px; font-weight:700; font-size:15px; display:flex; gap:8px; align-items:center; border:1px solid transparent}
+nav.tabs a:hover{background:var(--surface)}
+nav.tabs a[aria-current="page"]{background:var(--surface); border-color:var(--line); box-shadow:var(--shadow)}
+nav.tabs .count{background:var(--stop); color:#fff; border-radius:999px; font-size:12px; padding:0 7px; line-height:18px}
+.timebar{display:flex; flex-wrap:wrap; gap:8px 12px; align-items:center; background:var(--surface); border:1px solid var(--line); border-radius:var(--r); padding:8px 12px}
+.timebar label{font-weight:700; white-space:nowrap}
+.timebar input[type=range]{flex:1; min-width:120px; accent-color:var(--accent)}
+.hourbig{font-family:var(--f-data); font-size:18px; min-width:64px; text-align:right}
+.btn{border:1px solid var(--line); background:var(--surface); border-radius:999px; padding:8px 14px; cursor:pointer; font-weight:700; display:inline-flex; gap:8px; align-items:center}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--accent); color:var(--accent-ink); border-color:var(--accent)}
+.proto{font-size:13px; color:var(--muted)}
+.proto b{color:var(--sand)}
+
+/* vues */
+section.view{display:none}
+section.view.on{display:grid; gap:16px; animation:fadein .35s ease}
+@keyframes fadein{from{opacity:.4; transform:translateY(4px)}to{opacity:1; transform:none}}
+.card{background:var(--surface); border:1px solid var(--line); border-radius:var(--r); padding:16px; box-shadow:var(--shadow); min-width:0}
+.card h2{font-size:20px; margin-bottom:8px}
+.card h3{font-size:16px; margin-bottom:6px}
+.grid2{display:grid; grid-template-columns:minmax(0,1.35fr) minmax(0,1fr); gap:16px; align-items:start}
+@media (max-width:900px){.grid2{grid-template-columns:1fr}}
+.muted{color:var(--muted)}
+.steps{display:grid; gap:14px}
+.step{display:grid; gap:8px}
+.step > .lbl{display:flex; gap:10px; align-items:center; font-weight:700; font-family:var(--f-display); font-size:17px}
+.num{width:28px; height:28px; border-radius:50%; background:var(--accent); color:var(--accent-ink); display:grid; place-items:center; font-size:15px; flex:none}
+.acts{display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:8px}
+.act{border:2px solid var(--line); background:var(--surface-2); border-radius:12px; padding:10px; cursor:pointer; display:flex; gap:10px; align-items:center; text-align:left; font-weight:700; font-size:15px; transition:transform .15s, border-color .15s}
+.act:hover{transform:translateY(-2px)}
+.act[aria-pressed="true"]{border-color:var(--accent); background:color-mix(in srgb,var(--accent) 12%,var(--surface))}
+.act svg{flex:none}
+select.inp{border:1px solid var(--line); background:var(--surface-2); border-radius:10px; padding:9px 10px; width:100%}
+
+/* carte */
+.mapbox{position:relative; border-radius:12px; overflow:hidden; border:1px solid var(--line); background:var(--water); cursor:crosshair; touch-action:manipulation}
+.mapbox canvas{display:block; width:100%; height:auto}
+.maphint{position:absolute; left:10px; top:10px; background:color-mix(in srgb,var(--surface) 88%,transparent); border-radius:10px; padding:6px 10px; font-size:14px; font-weight:700; pointer-events:none; backdrop-filter:blur(4px)}
+.legend{display:flex; gap:10px; align-items:center; flex-wrap:wrap; font-size:13px; color:var(--muted); margin-top:8px}
+.ramp{height:10px; width:180px; border-radius:6px; background:linear-gradient(90deg,#bfe3f2,#59c3a0,#b6d84a,#f4c430,#f08a2c,#e0414b,#a73a9e)}
+
+/* réponse */
+.answer{border-radius:var(--r); padding:18px; display:grid; gap:10px; border:2px solid; position:relative; overflow:hidden}
+.answer.go{background:var(--go-soft); border-color:var(--go)}
+.answer.warn{background:var(--warn-soft); border-color:var(--warn)}
+.answer.stop{background:var(--stop-soft); border-color:var(--stop)}
+.answer.info{background:var(--info-soft); border-color:var(--info)}
+.verdict{display:flex; gap:12px; align-items:center}
+.badge-big{width:54px; height:54px; border-radius:50%; display:grid; place-items:center; color:#fff; flex:none; animation:pop .45s cubic-bezier(.2,1.6,.4,1)}
+@keyframes pop{from{transform:scale(.4)}to{transform:scale(1)}}
+.go .badge-big{background:var(--go)} .warn .badge-big{background:var(--warn)} .stop .badge-big{background:var(--stop)} .info .badge-big{background:var(--info)}
+.verdict h2{font-size:26px; margin:0}
+.answer p{margin:0; font-size:17px}
+.facts{display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:8px}
+.fact{background:var(--surface); border-radius:10px; padding:8px 10px; min-width:0}
+.fact .k{font-size:13px; color:var(--muted)}
+.fact .v{font-family:var(--f-display); font-weight:700; font-size:20px; display:flex; gap:6px; align-items:center}
+.windarrow{transition:transform .5s ease}
+.pill{display:inline-flex; gap:6px; align-items:center; border-radius:999px; padding:2px 10px; font-size:13px; font-weight:700}
+.pill.m{background:var(--info-soft); color:var(--info)}
+.pill.good{background:var(--go-soft); color:var(--go)} .pill.mid{background:var(--warn-soft); color:var(--warn)} .pill.bad{background:var(--stop-soft); color:var(--stop)}
+.tip{position:relative; display:inline-grid; place-items:center; width:20px; height:20px; border-radius:50%; border:1px solid var(--line); background:var(--surface); font-size:12px; font-weight:700; cursor:help}
+.tip:hover::after,.tip:focus::after{content:attr(data-tip); position:absolute; bottom:130%; left:50%; transform:translateX(-50%); width:240px; background:var(--ink); color:var(--bg); padding:8px 10px; border-radius:10px; font-weight:400; font-size:13px; line-height:1.4; z-index:20; text-align:left}
+
+/* frise 24 h */
+.day{display:grid; grid-template-columns:repeat(24,minmax(0,1fr)); gap:3px; align-items:end}
+.day button{border:0; padding:0; border-radius:6px 6px 3px 3px; cursor:pointer; min-height:12px; position:relative; transition:transform .15s}
+.day button:hover{transform:scaleY(1.06)}
+.day button.now{outline:3px solid var(--ink); outline-offset:1px}
+.day .go{background:var(--go)} .day .warn{background:var(--warn)} .day .stop{background:var(--stop)} .day .info{background:var(--info)}
+.dayaxis{display:grid; grid-template-columns:repeat(24,minmax(0,1fr)); font-size:11px; color:var(--muted); font-family:var(--f-data); margin-top:4px}
+.dayaxis span{text-align:center}
+.windows{display:flex; gap:8px; flex-wrap:wrap}
+
+/* alertes */
+.alerts{display:grid; gap:12px}
+.alert{display:grid; grid-template-columns:auto minmax(0,1fr); gap:14px; padding:14px; border-radius:var(--r); background:var(--surface); border:1px solid var(--line); border-left:8px solid; box-shadow:var(--shadow)}
+.alert.stop{border-left-color:var(--stop)} .alert.warn{border-left-color:var(--warn)} .alert.info{border-left-color:var(--info)} .alert.go{border-left-color:var(--go)}
+.alert .ic{width:44px; height:44px; border-radius:12px; display:grid; place-items:center; color:#fff}
+.alert.stop .ic{background:var(--stop); animation:blink 1.6s infinite} .alert.warn .ic{background:var(--warn)} .alert.info .ic{background:var(--info)} .alert.go .ic{background:var(--go)}
+@keyframes blink{50%{opacity:.55}}
+.alert h3{font-size:18px; margin:0 0 4px}
+.alert dl{display:grid; grid-template-columns:max-content minmax(0,1fr); gap:2px 10px; margin:6px 0 0; font-size:15px}
+.alert dt{font-weight:700; color:var(--muted)} .alert dd{margin:0}
+.alert .todo{margin-top:8px; background:var(--surface-2); border-radius:10px; padding:8px 10px; font-weight:700}
+
+/* 3D */
+.three{position:relative; border-radius:var(--r); overflow:hidden; border:1px solid var(--line); background:linear-gradient(180deg,color-mix(in srgb,var(--accent) 22%,var(--bg)),var(--bg)); height:min(68vh,620px); min-height:380px}
+.three canvas{display:block; width:100%; height:100%}
+.ov{position:absolute; display:flex; gap:8px; flex-wrap:wrap; z-index:2}
+.ov.tl{left:10px; top:10px} .ov.tr{right:10px; top:10px} .ov.bl{left:10px; bottom:10px; right:10px}
+.glass{background:color-mix(in srgb,var(--surface) 88%,transparent); backdrop-filter:blur(6px); border:1px solid var(--line); border-radius:12px; padding:8px 10px}
+.hslider{display:grid; gap:4px; width:min(100%,520px)}
+.hslider input{width:100%; accent-color:var(--accent)}
+.marks{display:flex; justify-content:space-between; font-size:11px; color:var(--muted)}
+.lbl3d{position:absolute; transform:translate(-50%,-120%); background:var(--surface); border:1px solid var(--line); border-radius:8px; padding:1px 7px; font-size:12px; font-weight:700; pointer-events:none; white-space:nowrap}
+.lbl3d.st{border-color:var(--info); color:var(--info)}
+.nogl{position:absolute; inset:0; display:grid; place-items:center; text-align:center; padding:24px}
+
+/* KPI */
+.kpis{display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:12px}
+.kpi .k{color:var(--muted); font-size:14px}
+.kpi .v{font-family:var(--f-display); font-weight:800; font-size:30px; font-variant-numeric:tabular-nums}
+.kpi .s{font-size:14px}
+svg text{fill:var(--muted); font-family:var(--f-data); font-size:11px}
+.turb{display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:12px}
+.rotor{animation:spin linear infinite; transform-origin:50% 50%; transform-box:fill-box}
+@keyframes spin{to{transform:rotate(360deg)}}
+table.t{width:100%; border-collapse:collapse; font-size:15px}
+.t th,.t td{padding:8px; border-bottom:1px solid var(--line); text-align:left}
+.t td.n{font-family:var(--f-data); text-align:right}
+.tblwrap{overflow-x:auto}
+
+/* fiche */
+.sheet{position:fixed; right:max(16px, env(safe-area-inset-right,0px)); bottom:max(16px, env(safe-area-inset-bottom,0px)); width:min(380px, calc(100vw - 32px)); z-index:30; display:grid; gap:10px; max-height:80vh; overflow:auto; animation:fadein .25s}
+.sheet header{display:flex; justify-content:space-between; gap:8px; align-items:start}
+.x{border:0; background:var(--surface-2); border-radius:50%; width:32px; height:32px; cursor:pointer; font-size:18px; flex:none}
+
+/* visite */
+.tour{position:fixed; inset:0; z-index:50; display:grid; place-items:center; background:color-mix(in srgb,var(--ink) 55%,transparent); padding:16px}
+.tour .card{max-width:460px; display:grid; gap:12px}
+.tour .ill{height:120px; border-radius:12px; background:var(--surface-2); display:grid; place-items:center}
+.tour .dots{display:flex; gap:6px} .tour .dots i{width:8px; height:8px; border-radius:50%; background:var(--line)} .tour .dots i.on{background:var(--accent)}
+.ov.tc{left:50%; top:64px; transform:translateX(-50%); width:min(560px,90%); text-align:center; font-weight:700; font-size:16px}
+.cdown{display:grid; gap:4px; margin-top:8px; font-weight:700}
+.cdown .bar{height:8px; border-radius:6px; background:var(--surface-2); overflow:hidden}
+.cdown .bar i{display:block; height:100%; border-radius:6px}
+.alert{cursor:pointer; transition:transform .15s} .alert:hover{transform:translateX(3px)} .alert.sel{outline:3px solid var(--accent); outline-offset:2px}
+.form{display:grid; gap:10px} .form label{font-weight:700; font-size:14px; display:grid; gap:4px}
+.mine{display:grid; gap:8px; margin-top:10px} .mine .it{display:flex; gap:10px; align-items:center; justify-content:space-between; background:var(--surface-2); border-radius:10px; padding:8px 10px; min-width:0}
+.x.sm{width:28px; height:28px; font-size:16px}
+.rel3{display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:16px}
+.dsos{display:grid; gap:6px}
+.dsos div{display:flex; justify-content:space-between; gap:10px; align-items:center; border-bottom:1px solid var(--line); padding-block:5px}
+#cutcv{display:block; width:100%; border-radius:10px}
+.chips{display:flex; gap:6px; flex-wrap:wrap}
+.chip{border:2px solid var(--line); background:var(--surface-2); border-radius:999px; padding:6px 12px; cursor:pointer; font-weight:700; font-size:14px}
+.chip[aria-pressed="true"]{border-color:var(--accent); background:color-mix(in srgb,var(--accent) 14%,var(--surface)); color:var(--ink)}
+.agform{display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:10px}
+.agform label{font-weight:700; font-size:14px; display:grid; gap:4px; min-width:0}
+input.inp{border:1px solid var(--line); background:var(--surface-2); border-radius:10px; padding:9px 10px; width:100%}
+.big{font-family:var(--f-display); font-weight:800; font-size:clamp(26px,4vw,38px); line-height:1.1}
+.src{font-size:13px; color:var(--muted)}
+.agcards{display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:16px}
+.drop{display:inline-block; animation:drip 1.6s ease-in-out infinite}
+@keyframes drip{0%,100%{transform:translateY(0)}50%{transform:translateY(3px)}}
+.userbox{display:flex; gap:8px; align-items:center}
+.avatar{width:34px; height:34px; border-radius:50%; background:var(--sand); color:#fff; display:grid; place-items:center; font-weight:800; font-family:var(--f-display); flex:none}
+.umenu{position:relative}
+.umenu .menu{position:absolute; right:0; top:calc(100% + 6px); width:260px; max-width:calc(100vw - 32px); z-index:40; display:grid; gap:8px}
+@media (max-width:700px){.umenu .menu{right:auto; left:0}}
+.authcard{width:min(460px,100%); display:grid; gap:12px; max-height:90vh; overflow:auto}
+.tabs2{display:grid; grid-template-columns:1fr 1fr; background:var(--surface-2); border-radius:999px; padding:3px}
+.tabs2 button{border:0; background:none; border-radius:999px; padding:8px; font-weight:700; cursor:pointer}
+.tabs2 button[aria-pressed="true"]{background:var(--surface); box-shadow:var(--shadow)}
+.err{color:var(--stop); font-size:14px; font-weight:700; min-height:1.2em}
+.ok{color:var(--go); font-size:14px; font-weight:700}
+.check{display:flex; gap:8px; align-items:flex-start; font-size:14px}
+.demo{display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:6px}
+.toast{position:fixed; left:50%; bottom:max(20px, env(safe-area-inset-bottom,0px)); transform:translateX(-50%); z-index:60; background:var(--ink); color:var(--bg); padding:10px 16px; border-radius:12px; font-weight:700; box-shadow:var(--shadow); max-width:calc(100vw - 32px)}
+.lock{display:inline-grid; place-items:center; width:16px; height:16px; opacity:.6}
+.t td select{border:1px solid var(--line); background:var(--surface-2); border-radius:8px; padding:4px 6px}
+.keybox{font-family:var(--f-data); background:var(--surface-2); border-radius:10px; padding:10px; word-break:break-all}
+.gtip{position:fixed; z-index:70; pointer-events:none; background:color-mix(in srgb,var(--ink) 92%,transparent); color:var(--bg); padding:8px 11px; border-radius:12px; font-size:14px; line-height:1.35; box-shadow:0 8px 24px rgba(0,0,0,.25); max-width:280px; backdrop-filter:blur(4px)}
+.gtip b{font-family:var(--f-display); font-size:17px}
+.gtip .sub{opacity:.75; font-size:12.5px}
+.skywrap{position:relative; flex:1; min-width:160px; display:grid; gap:2px; padding-top:20px}
+.sky{height:9px; border-radius:6px; background:linear-gradient(90deg,#1b2a4a 0%,#22345c 17%,#f2a65a 25%,#9ad7ee 34%,#6cc3e6 55%,#7ec8e3 70%,#f08a5d 80%,#3a3363 88%,#1b2a4a 100%)}
+.sun{position:absolute; top:0; width:18px; height:18px; border-radius:50%; transform:translateX(-50%); transition:left .35s ease, background .35s, box-shadow .35s}
+.sun.day{background:#ffcf3f; box-shadow:0 0 0 4px rgba(255,207,63,.25), 0 0 16px #ffcf3f}
+.sun.night{background:#e8edf5; box-shadow:inset -5px -2px 0 0 #9aa8bd}
+.skywrap input{width:100%; accent-color:var(--accent); margin:0}
+.card.kpi{transition:transform .2s, box-shadow .2s}
+.card.kpi:hover{transform:translateY(-3px); box-shadow:0 2px 4px rgba(20,35,43,.08), 0 14px 30px rgba(20,35,43,.12)}
+.act:hover,.chip:hover{border-color:var(--accent)}
+.palette{position:fixed; inset:0; z-index:65; display:grid; justify-items:center; align-items:start; padding:12vh 16px 16px; background:color-mix(in srgb,var(--ink) 40%,transparent)}
+.palette .card{width:min(560px,100%); padding:10px; display:grid; gap:8px}
+.palette input{border:0; background:var(--surface-2); border-radius:12px; padding:12px 14px; font-size:18px; width:100%}
+.palette ul{list-style:none; margin:0; padding:0; max-height:50vh; overflow:auto; display:grid; gap:2px}
+.palette li{padding:9px 12px; border-radius:10px; cursor:pointer; display:flex; justify-content:space-between; gap:10px}
+.palette li[aria-selected="true"]{background:color-mix(in srgb,var(--accent) 16%,var(--surface))}
+.palette li small{color:var(--muted)}
+.kbd{font-family:var(--f-data); font-size:12px; border:1px solid var(--line); border-bottom-width:2px; border-radius:6px; padding:0 5px; background:var(--surface)}
+.why{display:grid; gap:6px; background:var(--surface); border-radius:12px; padding:10px 12px; animation:fadein .3s}
+.why ul{margin:0; padding-left:18px; display:grid; gap:4px}
+.why li::marker{color:var(--accent)}
+.whybtn{justify-self:start}
+#b-sound[aria-pressed="true"]{background:var(--accent); color:var(--accent-ink); border-color:var(--accent)}
+.wave{display:inline-flex; gap:2px; align-items:center; height:14px}
+.wave i{width:3px; height:6px; background:currentColor; border-radius:2px; animation:wv 1s ease-in-out infinite}
+.wave i:nth-child(2){animation-delay:.15s} .wave i:nth-child(3){animation-delay:.3s} .wave i:nth-child(4){animation-delay:.45s}
+@keyframes wv{50%{height:14px}}
+#seedtype{width:auto; padding:7px 10px; border-radius:999px; font-weight:700}
+/* en-tête compact pendant le défilement : seuls les onglets et l'heure restent visibles */
+.top.compact{padding-block:6px; gap:6px}
+.top.compact .hdr1, .top.compact .proto, .top.compact .sky, .top.compact .sun{display:none}
+.top.compact .wrap{gap:6px}
+.top.compact .timebar{padding:4px 10px}
+.top.compact .skywrap{padding-top:0}
+.top.compact nav.tabs a{padding:5px 12px}
+@media (max-width:700px){ .top:not(.compact) .proto{display:none} .top.compact #play{display:none} }
+/* Nesma, l'assistante du grand public */
+.nesma-btn{position:fixed; left:max(16px, env(safe-area-inset-left,0px)); bottom:max(16px, env(safe-area-inset-bottom,0px)); z-index:35; display:flex; gap:10px; align-items:center; border:0; border-radius:999px; padding:6px 16px 6px 6px; background:var(--accent); color:var(--accent-ink); font-weight:800; box-shadow:0 10px 26px rgba(10,110,125,.35); cursor:pointer; animation:float 3s ease-in-out infinite}
+.nesma-btn .mini{width:42px; height:42px; border-radius:50%; background:#fff; overflow:hidden; display:grid; place-items:center}
+@keyframes float{50%{transform:translateY(-4px)}}
+.nesma{position:fixed; left:max(16px, env(safe-area-inset-left,0px)); bottom:max(16px, env(safe-area-inset-bottom,0px)); z-index:36; width:min(400px, calc(100vw - 32px)); max-height:min(86vh,760px); display:grid; grid-template-columns:minmax(0,1fr); grid-template-rows:auto minmax(0,1fr) auto auto; padding:0; overflow:hidden; animation:fadein .25s}
+.nesma .stage{position:relative; height:230px; background:linear-gradient(180deg, color-mix(in srgb,var(--accent) 22%,var(--surface)) 0%, var(--surface) 100%); display:grid; justify-items:start; align-items:end; padding-left:10px}
+.nesma .stage .close{position:absolute; right:10px; top:10px}
+.nesma .who{position:absolute; left:14px; top:12px; font-weight:800; font-family:var(--f-display); font-size:18px}
+.nesma .who small{display:block; font-weight:400; font-size:12px; color:var(--muted); font-family:var(--f-body)}
+.thought{position:absolute; right:12px; top:48px; width:min(200px,50%); background:var(--surface); border:2px solid var(--line); border-radius:22px; padding:10px 12px; font-weight:700; font-size:14px; line-height:1.3; box-shadow:var(--shadow); animation:pop .45s cubic-bezier(.2,1.6,.4,1)}
+.thought::before,.thought::after{content:""; position:absolute; background:var(--surface); border:2px solid var(--line); border-radius:50%}
+.thought::before{width:15px; height:15px; left:-18px; bottom:10px}
+.thought::after{width:9px; height:9px; left:-32px; bottom:2px}
+.thought .ti{display:block; font-size:12px; color:var(--muted); font-weight:700; margin-bottom:2px}
+.face{width:170px; height:170px; overflow:visible}
+.face .hair{transform-origin:50% 30%; animation:sway var(--dur,3s) ease-in-out infinite}
+@keyframes sway{0%,100%{transform:rotate(calc(var(--amp,2deg) * -1))}50%{transform:rotate(var(--amp,2deg))}}
+.face .blink{animation:blink2 5s infinite; transform-origin:center; transform-box:fill-box}
+@keyframes blink2{0%,94%,100%{transform:scaleY(1)}97%{transform:scaleY(.1)}}
+.face .feat{transition:all .35s ease}
+.chat{overflow:auto; padding:12px; display:grid; gap:8px; align-content:start; min-height:120px}
+.msg{max-width:85%; padding:8px 12px; border-radius:16px; font-size:15px; line-height:1.4; animation:fadein .25s}
+.msg.u{justify-self:end; background:var(--accent); color:var(--accent-ink); border-bottom-right-radius:4px}
+.msg.b{justify-self:start; background:var(--surface-2); border-bottom-left-radius:4px}
+.msg .facts2{display:flex; gap:6px; flex-wrap:wrap; margin-top:6px}
+.typing{display:inline-flex; gap:4px} .typing i{width:7px; height:7px; border-radius:50%; background:var(--muted); animation:wv 1s infinite} .typing i:nth-child(2){animation-delay:.15s} .typing i:nth-child(3){animation-delay:.3s}
+.sugg{display:flex; gap:6px; overflow-x:auto; padding:0 12px 8px; scrollbar-width:none}
+.sugg button{flex:none; border:1px solid var(--line); background:var(--surface); border-radius:999px; padding:5px 10px; font-size:13px; cursor:pointer; font-weight:700}
+.sugg button:hover{border-color:var(--accent)}
+.nform{display:flex; gap:8px; padding:10px 12px; border-top:1px solid var(--line)}
+.nform input{flex:1; min-width:0; border:1px solid var(--line); background:var(--surface-2); border-radius:999px; padding:9px 14px}
+@media (prefers-reduced-motion: reduce){*{animation:none!important; transition:none!important}}
+</style>
+
+<div class="top" id="topbar">
+  <div class="wrap">
+    <div class="row hdr1">
+      <div class="brand">
+        <svg width="38" height="38" viewBox="0 0 38 38" aria-hidden="true"><circle cx="19" cy="19" r="18" fill="var(--accent)"/><path d="M8 15c6-4 11 3 18-1M8 21c7-4 12 3 22-1M10 27c5-3 9 2 14-1" stroke="var(--accent-ink)" stroke-width="2.4" fill="none" stroke-linecap="round"/></svg>
+        <div><b>ATOM Wind</b><small>Le vent du Grand Tunis, partout et à toute hauteur</small></div>
+      </div>
+      <div class="fresh"><span class="dot" aria-hidden="true"></span><span>Mis à jour il y a 2 min</span></div>
+      <div class="userbox umenu" id="userbox"></div>
+      <div class="seg" role="group" aria-label="Unité de vitesse"><button id="u-kmh" aria-pressed="true">km/h</button><button id="u-ms" aria-pressed="false">m/s</button></div>
+      <button class="btn" id="b-sound" aria-pressed="false" aria-label="Écouter le vent">Écouter le vent</button>
+      <button class="btn" id="b-search" aria-label="Rechercher">Rechercher <span class="kbd">Ctrl K</span></button>
+      <div class="seg" role="group" aria-label="Thème"><button id="th-auto" aria-pressed="true">Auto</button><button id="th-light" aria-pressed="false">Clair</button><button id="th-dark" aria-pressed="false">Sombre</button></div>
+      <div class="seg" role="group" aria-label="Langue"><button aria-pressed="true">FR</button><button disabled title="Prévu">عربي</button><button disabled title="Prévu">EN</button></div>
+    </div>
+    <nav class="tabs" aria-label="Espaces">
+      <a href="#monvent" data-v="monvent">Mon vent</a>
+      <a href="#agri" data-v="agri">Agriculteur</a>
+      <a href="#tableau" data-v="tableau">Tableau de bord</a>
+      <a href="#carte3d" data-v="carte3d">Carte 3D</a>
+      <a href="#alertes" data-v="alertes">Alertes <span class="count" id="alertcount">0</span></a>
+      <a href="#eolien" data-v="eolien">Éolien</a>
+      <a href="#fiabilite" data-v="fiabilite">Fiabilité</a>
+      <a href="#admin" data-v="admin">Administration</a>
+    </nav>
+    <div class="timebar">
+      <label for="hour">Heure</label>
+      <div class="skywrap"><span class="sun day" id="sun" aria-hidden="true"></span><div class="sky" aria-hidden="true"></div><input type="range" id="hour" min="0" max="23" step="1" value="15"></div>
+      <span class="hourbig" id="hourtxt">15 h</span>
+      <button class="btn" id="play" aria-label="Rejouer la journée">Rejouer la journée</button>
+    </div>
+    <div class="proto">Prototype : <b>journée d'exemple d'été</b>, calculée sur la zone réelle du Grand Tunis. Ce ne sont pas des mesures en direct. <button class="btn" id="retour" style="padding:2px 10px;font-size:13px">Revoir la visite</button></div>
+  </div>
+</div>
+
+<main class="wrap" style="margin-top:16px">
+
+<!-- MON VENT -->
+<section class="view" id="v-monvent">
+  <div class="grid2">
+    <div class="card">
+      <div class="step"><div class="lbl"><span class="num">1</span>Où êtes-vous ?</div>
+        <div class="row">
+          <select class="inp" id="town" aria-label="Choisir une ville" style="flex:1;min-width:180px"></select>
+        </div>
+        <div class="mapbox" id="map1"><canvas id="c1"></canvas><div class="maphint" id="hint1">Touchez la carte pour placer votre position</div></div>
+        <div class="legend"><span>Calme</span><span class="ramp"></span><span>Très fort</span><span class="tip" tabindex="0" data-tip="Les traits qui bougent montrent le vent : leur couleur indique sa force, leur mouvement sa direction.">?</span></div>
+      </div>
+    </div>
+    <div class="steps">
+      <div class="card step"><div class="lbl"><span class="num">2</span>Que voulez-vous faire ?</div>
+        <div class="acts" id="acts"></div>
+      </div>
+      <div id="answer"></div>
+      <div class="card step"><div class="lbl"><span class="num">3</span>Votre journée, heure par heure</div>
+        <div class="day" id="day1"></div><div class="dayaxis" id="axis1"></div>
+        <div class="legend"><span class="pill good">Possible</span><span class="pill mid">Attention</span><span class="pill bad">Déconseillé</span><span>Touchez une heure pour la voir.</span></div>
+        <div class="windows" id="win1"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- AGRICULTEUR -->
+<section class="view" id="v-agri">
+  <div class="card">
+    <h2>Espace agriculteur</h2>
+    <p class="muted" style="margin-top:0">Choisissez votre lieu, votre milieu et votre culture : ATOM Wind calcule l'eau à apporter aujourd'hui et vous dit quand arroser, quand traiter et quand aérer votre dépôt.</p>
+    <div class="agform">
+      <label for="ag-place">Lieu<select class="inp" id="ag-place"></select></label>
+      <label for="ag-crop">Culture<select class="inp" id="ag-crop"></select></label>
+      <label for="ag-area">Surface (hectares)<input class="inp" id="ag-area" type="number" min="0.1" max="500" step="0.1" value="2"></label>
+      <label for="ag-irr">Arrosage<select class="inp" id="ag-irr"><option value="0.9">Goutte-à-goutte</option><option value="0.75">Aspersion</option><option value="0.6">Gravitaire (rigoles)</option></select></label>
+    </div>
+    <div style="margin-top:10px"><b style="font-size:14px">Milieu</b><div class="chips" id="ag-milieu" style="margin-top:4px"></div></div>
+  </div>
+  <div id="ag-water"></div>
+  <div class="agcards" id="ag-cards"></div>
+  <p class="src">Sources : vent calculé par ATOM Wind ; température, humidité et rayonnement d'une journée d'été d'exemple (source prévue : ERA5 et capteurs ANEO) ; poussière d'exemple (source prévue : Copernicus CAMS et capteurs SPH-AIR). Besoin en eau selon la méthode FAO-56 de Penman-Monteith.</p>
+</section>
+
+<!-- TABLEAU DE BORD -->
+<section class="view" id="v-tableau">
+  <div class="card"><h2>Tableau de bord du Grand Tunis</h2><p class="muted" style="margin:0">Ce qui se passe maintenant sur la zone, la qualité du modèle et l'état du réseau de mesure. Les chiffres de qualité du modèle sont des résultats réels ; le vent de la journée est un exemple.</p></div>
+  <div class="kpis" id="tbkpis"></div>
+  <div class="grid2">
+    <div class="card"><h3>Le vent de la zone, heure par heure</h3><div id="tbday"></div></div>
+    <div class="card"><h3>Alertes en cours</h3><div id="tbalerts" class="mine" style="margin-top:0"></div><p style="margin:10px 0 0"><a href="#alertes" class="btn">Voir toutes les alertes</a></p></div>
+  </div>
+  <div class="grid2">
+    <div class="card"><h3>Comparaison avec de vraies mesures <span class="pill m">résultats réels</span></h3><p class="muted" style="margin-top:0;font-size:14px">Écart moyen entre le vent calculé et le vent mesuré, sur des jours de 2022 jamais vus par le modèle. Plus la barre est courte, mieux c'est.</p><div id="tbcomp"></div></div>
+    <div class="card"><h3>Qualité du modèle v9 <span class="pill m">résultats réels</span></h3>
+      <div class="dsos">
+        <div><span>Écart moyen sur le champ 3D (u / v)</span><b>0,38 / 0,37 m/s</b></div>
+        <div><span>Part du vent expliquée (R²)</span><b>≥ 0,98</b></div>
+        <div><span>Erreur sur la direction</span><b>3,3°</b></div>
+        <div><span>Temps de calcul d'une carte 3D</span><b>0,29 s</b></div>
+        <div><span>DSO1 précision (≤ 0,5 m/s par niveau)</span><span class="pill mid">sauf 25 m (0,53)</span></div>
+        <div><span>DSO2 conservation de la masse</span><span class="pill mid">1,3·10⁻⁴ pour 10⁻⁴</span></div>
+        <div><span>DSO3 finesse des détails</span><span class="pill mid">0,82 pour 0,9</span></div>
+        <div><span>DSO4 rapidité</span><span class="pill good">atteint</span></div>
+        <div><span>DSO5 robustesse</span><span class="pill good">atteint</span></div>
+      </div></div>
+  </div>
+  <div class="card"><h3>Réseau de mesure</h3><div class="rel3" id="tbnet"></div></div>
+</section>
+
+<!-- CARTE 3D -->
+<section class="view" id="v-carte3d">
+  <div class="three" id="three">
+    <div class="ov tl"><div class="glass" style="max-width:340px"><b>Le vent en 3D au-dessus du relief</b><br><span class="muted" style="font-size:14px">Faites tourner avec la souris ou le doigt. Touchez le relief pour voir le vent à cet endroit.</span></div></div>
+    <div class="ov tr"><button class="btn" id="recenter">Recentrer</button><button class="btn" id="relbtn" aria-pressed="false">Afficher la fiabilité</button><button class="btn" id="cutbtn" aria-pressed="false">Tracer une coupe</button><button class="btn primary" id="breeze">Voir la brise de mer</button><select class="inp" id="seedtype" aria-label="Objet à lâcher"><option value="graine">Graine de pissenlit</option><option value="sable">Grain de sable</option><option value="ballon">Ballon</option></select><button class="btn" id="seedbtn">Lâcher dans le vent</button></div>
+    <div class="ov tc glass" id="cap3" hidden></div>
+    <div class="ov bl"><div class="glass hslider"><label for="h3"><b>Hauteur au-dessus du sol : <span id="h3txt">100 m</span></b></label>
+      <input type="range" id="h3" min="0" max="7" step="1" value="3">
+      <div class="marks"><span>10 m<br>anémomètre</span><span>30 m<br>immeuble</span><span>45 m<br>grue</span><span>100 m<br>éolienne</span><span>200 m</span><span>300 m</span><span>500 m</span><span>1 000 m</span></div>
+      <div class="legend" style="margin:0"><span>Calme</span><span class="ramp"></span><span>Très fort</span></div></div></div>
+  </div>
+  <div class="card" id="cutcard" hidden>
+    <div class="row" style="justify-content:space-between"><h3 style="margin:0">Coupe verticale du vent</h3><button class="x sm" id="cutclose" aria-label="Fermer la coupe">×</button></div>
+    <p class="muted" id="cuttxt" style="margin:6px 0 10px"></p>
+    <div class="tblwrap"><canvas id="cutcv" height="260" style="min-width:320px"></canvas></div>
+    <div class="legend"><span>Calme</span><span class="ramp"></span><span>Très fort</span><span>Les flèches noires montrent le sens du vent le long de la coupe.</span></div>
+  </div>
+</section>
+
+<!-- ALERTES -->
+<section class="view" id="v-alertes">
+  <div class="card"><h2>Alertes de la journée</h2><p class="muted" style="margin:0">Chaque alerte dit quoi, où, quand et que faire. Les plus urgentes sont en haut.</p></div>
+  <div class="grid2">
+    <div class="alerts" id="alertlist"></div>
+    <div class="steps">
+      <div class="card"><h3>Les alertes sur la carte</h3><p class="muted" style="margin-top:0;font-size:14px">Touchez une alerte pour la repérer sur la carte.</p><div class="mapbox" id="map3"><canvas id="c3"></canvas></div></div>
+      <div class="card"><h3>Créer mon alerte</h3>
+        <div class="form">
+          <label for="al-place">Où ?<select class="inp" id="al-place"></select></label>
+          <label for="al-act">Pour quelle activité ?<select class="inp" id="al-act"></select></label>
+          <label for="al-chan">Me prévenir par<select class="inp" id="al-chan"><option>l'application</option><option>SMS</option><option>WhatsApp</option></select></label>
+          <button class="btn primary" id="al-add">Créer l'alerte</button>
+        </div>
+        <div class="mine" id="al-mine"></div>
+        <p class="muted" style="margin:8px 0 0;font-size:13px">Prototype : l'envoi par SMS ou WhatsApp est simulé. Vos alertes restent sur cet appareil.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- EOLIEN -->
+<section class="view" id="v-eolien">
+  <div class="card"><h2>Parc éolien virtuel de la crête du djebel Ressas</h2><p class="muted" style="margin:0">Trois éoliennes d'exemple de 2 MW, moyeu à 80 m. La production est calculée avec le vent à hauteur de moyeu.</p></div>
+  <div class="kpis" id="kpis"></div>
+  <div class="card"><h3>Production du parc sur la journée</h3><div id="prodchart"></div></div>
+  <div class="turb" id="turbs"></div>
+  <div class="grid2">
+    <div class="card"><h3>Placer mon éolienne</h3>
+      <div class="form"><label for="tm">Modèle<select class="inp" id="tm"><option value="s">Petite : moyeu 30 m, 100 kW</option><option value="m">Moyenne : moyeu 50 m, 800 kW</option><option value="l" selected>Grande : moyeu 80 m, 2 MW</option></select></label></div>
+      <p class="muted" style="font-size:14px;margin:8px 0">Touchez la carte pour placer l'éolienne.</p>
+      <div class="mapbox" id="map4"><canvas id="c4"></canvas></div>
+      <div id="myt" style="margin-top:10px"></div>
+    </div>
+    <div class="steps">
+      <div class="card"><h3>Le vent sur toute la hauteur du rotor</h3><div id="rotor"></div></div>
+      <div class="card"><h3>D'où vient le vent au moyeu aujourd'hui ?</h3><div id="rose"></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ADMINISTRATION -->
+<section class="view" id="v-admin">
+  <div class="card"><h2>Administration</h2><p class="muted" style="margin:0">Validez les comptes, attribuez les rôles et gérez les clés d'accès à l'API. Réservé aux administrateurs.</p></div>
+  <div class="kpis" id="adkpis"></div>
+  <div class="card"><h3>Utilisateurs</h3><div class="tblwrap"><table class="t" id="adusers"></table></div></div>
+  <div class="grid2">
+    <div class="card"><h3>Rôles et accès</h3><div class="tblwrap"><table class="t" id="adroles"></table></div></div>
+    <div class="card"><h3>Clés d'API</h3><p class="muted" style="margin-top:0;font-size:14px">Une clé permet à un logiciel partenaire de lire le vent en temps réel. Elle n'est affichée qu'une seule fois.</p>
+      <div class="form"><label for="k-name">Nom de la clé<input class="inp" id="k-name" placeholder="Ex. : Parc éolien de Bizerte"></label><label for="k-scope">Accès<select class="inp" id="k-scope"><option value="lecture">Lecture du vent</option><option value="simulation">Lecture et simulations (R&amp;D)</option><option value="admin">Administration</option></select></label><button class="btn primary" id="k-add">Créer la clé</button></div>
+      <div id="k-new"></div><div class="mine" id="k-list"></div></div>
+  </div>
+</section>
+
+<!-- FIABILITE -->
+<section class="view" id="v-fiabilite">
+  <div class="grid2">
+    <div class="card">
+      <h2>Où le vent est-il bien connu ?</h2>
+      <div class="row" style="margin-bottom:10px"><div class="seg" role="group" aria-label="Réseau de capteurs"><button id="m-reel" aria-pressed="true">Aujourd'hui : 3 stations</button><button id="m-aneo" aria-pressed="false">Avec le réseau ANEO prévu</button></div></div>
+      <div class="mapbox" id="map2"><canvas id="c2"></canvas></div>
+      <div class="legend"><span class="pill good">Fiabilité bonne</span><span class="pill mid">Moyenne</span><span class="pill bad">Faible</span><span>Les zones pâles sont moins sûres.</span></div>
+    </div>
+    <div class="steps">
+      <div class="card" id="relstats"></div>
+      <div class="card">
+        <h3>Vérifié sur de vraies mesures</h3>
+        <p class="muted" style="margin-top:0">Test sur des jours de 2022 jamais vus par le modèle. Chaque station a été cachée au modèle, qui a dû la retrouver. Écart moyen entre le vent calculé et le vent mesuré (plus c'est petit, mieux c'est).</p>
+        <div class="tblwrap"><table class="t">
+          <thead><tr><th>Mesure réelle</th><th style="text-align:right">ATOM Wind</th><th style="text-align:right">ERA5</th></tr></thead>
+          <tbody>
+            <tr><td>Anémomètre de Nabeul</td><td class="n"><b>8,7 km/h</b></td><td class="n">9,3 km/h</td></tr>
+            <tr><td>Anémomètre de Tunis-Carthage</td><td class="n"><b>9,7 km/h</b></td><td class="n">10,1 km/h</td></tr>
+            <tr><td>Anémomètre de Zaghouan</td><td class="n">8,2 km/h</td><td class="n"><b>7,8 km/h</b></td></tr>
+            <tr><td>Ballons-sondes de Tunis, 0 à 250 m</td><td class="n"><b>8,0 km/h</b></td><td class="n">8,3 km/h</td></tr>
+          </tbody></table></div>
+        <p class="muted" style="margin-bottom:0;font-size:14px">ATOM Wind fait mieux que la réanalyse ERA5 à Nabeul, à Tunis-Carthage et sur les ballons-sondes, et un peu moins bien à Zaghouan, en bord de zone. Une mesure ponctuelle et une valeur calculée sur 100 m diffèrent toujours de quelques km/h.</p>
+      </div>
+    </div>
+  </div>
+</section>
+</main>
+
+<aside class="sheet card" id="sheet" hidden></aside>
+<div class="tour" id="tour" hidden></div>
+<div class="tour" id="authm" hidden></div>
+<div class="toast" id="toast" hidden></div>
+<div class="gtip" id="gtip" hidden></div>
+<div class="palette" id="palette" hidden></div>
+<button class="nesma-btn" id="nesma-btn" hidden aria-label="Demander à Nesma"><span class="mini" id="nesma-mini"></span>Demande à Nesma</button>
+<aside class="nesma card" id="nesma" hidden aria-label="Nesma, l'assistante du vent">
+  <div class="stage"><div class="who">Nesma<small>La brise qui te conseille</small></div><button class="x close" id="nesma-x" aria-label="Fermer">×</button><div class="thought" id="nesma-thought"><span class="ti">Je pense…</span>Pose-moi une question sur ta journée !</div><svg class="face" id="nesma-face" viewBox="0 0 200 200" aria-hidden="true"></svg></div>
+  <div class="chat" id="nesma-chat" aria-live="polite"></div>
+  <div class="sugg" id="nesma-sugg"></div>
+  <form class="nform" id="nesma-form"><label for="nesma-in" style="position:absolute;left:-9999px">Ta question</label><input id="nesma-in" placeholder="Ex. : je veux porter une jupe cet après-midi" autocomplete="off"><button class="btn primary" type="submit">Envoyer</button></form>
+</aside>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script>
+(() => {
+"use strict";
+// ---------------- géographie (zone réelle du Grand Tunis, km) ----------------
+const LAT0 = 36.395, LON0 = 10.04, KX = 89.42, KY = 110.97, W = 68, H = 56;
+const xy = (lat, lon) => [(lon - LON0) * KX, (lat - LAT0) * KY];
+const poly = pts => pts.map(([a, b]) => xy(a, b));
+const GULF = poly([[36.95,10.29],[36.90,10.29],[36.878,10.325],[36.85,10.33],[36.818,10.305],[36.79,10.29],[36.765,10.285],[36.735,10.33],[36.715,10.40],[36.72,10.46],[36.745,10.52],[36.80,10.555],[36.845,10.585],[36.90,10.625],[36.95,10.625]]);
+const HAMM = poly([[36.36,10.60],[36.40,10.61],[36.43,10.68],[36.45,10.745],[36.48,10.79],[36.51,10.84],[36.36,10.84]]);
+const LAKES = [[...xy(36.81,10.235), 4.6, 2.2], [...xy(36.775,10.14), 4.0, 2.4]];
+const URB = [[...xy(36.80,10.18),6],[...xy(36.75,10.23),3],[...xy(36.87,10.31),2.5],[...xy(36.455,10.72),2],[...xy(36.725,10.34),1.6]];
+const HILLS = [[36.61,10.33,720,2.6],[36.705,10.375,520,1.9],[36.36,10.10,950,6.5],[36.76,10.64,480,5],[36.58,10.43,240,4],[36.86,10.12,230,4],[36.50,10.22,260,5]].map(([a,b,h,s]) => [...xy(a,b),h,s]);
+function inPoly(x, y, P){ let c=false; for(let i=0,j=P.length-1;i<P.length;j=i++){ const [xi,yi]=P[i],[xj,yj]=P[j]; if(((yi>y)!==(yj>y)) && x < (xj-xi)*(y-yi)/(yj-yi)+xi) c=!c; } return c; }
+function waterType(x, y){ if(inPoly(x,y,GULF)||inPoly(x,y,HAMM)) return 1; for(const [cx,cy,rx,ry] of LAKES){ const dx=(x-cx)/rx, dy=(y-cy)/ry; if(dx*dx+dy*dy<1) return 2; } return 0; }
+function elevRaw(x, y){ let h = 18 + 6*Math.sin(x*.31)*Math.cos(y*.27) + 4*Math.sin(x*.9+y*.4); for(const [cx,cy,hh,s] of HILLS){ const d2=(x-cx)**2+(y-cy)**2; h += hh*Math.exp(-d2/(2*s*s)); } return Math.max(2,h); }
+function urbanAt(x,y){ for(const [cx,cy,r] of URB) if((x-cx)**2+(y-cy)**2<r*r) return true; return false; }
+
+// grille à 0,5 km
+const G = 2, NX = W*G, NY = H*G;
+const AIRP = xy(36.851,10.227); // aéroport de Tunis-Carthage : terrain dégagé (pistes, herbe)
+const elev = new Float32Array(NX*NY), wat = new Uint8Array(NX*NY), z0 = new Float32Array(NX*NY), sdist = new Float32Array(NX*NY);
+for(let j=0;j<NY;j++) for(let i=0;i<NX;i++){ const x=(i+.5)/G, y=(j+.5)/G, k=j*NX+i, w=waterType(x,y); wat[k]=w; elev[k]= w ? 0 : elevRaw(x,y); z0[k]= w===1 ? .0002 : w===2 ? .001 : Math.hypot(x-AIRP[0],y-AIRP[1])<1.8 ? .03 : urbanAt(x,y) ? .8 : elev[k]>300 ? .4 : .08; }
+// distance signée à la côte marine (positive dans les terres) : deux passes de chanfrein
+(function(){ const INF=1e9, dl=new Float32Array(NX*NY).fill(INF), ds=new Float32Array(NX*NY).fill(INF);
+  for(let k=0;k<NX*NY;k++){ if(wat[k]===1) dl[k]=0; else ds[k]=0; }
+  for(const d of [dl,ds]){ const s=1/G, s2=s*1.414;
+    for(let j=0;j<NY;j++) for(let i=0;i<NX;i++){ const k=j*NX+i; if(i>0) d[k]=Math.min(d[k],d[k-1]+s); if(j>0){ d[k]=Math.min(d[k],d[k-NX]+s); if(i>0) d[k]=Math.min(d[k],d[k-NX-1]+s2); if(i<NX-1) d[k]=Math.min(d[k],d[k-NX+1]+s2);} }
+    for(let j=NY-1;j>=0;j--) for(let i=NX-1;i>=0;i--){ const k=j*NX+i; if(i<NX-1) d[k]=Math.min(d[k],d[k+1]+s); if(j<NY-1){ d[k]=Math.min(d[k],d[k+NX]+s); if(i<NX-1) d[k]=Math.min(d[k],d[k+NX+1]+s2); if(i>0) d[k]=Math.min(d[k],d[k+NX-1]+s2);} } }
+  for(let k=0;k<NX*NY;k++) sdist[k] = wat[k]===1 ? -ds[k] : dl[k]; })();
+const gx = new Float32Array(NX*NY), gy = new Float32Array(NX*NY), smooth = new Float32Array(NX*NY);
+for(let j=0;j<NY;j++) for(let i=0;i<NX;i++){ const k=j*NX+i, il=Math.max(0,i-1), ir=Math.min(NX-1,i+1), jd=Math.max(0,j-1), ju=Math.min(NY-1,j+1);
+  let a=sdist[j*NX+ir]-sdist[j*NX+il], b=sdist[ju*NX+i]-sdist[jd*NX+i]; const n=Math.hypot(a,b)||1; gx[k]=a/n; gy[k]=b/n;
+  let s=0,c=0; for(let dj=-6;dj<=6;dj+=2) for(let di=-6;di<=6;di+=2){ const ii=Math.min(NX-1,Math.max(0,i+di)), jj=Math.min(NY-1,Math.max(0,j+dj)); s+=elev[jj*NX+ii]; c++; } smooth[k]=s/c; }
+const idx = (x,y) => Math.min(NY-1,Math.max(0,Math.floor(y*G)))*NX + Math.min(NX-1,Math.max(0,Math.floor(x*G)));
+
+// ---------------- modèle de vent d'exemple (journée d'été avec brise de mer) ----------------
+function synoptic(h){ const day=Math.max(0, Math.sin((h-8)/12*Math.PI)), th = (305 + 40*day) * Math.PI/180, S = 3.0 + 2.2*day; return [-S*Math.sin(th), -S*Math.cos(th)]; }
+function breeze(h){ if(h>=9 && h<=20) return 5.2*Math.sin((h-9)/11*Math.PI); if(h>=22 || h<=6) return -0.9; return 0; }
+function wind(x, y, z, h){
+  const k = idx(x,y), [bu,bv] = synoptic(h), B = breeze(h), sd = sdist[k];
+  const reach = sd > 0 ? Math.exp(-sd/13) : Math.exp(sd/9);
+  const fz = Math.exp(-z/380), ret = -0.35 * smoothstep(350, 900, z);
+  const br = B * reach * (fz + ret);
+  const zz = Math.max(z, 1), zr = z0[k], low = Math.log(Math.min(zz,150)/zr)/Math.log(10/zr);
+  const sp = 1 + Math.max(-.25, Math.min(.45, .0016*(elev[k]-smooth[k]))) * Math.exp(-z/400);
+  let u = (bu*low + br*gx[k]*Math.max(.6,low*.8)) * sp, v = (bv*low + br*gy[k]*Math.max(.6,low*.8)) * sp;
+  const a = smoothstep(150, 1000, z), veer = 20*Math.PI/180*a, gu = bu*2.4, gv = bv*2.4;
+  const ru = gu*Math.cos(veer) - gv*Math.sin(veer), rv = gu*Math.sin(veer) + gv*Math.cos(veer);
+  u = (1-a)*u + a*(ru + br*gx[k]); v = (1-a)*v + a*(rv + br*gy[k]);
+  return [u, v];
+}
+function smoothstep(a,b,x){ const t=Math.min(1,Math.max(0,(x-a)/(b-a))); return t*t*(3-2*t); }
+function gustF(x,y,z){ const zr=z0[idx(x,y)], g0 = zr>.5 ? 1.65 : zr>.05 ? 1.45 : 1.22; return 1 + (g0-1)*Math.exp(-z/300); }
+
+// fiabilité
+const STATIONS = [{n:"Tunis-Carthage", p:xy(36.8504,10.2156)},{n:"Zaghouan", p:xy(36.4333,10.0833)},{n:"Nabeul", p:xy(36.45,10.7333)}];
+const ANEO = (() => { const pts=[]; const cand=[]; for(let j=2;j<NY;j+=4) for(let i=2;i<NX;i+=4){ const k=j*NX+i; if(!wat[k] && elev[k]<650) cand.push([(i+.5)/G,(j+.5)/G]); }
+  const all = STATIONS.map(s=>s.p); for(let n=0;n<36;n++){ let best=null, bd=-1; for(const c of cand){ let d=1e9; for(const p of all.concat(pts)) d=Math.min(d,Math.hypot(c[0]-p[0],c[1]-p[1])); if(d>bd){bd=d; best=c;} } pts.push(best); } return pts; })();
+let relMode = "reel";
+function sigma(x,y,mode=relMode){ let d=1e9, who=null; for(const s of STATIONS){ const dd=Math.hypot(x-s.p[0],y-s.p[1]); if(dd<d){d=dd; who=s.n;} }
+  if(mode==="aneo"){ for(const p of ANEO){ const dd=Math.hypot(x-p[0],y-p[1]); if(dd<d){d=dd; who="un capteur ANEO";} } return {s:.35+.75*(1-Math.exp(-d/3)), d, who}; }
+  return {s:.45+1.9*(1-Math.exp(-d/11)), d, who}; }
+const relClass = s => s < .9 ? ["good","bonne"] : s < 1.5 ? ["mid","moyenne"] : ["bad","faible"];
+
+// ---------------- unités et mots simples ----------------
+let unit = "kmh";
+const kmh = ms => ms*3.6;
+const fmtSpeed = ms => unit==="kmh" ? `${Math.round(kmh(ms))} km/h` : `${(ms).toFixed(1).replace(".",",")} m/s`;
+const DIRS = ["du nord","du nord-est","de l'est","du sud-est","du sud","du sud-ouest","de l'ouest","du nord-ouest"];
+const fromDeg = (u,v) => (Math.atan2(-u,-v)*180/Math.PI + 360) % 360;
+const dirName = (u,v) => DIRS[Math.round(fromDeg(u,v)/45)%8];
+function beaufort(k){ const T=[[2,"Calme : la fumée monte tout droit."],[6,"Très léger : la fumée penche un peu."],[12,"Léger : on sent le vent sur le visage."],[20,"Petite brise : les feuilles bougent sans arrêt."],[29,"Jolie brise : la poussière s'envole, les petites branches bougent."],[39,"Bonne brise : les petits arbres se balancent."],[50,"Vent frais : les grosses branches bougent."],[62,"Grand frais : les arbres entiers bougent, marcher face au vent est pénible."],[75,"Coup de vent : des branches cassent."],[999,"Fort coup de vent : dégâts possibles."]]; return T.find(t=>k<t[0])[1]; }
+const COL = [[0,[191,227,242]],[8,[89,195,160]],[16,[182,216,74]],[24,[244,196,48]],[34,[240,138,44]],[46,[224,65,75]],[62,[167,58,158]]];
+function speedColor(k){ for(let i=1;i<COL.length;i++) if(k<=COL[i][0]){ const [a,ca]=COL[i-1],[b,cb]=COL[i], t=(k-a)/(b-a); return ca.map((c,j)=>Math.round(c+(cb[j]-c)*t)); } return COL[COL.length-1][1]; }
+const arrowSvg = (deg,size=26,color="currentColor") => `<svg class="windarrow" width="${size}" height="${size}" viewBox="0 0 24 24" style="transform:rotate(${deg}deg)" aria-hidden="true"><path d="M12 3l6 9h-4v9h-4v-9H6z" fill="${color}"/></svg>`;
+const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+
+// ---------------- activités : l'entrée de l'utilisateur ----------------
+const ICONS = {
+  spray:'<path d="M4 20h7M7 20V9h4l3-3h5M14 6v5M17 13c0 1.5-1 2-1 3M20 12c0 1.5-1 2-1 3M17 18c0 1.5-1 2-1 3" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/>',
+  irr:'<path d="M12 3c3 4 5 7 5 10a5 5 0 0 1-10 0c0-3 2-6 5-10z" stroke="currentColor" stroke-width="2" fill="none"/>',
+  crane:'<path d="M5 21V4M5 4h15M5 4l4 4M18 4v6M16 10h4v3h-4zM3 21h6M5 9l4-5" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/>',
+  drone:'<path d="M9 12h6M12 10v4M4 7h5M15 7h5M6.5 7v3l3 2M17.5 7v3l-3 2" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/>',
+  boat:'<path d="M3 16h18l-3 4H6zM12 4v12M12 4l6 9h-6" stroke="currentColor" stroke-width="2" fill="none" stroke-linejoin="round"/>',
+  turbine:'<path d="M12 10v11M9 21h6M12 10L12 3M12 10l6 3.5M12 10l-6 3.5" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/><circle cx="12" cy="10" r="1.6" fill="currentColor"/>'
+};
+const ACTS = {
+  spray:{n:"Traiter mes cultures", z:10, kind:"speed", rule:k => k<3 ? ["warn","Attention : air trop calme"] : k<=15 ? ["go","Oui, vous pouvez traiter"] : k<=19 ? ["warn","Attention : le produit peut dériver"] : ["stop","Non, vent trop fort pour traiter"],
+    todo:{go:"Traitez maintenant ; gardez une bande sans traitement près des voisins et des points d'eau.", warn:"Utilisez des buses anti-dérive et baissez la rampe, ou attendez le prochain créneau vert.", stop:"Reportez le traitement : le produit partirait chez les voisins."}},
+  irr:{n:"Arroser par aspersion", z:10, kind:"speed", rule:k => k<=15 ? ["go","Oui, bon moment pour arroser"] : k<=25 ? ["warn","Attention : l'eau est emportée en partie"] : ["stop","Non, trop de vent pour l'aspersion"],
+    todo:{go:"Arrosez maintenant : l'eau tombera là où il faut.", warn:"Préférez le goutte-à-goutte ou attendez le soir, quand le vent baisse.", stop:"Attendez : une grande partie de l'eau serait perdue."}},
+  crane:{n:"Lever avec une grue", z:45, kind:"gust", rule:k => k<50 ? ["go","Oui, levage autorisé"] : k<72 ? ["warn","Attention : rafales fortes à 45 m"] : ["stop","Arrêt : rafales au-dessus de la limite"],
+    todo:{go:"Levage possible. Restez attentif aux annonces de rafales.", warn:"Pas de charges à grande surface (panneaux, coffrages). Préparez l'arrêt.", stop:"Arrêtez le levage et mettez la flèche en girouette."}},
+  drone:{n:"Faire voler un drone", z:50, kind:"gust", rule:k => k<20 ? ["go","Oui, vol possible"] : k<30 ? ["warn","Attention : rafales gênantes"] : ["stop","Non, vol déconseillé"],
+    todo:{go:"Vol possible. Gardez une réserve de batterie pour le retour face au vent.", warn:"Volez bas et près de vous ; le retour face au vent consommera plus.", stop:"Ne décollez pas : le drone risque de dériver."}},
+  boat:{n:"Sortir en petit bateau", z:10, kind:"gust", rule:k => k<20 ? ["go","Oui, mer favorable"] : k<30 ? ["warn","Attention : mer agitée possible"] : ["stop","Non, restez au port"],
+    todo:{go:"Sortie possible. Prévenez quelqu'un de votre heure de retour.", warn:"Restez près de la côte et rentrez avant le renforcement du vent.", stop:"Restez au port : vent et vagues trop forts pour un petit bateau."}},
+  turbine:{n:"Produire avec une éolienne", z:80, kind:"power", rule:k => k<11 ? ["info","Production très faible : vent trop faible"] : k<90 ? ["go","Bonne production"] : ["stop","Arrêt de sécurité : vent trop fort"],
+    todo:{go:"Bonne période pour produire ; reportez la maintenance.", info:"Bon moment pour la maintenance : l'éolienne produit peu.", stop:"L'éolienne se met en sécurité automatiquement."}}
+};
+const PLACES = [["Tunis-Carthage (aéroport)",36.8504,10.2156],["Tunis centre",36.80,10.18],["La Marsa",36.878,10.325],["Ben Arous",36.75,10.23],["Hammam-Lif",36.728,10.34],["Mornag (vignes)",36.68,10.29],["Djebel Ressas",36.61,10.33],["Soliman",36.69,10.49],["Grombalia (agrumes)",36.60,10.50],["Korbous",36.82,10.57],["Nabeul",36.455,10.715],["Zaghouan (station)",36.4333,10.0833],["Mohamedia",36.68,10.16]];
+
+const state = { hour:15, act:"spray", pin:xy(36.68,10.29), pinName:"Mornag (vignes)" };
+function evalAt(actKey, x, y, h){
+  const a = ACTS[actKey], [u,v] = wind(x,y,a.z,h), sp = Math.hypot(u,v), g = sp*gustF(x,y,a.z);
+  const val = a.kind==="gust" ? kmh(g) : kmh(sp), [cls,title] = a.rule(val);
+  return {u,v,sp,g,val,cls,title};
+}
+
+// ---------------- carte 2D animée ----------------
+const MAPS=[];
+function makeMap(canvasId, boxId, opts){
+  const cv = document.getElementById(canvasId), box = document.getElementById(boxId), ctx = cv.getContext("2d");
+  const base = document.createElement("canvas"), trail = document.createElement("canvas");
+  let w=0, h=0, dpr=1, parts=[], hover=null; const ripples=[];
+  function size(){ dpr = Math.min(2, window.devicePixelRatio||1); w = box.clientWidth; h = Math.round(w*H/W); if(!w) return; cv.width=base.width=trail.width=w*dpr; cv.height=base.height=trail.height=h*dpr; cv.style.height=h+"px"; drawBase(); parts = Array.from({length: Math.round(1300*w/700)}, () => newPart()); }
+  const toPx = (x,y) => [x/W*w*dpr, (1-y/H)*h*dpr];
+  function newPart(){ return {x:Math.random()*W, y:Math.random()*H, age:Math.random()*60|0}; }
+  function drawBase(){
+    const b = base.getContext("2d"), RW=272, RH=224, img=b.createImageData(RW,RH);
+    const hex = s => { const m = s.match(/#(..)(..)(..)/); return m ? [1,2,3].map(i=>parseInt(m[i],16)) : [128,128,128]; };
+    const lo=hex(css("--land-lo")), hi=hex(css("--land-hi")), wa=hex(css("--water")), la=hex(css("--lake")), ur=hex(css("--urban"));
+    for(let j=0;j<RH;j++) for(let i=0;i<RW;i++){ const x=(i+.5)/RW*W, y=(1-(j+.5)/RH)*H, k=idx(x,y); let c;
+      if(wat[k]===1) c=wa; else if(wat[k]===2) c=la; else { const t=Math.min(1,elev[k]/700); c=lo.map((q,n)=>q+(hi[n]-q)*Math.sqrt(t)); if(z0[k]>.7) c=c.map((q,n)=>q*.5+ur[n]*.5);
+        const kE=idx(x+.5,y), kN=idx(x,y+.5), sh = Math.max(-.22,Math.min(.22,((elev[kE]-elev[k]) + (elev[kN]-elev[k]))*.0011)); c=c.map(q=>Math.min(255,q*(1-sh))); }
+      if(opts.rel){ const s=sigma(x,y).s, t=Math.min(1,Math.max(0,(s-.45)/1.6)); const col = t<.3 ? [31,157,85] : t<.6 ? [217,138,0] : [210,58,58]; c=c.map((q,n)=>q*(.55+.2*t)+col[n]*(.45-.2*t)); if(t>.6) c=c.map(q=>q+(255-q)*.35*(t-.6)/.4); }
+      const o=(j*RW+i)*4; img.data[o]=c[0]; img.data[o+1]=c[1]; img.data[o+2]=c[2]; img.data[o+3]=255; }
+    const tmp=document.createElement("canvas"); tmp.width=RW; tmp.height=RH; tmp.getContext("2d").putImageData(img,0,0);
+    b.imageSmoothingEnabled=true; b.drawImage(tmp,0,0,base.width,base.height);
+  }
+  function overlay(){
+    ctx.save(); ctx.font = `700 ${12*dpr}px ${css("--f-body")}`; ctx.textAlign="center";
+    for(const s of STATIONS){ const [px,py]=toPx(...s.p); ctx.fillStyle=css("--info"); ctx.beginPath(); ctx.arc(px,py,6*dpr,0,7); ctx.fill(); ctx.strokeStyle="#fff"; ctx.lineWidth=2*dpr; ctx.stroke(); }
+    if(opts.rel && relMode==="aneo") for(const p of ANEO){ const [px,py]=toPx(...p); ctx.fillStyle=css("--sand"); ctx.beginPath(); ctx.arc(px,py,4*dpr,0,7); ctx.fill(); }
+    if(opts.marks) for(const m of opts.marks()){ const [px,py]=toPx(...m.p), r=(m.r||2.2)/W*w*dpr, col=css(m.cls==="stop"?"--stop":m.cls==="warn"?"--warn":m.cls==="go"?"--go":"--info"), puls=m.sel?1+.18*Math.sin(performance.now()/220):1;
+      ctx.globalAlpha=.25; ctx.fillStyle=col; ctx.beginPath(); ctx.arc(px,py,r*puls,0,7); ctx.fill(); ctx.globalAlpha=1; ctx.strokeStyle=col; ctx.lineWidth=(m.sel?4:2.5)*dpr; ctx.beginPath(); ctx.arc(px,py,r*puls,0,7); ctx.stroke();
+      if(m.label){ ctx.fillStyle=css("--ink"); ctx.fillText(m.label,px,py-r-6*dpr); } }
+    const pinP = typeof opts.pin==="function" ? opts.pin() : opts.pin ? state.pin : null;
+    if(pinP){ const [px,py]=toPx(...pinP), t=performance.now()/600; ctx.strokeStyle=css("--accent"); ctx.lineWidth=2*dpr; ctx.globalAlpha=.6; ctx.beginPath(); ctx.arc(px,py,(10+6*(t%1))*dpr,0,7); ctx.stroke(); ctx.globalAlpha=1;
+      ctx.fillStyle=css("--accent"); ctx.beginPath(); ctx.moveTo(px,py); ctx.arc(px,py-16*dpr,8*dpr,Math.PI*.8,Math.PI*.2,false); ctx.closePath(); ctx.fill(); ctx.fillStyle="#fff"; ctx.beginPath(); ctx.arc(px,py-16*dpr,3.2*dpr,0,7); ctx.fill(); }
+    if(hover){ const [px,py]=toPx(...hover); ctx.strokeStyle=css("--ink"); ctx.globalAlpha=.55; ctx.lineWidth=1*dpr; ctx.setLineDash([4*dpr,4*dpr]); ctx.beginPath(); ctx.moveTo(px,0); ctx.lineTo(px,cv.height); ctx.moveTo(0,py); ctx.lineTo(cv.width,py); ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha=1; ctx.lineWidth=2.5*dpr; ctx.strokeStyle="#fff"; ctx.beginPath(); ctx.arc(px,py,9*dpr,0,7); ctx.stroke(); ctx.strokeStyle=css("--accent"); ctx.lineWidth=1.5*dpr; ctx.beginPath(); ctx.arc(px,py,9*dpr,0,7); ctx.stroke(); }
+    const now=performance.now(); for(let i=ripples.length-1;i>=0;i--){ const q=ripples[i], a=(now-q.t)/700; if(a>1){ ripples.splice(i,1); continue; } const [px,py]=toPx(...q.p); ctx.globalAlpha=1-a; ctx.strokeStyle=css("--accent"); ctx.lineWidth=3*dpr; ctx.beginPath(); ctx.arc(px,py,(6+38*a)*dpr,0,7); ctx.stroke(); ctx.globalAlpha=1; }
+    ctx.restore();
+  }
+  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  function frame(){
+    if(!w || !box.offsetParent){ requestAnimationFrame(frame); return; }
+    const tc = trail.getContext("2d"), z = opts.z();
+    tc.globalCompositeOperation="destination-out"; tc.fillStyle="rgba(0,0,0,.07)"; tc.fillRect(0,0,trail.width,trail.height); tc.globalCompositeOperation="source-over"; tc.lineWidth=2.2*dpr; tc.lineCap="round";
+    if(!reduce) for(const p of parts){ const [u,v]=wind(p.x,p.y,z,state.hour), sp=Math.hypot(u,v), k=kmh(sp), dt=.055;
+      const nx=p.x+u*dt, ny=p.y+v*dt, [x1,y1]=toPx(p.x,p.y), [x2,y2]=toPx(nx,ny), c=speedColor(k); tc.strokeStyle=`rgb(${c[0]},${c[1]},${c[2]})`; tc.beginPath(); tc.moveTo(x1,y1); tc.lineTo(x2,y2); tc.stroke();
+      p.x=nx; p.y=ny; if(++p.age>80 || p.x<0||p.x>W||p.y<0||p.y>H) Object.assign(p,newPart(),{age:0}); }
+    else { tc.clearRect(0,0,trail.width,trail.height); for(let y=2;y<H;y+=4) for(let x=2;x<W;x+=4){ const [u,v]=wind(x,y,z,state.hour), c=speedColor(kmh(Math.hypot(u,v))), [x1,y1]=toPx(x,y), [x2,y2]=toPx(x+u*.5,y+v*.5); tc.strokeStyle=`rgb(${c})`; tc.lineWidth=2*dpr; tc.beginPath(); tc.moveTo(x1,y1); tc.lineTo(x2,y2); tc.stroke(); } }
+    ctx.clearRect(0,0,cv.width,cv.height); ctx.drawImage(base,0,0); ctx.drawImage(trail,0,0); overlay();
+    requestAnimationFrame(frame);
+  }
+  box.addEventListener("click", e => { const r=cv.getBoundingClientRect(), x=(e.clientX-r.left)/r.width*W, y=(1-(e.clientY-r.top)/r.height)*H; ripples.push({p:[x,y], t:performance.now()}); opts.onClick && opts.onClick(x,y); });
+  box.addEventListener("mousemove", e => { const r=cv.getBoundingClientRect(), x=(e.clientX-r.left)/r.width*W, y=(1-(e.clientY-r.top)/r.height)*H; if(x<0||x>W||y<0||y>H) return; hover=[x,y];
+    const z=opts.z(), k=idx(x,y), [u,v]=wind(x,y,z,state.hour), sp=Math.hypot(u,v), [rc,rl]=relClass(sigma(x,y).s), deg=(fromDeg(u,v)+180)%360;
+    showTip(`<div style="display:flex;gap:8px;align-items:center"><b>${fmtSpeed(sp)}</b>${arrowSvg(deg,18,"currentColor")}</div>Vent ${dirName(u,v)}, à ${z} m du sol<br><span class="sub">${wat[k]===1?"En mer":wat[k]===2?"Lac ou sebkha":`Sol à ${Math.round(elev[k])} m`} · fiabilité ${rl} · près de ${nearestName([x,y])}</span>`, e.clientX, e.clientY, "map"); });
+  box.addEventListener("mouseleave", () => { hover=null; hideTip("map"); });
+  new ResizeObserver(size).observe(box);
+  matchMedia("(prefers-color-scheme: dark)").addEventListener("change", drawBase);
+  requestAnimationFrame(frame);
+  const api = { redraw: drawBase }; MAPS.push(api); return api;
+}
+
+// ---------------- MON VENT ----------------
+const townSel = document.getElementById("town");
+townSel.innerHTML = `<option value="">Choisir ma ville ou mon lieu…</option>` + PLACES.map((p,i)=>`<option value="${i}">${p[0]}</option>`).join("") + `<option value="pin" hidden>Ma position sur la carte</option>`;
+townSel.value = "5";
+townSel.addEventListener("change", () => { if(townSel.value===""||townSel.value==="pin") return; const p=PLACES[+townSel.value]; state.pin=xy(p[1],p[2]); state.pinName=p[0]; renderAnswer(); });
+const map1 = makeMap("c1","map1",{ pin:true, z:()=>ACTS[state.act].z, onClick:(x,y) => { const k=idx(x,y); state.pin=[x,y]; let near=PLACES.map(p=>[p[0],Math.hypot(x-xy(p[1],p[2])[0],y-xy(p[1],p[2])[1])]).sort((a,b)=>a[1]-b[1])[0];
+  state.pinName = wat[k]===1 ? `En mer, à ${Math.round(near[1])} km de ${near[0].split(" (")[0]}` : near[1]<2 ? near[0] : `À ${Math.round(near[1])} km de ${near[0].split(" (")[0]}`; townSel.value="pin"; townSel.querySelector('[value="pin"]').hidden=false; document.getElementById("hint1").textContent="Position placée. Touchez ailleurs pour la déplacer."; renderAnswer(); } });
+document.getElementById("acts").innerHTML = Object.entries(ACTS).map(([k,a]) => `<button class="act" data-a="${k}" aria-pressed="${k===state.act}"><svg width="28" height="28" viewBox="0 0 24 24" aria-hidden="true">${ICONS[k]}</svg>${a.n}</button>`).join("");
+document.getElementById("acts").addEventListener("click", e => { const b=e.target.closest(".act"); if(!b) return; state.act=b.dataset.a; document.querySelectorAll(".act").forEach(x=>x.setAttribute("aria-pressed", x===b)); renderAnswer(); });
+
+const VERD_ICON = {go:'<path d="M5 12l5 5 9-10" stroke="#fff" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/>', warn:'<path d="M12 6v8M12 17.5v.5" stroke="#fff" stroke-width="3" stroke-linecap="round"/>', stop:'<path d="M7 7l10 10M17 7L7 17" stroke="#fff" stroke-width="3" stroke-linecap="round"/>', info:'<path d="M12 11v7M12 6.5v.5" stroke="#fff" stroke-width="3" stroke-linecap="round"/>'};
+function power(ms){ if(ms<3||ms>=25) return 0; if(ms>=12) return 2; return 2*(ms**3-27)/(1728-27); }
+let whyOpen=false;
+function renderAnswer(){
+  const a=ACTS[state.act], [x,y]=state.pin, r=evalAt(state.act,x,y,state.hour), rel=sigma(x,y), [rc,rl]=relClass(rel.s), deg=(fromDeg(r.u,r.v)+180)%360;
+  const extra = a.kind==="power" ? `<div class="fact"><div class="k">Production d'une éolienne de 2 MW</div><div class="v">${(power(r.sp)*1000).toFixed(0)} kW</div></div>` : `<div class="fact"><div class="k">Rafales à ${a.z} m</div><div class="v">${fmtSpeed(r.g)}</div></div>`;
+  document.getElementById("answer").innerHTML = `<div class="answer ${r.cls}" role="status" aria-live="polite">
+    <div class="verdict"><div class="badge-big"><svg width="28" height="28" viewBox="0 0 24 24">${VERD_ICON[r.cls]}</svg></div><div><div class="muted" style="font-size:14px;font-weight:700">${state.pinName} · ${state.hour} h · ${a.n.toLowerCase()}</div><h2>${r.title}</h2></div></div>
+    <p>${a.todo[r.cls]||a.todo.go}</p>
+    <div class="facts">
+      <div class="fact"><div class="k">Vent à ${a.z} m du sol</div><div class="v">${fmtSpeed(r.sp)}</div></div>
+      ${extra}
+      <div class="fact"><div class="k">Il vient</div><div class="v" style="font-size:17px">${arrowSvg(deg,22,css("--accent"))}${dirName(r.u,r.v)}</div></div>
+      <div class="fact"><div class="k">Fiabilité <span class="tip" tabindex="0" data-tip="Valeur calculée par ATOM Wind à partir de ${STATIONS.length} stations et de la météo de grande échelle. La station la plus proche (${rel.who}) est à ${Math.round(rel.d)} km. Erreur probable : ± ${Math.round(kmh(rel.s))} km/h.">?</span></div><div class="v" style="font-size:17px"><span class="pill ${rc}">${rl}</span></div></div>
+    </div>
+    <p class="muted" style="font-size:15px">${beaufort(kmh(r.sp))}</p>
+    <button class="btn whybtn" id="whybtn" aria-expanded="${whyOpen}">Pourquoi ce vent ?</button>
+    <div id="whybox" ${whyOpen?"":"hidden"}>${explainHtml(x,y,a.z,state.hour)}</div>
+  </div>`;
+  document.getElementById("whybtn").onclick=()=>{ whyOpen=!whyOpen; renderAnswer(); };
+  updateSound();
+  renderDay();
+}
+function renderDay(){
+  const [x,y]=state.pin, a=ACTS[state.act], rows=[];
+  for(let h=0;h<24;h++) rows.push(evalAt(state.act,x,y,h));
+  const mx = Math.max(...rows.map(r=>r.val), 20);
+  document.getElementById("day1").innerHTML = rows.map((r,h)=>`<button class="${r.cls}${h===state.hour?" now":""}" style="height:${Math.round(18+70*r.val/mx)}px" aria-label="${h} h : ${r.title}, ${Math.round(r.val)} km/h" data-h="<b>${h} h</b><br>${r.title}<br><span class=&quot;sub&quot;>${fmtSpeed(r.val/3.6)}</span>">​</button>`).join("");
+  document.getElementById("axis1").innerHTML = Array.from({length:24},(_,h)=>`<span>${h%3===0?h:""}</span>`).join("");
+  document.querySelectorAll("#day1 button").forEach((b,h)=>b.onclick=()=>setHour(h));
+  const good=[]; let s=null; rows.forEach((r,h)=>{ if(r.cls==="go"){ if(s===null) s=h; } else if(s!==null){ good.push([s,h]); s=null; } }); if(s!==null) good.push([s,24]);
+  document.getElementById("win1").innerHTML = good.length ? `<span style="font-weight:700">Meilleurs créneaux :</span>` + good.map(([a,b])=>`<span class="pill good">${a} h – ${b} h</span>`).join("") : `<span class="pill bad">Aucun créneau favorable aujourd'hui</span>`;
+}
+
+// ---------------- heure, lecture, unités ----------------
+const hourIn=document.getElementById("hour"), hourTxt=document.getElementById("hourtxt");
+function setHour(h){ state.hour=h; hourIn.value=h; hourTxt.textContent=`${h} h`; const sun=document.getElementById("sun"); if(sun){ sun.style.left=`${h/23*100}%`; sun.className=`sun ${h>=6&&h<=19?"day":"night"}`; } renderAnswer(); renderAlerts(); renderEol(); renderTB(); renderMyT(); renderAgri(); if(lastCut) renderCut(...lastCut); animateKpis("kpis"); animateKpis("tbkpis"); }
+hourIn.addEventListener("input", () => setHour(+hourIn.value));
+let playT=null; document.getElementById("play").onclick = e => { if(playT){ clearInterval(playT); playT=null; e.target.textContent="Rejouer la journée"; return; } e.target.textContent="Pause"; let h=0; setHour(0); playT=setInterval(()=>{ h=(h+1)%24; setHour(h); if(h===23){ clearInterval(playT); playT=null; e.target.textContent="Rejouer la journée"; } }, 700); };
+function setUnit(u){ unit=u; document.getElementById("u-kmh").setAttribute("aria-pressed",u==="kmh"); document.getElementById("u-ms").setAttribute("aria-pressed",u==="ms"); renderAnswer(); renderAlerts(); renderEol(); renderTB(); renderMyT(); }
+document.getElementById("u-kmh").onclick=()=>setUnit("kmh"); document.getElementById("u-ms").onclick=()=>setUnit("ms");
+
+// ---------------- ALERTES ----------------
+const CRANES = [{n:"Grue G1, chantier de Ben Arous", p:xy(36.75,10.23)},{n:"Grue G2, Les Berges du Lac", p:xy(36.835,10.27)}];
+let ALERTS=[], selAlert=-1, MY=[];
+try{ MY=JSON.parse(localStorage.getItem("aw-alertes")||"[]"); if(!Array.isArray(MY)) MY=[]; }catch(e){ MY=[]; }
+const saveMy=()=>{ try{ localStorage.setItem("aw-alertes",JSON.stringify(MY)); }catch(e){} };
+const LV={stop:"Danger",warn:"Attention",info:"Information",go:"Tout va bien"}, PILL={stop:"bad",warn:"mid",info:"m",go:"good"};
+function buildAlerts(){
+  const L=[];
+  for(const c of CRANES){ let peak=0, ph=0; for(let h=0;h<24;h++){ const r=evalAt("crane",...c.p,h); if(r.val>peak){peak=r.val; ph=h;} } const rule=ACTS.crane.rule(peak);
+    if(rule[0]!=="go") L.push({cls:rule[0], p:c.p, at:ph, t:rule[0]==="stop"?"Rafales dangereuses pour la grue":"Rafales fortes attendues sur la grue", where:c.n, when:`vers ${ph} h (rafales jusqu'à ${fmtSpeed(peak/3.6)} à 45 m)`, what:"La brise de mer de l'après-midi renforce le vent en hauteur.", todo: rule[0]==="stop" ? `Arrêter le levage avant ${ph-1} h et mettre la flèche en girouette.` : `Éviter les charges à grande surface entre ${ph-2} h et ${ph+2} h.`}); }
+  const mp=xy(36.68,10.29); let last=-1; for(let h=6;h<20;h++) if(evalAt("spray",...mp,h).cls==="go") last=h;
+  const sprayNow = evalAt("spray",...mp,state.hour);
+  L.push({cls: sprayNow.cls==="stop"?"warn":"info", p:mp, at:last+1, t:"Créneau de traitement des vignes", where:"Mornag", when: last>0 ? `favorable jusqu'à ${last+1} h environ` : "pas de créneau favorable aujourd'hui", what:"Au-delà, le vent dépasse 15 km/h et le produit peut dériver.", todo:"Traiter tôt le matin ; reprendre en fin de soirée si le vent retombe."});
+  const sea=xy(36.80,10.42), rb=evalAt("boat",...sea,state.hour);
+  if(rb.cls!=="go") L.push({cls:rb.cls, p:sea, r:5, at:state.hour, t:"Mer agitée dans le golfe de Tunis", where:"Golfe de Tunis, au large de Hammam-Lif", when:`maintenant (${state.hour} h) : rafales ${fmtSpeed(rb.g)}`, what:"Vent de mer établi, vagues courtes et creuses pour les petites embarcations.", todo:"Petits bateaux : rester au port ou près de la côte."});
+  L.push({cls:"info", p:STATIONS[2].p, t:"Station de Nabeul : vent mesuré plus faible que la zone", where:"Nabeul (station de l'INM)", when:"toute la journée", what:"L'anémomètre est abrité en ville ; il mesure moins que le vent réel alentour.", todo:"Aucune action : ATOM Wind tient compte de cet écart dans la fiabilité."});
+  for(const m of MY){ const pl=PLACES[m.place], p=xy(pl[1],pl[2]), a=ACTS[m.act]; let hit=null;
+    for(let k=0;k<24;k++){ const h=(state.hour+k)%24, r=evalAt(m.act,...p,h); if(r.cls==="stop"||r.cls==="warn"){ hit={h,r}; break; } }
+    m.res = hit ? `se déclenche à ${hit.h} h (${LV[hit.r.cls].toLowerCase()})` : "rien à signaler dans les 24 h";
+    if(hit) L.push({cls:hit.r.cls, p, at:hit.h, mine:true, t:`Votre alerte : ${a.n.toLowerCase()}`, where:pl[0], when:`à ${hit.h} h : ${hit.r.title.toLowerCase()} (${fmtSpeed(a.kind==="gust"?hit.r.g:hit.r.sp)})`, what:`Alerte créée par vous, envoi par ${m.chan}.`, todo:a.todo[hit.r.cls]||a.todo.go}); }
+  const ord={stop:0,warn:1,info:2,go:3}; L.sort((a,b)=>ord[a.cls]-ord[b.cls]);
+  return L;
+}
+function countdown(a){ if(a.at===undefined || a.at<0) return ""; const d=a.at-state.hour, col=css(a.cls==="stop"?"--stop":a.cls==="warn"?"--warn":"--info");
+  const txt = d>0 ? `Dans ${d} h` : d===0 ? "Maintenant" : "Passé"; const pct = d<=0 ? 100 : Math.max(5, 100-d/12*100);
+  return `<div class="cdown" style="color:${col}"><span>${txt}</span><div class="bar"><i style="width:${pct}%;background:${col}"></i></div></div>`; }
+function renderAlerts(){
+  ALERTS = buildAlerts(); if(selAlert>=ALERTS.length) selAlert=-1;
+  document.getElementById("alertlist").innerHTML = ALERTS.map((a,i)=>`<article class="alert ${a.cls}${i===selAlert?" sel":""}" data-i="${i}" tabindex="0"><div class="ic"><svg width="24" height="24" viewBox="0 0 24 24">${VERD_ICON[a.cls]}</svg></div><div><span class="pill ${PILL[a.cls]}">${LV[a.cls]}</span>${a.mine?' <span class="pill m">Mon alerte</span>':''}<h3 style="margin-top:6px">${a.t}</h3><dl><dt>Où</dt><dd>${a.where}</dd><dt>Quand</dt><dd>${a.when}</dd><dt>Pourquoi</dt><dd>${a.what}</dd></dl><div class="todo">Que faire : ${a.todo}</div>${a.cls!=="info"?countdown(a):""}</div></article>`).join("");
+  document.querySelectorAll("#alertlist .alert").forEach(el=>{ const f=()=>{ selAlert=+el.dataset.i; renderAlerts(); }; el.onclick=f; el.onkeydown=e=>{ if(e.key==="Enter") f(); }; });
+  const n=ALERTS.filter(a=>a.cls==="stop"||a.cls==="warn").length; const ac=document.getElementById("alertcount"); ac.textContent=n; ac.hidden=!n;
+  document.getElementById("al-mine").innerHTML = MY.length ? MY.map((m,i)=>`<div class="it"><span style="min-width:0"><b>${ACTS[m.act].n}</b> · ${PLACES[m.place][0]}<br><span class="muted" style="font-size:14px">${m.res||""} · par ${m.chan}</span></span><button class="x sm" data-del="${i}" aria-label="Supprimer cette alerte">×</button></div>`).join("") : `<span class="muted">Aucune alerte personnelle pour l'instant.</span>`;
+  document.querySelectorAll("[data-del]").forEach(b=>b.onclick=()=>{ MY.splice(+b.dataset.del,1); saveMy(); renderAlerts(); renderTB(); });
+}
+// ---------------- ÉOLIEN ----------------
+const TURB = [["E1",36.618,10.315],["E2",36.612,10.33],["E3",36.605,10.345]].map(([n,a,b])=>({n,p:xy(a,b)}));
+function renderEol(){
+  const now = TURB.map(t=>{ const [u,v]=wind(...t.p,80,state.hour), sp=Math.hypot(u,v); return {...t,u,v,sp,P:power(sp)}; });
+  const tot = now.reduce((s,t)=>s+t.P,0), day=Array.from({length:24},(_,h)=>TURB.reduce((s,t)=>s+power(Math.hypot(...wind(...t.p,80,h))),0)), energy=day.reduce((a,b)=>a+b,0);
+  const avg = now.reduce((s,t)=>s+t.sp,0)/3;
+  document.getElementById("kpis").innerHTML = [
+    ["Production maintenant", `${tot.toFixed(1).replace(".",",")} MW`, `${Math.round(tot/6*100)} % de la capacité`],
+    ["Vent au moyeu (80 m)", fmtSpeed(avg), `vient ${dirName(now[0].u,now[0].v)}`],
+    ["Énergie de la journée", `${energy.toFixed(0)} MWh`, `≈ ${Math.round(energy*1000/8)} foyers pour une journée`],
+    ["État du parc", "3 / 3 en service", "Aucune alerte d'arrêt"]].map(([k,v,s])=>`<div class="card kpi"><div class="k">${k}</div><div class="v">${v}</div><div class="s muted">${s}</div></div>`).join("");
+  const Wd=640,Hd=200,pl=36,pb=24, mx=6, X=h=>pl+h*(Wd-pl-8)/23, Y=p=>Hd-pb-p/mx*(Hd-pb-10);
+  const path = day.map((p,h)=>`${h?"L":"M"}${X(h).toFixed(1)},${Y(p).toFixed(1)}`).join("");
+  document.getElementById("prodchart").innerHTML = `<div class="tblwrap"><svg viewBox="0 0 ${Wd} ${Hd}" style="width:100%;min-width:320px;height:auto" role="img" aria-label="Production du parc heure par heure">
+    ${[0,2,4,6].map(p=>`<line x1="${pl}" x2="${Wd-8}" y1="${Y(p)}" y2="${Y(p)}" stroke="var(--line)"/><text x="${pl-6}" y="${Y(p)+4}" text-anchor="end">${p} MW</text>`).join("")}
+    ${[0,6,12,18,23].map(h=>`<text x="${X(h)}" y="${Hd-6}" text-anchor="middle">${h} h</text>`).join("")}
+    <path d="${path}L${X(23)},${Y(0)}L${X(0)},${Y(0)}Z" fill="var(--accent)" opacity=".18"/><path d="${path}" fill="none" stroke="var(--accent)" stroke-width="2.5"/>
+    <line x1="${X(state.hour)}" x2="${X(state.hour)}" y1="10" y2="${Hd-pb}" stroke="var(--sand)" stroke-width="2" stroke-dasharray="4 3"/><circle cx="${X(state.hour)}" cy="${Y(day[state.hour])}" r="5" fill="var(--sand)"/><line class="hl" y1="10" y2="${Hd-pb}" stroke="var(--ink)" stroke-opacity=".35" visibility="hidden"/></svg></div>`;
+  hoverChart("prodchart", Wd, pl, 8, h=>`<b>${h} h</b><br>Production du parc : ${day[h].toFixed(1).replace(".",",")} MW<br><span class="sub">Cliquez pour aller à cette heure</span>`);
+  document.getElementById("turbs").innerHTML = now.map(t=>{ const dur = t.P>0 ? Math.max(.6, 4.5-t.sp/4) : 0; return `<div class="card" style="display:grid;grid-template-columns:auto minmax(0,1fr);gap:12px;align-items:center">
+    <svg width="70" height="90" viewBox="0 0 70 90" aria-hidden="true"><path d="M33 34h4l2 54h-8z" fill="var(--muted)"/><g class="rotor" style="animation-duration:${dur||0}s;${dur?"":"animation:none"}"><path d="M35 32L35 4M35 32L59 46M35 32L11 46" stroke="var(--ink)" stroke-width="4" stroke-linecap="round"/><circle cx="35" cy="32" r="4" fill="var(--accent)"/></g></svg>
+    <div><h3>Éolienne ${t.n}</h3><div><b>${(t.P*1000).toFixed(0)} kW</b> <span class="muted">sur 2 000</span></div><div class="muted" style="font-size:14px">Vent au moyeu ${fmtSpeed(t.sp)}, ${dirName(t.u,t.v)}</div><span class="pill ${t.P>0?"good":"mid"}">${t.P>0?"En production":"À l'arrêt, vent trop faible"}</span></div></div>`; }).join("");
+}
+
+// ---------------- alertes : formulaire et carte ----------------
+document.getElementById("al-place").innerHTML = PLACES.map((p,i)=>`<option value="${i}">${p[0]}</option>`).join("");
+document.getElementById("al-act").innerHTML = Object.entries(ACTS).map(([k,a])=>`<option value="${k}">${a.n}</option>`).join("");
+document.getElementById("al-add").onclick = () => { MY.push({place:+document.getElementById("al-place").value, act:document.getElementById("al-act").value, chan:document.getElementById("al-chan").value}); saveMy(); renderAlerts(); renderTB(); };
+makeMap("c3","map3",{ z:()=>10, marks:()=>ALERTS.map((a,i)=>({p:a.p, r:a.r, cls:a.cls, sel:i===selAlert})), onClick:()=>{} });
+
+// ---------------- tableau de bord ----------------
+const DSTAT = {};
+function domainStats(h){ if(DSTAT[h]) return DSTAT[h]; let n=0, su=0, sv=0, ss=0, gmax=0, gwhere=null;
+  for(let y=1;y<H;y+=2) for(let x=1;x<W;x+=2){ if(wat[idx(x,y)]) continue; const [u,v]=wind(x,y,10,h), sp=Math.hypot(u,v), g=sp*gustF(x,y,10); n++; su+=u; sv+=v; ss+=sp; if(g>gmax){ gmax=g; gwhere=[x,y]; } }
+  return DSTAT[h]={mean:ss/n, u:su/n, v:sv/n, gmax, gwhere}; }
+function nearestName(p){ return PLACES.map(q=>[q[0],Math.hypot(p[0]-xy(q[1],q[2])[0],p[1]-xy(q[1],q[2])[1])]).sort((a,b)=>a[1]-b[1])[0][0].split(" (")[0]; }
+let relGood=null;
+function renderTB(){
+  const d=domainStats(state.hour), prod=TURB.reduce((s,t)=>s+power(Math.hypot(...wind(...t.p,80,state.hour))),0), na=ALERTS.filter(a=>a.cls==="stop"||a.cls==="warn").length;
+  if(!relGood){ const keep=relMode; relMode="reel"; const a=relStats(); relMode="aneo"; const b=relStats(); relMode=keep; relGood=[a,b]; }
+  document.getElementById("tbkpis").innerHTML = [
+    ["Vent moyen sur la zone, à 10 m", fmtSpeed(d.mean), `vient ${dirName(d.u,d.v)}`],
+    ["Rafale la plus forte", fmtSpeed(d.gmax), `près de ${nearestName(d.gwhere)}`],
+    ["Production du parc virtuel", `${prod.toFixed(1).replace(".",",")} MW`, `${Math.round(prod/6*100)} % de la capacité`],
+    ["Alertes à suivre", `${na}`, na ? "danger ou attention" : "aucune alerte importante"],
+    ["Zone bien couverte", `${relGood[0]} %`, `${relGood[1]} % avec le réseau ANEO prévu`]
+  ].map(([k,v,s2])=>`<div class="card kpi"><div class="k">${k}</div><div class="v">${v}</div><div class="s muted">${s2}</div></div>`).join("");
+  const days=Array.from({length:24},(_,h)=>domainStats(h)), Wd=640, Hd=210, pl=66, pb=24, mx=Math.ceil(Math.max(...days.map(x=>kmh(x.gmax)))/10)*10;
+  const X=h=>pl+h*(Wd-pl-10)/23, Y=k=>Hd-pb-k/mx*(Hd-pb-12);
+  const line=(f)=>days.map((x,h)=>`${h?"L":"M"}${X(h).toFixed(1)},${Y(f(x)).toFixed(1)}`).join("");
+  document.getElementById("tbday").innerHTML = `<div class="tblwrap"><svg viewBox="0 0 ${Wd} ${Hd}" style="width:100%;min-width:320px;height:auto" role="img" aria-label="Vent moyen et rafale maximale de la zone">
+    ${[0,mx/2,mx].map(k=>`<line x1="${pl}" x2="${Wd-10}" y1="${Y(k)}" y2="${Y(k)}" stroke="var(--line)"/><text x="${pl-6}" y="${Y(k)+4}" text-anchor="end">${Math.round(k)} km/h</text>`).join("")}
+    ${[0,6,12,18,23].map(h=>`<text x="${X(h)}" y="${Hd-6}" text-anchor="middle">${h} h</text>`).join("")}
+    <path d="${line(x=>kmh(x.gmax))}" fill="none" stroke="var(--stop)" stroke-width="2.2" stroke-dasharray="5 4"/>
+    <path d="${line(x=>kmh(x.mean))}L${X(23)},${Y(0)}L${X(0)},${Y(0)}Z" fill="var(--accent)" opacity=".16"/><path d="${line(x=>kmh(x.mean))}" fill="none" stroke="var(--accent)" stroke-width="2.6"/>
+    <line x1="${X(state.hour)}" x2="${X(state.hour)}" y1="8" y2="${Hd-pb}" stroke="var(--sand)" stroke-width="2"/><circle cx="${X(state.hour)}" cy="${Y(kmh(days[state.hour].mean))}" r="5" fill="var(--sand)"/><line class="hl" y1="8" y2="${Hd-pb}" stroke="var(--ink)" stroke-opacity=".35" visibility="hidden"/></svg></div>
+    <div class="legend"><span style="color:var(--accent);font-weight:700">Vent moyen</span><span style="color:var(--stop);font-weight:700">Rafale la plus forte</span><span>Survolez la courbe pour lire les valeurs ; cliquez pour changer d'heure.</span></div>`;
+  hoverChart("tbday", Wd, pl, 10, h=>`<b>${h} h</b><br>Vent moyen : ${fmtSpeed(days[h].mean)}<br>Rafale la plus forte : ${fmtSpeed(days[h].gmax)}`);
+  document.getElementById("tbalerts").innerHTML = ALERTS.slice(0,4).map(a=>`<div class="it"><span style="min-width:0"><span class="pill ${PILL[a.cls]}">${LV[a.cls]}</span> <b>${a.t}</b><br><span class="muted" style="font-size:14px">${a.where} · ${a.when}</span></span></div>`).join("") || `<span class="muted">Aucune alerte.</span>`;
+  const C=[["Anémomètre de Nabeul",2.42,2.57],["Anémomètre de Tunis-Carthage",2.70,2.81],["Anémomètre de Zaghouan",2.28,2.16],["Ballons-sondes, 0 à 250 m",2.22,2.29]];
+  const bx=k=>Math.round(k/12*100);
+  document.getElementById("tbcomp").innerHTML = C.map(([n,a,b])=>`<div style="display:grid;gap:3px;margin-bottom:10px"><b style="font-size:15px">${n}</b>
+    <div style="display:grid;grid-template-columns:90px minmax(0,1fr) 86px;gap:8px;align-items:center;font-size:14px"><span>ATOM Wind</span><span style="height:12px;border-radius:6px;background:var(--accent);width:${bx(kmh(a))}%"></span><span style="font-family:var(--f-data)">${kmh(a).toFixed(1).replace(".",",")} km/h</span></div>
+    <div style="display:grid;grid-template-columns:90px minmax(0,1fr) 86px;gap:8px;align-items:center;font-size:14px"><span class="muted">ERA5</span><span style="height:12px;border-radius:6px;background:var(--muted);opacity:.5;width:${bx(kmh(b))}%"></span><span style="font-family:var(--f-data)" class="muted">${kmh(b).toFixed(1).replace(".",",")} km/h</span></div></div>`).join("") + `<p class="muted" style="font-size:13px;margin:0">ATOM Wind fait mieux qu'ERA5 à Nabeul, à Tunis-Carthage et sur les ballons-sondes ; un peu moins bien à Zaghouan, en bord de zone.</p>`;
+  document.getElementById("tbnet").innerHTML = [
+    ["Stations de l'INM dans la zone","3","Tunis-Carthage, Zaghouan, Nabeul : vent à 10 m, toutes les 30 min à 3 h"],
+    ["Mesure en altitude","1","Ballons-sondes de Tunis-Carthage, deux fois par jour"],
+    ["Réseau ANEO prévu","36 capteurs",`Fiabilité bonne sur ${relGood[1]} % des terres, contre ${relGood[0]} % aujourd'hui`]].map(([k,v,s2])=>`<div class="kpi"><div class="k">${k}</div><div class="v" style="font-size:26px">${v}</div><div class="s muted">${s2}</div></div>`).join("");
+}
+
+// ---------------- éolien : mon éolienne, rotor, rose ----------------
+const TMOD={s:{n:"petite éolienne",z:30,pr:.1,d:20},m:{n:"éolienne moyenne",z:50,pr:.8,d:50},l:{n:"grande éolienne",z:80,pr:2,d:90}};
+const myT={p:xy(36.69,10.40), m:"l"};
+const powerM=(ms,pr)=> ms<3||ms>=25 ? 0 : ms>=12 ? pr : pr*(ms**3-27)/(1728-27);
+const dayEnergy=(p,m)=>{ let e=0; for(let h=0;h<24;h++) e+=powerM(Math.hypot(...wind(...p,TMOD[m].z,h)),TMOD[m].pr); return e; };
+function renderMyT(){
+  const t=TMOD[myT.m], e=dayEnergy(myT.p,myT.m), ref=dayEnergy(TURB[1].p,myT.m), cf=e/(t.pr*24), ratio=ref>0?e/ref:0, k=idx(...myT.p);
+  const verdict = wat[k]===1 ? ["info","En mer : ce prototype estime surtout les éoliennes à terre."] : cf>.3 ? ["go","Très bon emplacement"] : cf>.18 ? ["warn","Emplacement moyen"] : ["stop","Emplacement peu venté"];
+  document.getElementById("myt").innerHTML = `<div class="answer ${verdict[0]}" style="padding:14px"><div class="verdict"><div class="badge-big" style="width:42px;height:42px"><svg width="22" height="22" viewBox="0 0 24 24">${VERD_ICON[verdict[0]]}</svg></div><div><div class="muted" style="font-size:13px;font-weight:700">${t.n[0].toUpperCase()+t.n.slice(1)} près de ${nearestName(myT.p)}, sol à ${Math.round(elev[k])} m</div><h2 style="font-size:21px">${verdict[1]}</h2></div></div>
+    <div class="facts"><div class="fact"><div class="k">Énergie sur la journée</div><div class="v">${e>=1?e.toFixed(1).replace(".",",")+" MWh":Math.round(e*1000)+" kWh"}</div></div><div class="fact"><div class="k">Taux de charge</div><div class="v">${Math.round(cf*100)} %</div></div><div class="fact"><div class="k">Par rapport à la crête du djebel Ressas</div><div class="v">${Math.round(ratio*100)} %</div></div></div>
+    <p class="muted" style="font-size:14px">${ratio<.7?"Le vent est plus faible ici que sur la crête : une tour plus haute ou un site plus exposé produirait davantage.":"Cet emplacement produit presque autant que la crête, la meilleure zone de l'exemple."} Estimation sur la journée d'exemple.</p></div>`;
+  // rotor
+  const z0h=t.z, R=t.d/2, hs=[]; for(let i=0;i<=8;i++){ const z=Math.max(5,z0h-R+i*(2*R/8)); hs.push([z,Math.hypot(...wind(...myT.p,z,state.hour))]); }
+  const top=hs[8][1], bot=hs[0][1], hub=Math.hypot(...wind(...myT.p,z0h,state.hour)), cx=110, cy=110, rp=82;
+  const bands=hs.slice(0,8).map(([z,sp],i)=>{ const y=cy+rp-(i+1)*(2*rp/8), c=speedColor(kmh((sp+hs[i+1][1])/2)); return `<rect x="${cx-rp}" y="${y.toFixed(1)}" width="${2*rp}" height="${(2*rp/8+.5).toFixed(1)}" fill="rgb(${c})"/>`; }).join("");
+  document.getElementById("rotor").innerHTML = `<div style="display:grid;grid-template-columns:auto minmax(0,1fr);gap:14px;align-items:center"><svg width="220" height="260" viewBox="0 0 220 260" aria-hidden="true"><defs><clipPath id="disk"><circle cx="${cx}" cy="${cy}" r="${rp}"/></clipPath></defs><path d="M106 ${cy}h8l5 148h-18z" fill="var(--muted)"/><g clip-path="url(#disk)">${bands}</g><circle cx="${cx}" cy="${cy}" r="${rp}" fill="none" stroke="var(--ink)" stroke-width="2"/><g class="rotor" style="animation-duration:${hub>3?Math.max(.8,5-hub/3):0}s"><path d="M${cx} ${cy}V${cy-rp+4}M${cx} ${cy}L${cx+71} ${cy+41}M${cx} ${cy}L${cx-71} ${cy+41}" stroke="var(--ink)" stroke-width="5" stroke-linecap="round" opacity=".75"/></g><circle cx="${cx}" cy="${cy}" r="6" fill="var(--accent)"/></svg>
+    <div style="display:grid;gap:8px"><div><span class="muted">En haut des pales (${Math.round(z0h+R)} m)</span><br><b style="font-size:20px">${fmtSpeed(top)}</b></div><div><span class="muted">Au moyeu (${z0h} m)</span><br><b style="font-size:20px">${fmtSpeed(hub)}</b></div><div><span class="muted">En bas des pales (${Math.round(Math.max(5,z0h-R))} m)</span><br><b style="font-size:20px">${fmtSpeed(bot)}</b></div>
+    <p style="margin:0">En haut des pales, le vent est <b>${Math.round((top/bot-1)*100)} %</b> plus fort qu'en bas. Cet écart fatigue les pales : seule une carte du vent en 3D permet de le connaître.</p></div></div>`;
+  // rose
+  const sec=Array.from({length:8},()=>({n:0,s:0})); for(let h=0;h<24;h++){ const [u,v]=wind(...myT.p,z0h,h), i=Math.round(fromDeg(u,v)/45)%8; sec[i].n++; sec[i].s+=Math.hypot(u,v); }
+  const mxn=Math.max(...sec.map(x=>x.n)), c0=120, rr=95, NAMES=["N","NE","E","SE","S","SO","O","NO"];
+  const wedges=sec.map((x,i)=>{ if(!x.n) return ""; const r=18+(rr-18)*x.n/mxn, a0=(i*45-20)*Math.PI/180, a1=(i*45+20)*Math.PI/180, c=speedColor(kmh(x.s/x.n));
+    return `<path d="M${c0} ${c0} L${(c0+r*Math.sin(a0)).toFixed(1)} ${(c0-r*Math.cos(a0)).toFixed(1)} A${r.toFixed(1)} ${r.toFixed(1)} 0 0 1 ${(c0+r*Math.sin(a1)).toFixed(1)} ${(c0-r*Math.cos(a1)).toFixed(1)} Z" fill="rgb(${c})" stroke="var(--surface)" stroke-width="2" data-h="<b>Vent ${DIRS[i]}</b><br>${x.n} h sur 24, ${fmtSpeed(x.s/x.n)} en moyenne"></path>`; }).join("");
+  const best=sec.map((x,i)=>[x.n,i]).sort((a,b)=>b[0]-a[0])[0][1];
+  document.getElementById("rose").innerHTML = `<div style="display:grid;grid-template-columns:auto minmax(0,1fr);gap:14px;align-items:center"><svg width="240" height="240" viewBox="0 0 240 240" role="img" aria-label="Rose des vents"><circle cx="${c0}" cy="${c0}" r="${rr}" fill="none" stroke="var(--line)"/><circle cx="${c0}" cy="${c0}" r="${rr/2}" fill="none" stroke="var(--line)"/>${wedges}${NAMES.map((n,i)=>`<text x="${c0+(rr+14)*Math.sin(i*Math.PI/4)}" y="${c0-(rr+14)*Math.cos(i*Math.PI/4)+4}" text-anchor="middle" style="font-weight:700">${n}</text>`).join("")}</svg>
+    <p style="margin:0">Aujourd'hui, au moyeu de votre éolienne, le vent vient surtout <b>${DIRS[best]}</b> (${sec[best].n} heures sur 24). La longueur indique la durée, la couleur la force. Orientez les rangées d'éoliennes face à ce vent.</p></div>`;
+}
+document.getElementById("tm").onchange=e=>{ myT.m=e.target.value; renderMyT(); };
+makeMap("c4","map4",{ pin:()=>myT.p, z:()=>TMOD[myT.m].z, marks:()=>TURB.map(t=>({p:t.p, r:.8, cls:"go"})), onClick:(x,y)=>{ myT.p=[x,y]; renderMyT(); } });
+
+// ---------------- coupe verticale ----------------
+let lastCut=null;
+function renderCut(A,B){
+  lastCut=[A,B]; const card=document.getElementById("cutcard"); card.hidden=false;
+  const cv=document.getElementById("cutcv"), w=Math.max(320,cv.clientWidth||600), h=260, dpr=Math.min(2,devicePixelRatio||1);
+  cv.width=w*dpr; cv.height=h*dpr; cv.style.height=h+"px"; const ctx=cv.getContext("2d"); ctx.setTransform(dpr,0,0,dpr,0,0);
+  const L=Math.hypot(B[0]-A[0],B[1]-A[1])||1, tx=(B[0]-A[0])/L, ty=(B[1]-A[1])/L, ZMAX=1300, pl=50, pr=12, pt=10, pb=26, W2=w-pl-pr, H2=h-pt-pb, N=Math.round(W2/4), M=Math.round(H2/4);
+  ctx.fillStyle=css("--surface-2"); ctx.fillRect(0,0,w,h);
+  const at=s=>{ const x=A[0]+(B[0]-A[0])*s, y=A[1]+(B[1]-A[1])*s, k=idx(x,y); return [x,y,k,wat[k]?0:elev[k]]; };
+  for(let i=0;i<N;i++){ const [x,y,k,g]=at((i+.5)/N);
+    for(let j=0;j<M;j++){ const zasl=(j+.5)/M*ZMAX, zagl=zasl-g, px=pl+i*W2/N, py=pt+H2-(j+1)*H2/M;
+      if(zagl<0) ctx.fillStyle = wat[k] ? css("--water") : css("--land-hi"); else if(zagl>1000) ctx.fillStyle=css("--surface-2"); else { const c=speedColor(kmh(Math.hypot(...wind(x,y,Math.max(10,zagl),state.hour)))); ctx.fillStyle=`rgb(${c[0]},${c[1]},${c[2]})`; }
+      ctx.fillRect(px,py,W2/N+.7,H2/M+.7); } }
+  ctx.strokeStyle=css("--ink"); ctx.fillStyle=css("--ink"); ctx.lineWidth=1.6;
+  for(let i=5;i<N;i+=12) for(const zagl of [40,200,450,750]){ const [x,y,,g]=at((i+.5)/N), zasl=g+zagl; if(zasl>ZMAX) continue; const [u,v]=wind(x,y,zagl,state.hour), al=u*tx+v*ty, len=Math.max(-16,Math.min(16,al*2)), px=pl+(i+.5)*W2/N, py=pt+H2-zasl/ZMAX*H2;
+    if(Math.abs(len)<2){ ctx.beginPath(); ctx.arc(px,py,2,0,7); ctx.fill(); continue; } ctx.beginPath(); ctx.moveTo(px-len/2,py); ctx.lineTo(px+len/2,py); ctx.stroke(); const sg=Math.sign(len); ctx.beginPath(); ctx.moveTo(px+len/2,py); ctx.lineTo(px+len/2-sg*5,py-3.5); ctx.lineTo(px+len/2-sg*5,py+3.5); ctx.closePath(); ctx.fill(); }
+  ctx.fillStyle=css("--muted"); ctx.font=`11px ${css("--f-data")}`; ctx.textAlign="right";
+  for(const z of [0,400,800,1200]){ const py=pt+H2-z/ZMAX*H2; ctx.fillText(`${z} m`,pl-6,py+4); }
+  ctx.textAlign="left"; ctx.font=`700 13px ${css("--f-body")}`; ctx.fillStyle=css("--ink"); ctx.fillText("A",pl+2,h-8); ctx.textAlign="right"; ctx.fillText("B",w-pr-2,h-8); ctx.textAlign="center"; ctx.font=`11px ${css("--f-data")}`; ctx.fillStyle=css("--muted"); ctx.fillText(`${L.toFixed(1).replace(".",",")} km`,pl+W2/2,h-8);
+  document.getElementById("cuttxt").textContent = `De A (près de ${nearestName(A)}) à B (près de ${nearestName(B)}), à ${state.hour} h. La couleur donne la force du vent du sol jusqu'à 1 000 m au-dessus du sol ; le relief est en brun, la mer en bleu. On voit le vent accélérer au-dessus des sommets et changer près de la côte.`;
+}
+document.getElementById("cutclose").onclick=()=>{ document.getElementById("cutcard").hidden=true; lastCut=null; };
+
+// ---------------- AGRICULTEUR ----------------
+const CROPS = { tomate:["Tomate",1.15,"mildiou"], pdt:["Pomme de terre",1.15,"mildiou"], pasteque:["Pastèque, melon",1.0,"oïdium"], piment:["Piment, poivron",1.05,"oïdium"], fraise:["Fraise",0.85,"botrytis"], agrumes:["Agrumes",0.65,"gommose"], olivier:["Olivier",0.7,"œil de paon"], vigne:["Vigne",0.7,"mildiou"], artichaut:["Artichaut",1.0,"oïdium"], palmier:["Palmier dattier",0.95,"bayoud"] };
+const MILIEUX = { champ:"Plein champ", serre:"Serre", verger:"Verger", depot:"Dépôt de récolte" };
+const ag = { place:5, crop:"tomate", area:2, eff:.9, milieu:"champ" };
+const agP = () => { const q=PLACES[ag.place]; return xy(q[1],q[2]); };
+const Tair = (h,x,y) => 26.5 + 6.5*Math.sin((h-9)*Math.PI/12) - .0065*elev[idx(x,y)];
+const RHair = (h,x,y) => Math.max(25, Math.min(98, 62 - 18*Math.sin((h-9)*Math.PI/12) + (sdist[idx(x,y)]<4 ? 8 : 0)));
+const PM10 = (h,x,y) => 28 + 48*Math.exp(-(((h-16)/3.2)**2)) + (sdist[idx(x,y)]>8 ? 6 : 0);
+const esat = T => .6108*Math.exp(17.27*T/(T+237.3));
+function et0Day(x,y,du=0){ // FAO-56 Penman-Monteith, pas journalier ; du = vent ajouté (m/s) pour mesurer l'effet du vent
+  const Ts=[], RH=[], U=[]; for(let h=0;h<24;h++){ Ts.push(Tair(h,x,y)); RH.push(RHair(h,x,y)); U.push(Math.hypot(...wind(x,y,10,h))*0.748 + du); }
+  const Tmax=Math.max(...Ts), Tmin=Math.min(...Ts), T=(Tmax+Tmin)/2, u2=U.reduce((a,b)=>a+b)/24, rh=RH.reduce((a,b)=>a+b)/24, z=elev[idx(x,y)];
+  const D=4098*esat(T)/((T+237.3)**2), P=101.3*((293-.0065*z)/293)**5.26, g=.000665*P, es=(esat(Tmax)+esat(Tmin))/2, ea=es*rh/100;
+  const J=200, phi=36.65*Math.PI/180, dr=1+.033*Math.cos(2*Math.PI*J/365), dl=.409*Math.sin(2*Math.PI*J/365-1.39), ws=Math.acos(-Math.tan(phi)*Math.tan(dl));
+  const Ra=24*60/Math.PI*.082*dr*(ws*Math.sin(phi)*Math.sin(dl)+Math.cos(phi)*Math.cos(dl)*Math.sin(ws)), Rs=.72*Ra, Rso=(.75+2e-5*z)*Ra;
+  const Rnl=4.903e-9*(((Tmax+273.16)**4+(Tmin+273.16)**4)/2)*(.34-.14*Math.sqrt(ea))*(1.35*Rs/Rso-.35), Rn=.77*Rs-Rnl;
+  const et0=(.408*D*Rn + g*900/(T+273)*u2*(es-ea))/(D+g*(1+.34*u2));
+  return {et0, Tmax, Tmin, u2, rh};
+}
+function hourBars(id, rows, legend){ const el=document.getElementById(id); const mx=Math.max(...rows.map(r=>r.v),1);
+  el.innerHTML = `<div class="day">${rows.map((r,h)=>`<button class="${r.cls}${h===state.hour?" now":""}" style="height:${Math.round(16+60*r.v/mx)}px" data-h="<b>${h} h</b><br>${r.t}" aria-label="${h} h : ${r.t}">​</button>`).join("")}</div><div class="dayaxis">${Array.from({length:24},(_,h)=>`<span>${h%3===0?h:""}</span>`).join("")}</div>${legend||""}`;
+  el.querySelectorAll(".day button").forEach((b,h)=>b.onclick=()=>setHour(h)); }
+function windowsOf(rows, cls="go"){ const out=[]; let st=null; rows.forEach((r,h)=>{ if(r.cls===cls){ if(st===null) st=h; } else if(st!==null){ out.push([st,h]); st=null; } }); if(st!==null) out.push([st,24]); return out; }
+const winTxt = ws => ws.length ? ws.map(([a,b])=>`<span class="pill good">${a} h – ${b} h</span>`).join(" ") : `<span class="pill bad">Aucun créneau favorable</span>`;
+function renderAgri(){
+  const [x,y]=agP(), c=CROPS[ag.crop], d=et0Day(x,y), etc=d.et0*c[1], gross=etc/ag.eff, m3ha=gross*10, tot=m3ha*ag.area;
+  const fmt1=v=>v.toFixed(1).replace(".",",");
+  const showWater = ag.milieu!=="depot";
+  document.getElementById("ag-water").innerHTML = showWater ? `<div class="answer info"><div class="verdict"><div class="badge-big"><svg width="28" height="28" viewBox="0 0 24 24"><path class="drop" d="M12 3c3 4 5 7 5 10a5 5 0 0 1-10 0c0-3 2-6 5-10z" fill="#fff"/></svg></div><div><div class="muted" style="font-size:14px;font-weight:700">${PLACES[ag.place][0]} · ${c[0]} · ${MILIEUX[ag.milieu].toLowerCase()} · aujourd'hui</div><div class="big">Apportez ${Math.round(m3ha)} m³ par hectare</div></div></div>
+    <p>Soit <b>${Math.round(tot).toLocaleString("fr-FR")} m³</b> pour vos ${fmt1(ag.area)} ha (${fmt1(gross)} mm d'eau). ${ag.milieu==="serre"?"Sous serre, le besoin réel est souvent 20 à 30 % plus faible : ajustez selon l'aération.":""}</p>
+    <div class="facts"><div class="fact"><div class="k">Évaporation de référence <span class="tip" tabindex="0" data-tip="Quantité d'eau qu'un gazon perdrait aujourd'hui, calculée avec le vent, la chaleur, l'humidité et le soleil (méthode FAO-56).">?</span></div><div class="v">${fmt1(d.et0)} mm</div></div>
+      <div class="fact"><div class="k">Besoin de la culture</div><div class="v">${fmt1(etc)} mm</div></div>
+      <div class="fact"><div class="k">Vent moyen à 2 m</div><div class="v">${fmtSpeed(d.u2)}</div></div>
+      <div class="fact"><div class="k">Chaleur du jour</div><div class="v">${Math.round(d.Tmin)} à ${Math.round(d.Tmax)} °C</div></div></div>
+    <p class="muted" style="font-size:14px">Le vent compte : avec 10 km/h de vent en plus, cette parcelle aurait besoin d'environ ${Math.round((et0Day(x,y,10/3.6).et0/d.et0-1)*100)} % d'eau en plus. C'est pourquoi le calcul utilise le vent d'ATOM Wind à votre emplacement.</p></div>` : "";
+  const cards=[];
+  // meilleure heure pour arroser
+  const asp = ag.eff<.8 && ag.eff>.7;
+  const rowsIrr=[]; for(let h=0;h<24;h++){ const k=kmh(Math.hypot(...wind(x,y,10,h))), T=Tair(h,x,y), loss=k*.8+Math.max(0,T-22)*2;
+    rowsIrr.push({v:loss, cls: (asp ? (k>20||T>32) : T>32) ? "stop" : (asp ? (k>12||T>28) : T>29) ? "warn" : "go", t:`${Math.round(k)} km/h, ${Math.round(T)} °C`}); }
+  if(showWater) cards.push(`<div class="card"><h3>Quand arroser aujourd'hui ?</h3><div id="ag-irrbars"></div><p style="margin:8px 0 4px">Meilleurs moments : ${winTxt(windowsOf(rowsIrr))}</p><p class="muted" style="font-size:14px;margin:0">${asp?"En aspersion, le vent emporte l'eau et la chaleur l'évapore : arrosez quand le vent est faible et l'air frais.":"Avec ce mode d'arrosage, l'heure compte moins ; évitez seulement les heures les plus chaudes."}</p></div>`);
+  // poussière
+  const rowsPM=[]; for(let h=0;h<24;h++){ const pm=PM10(h,x,y); rowsPM.push({v:pm, cls: pm>100?"stop":pm>45?"warn":"go", t:`${Math.round(pm)} µg/m³`}); }
+  const pmNow=PM10(state.hour,x,y), pmMax=Math.max(...rowsPM.map(r=>r.v)), pmH=rowsPM.findIndex(r=>r.v===pmMax);
+  cards.push(`<div class="card"><h3>Poussière dans l'air</h3><div class="row" style="margin-bottom:6px"><span class="pill ${pmNow>100?"bad":pmNow>45?"mid":"good"}">${pmNow>100?"Mauvaise":pmNow>45?"Moyenne":"Bonne"} à ${state.hour} h</span><span class="muted" style="font-size:14px">${Math.round(pmNow)} µg/m³ de particules (PM10)</span></div><div id="ag-pmbars"></div>
+    <p style="margin:8px 0 0">${pmMax>45?`Pic de poussière vers <b>${pmH} h</b> (${Math.round(pmMax)} µg/m³). Ne traitez pas à ce moment : le produit colle à la poussière. Nettoyez les filtres du goutte-à-goutte ce soir, et couvrez les jeunes plants si le vent forcit.`:"Air peu poussiéreux aujourd'hui : rien à prévoir."}</p><p class="src" style="margin:6px 0 0">Seuil de l'OMS : 45 µg/m³ en moyenne sur 24 h.</p></div>`);
+  // maladie
+  let wet=0; for(let h=0;h<24;h++){ const T=Tair(h,x,y), rh=RHair(h,x,y), w=Math.hypot(...wind(x,y,10,h)); if(rh>=85 && T>=12 && T<=28 && w<2.5) wet++; }
+  const risk = wet>=5 ? ["stop","Élevé"] : wet>=2 ? ["warn","Moyen"] : ["go","Faible"];
+  if(ag.milieu!=="depot") cards.push(`<div class="card"><h3>Risque de maladie</h3><div class="row"><span class="pill ${risk[0]==="stop"?"bad":risk[0]==="warn"?"mid":"good"}">Risque ${risk[1].toLowerCase()} de ${c[2]}</span></div>
+    <p style="margin:8px 0 0">${wet===0?"Aucune heure cette nuit avec un air à la fois très humide, doux et sans vent : le champignon a peu de chances de se développer.":`${wet} heure${wet>1?"s":""} cette nuit avec un air très humide, doux et sans vent : ce sont les conditions où le champignon se développe.`}</p>
+    <p class="muted" style="font-size:14px;margin:6px 0 0">${risk[0]==="stop"?"Traitement préventif conseillé en début de matinée, quand le vent est faible.":risk[0]==="warn"?"Surveillez les feuilles demain matin ; aérez bien les rangs.":"Pas d'action particulière aujourd'hui."} ${ag.milieu==="serre"?"En serre, aérez tôt le matin pour faire baisser l'humidité.":""}</p></div>`);
+  // dépôt
+  const rowsDep=[]; for(let h=0;h<24;h++){ const T=Tair(h,x,y), rh=RHair(h,x,y), pm=PM10(h,x,y), k=kmh(Math.hypot(...wind(x,y,10,h)));
+    const ok = T<=25 && rh<=78 && pm<50 && k>=3 && k<=30, mid = T<=28 && rh<=85 && pm<80; rowsDep.push({v:Math.max(1,40-T+ (ok?10:0)), cls: ok?"go":mid?"warn":"stop", t:`${Math.round(T)} °C, ${Math.round(rh)} %, ${Math.round(pm)} µg/m³`}); }
+  const depCard = `<div class="card"><h3>Quand aérer le dépôt de récolte ?</h3><div id="ag-depbars"></div><p style="margin:8px 0 4px">Ouvrir : ${winTxt(windowsOf(rowsDep))}</p><p class="muted" style="font-size:14px;margin:0">On aère quand l'air dehors est frais, pas trop humide et peu poussiéreux. Fermez pendant les heures chaudes et les pics de poussière. Avec un capteur de CO₂ dans le dépôt, ATOM Wind pourra aussi signaler un début de pourriture.</p></div>`;
+  if(ag.milieu==="depot") cards.unshift(depCard); else cards.push(depCard);
+  // serre : aération selon le vent
+  if(ag.milieu==="serre"){ const [u,v]=wind(x,y,10,state.hour), k=kmh(Math.hypot(u,v)), lee=DIRS[(Math.round(fromDeg(u,v)/45)+4)%8].replace(/^du |^de l'|^de /,"");
+    cards.unshift(`<div class="card"><h3>Aérer la serre maintenant</h3><p style="margin:0 0 6px"><b>${k>35?"Fermez les ouvrants : vent trop fort.":`Ouvrez les ouvrants côté ${lee}`}</b></p><p class="muted" style="font-size:14px;margin:0">Le vent vient ${dirName(u,v)} à ${fmtSpeed(Math.hypot(u,v))}. ${k>35?"Le film et les arceaux risquent de souffrir.":"En ouvrant à l'abri du vent, l'air se renouvelle sans courant violent sur les plantes."}</p></div>`); }
+  // verger : abeilles
+  if(ag.milieu==="verger"){ const rowsB=[]; for(let h=0;h<24;h++){ const k=kmh(Math.hypot(...wind(x,y,10,h))), T=Tair(h,x,y), day=h>=7&&h<=19; rowsB.push({v:day?Math.max(1,30-k):1, cls: !day?"info": (k<20&&T>=15&&T<=35)?"go":"warn", t:`${Math.round(k)} km/h`}); }
+    cards.push(`<div class="card"><h3>Les abeilles butinent-elles ?</h3><div id="ag-beebars"></div><p style="margin:8px 0 0">Bons moments pour la pollinisation : ${winTxt(windowsOf(rowsB))}</p><p class="muted" style="font-size:14px;margin:4px 0 0">Les abeilles sortent peu au-dessus de 20 km/h de vent. Ne traitez jamais pendant ces créneaux.</p></div>`);
+    setTimeout(()=>hourBars("ag-beebars",rowsB),0); }
+  document.getElementById("ag-cards").innerHTML = cards.join("");
+  if(showWater) hourBars("ag-irrbars",rowsIrr); hourBars("ag-pmbars",rowsPM); hourBars("ag-depbars",rowsDep);
+}
+document.getElementById("ag-place").innerHTML = PLACES.map((p,i)=>`<option value="${i}">${p[0]}</option>`).join(""); document.getElementById("ag-place").value="5";
+document.getElementById("ag-crop").innerHTML = Object.entries(CROPS).map(([k,c])=>`<option value="${k}">${c[0]}</option>`).join("");
+document.getElementById("ag-milieu").innerHTML = Object.entries(MILIEUX).map(([k,n])=>`<button class="chip" data-m="${k}" aria-pressed="${k===ag.milieu}">${n}</button>`).join("");
+document.getElementById("ag-milieu").onclick=e=>{ const b=e.target.closest(".chip"); if(!b) return; ag.milieu=b.dataset.m; document.querySelectorAll("#ag-milieu .chip").forEach(x=>x.setAttribute("aria-pressed",x===b)); renderAgri(); };
+document.getElementById("ag-place").onchange=e=>{ ag.place=+e.target.value; renderAgri(); };
+document.getElementById("ag-crop").onchange=e=>{ ag.crop=e.target.value; renderAgri(); };
+document.getElementById("ag-area").oninput=e=>{ const v=parseFloat(e.target.value); if(v>0){ ag.area=v; renderAgri(); } };
+document.getElementById("ag-irr").onchange=e=>{ ag.eff=+e.target.value; renderAgri(); };
+
+// ---------------- FIABILITÉ ----------------
+const map2 = makeMap("c2","map2",{ rel:true, z:()=>10, onClick:(x,y)=>openSheet(x,y,10) });
+function relStats(){ let n=0, g=0; for(let j=0;j<NY;j+=2) for(let i=0;i<NX;i+=2){ if(wat[j*NX+i]) continue; n++; if(sigma((i+.5)/G,(j+.5)/G).s<.9) g++; } return Math.round(g/n*100); }
+function renderRel(){ const a=relStats(); const other = relMode==="reel" ? (relMode="aneo", relStats()) : null; if(other!==null) relMode="reel";
+  document.getElementById("relstats").innerHTML = relMode==="reel"
+    ? `<h3>Aujourd'hui, avec 3 stations</h3><div class="kpi"><div class="v">${a} %</div><div class="s">des terres avec une fiabilité bonne</div></div><p style="margin-bottom:0">Avec le réseau ANEO prévu (36 capteurs, points orange), ce chiffre passerait à <b>${other} %</b>. Le plan de déploiement place chaque capteur là où il apporte le plus.</p>`
+    : `<h3>Avec le réseau ANEO prévu</h3><div class="kpi"><div class="v">${a} %</div><div class="s">des terres avec une fiabilité bonne</div></div><p style="margin-bottom:0">Les points orange montrent les 36 emplacements proposés, dans l'ordre où les installer. Zones d'eau exclues.</p>`;
+}
+function setRel(m){ relMode=m; document.getElementById("m-reel").setAttribute("aria-pressed",m==="reel"); document.getElementById("m-aneo").setAttribute("aria-pressed",m==="aneo"); map2.redraw(); renderRel(); renderAnswer(); }
+document.getElementById("m-reel").onclick=()=>setRel("reel"); document.getElementById("m-aneo").onclick=()=>setRel("aneo");
+
+// ---------------- fiche d'un point ----------------
+const sheet=document.getElementById("sheet");
+function openSheet(x,y,zSel){
+  const k=idx(x,y), [u,v]=wind(x,y,zSel,state.hour), sp=Math.hypot(u,v), rel=sigma(x,y), [rc,rl]=relClass(rel.s), deg=(fromDeg(u,v)+180)%360;
+  const Z=[10,25,50,100,150,200,300,400,500,650,800,1000], prof=Z.map(z=>kmh(Math.hypot(...wind(x,y,z,state.hour)))), mx=Math.max(...prof)*1.15;
+  const Wp=300,Hp=170, X=s=>34+s/mx*(Wp-44), Yz=z=>Hp-18-Math.log10(z/10)/2*(Hp-30);
+  const pts=prof.map((s,i)=>`${X(s).toFixed(1)},${Yz(Z[i]).toFixed(1)}`).join(" ");
+  let near=PLACES.map(p=>[p[0],Math.hypot(x-xy(p[1],p[2])[0],y-xy(p[1],p[2])[1])]).sort((a,b)=>a[1]-b[1])[0];
+  sheet.innerHTML = `<header><div><div class="muted" style="font-size:13px;font-weight:700">${wat[k]===1?"En mer":`Altitude du sol : ${Math.round(elev[k])} m`} · près de ${near[0].split(" (")[0]}</div><h2 style="font-size:24px">${fmtSpeed(sp)} à ${zSel} m</h2></div><button class="x" aria-label="Fermer">×</button></header>
+    <div class="row">${arrowSvg(deg,30,css("--accent"))}<b>Vent ${dirName(u,v)}</b></div>
+    <div class="muted">${beaufort(kmh(sp))}</div>
+    <details><summary style="cursor:pointer;font-weight:700">Pourquoi ce vent ?</summary>${explainHtml(x,y,zSel,state.hour)}</details>
+    <div class="row"><span class="pill m">Valeur calculée</span><span class="pill ${rc}">Fiabilité ${rl}</span></div>
+    <p style="margin:0;font-size:15px">Calculée à partir des stations et de la météo de grande échelle. Le capteur le plus proche (${rel.who}) est à ${Math.round(rel.d)} km. Erreur probable : ± ${Math.round(kmh(rel.s))} km/h.</p>
+    <div><b style="font-size:15px">Le vent selon la hauteur</b><svg viewBox="0 0 ${Wp} ${Hp}" style="width:100%;height:auto" role="img" aria-label="Profil vertical du vent">
+      ${[10,100,1000].map(z=>`<line x1="34" x2="${Wp-8}" y1="${Yz(z)}" y2="${Yz(z)}" stroke="var(--line)"/><text x="30" y="${Yz(z)+4}" text-anchor="end">${z} m</text>`).join("")}
+      <polyline points="${pts}" fill="none" stroke="var(--accent)" stroke-width="2.5"/>${prof.map((s,i)=>`<circle cx="${X(s)}" cy="${Yz(Z[i])}" r="3" fill="var(--accent)"/>`).join("")}
+      <text x="${Wp-8}" y="${Hp-4}" text-anchor="end">km/h →</text></svg></div>`;
+  sheet.hidden=false; sheet.querySelector(".x").onclick=()=>sheet.hidden=true;
+}
+
+// ---------------- CARTE 3D ----------------
+let update3dColors=null; const H3=[10,30,45,100,200,300,500,1000]; let z3=100, relOn=false;
+function init3d(){
+  const host=document.getElementById("three");
+  if(!window.THREE){ host.insertAdjacentHTML("beforeend",`<div class="nogl"><div class="card"><b>La vue 3D n'a pas pu se charger.</b><br><span class="muted">Vérifiez la connexion, puis rechargez la page.</span></div></div>`); return; }
+  let renderer; try{ renderer=new THREE.WebGLRenderer({antialias:true, alpha:true}); }catch(e){ host.insertAdjacentHTML("beforeend",`<div class="nogl"><div class="card"><b>Votre appareil n'affiche pas la 3D.</b><br><span class="muted">Utilisez l'onglet « Mon vent ».</span></div></div>`); return; }
+  renderer.setPixelRatio(Math.min(2,devicePixelRatio)); host.prepend(renderer.domElement);
+  const scene=new THREE.Scene(), cam=new THREE.PerspectiveCamera(45,1,.1,500), EX=11/1000;
+  scene.add(new THREE.HemisphereLight(0xffffff,0x6b7d6a,.9)); const sun=new THREE.DirectionalLight(0xffffff,.7); sun.position.set(-30,40,20); scene.add(sun);
+  const SEG=[136,112], geo=new THREE.PlaneGeometry(W,H,SEG[0],SEG[1]); geo.rotateX(-Math.PI/2);
+  const pos=geo.attributes.position, cols=new Float32Array(pos.count*3);
+  for(let i=0;i<pos.count;i++){ const x=pos.getX(i)+W/2, y=H/2-pos.getZ(i), k=idx(x,y); pos.setY(i, wat[k]?-.02:elev[k]*EX); pos.setX(i,x-W/2); pos.setZ(i,-(y-H/2)); }
+  geo.computeVertexNormals(); geo.setAttribute("color",new THREE.BufferAttribute(cols,3));
+  const mesh=new THREE.Mesh(geo,new THREE.MeshLambertMaterial({vertexColors:true})); scene.add(mesh);
+  function colorTerrain(){ const lo=new THREE.Color(0x9cbf7e), mid=new THREE.Color(0xb39462), hi=new THREE.Color(0xe8e0cc), wa=new THREE.Color(0x4f9fc4), la=new THREE.Color(0x86bccc), ur=new THREE.Color(0xb3aca2);
+    for(let i=0;i<pos.count;i++){ const x=pos.getX(i)+W/2, y=-pos.getZ(i)+H/2, k=idx(x,y); let c;
+      if(wat[k]===1) c=wa.clone(); else if(wat[k]===2) c=la.clone(); else { const t=Math.min(1,elev[k]/700); c = t<.5 ? lo.clone().lerp(mid,t*2) : mid.clone().lerp(hi,(t-.5)*2); if(z0[k]>.7) c.lerp(ur,.6); }
+      if(relOn && !wat[k]){ const s=sigma(x,y).s, t=Math.min(1,Math.max(0,(s-.45)/1.6)); c.lerp(new THREE.Color(t<.3?0x1f9d55:t<.6?0xd98a00:0xd23a3a),.5); c.lerp(new THREE.Color(0xffffff),Math.max(0,t-.5)*.6); }
+      cols[i*3]=c.r; cols[i*3+1]=c.g; cols[i*3+2]=c.b; } geo.attributes.color.needsUpdate=true; }
+  colorTerrain();
+  // particules
+  const N=3200, pp=new Float32Array(N*3), pc=new Float32Array(N*3), P=[]; const pg=new THREE.BufferGeometry(); pg.setAttribute("position",new THREE.BufferAttribute(pp,3)); pg.setAttribute("color",new THREE.BufferAttribute(pc,3));
+  const pts=new THREE.Points(pg,new THREE.PointsMaterial({size:.42, vertexColors:true, transparent:true, opacity:.95, depthWrite:false})); scene.add(pts);
+  for(let i=0;i<N;i++) P.push({x:Math.random()*W, y:Math.random()*H, a:Math.random()*90|0});
+  // stations et éoliennes
+  for(const s of STATIONS){ const k=idx(...s.p), m=new THREE.Mesh(new THREE.CylinderGeometry(.18,.18,1.2,10),new THREE.MeshLambertMaterial({color:0x3a6fd2})); m.position.set(s.p[0]-W/2,elev[k]*EX+.6,-(s.p[1]-H/2)); scene.add(m); }
+  for(const t of TURB){ const k=idx(...t.p), m=new THREE.Mesh(new THREE.CylinderGeometry(.06,.1,80*EX*4,8),new THREE.MeshLambertMaterial({color:0xf2f2f2})); m.position.set(t.p[0]-W/2,elev[k]*EX+80*EX*2,-(t.p[1]-H/2)); scene.add(m); }
+  const pin=new THREE.Mesh(new THREE.ConeGeometry(.5,1.6,16),new THREE.MeshLambertMaterial({color:0x0a6e7d})); pin.rotation.x=Math.PI; pin.visible=false; scene.add(pin);
+  const labels=[...STATIONS.map(s=>({t:s.n,p:s.p,st:true})), {t:"Djebel Ressas",p:xy(36.61,10.33)},{t:"Golfe de Tunis",p:xy(36.84,10.42)},{t:"Tunis",p:xy(36.80,10.18)},{t:"Parc éolien virtuel",p:xy(36.612,10.33)}]
+    .map(l=>{ const d=document.createElement("div"); d.className="lbl3d"+(l.st?" st":""); d.textContent=l.t; host.appendChild(d); const k=idx(...l.p); return {d, v:new THREE.Vector3(l.p[0]-W/2, (wat[k]?0:elev[k]*EX)+1.6, -(l.p[1]-H/2))}; });
+  const ctl=new THREE.OrbitControls(cam,renderer.domElement); ctl.enableDamping=true; ctl.maxPolarAngle=Math.PI*.47; ctl.minDistance=12; ctl.maxDistance=140;
+  const home=()=>{ cam.position.set(-6,46,58); ctl.target.set(2,0,-2); ctl.update(); }; home();
+  document.getElementById("recenter").onclick=home;
+  const rb=document.getElementById("relbtn"); rb.onclick=()=>{ relOn=!relOn; rb.setAttribute("aria-pressed",relOn); rb.textContent=relOn?"Masquer la fiabilité":"Afficher la fiabilité"; colorTerrain(); };
+  const hs=document.getElementById("h3"); hs.oninput=()=>{ z3=H3[+hs.value]; document.getElementById("h3txt").textContent=`${z3.toLocaleString("fr-FR")} m`; };
+  const ray=new THREE.Raycaster(), m2=new THREE.Vector2(); let down=null, hovPend=null;
+  const hring=new THREE.Mesh(new THREE.RingGeometry(.55,.8,32),new THREE.MeshBasicMaterial({color:0xffffff, transparent:true, opacity:.9, side:THREE.DoubleSide, depthTest:false})); hring.rotation.x=-Math.PI/2; hring.visible=false; hring.renderOrder=5; scene.add(hring);
+  renderer.domElement.addEventListener("pointermove", e => { if(e.buttons){ hideTip("3d"); hring.visible=false; return; } if(hovPend) return; hovPend=requestAnimationFrame(()=>{ hovPend=null;
+    const r=renderer.domElement.getBoundingClientRect(); m2.set((e.clientX-r.left)/r.width*2-1,-(e.clientY-r.top)/r.height*2+1); ray.setFromCamera(m2,cam); const hit=ray.intersectObject(mesh)[0];
+    if(!hit){ hideTip("3d"); hring.visible=false; return; } const x=hit.point.x+W/2, y=-hit.point.z+H/2, k=idx(x,y), [u,v]=wind(x,y,z3,state.hour), sp=Math.hypot(u,v), deg=(fromDeg(u,v)+180)%360;
+    hring.position.set(hit.point.x, hit.point.y+.08, hit.point.z); hring.visible=true;
+    showTip(`<div style="display:flex;gap:8px;align-items:center"><b>${fmtSpeed(sp)}</b>${arrowSvg(deg,18,"currentColor")}</div>Vent ${dirName(u,v)}, à ${z3} m du sol<br><span class="sub">${wat[k]===1?"En mer":`Sol à ${Math.round(elev[k])} m`} · près de ${nearestName([x,y])} · cliquez pour le détail</span>`, e.clientX, e.clientY, "3d"); }); });
+  renderer.domElement.addEventListener("pointerleave", () => { hideTip("3d"); hring.visible=false; });
+  renderer.domElement.addEventListener("pointerdown",e=>down=[e.clientX,e.clientY]);
+  let cutMode=false, cutPts=[], cutObjs=[]; const cb=document.getElementById("cutbtn"), cap=document.getElementById("cap3");
+  const clearCut=()=>{ cutObjs.forEach(o=>scene.remove(o)); cutObjs=[]; cutPts=[]; };
+  cb.onclick=()=>{ cutMode=!cutMode; clearCut(); cb.setAttribute("aria-pressed",cutMode); cb.textContent=cutMode?"Touchez 2 points du relief":"Tracer une coupe"; cap.hidden=!cutMode; cap.textContent="Touchez le point de départ A, puis le point d'arrivée B."; };
+  function drawCut(A,B){ const pts=[]; for(let i=0;i<=80;i++){ const s=i/80, x=A[0]+(B[0]-A[0])*s, y=A[1]+(B[1]-A[1])*s, k=idx(x,y); pts.push(new THREE.Vector3(x-W/2,(wat[k]?0:elev[k]*EX)+.35,-(y-H/2))); }
+    const ln=new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),new THREE.LineBasicMaterial({color:0xc4842f})); scene.add(ln); cutObjs.push(ln); }
+  renderer.domElement.addEventListener("pointerup",e=>{ if(!down||Math.hypot(e.clientX-down[0],e.clientY-down[1])>6) return; const r=renderer.domElement.getBoundingClientRect(); m2.set((e.clientX-r.left)/r.width*2-1,-(e.clientY-r.top)/r.height*2+1); ray.setFromCamera(m2,cam); const hit=ray.intersectObject(mesh)[0]; if(!hit) return; const x=hit.point.x+W/2, y=-hit.point.z+H/2;
+    if(seedMode){ launchSeed(x,y,hit.point); return; }
+    if(cutMode){ cutPts.push([x,y]); const mk=new THREE.Mesh(new THREE.SphereGeometry(.45,16,12),new THREE.MeshLambertMaterial({color:0xc4842f})); mk.position.set(hit.point.x,hit.point.y+.5,hit.point.z); scene.add(mk); cutObjs.push(mk);
+      if(cutPts.length===2){ drawCut(...cutPts); renderCut(...cutPts); cutMode=false; cb.setAttribute("aria-pressed",false); cb.textContent="Nouvelle coupe"; cap.hidden=true; document.getElementById("cutcard").scrollIntoView({behavior:"smooth",block:"nearest"}); } else cap.textContent="Touchez maintenant le point d'arrivée B."; return; }
+    pin.position.set(hit.point.x,hit.point.y+1.1,hit.point.z); pin.visible=true; openSheet(x,y,z3); });
+  const BREEZE={8:"8 h : le matin, le vent de terre faiblit.",10:"10 h : la terre chauffe plus vite que la mer.",12:"12 h : la brise de mer se lève et entre dans les terres.",14:"14 h : brise de mer forte sur toute la côte du golfe.",16:"16 h : la brise est à son maximum et pénètre à 10 ou 15 km.",18:"18 h : le soleil baisse, la brise faiblit.",20:"20 h : le vent tombe près de la côte.",22:"22 h : la nuit, une faible brise de terre souffle vers la mer."};
+  let bT=null; const bb=document.getElementById("breeze");
+  bb.onclick=()=>{ if(bT){ clearInterval(bT); bT=null; bb.textContent="Voir la brise de mer"; cap.hidden=true; return; } let h=8; hs.value=0; hs.oninput(); bb.textContent="Arrêter"; cap.hidden=false;
+    const step=()=>{ setHour(h); const k=Object.keys(BREEZE).map(Number).filter(q=>q<=h).pop(); cap.textContent=BREEZE[k]; h++; if(h>22){ clearInterval(bT); bT=null; bb.textContent="Voir la brise de mer"; setTimeout(()=>{ if(!bT) cap.hidden=true; },2500); } };
+    step(); bT=setInterval(step,1100); };
+  function resize(){ const w=host.clientWidth, h=host.clientHeight; renderer.setSize(w,h,false); cam.aspect=w/h; cam.updateProjectionMatrix(); }
+  new ResizeObserver(resize).observe(host);
+  matchMedia("(prefers-color-scheme: dark)").addEventListener("change", colorTerrain);
+  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches, tmp=new THREE.Vector3();
+  // ---- voyage d'un objet lâché dans le vent
+  let seedMode=false, seed=null; const sb=document.getElementById("seedbtn"), st=document.getElementById("seedtype");
+  const SEEDS={graine:{n:"la graine",c:0xfff1a8,z0:15}, sable:{n:"le grain de sable",c:0xe0a457,z0:5}, ballon:{n:"le ballon",c:0xff5a5f,z0:10}};
+  const TOWARD=["le nord","le nord-est","l'est","le sud-est","le sud","le sud-ouest","l'ouest","le nord-ouest"];
+  const NMAX=900, tpos=new Float32Array(NMAX*3), tgeo=new THREE.BufferGeometry(); tgeo.setAttribute("position",new THREE.BufferAttribute(tpos,3)); tgeo.setDrawRange(0,0);
+  const trail=new THREE.Line(tgeo,new THREE.LineBasicMaterial({color:0xffd34d})); scene.add(trail);
+  const ball=new THREE.Mesh(new THREE.SphereGeometry(.5,20,14),new THREE.MeshBasicMaterial({color:0xfff1a8})); ball.visible=false; scene.add(ball);
+  const glow=new THREE.Mesh(new THREE.SphereGeometry(1.1,20,14),new THREE.MeshBasicMaterial({color:0xffd34d, transparent:true, opacity:.25, depthWrite:false})); ball.add(glow);
+  const yOf=(x,y,z)=>{ const k=idx(x,y); return (wat[k]?0:elev[k])*EX + Math.max(.15, z*EX*1.4); };
+  sb.onclick=()=>{ seedMode=!seedMode; sb.setAttribute("aria-pressed",seedMode); sb.textContent=seedMode?"Touchez le relief…":"Lâcher dans le vent"; cap.hidden=!seedMode; cap.textContent=`Touchez le relief pour lâcher ${SEEDS[st.value].n}.`; };
+  function launchSeed(x,y,p){ seedMode=false; sb.setAttribute("aria-pressed",false); sb.textContent="Lâcher encore";
+    const T=SEEDS[st.value]; seed={x,y,x0:x,y0:y,z:T.z0,type:st.value,t:0,dist:0,n:0,zmax:T.z0,done:false}; ball.material.color.setHex(T.c); ball.visible=true; tgeo.setDrawRange(0,0); cap.hidden=false; }
+  function stepSeed(){ if(!seed || seed.done) return; const dt=6;
+    for(let s2=0;s2<(reduce?50:1);s2++){
+      const [u,v]=wind(seed.x,seed.y,seed.z,state.hour), sp=Math.hypot(u,v);
+      seed.x+=u*dt/1000; seed.y+=v*dt/1000; seed.dist+=sp*dt/1000; seed.t+=dt;
+      if(seed.type==="ballon") seed.z=Math.min(1000,seed.z+2.2*dt); else if(seed.type==="graine") seed.z=Math.max(4,Math.min(160,seed.z+(Math.sin(seed.t/240)*.35+.05*(sp-3))*dt)); else seed.z=Math.max(2,Math.min(30,seed.z+(sp>6?.15:-.25)*dt));
+      seed.zmax=Math.max(seed.zmax,seed.z);
+      if(seed.n<NMAX){ tpos[seed.n*3]=seed.x-W/2; tpos[seed.n*3+1]=yOf(seed.x,seed.y,seed.z); tpos[seed.n*3+2]=-(seed.y-H/2); seed.n++; tgeo.setDrawRange(0,seed.n); tgeo.attributes.position.needsUpdate=true; }
+      const out = seed.x<0||seed.x>W||seed.y<0||seed.y>H;
+      if(out || seed.t>=3600 || (seed.type==="sable" && sp<2.5 && seed.t>600)){ seed.done=true;
+        const dx=seed.x-seed.x0, dy=seed.y-seed.y0, dd=Math.hypot(dx,dy), dir=TOWARD[Math.round(((Math.atan2(dx,dy)*180/Math.PI)+360)%360/45)%8], mins=Math.round(seed.t/60);
+        cap.textContent = `${SEEDS[seed.type].n[0].toUpperCase()+SEEDS[seed.type].n.slice(1)} a voyagé ${dd.toFixed(1).replace(".",",")} km vers ${dir} en ${mins} min${out?" (sortie de la zone)":""}, jusqu'à ${Math.round(seed.zmax)} m du sol, près de ${nearestName([Math.min(W,Math.max(0,seed.x)),Math.min(H,Math.max(0,seed.y))])}.`;
+        break; } }
+    ball.position.set(seed.x-W/2, yOf(seed.x,seed.y,seed.z), -(seed.y-H/2)); glow.scale.setScalar(1+.15*Math.sin(performance.now()/200));
+    if(!seed.done) cap.textContent=`${SEEDS[seed.type].n[0].toUpperCase()+SEEDS[seed.type].n.slice(1)} vole depuis ${Math.round(seed.t/60)} min : ${seed.dist.toFixed(1).replace(".",",")} km parcourus, à ${Math.round(seed.z)} m du sol.`; }
+  function tick(){ requestAnimationFrame(tick); if(!host.offsetParent) return; stepSeed();
+    for(let i=0;i<N;i++){ const p=P[i], [u,v]=wind(p.x,p.y,z3,state.hour), sp=Math.hypot(u,v); if(!reduce){ p.x+=u*.02; p.y+=v*.02; } if(++p.a>140||p.x<0||p.x>W||p.y<0||p.y>H){ p.x=Math.random()*W; p.y=Math.random()*H; p.a=0; }
+      const k=idx(p.x,p.y), gz=(wat[k]?0:elev[k]); pp[i*3]=p.x-W/2; pp[i*3+1]=gz*EX+Math.max(.15,z3*EX*1.4); pp[i*3+2]=-(p.y-H/2); const c=speedColor(kmh(sp)); pc[i*3]=c[0]/255; pc[i*3+1]=c[1]/255; pc[i*3+2]=c[2]/255; }
+    pg.attributes.position.needsUpdate=true; pg.attributes.color.needsUpdate=true; ctl.update(); renderer.render(scene,cam);
+    const r=renderer.domElement.getBoundingClientRect(); for(const l of labels){ tmp.copy(l.v).project(cam); const vis=tmp.z<1&&Math.abs(tmp.x)<1&&Math.abs(tmp.y)<1; l.d.hidden=!vis; if(vis){ l.d.style.left=((tmp.x+1)/2*r.width)+"px"; l.d.style.top=((1-tmp.y)/2*r.height)+"px"; } } }
+  tick(); update3dColors=()=>{};
+}
+
+// ---------------- navigation par onglets ----------------
+let threeReady=false;
+// ---------------- comptes, rôles et accès ----------------
+const ROLES = {
+  public:{n:"Grand public", auto:true, home:"monvent", d:"Vent près de chez soi, alertes"},
+  agri:{n:"Agriculteur", auto:true, home:"agri", d:"Irrigation, traitements, dépôt"},
+  chantier:{n:"Chef de chantier", auto:false, home:"monvent", d:"Grues, travail en hauteur"},
+  eolien:{n:"Exploitant éolien", auto:false, home:"eolien", d:"Parcs, production, emplacements"},
+  rd:{n:"Chercheur (R&D)", auto:false, home:"tableau", d:"Toutes les données, fiabilité, API"},
+  admin:{n:"Administrateur", auto:false, home:"admin", d:"Comptes, rôles, clés d'API"}
+};
+const ACCESS = { monvent:"*", carte3d:"*", alertes:"*", agri:["agri","rd","admin"], tableau:["chantier","eolien","rd","admin"], eolien:["eolien","rd","admin"], fiabilite:["eolien","rd","admin"], admin:["admin"] };
+const TABNAME = { monvent:"Mon vent", agri:"Agriculteur", tableau:"Tableau de bord", carte3d:"Carte 3D", alertes:"Alertes", eolien:"Éolien", fiabilite:"Fiabilité", admin:"Administration" };
+const store = { get(k,d){ try{ const v=localStorage.getItem(k); return v?JSON.parse(v):d; }catch(e){ return d; } }, set(k,v){ try{ localStorage.setItem(k,JSON.stringify(v)); }catch(e){} } };
+let USERS = store.get("aw-users", null);
+if(!Array.isArray(USERS)){ USERS = [
+  {id:"u1", name:"Admin ATOM Wind", email:"admin@demo.atomwind.tn", role:"admin", status:"actif", demo:true, created:"2026-10-01"},
+  {id:"u2", name:"Hédi, agriculteur à Mornag", email:"agri@demo.atomwind.tn", role:"agri", status:"actif", demo:true, created:"2026-10-05"},
+  {id:"u3", name:"Société Vent du Cap", email:"eolien@demo.atomwind.tn", role:"eolien", status:"actif", demo:true, created:"2026-10-08"},
+  {id:"u4", name:"Chantier Ben Arous", email:"chantier@demo.atomwind.tn", role:"public", requested:"chantier", status:"en attente", demo:true, created:"2026-10-20"},
+  {id:"u5", name:"Labo R&D Nuthora", email:"rd@demo.atomwind.tn", role:"rd", status:"actif", demo:true, created:"2026-10-02"} ]; store.set("aw-users",USERS); }
+USERS.forEach(u=>{ if(!ROLES[u.role]) u.role="public"; if(u.requested && !ROLES[u.requested]) u.requested=null; });
+let KEYS = store.get("aw-keys", []); if(!Array.isArray(KEYS)) KEYS=[];
+let me = USERS.find(u=>u.id===store.get("aw-session",null) && u.status!=="désactivé") || null;
+const roleOf = () => me ? me.role : "visiteur";
+const allowed = v => ACCESS[v]==="*" || (Array.isArray(ACCESS[v]) && ACCESS[v].includes(roleOf()));
+const toastEl=document.getElementById("toast"); let toastT=null;
+function toast(msg){ toastEl.textContent=msg; toastEl.hidden=false; clearTimeout(toastT); toastT=setTimeout(()=>toastEl.hidden=true,3200); }
+async function hashPw(salt,pw){ try{ const b=await crypto.subtle.digest("SHA-256", new TextEncoder().encode(salt+":"+pw)); return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,"0")).join(""); }catch(e){ let h=0; for(const c of salt+pw) h=(h*31+c.charCodeAt(0))|0; return "f"+h; } }
+const esc = t => String(t).replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const initials = n => n.split(/\s+/).filter(Boolean).slice(0,2).map(w=>w[0].toUpperCase()).join("");
+function applyAccess(){ document.querySelectorAll("nav.tabs a").forEach(a=>{ a.hidden = !allowed(a.dataset.v); }); if(typeof nesmaAccess==="function") nesmaAccess(); renderUserBox(); }
+function renderUserBox(){ const ub=document.getElementById("userbox");
+  if(!me){ ub.innerHTML=`<button class="btn" id="b-login">Se connecter</button><button class="btn primary" id="b-reg">Créer un compte</button>`; document.getElementById("b-login").onclick=()=>openAuth("login"); document.getElementById("b-reg").onclick=()=>openAuth("register"); return; }
+  ub.innerHTML=`<button class="btn" id="b-user" aria-haspopup="true" aria-expanded="false"><span class="avatar">${esc(initials(me.name))}</span><span style="text-align:left;line-height:1.15"><span style="display:block">${esc(me.name.split(",")[0])}</span><span class="muted" style="font-size:12px;font-weight:400">${ROLES[me.role].n}${me.requested?" · demande en cours":""}</span></span></button><div class="menu card" id="umenu" hidden>
+    <div><b>${esc(me.name)}</b><br><span class="muted" style="font-size:14px">${esc(me.email)}</span></div>
+    <div><span class="pill m">${ROLES[me.role].n}</span>${me.requested?` <span class="pill mid">${ROLES[me.requested].n} : en attente de validation</span>`:""}</div>
+    <div class="muted" style="font-size:14px">Accès : ${Object.keys(ACCESS).filter(allowed).map(v=>TABNAME[v]).join(", ")}</div>
+    <button class="btn" id="b-out">Se déconnecter</button></div>`;
+  const bu=document.getElementById("b-user"), mn=document.getElementById("umenu");
+  bu.onclick=e=>{ e.stopPropagation(); mn.hidden=!mn.hidden; bu.setAttribute("aria-expanded",!mn.hidden); };
+  document.addEventListener("click",e=>{ if(!e.target.closest("#userbox")) mn.hidden=true; },{once:true});
+  document.getElementById("b-out").onclick=logout; }
+function login(u, msg){ me=u; store.set("aw-session",u.id); applyAccess(); closeAuth(); const home=ROLES[u.role].home; show(home); toast(msg||`Bienvenue, ${u.name.split(",")[0]}`);
+  if(u.role==="chantier"){ state.act="crane"; document.querySelectorAll(".act").forEach(x=>x.setAttribute("aria-pressed",x.dataset.a==="crane")); renderAnswer(); } }
+function logout(){ me=null; store.set("aw-session",null); applyAccess(); show("monvent"); toast("Vous êtes déconnecté."); }
+const authEl=document.getElementById("authm");
+function closeAuth(){ authEl.hidden=true; }
+function openAuth(mode){
+  const roleOpts = Object.entries(ROLES).filter(([k])=>k!=="admin").map(([k,r])=>`<option value="${k}">${r.n} : ${r.d}${r.auto?"":" (validation par l'équipe)"}</option>`).join("");
+  authEl.innerHTML = `<div class="card authcard" role="dialog" aria-modal="true" aria-label="Connexion à ATOM Wind">
+    <div class="row" style="justify-content:space-between"><div class="brand" style="margin:0"><svg width="30" height="30" viewBox="0 0 38 38" aria-hidden="true"><circle cx="19" cy="19" r="18" fill="var(--accent)"/><path d="M8 15c6-4 11 3 18-1M8 21c7-4 12 3 22-1M10 27c5-3 9 2 14-1" stroke="var(--accent-ink)" stroke-width="2.4" fill="none" stroke-linecap="round"/></svg><b>ATOM Wind</b></div><button class="x" id="a-close" aria-label="Fermer">×</button></div>
+    <div class="tabs2"><button id="t-login" aria-pressed="${mode==="login"}">Se connecter</button><button id="t-reg" aria-pressed="${mode==="register"}">Créer un compte</button></div>
+    ${mode==="login" ? `<form class="form" id="f-login" novalidate>
+      <label for="l-mail">Adresse e-mail<input class="inp" id="l-mail" type="email" autocomplete="username" required></label>
+      <label for="l-pw">Mot de passe<input class="inp" id="l-pw" type="password" autocomplete="current-password" required></label>
+      <div class="err" id="l-err" role="alert"></div>
+      <button class="btn primary" type="submit">Se connecter</button>
+      <button class="btn" type="button" id="l-forgot">Mot de passe oublié ?</button></form>
+      <div><b style="font-size:14px">Démonstration : entrer directement en tant que</b><div class="demo" style="margin-top:6px">${["agri","eolien","rd","admin"].map(r=>`<button class="btn" data-demo="${r}">${ROLES[r].n}</button>`).join("")}</div></div>`
+    : `<form class="form" id="f-reg" novalidate>
+      <label for="r-name">Nom ou raison sociale<input class="inp" id="r-name" autocomplete="name" required></label>
+      <label for="r-mail">Adresse e-mail<input class="inp" id="r-mail" type="email" autocomplete="email" required></label>
+      <label for="r-pw">Mot de passe (8 caractères au moins, dont un chiffre)<input class="inp" id="r-pw" type="password" autocomplete="new-password" required></label>
+      <label for="r-pw2">Confirmer le mot de passe<input class="inp" id="r-pw2" type="password" autocomplete="new-password" required></label>
+      <label for="r-role">Je suis<select class="inp" id="r-role">${roleOpts}</select></label>
+      <label for="r-place">Mon lieu principal<select class="inp" id="r-place">${PLACES.map((p,i)=>`<option value="${i}">${p[0]}</option>`).join("")}</select></label>
+      <label class="check" for="r-ok"><input type="checkbox" id="r-ok"> J'accepte les conditions d'utilisation et la politique de confidentialité d'ATOM Wind.</label>
+      <div class="err" id="r-err" role="alert"></div>
+      <button class="btn primary" type="submit">Créer mon compte</button></form>`}
+    <p class="muted" style="font-size:12px;margin:0">Prototype : les comptes sont enregistrés seulement dans ce navigateur, mot de passe chiffré (empreinte). En production, l'authentification se fait sur le serveur ATOM Wind.</p></div>`;
+  authEl.hidden=false;
+  document.getElementById("a-close").onclick=closeAuth;
+  document.getElementById("t-login").onclick=()=>openAuth("login"); document.getElementById("t-reg").onclick=()=>openAuth("register");
+  if(mode==="login"){
+    document.getElementById("l-mail").focus();
+    document.getElementById("l-forgot").onclick=()=>{ document.getElementById("l-err").textContent="Prototype : en production, un lien de réinitialisation est envoyé par e-mail."; };
+    authEl.querySelectorAll("[data-demo]").forEach(b=>b.onclick=()=>{ let u=USERS.find(x=>x.demo && x.role===b.dataset.demo && x.status==="actif"); if(!u){ u={id:"d"+b.dataset.demo, name: ROLES[b.dataset.demo].n, email:`${b.dataset.demo}@demo.atomwind.tn`, role:b.dataset.demo, status:"actif", demo:true, created:new Date().toISOString().slice(0,10)}; USERS.push(u); store.set("aw-users",USERS); } if(u) login(u, `Démonstration : connecté en tant que ${ROLES[u.role].n}`); });
+    document.getElementById("f-login").onsubmit=async e=>{ e.preventDefault(); const mail=document.getElementById("l-mail").value.trim().toLowerCase(), pw=document.getElementById("l-pw").value, err=document.getElementById("l-err");
+      const u=USERS.find(x=>x.email===mail);
+      if(!mail||!pw){ err.textContent="Saisissez votre e-mail et votre mot de passe."; return; }
+      if(!u || u.demo || !u.salt || await hashPw(u.salt,pw)!==u.hash){ err.textContent="E-mail ou mot de passe incorrect."; return; }
+      if(u.status==="désactivé"){ err.textContent="Ce compte est désactivé. Contactez l'équipe ATOM Wind."; return; }
+      login(u); };
+  } else {
+    document.getElementById("r-name").focus();
+    document.getElementById("f-reg").onsubmit=async e=>{ e.preventDefault(); const g=id=>document.getElementById(id), err=g("r-err");
+      const name=g("r-name").value.trim(), mail=g("r-mail").value.trim().toLowerCase(), pw=g("r-pw").value, pw2=g("r-pw2").value, role=g("r-role").value;
+      if(name.length<2){ err.textContent="Indiquez votre nom."; return; }
+      if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(mail)){ err.textContent="Cette adresse e-mail n'est pas valide."; return; }
+      if(USERS.some(u=>u.email===mail)){ err.textContent="Un compte existe déjà avec cette adresse. Connectez-vous."; return; }
+      if(pw.length<8 || !/\d/.test(pw)){ err.textContent="Le mot de passe doit faire 8 caractères au moins, dont un chiffre."; return; }
+      if(pw!==pw2){ err.textContent="Les deux mots de passe ne sont pas identiques."; return; }
+      if(!g("r-ok").checked){ err.textContent="Acceptez les conditions d'utilisation pour continuer."; return; }
+      const salt=[...crypto.getRandomValues(new Uint8Array(12))].map(x=>x.toString(16).padStart(2,"0")).join(""), auto=ROLES[role].auto;
+      const u={id:"u"+Date.now(), name, email:mail, role: auto?role:"public", requested: auto?null:role, status: auto?"actif":"en attente", salt, hash:await hashPw(salt,pw), place:+g("r-place").value, created:new Date().toISOString().slice(0,10)};
+      USERS.push(u); store.set("aw-users",USERS);
+      if(u.role==="agri"){ ag.place=u.place; const ps=document.getElementById("ag-place"); if(ps) ps.value=String(u.place); renderAgri(); }
+      login(u, auto ? "Compte créé. Bienvenue sur ATOM Wind !" : `Compte créé. Votre accès « ${ROLES[role].n} » sera validé par l'équipe ; en attendant, vous avez l'accès Grand public.`); };
+  }
+}
+
+// ---------------- administration ----------------
+function renderAdmin(){
+  if(!document.getElementById("adusers")) return;
+  const n=s=>USERS.filter(u=>u.status===s).length;
+  document.getElementById("adkpis").innerHTML=[["Comptes",USERS.length],["Actifs",n("actif")],["En attente de validation",n("en attente")],["Clés d'API actives",KEYS.filter(k=>!k.revoked).length]].map(([k,v])=>`<div class="card kpi"><div class="k">${k}</div><div class="v">${v}</div></div>`).join("");
+  document.getElementById("adusers").innerHTML = `<thead><tr><th>Nom</th><th>E-mail</th><th>Rôle</th><th>Statut</th><th>Actions</th></tr></thead><tbody>${USERS.map(u=>`<tr>
+    <td><b>${esc(u.name)}</b><br><span class="muted" style="font-size:13px">créé le ${u.created}</span></td><td>${esc(u.email)}</td>
+    <td><select data-role="${u.id}" aria-label="Rôle de ${esc(u.name)}" ${u.id===me?.id?"disabled":""}>${Object.entries(ROLES).map(([k,r])=>`<option value="${k}" ${k===u.role?"selected":""}>${r.n}</option>`).join("")}</select>${u.requested?`<br><span class="pill mid" style="margin-top:4px">demande : ${ROLES[u.requested].n}</span>`:""}</td>
+    <td><span class="pill ${u.status==="actif"?"good":u.status==="en attente"?"mid":"bad"}">${u.status}</span></td>
+    <td><div class="row" style="gap:6px">${u.requested?`<button class="btn" data-ok="${u.id}">Valider</button>`:""}${u.id!==me?.id?`<button class="btn" data-off="${u.id}">${u.status==="désactivé"?"Réactiver":"Désactiver"}</button>`:`<span class="muted" style="font-size:13px">vous</span>`}</div></td></tr>`).join("")}</tbody>`;
+  document.querySelectorAll("[data-role]").forEach(sl=>sl.onchange=()=>{ const u=USERS.find(x=>x.id===sl.dataset.role); u.role=sl.value; u.requested=null; if(u.status==="en attente") u.status="actif"; store.set("aw-users",USERS); renderAdmin(); toast(`Rôle de ${u.name} : ${ROLES[u.role].n}`); });
+  document.querySelectorAll("[data-ok]").forEach(b=>b.onclick=()=>{ const u=USERS.find(x=>x.id===b.dataset.ok); u.role=u.requested; u.requested=null; u.status="actif"; store.set("aw-users",USERS); renderAdmin(); toast(`Accès « ${ROLES[u.role].n} » validé pour ${u.name}`); });
+  document.querySelectorAll("[data-off]").forEach(b=>b.onclick=()=>{ const u=USERS.find(x=>x.id===b.dataset.off); u.status = u.status==="désactivé" ? "actif" : "désactivé"; store.set("aw-users",USERS); renderAdmin(); toast(`${u.name} : compte ${u.status}`); });
+  const tabs=Object.keys(ACCESS);
+  document.getElementById("adroles").innerHTML = `<thead><tr><th>Rôle</th>${tabs.map(t=>`<th style="font-size:13px">${TABNAME[t]}</th>`).join("")}</tr></thead><tbody>${[["visiteur","Visiteur (sans compte)"],...Object.entries(ROLES).map(([k,r])=>[k,r.n])].map(([k,nm])=>`<tr><td><b>${nm}</b></td>${tabs.map(t=>{ const ok=ACCESS[t]==="*"||ACCESS[t].includes(k); return `<td style="text-align:center">${ok?'<span class="pill good">oui</span>':'<span class="muted">—</span>'}</td>`; }).join("")}</tr>`).join("")}</tbody>`;
+  document.getElementById("k-list").innerHTML = KEYS.length ? KEYS.map((k,i)=>`<div class="it"><span style="min-width:0"><b>${esc(k.name)}</b> <span class="pill ${k.revoked?"bad":"good"}">${k.revoked?"révoquée":"active"}</span><br><span class="muted" style="font-size:13px;font-family:var(--f-data)">${k.prefix}… · ${k.scope} · créée le ${k.created}</span></span>${k.revoked?"":`<button class="btn" data-rev="${i}">Révoquer</button>`}</div>`).join("") : `<span class="muted">Aucune clé pour l'instant.</span>`;
+  document.querySelectorAll("[data-rev]").forEach(b=>b.onclick=()=>{ KEYS[+b.dataset.rev].revoked=true; store.set("aw-keys",KEYS); renderAdmin(); toast("Clé révoquée : elle ne fonctionne plus."); });
+}
+document.getElementById("k-add").onclick=()=>{ const name=document.getElementById("k-name").value.trim()||"Clé sans nom", scope=document.getElementById("k-scope").value;
+  const raw="aw_"+[...crypto.getRandomValues(new Uint8Array(20))].map(x=>x.toString(16).padStart(2,"0")).join("");
+  KEYS.push({name, scope, prefix:raw.slice(0,10), created:new Date().toISOString().slice(0,10), revoked:false}); store.set("aw-keys",KEYS);
+  document.getElementById("k-new").innerHTML=`<div class="answer go" style="padding:12px;margin-top:10px"><b>Copiez cette clé maintenant : elle ne sera plus affichée.</b><div class="keybox" id="k-raw">${raw}</div><button class="btn" id="k-copy">Copier</button></div>`;
+  document.getElementById("k-copy").onclick=()=>{ navigator.clipboard?.writeText(raw).then(()=>toast("Clé copiée."),()=>{ const r=document.createRange(); r.selectNodeContents(document.getElementById("k-raw")); getSelection().removeAllRanges(); getSelection().addRange(r); toast("Sélectionnée : copiez-la avec Ctrl+C."); }); };
+  document.getElementById("k-name").value=""; renderAdmin(); };
+
+function show(v){ if(!document.getElementById("v-"+v)) v="monvent";
+  if(!allowed(v)){ toast(me ? `L'espace « ${TABNAME[v]} » n'est pas inclus dans votre rôle (${ROLES[me.role].n}).` : `Connectez-vous pour accéder à l'espace « ${TABNAME[v]} ».`); if(!me) openAuth("login"); v = me ? ROLES[me.role].home : "monvent"; }
+  if(v==="admin") renderAdmin(); document.querySelectorAll("section.view").forEach(s=>s.classList.toggle("on",s.id==="v-"+v)); document.querySelectorAll("nav.tabs a").forEach(a=>a.setAttribute("aria-current",a.dataset.v===v?"page":"false")); sheet.hidden=true; if(v==="carte3d"&&!threeReady){ threeReady=true; init3d(); } }
+addEventListener("hashchange",()=>show(location.hash.slice(1)));
+// les liens internes sont gérés par la page elle-même : la visionneuse ne transmet pas toujours le changement d'ancre
+document.addEventListener("click", e => { const a=e.target.closest('a[href^="#"]'); if(!a) return; const v=a.getAttribute("href").slice(1); if(!document.getElementById("v-"+v)) return; e.preventDefault(); show(v); try{ history.replaceState(null,"","#"+v); }catch(_){} window.scrollTo({top:0, behavior:"smooth"}); });
+
+// ---------------- « Pourquoi ce vent ? » ----------------
+function explainHtml(x,y,z,h){
+  const k=idx(x,y), [bu,bv]=synoptic(h), B=breeze(h), sd=sdist[k], zr=z0[k], zz=Math.max(z,1);
+  const low=Math.log(Math.min(zz,150)/zr)/Math.log(10/zr), reach = sd>0 ? Math.exp(-sd/13) : Math.exp(sd/9);
+  const relief=Math.max(-.25,Math.min(.45,.0016*(elev[k]-smooth[k])))*Math.exp(-z/400);
+  const syn=Math.hypot(bu,bv)*Math.max(.3,low), brz=Math.abs(B)*reach*Math.max(.6,low*.8)*Math.exp(-z/380);
+  const L=[];
+  L.push(`<b>La météo générale</b> amène un vent ${dirName(bu,bv)} d'environ ${fmtSpeed(syn)} à cette hauteur.`);
+  if(B>.5 && brz>.4) L.push(`<b>La brise de mer</b> ajoute environ ${fmtSpeed(brz)} : l'après-midi, la terre chauffe plus vite que la mer et l'air frais de la mer entre dans les terres. Ici, elle vient ${dirName(gx[k],gy[k])} ; ${sd>0?`vous êtes à ${Math.round(sd)} km de la côte`:"vous êtes en mer"}.`);
+  else if(B<0 && brz>.2) L.push(`<b>La brise de terre</b> : la nuit, la terre refroidit plus vite que la mer, et un léger vent descend vers la mer.`);
+  else if(B>.5 && sd>20) L.push(`<b>Pas de brise de mer ici</b> : vous êtes à ${Math.round(sd)} km de la côte, trop loin pour la sentir.`);
+  if(relief>.04) L.push(`<b>Le relief accélère le vent</b> d'environ ${Math.round(relief*100)} % : vous êtes sur une hauteur (sol à ${Math.round(elev[k])} m), le vent s'y engouffre.`);
+  else if(relief<-.04) L.push(`<b>Le relief abrite</b> : vous êtes dans un creux, le vent est freiné d'environ ${Math.round(-relief*100)} %.`);
+  if(zr>.5 && z<100) L.push(`<b>Bâtiments ou arbres</b> : le sol rugueux freine le vent près du sol.`);
+  else if(zr<.01) L.push(`<b>Sur l'eau</b>, rien ne freine le vent : il est plus régulier qu'à terre.`);
+  if(z<100){ const s100=Math.hypot(...wind(x,y,100,h)); L.push(`<b>La hauteur compte</b> : à 100 m du sol, le vent souffle à ${fmtSpeed(s100)}. Plus on monte, moins le sol le freine.`); }
+  return `<div class="why"><ul>${L.map(t=>`<li>${t}</li>`).join("")}</ul><span class="src">Explication simplifiée, tirée des composantes du calcul.</span></div>`;
+}
+
+// ---------------- le vent qui chante ----------------
+let audio=null; const sbtn=document.getElementById("b-sound");
+function soundToggle(){
+  if(audio){ try{ audio.ctx.close(); }catch(e){} audio=null; sbtn.setAttribute("aria-pressed",false); sbtn.innerHTML="Écouter le vent"; return; }
+  const AC=window.AudioContext||window.webkitAudioContext; if(!AC){ toast("Le son n'est pas disponible sur cet appareil."); return; }
+  const ctx=new AC(), len=ctx.sampleRate*3, buf=ctx.createBuffer(2,len,ctx.sampleRate);
+  for(let c=0;c<2;c++){ const d=buf.getChannelData(c); let last=0; for(let i=0;i<len;i++){ last=(last+.02*(Math.random()*2-1))/1.02; d[i]=last*3.2; } }
+  const src=ctx.createBufferSource(); src.buffer=buf; src.loop=true;
+  const bp=ctx.createBiquadFilter(); bp.type="bandpass"; bp.Q.value=.7;
+  const hi=ctx.createBiquadFilter(); hi.type="highpass"; hi.frequency.value=90;
+  const gain=ctx.createGain(); gain.gain.value=0; const master=ctx.createGain(); master.gain.value=.8;
+  const lfo=ctx.createOscillator(), lfoG=ctx.createGain(); lfo.frequency.value=.13; lfoG.gain.value=0; lfo.connect(lfoG); lfoG.connect(gain.gain);
+  const pan=ctx.createStereoPanner ? ctx.createStereoPanner() : null;
+  src.connect(hi); hi.connect(bp); bp.connect(gain); if(pan){ gain.connect(pan); pan.connect(master); } else gain.connect(master); master.connect(ctx.destination);
+  src.start(); lfo.start(); audio={ctx,bp,gain,lfoG,pan,lfo};
+  sbtn.setAttribute("aria-pressed",true); sbtn.innerHTML='<span class="wave" aria-hidden="true"><i></i><i></i><i></i><i></i></span> Couper le son'; updateSound();
+  toast("Le son suit le vent : plus fort quand il forcit, à gauche ou à droite selon sa direction.");
+}
+function updateSound(){ if(!audio) return; const [x,y]=state.pin, [u,v]=wind(x,y,ACTS[state.act].z,state.hour), sp=Math.hypot(u,v), t=audio.ctx.currentTime;
+  const g=Math.min(.55,.03+sp*.04); audio.gain.gain.setTargetAtTime(g,t,.5); audio.lfoG.gain.setTargetAtTime(g*.4,t,.5); audio.lfo.frequency.setTargetAtTime(.08+sp*.025,t,.5);
+  audio.bp.frequency.setTargetAtTime(220+sp*85,t,.5); if(audio.pan) audio.pan.pan.setTargetAtTime(Math.max(-.9,Math.min(.9,u/7)),t,.5); }
+sbtn.onclick=soundToggle;
+
+// ---------------- info-bulle, survol des graphiques, compteurs ----------------
+const gtip=document.getElementById("gtip"); let tipOwner=null;
+function showTip(html,cx,cy,owner){ tipOwner=owner; gtip.innerHTML=html; gtip.hidden=false; const w=gtip.offsetWidth, h=gtip.offsetHeight; let x=cx+16, y=cy+16; if(x+w>innerWidth-8) x=cx-w-16; if(y+h>innerHeight-8) y=cy-h-16; gtip.style.left=Math.max(8,x)+"px"; gtip.style.top=Math.max(8,y)+"px"; }
+function hideTip(owner){ if(!owner || owner===tipOwner){ gtip.hidden=true; tipOwner=null; } }
+document.addEventListener("mousemove", e => { const el=e.target.closest && e.target.closest("[data-h]"); if(el) showTip(el.getAttribute("data-h"), e.clientX, e.clientY, "data"); else if(tipOwner==="data") hideTip("data"); });
+document.addEventListener("scroll", () => hideTip(), {passive:true});
+function hoverChart(id, Wd, pl, pr, html){ const box=document.getElementById(id), svg=box && box.querySelector("svg"); if(!svg) return; const hl=svg.querySelector(".hl");
+  const hourAt=e=>{ const r=svg.getBoundingClientRect(), xv=(e.clientX-r.left)/r.width*Wd; return Math.max(0,Math.min(23,Math.round((xv-pl)/(Wd-pl-pr)*23))); };
+  svg.style.cursor="pointer";
+  svg.addEventListener("mousemove", e=>{ const h=hourAt(e), x=pl+h*(Wd-pl-pr)/23; if(hl){ hl.setAttribute("x1",x); hl.setAttribute("x2",x); hl.setAttribute("visibility","visible"); } showTip(html(h), e.clientX, e.clientY, "chart"); });
+  svg.addEventListener("mouseleave", ()=>{ if(hl) hl.setAttribute("visibility","hidden"); hideTip("chart"); });
+  svg.addEventListener("click", e=>setHour(hourAt(e))); }
+const KPIPREV={};
+function animateKpis(id){ const box=document.getElementById(id); if(!box || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  box.querySelectorAll(".v").forEach((el,i)=>{ const m=el.textContent.match(/^([\d\s ]*\d(?:,\d+)?)(.*)$/); if(!m) return; const txt=m[1].replace(/[\s ]/g,""), dec=(txt.split(",")[1]||"").length, to=parseFloat(txt.replace(",",".")), key=id+i, from=KPIPREV[key]??0; KPIPREV[key]=to; if(from===to) return;
+    const t0=performance.now(), suf=m[2]; const step=t=>{ const a=Math.min(1,(t-t0)/550), e=1-(1-a)**3, v=from+(to-from)*e; el.textContent=(dec?v.toFixed(dec).replace(".",","):Math.round(v).toLocaleString("fr-FR"))+suf; if(a<1) requestAnimationFrame(step); }; requestAnimationFrame(step); }); }
+
+// ---------------- thème ----------------
+function setTheme(t){ if(t==="auto") delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme=t; ["auto","light","dark"].forEach(k=>document.getElementById("th-"+k).setAttribute("aria-pressed",k===t)); store.set("aw-theme",t); MAPS.forEach(m=>m.redraw()); renderAnswer(); renderTB(); renderEol(); }
+["auto","light","dark"].forEach(k=>document.getElementById("th-"+k).onclick=()=>setTheme(k));
+
+// ---------------- recherche rapide (Ctrl K) ----------------
+const pal=document.getElementById("palette"); let palSel=0, palItems=[];
+const norm=t=>t.normalize("NFD").replace(/[̀-ͯ]/g,"").toLowerCase();
+function palAll(){ const L=[];
+  PLACES.forEach((p,i)=>L.push({t:p[0], k:"Lieu", go:()=>{ state.pin=xy(p[1],p[2]); state.pinName=p[0]; townSel.value=String(i); show("monvent"); renderAnswer(); }}));
+  Object.entries(ACTS).forEach(([k,a])=>L.push({t:a.n, k:"Activité", go:()=>{ state.act=k; document.querySelectorAll(".act").forEach(x=>x.setAttribute("aria-pressed",x.dataset.a===k)); show("monvent"); renderAnswer(); }}));
+  Object.keys(ACCESS).filter(allowed).forEach(v=>L.push({t:TABNAME[v], k:"Espace", go:()=>show(v)}));
+  L.push({t:"Voir la brise de mer en 3D", k:"Action", go:()=>{ show("carte3d"); setTimeout(()=>document.getElementById("breeze").click(),900); }});
+  L.push({t:"Rejouer la journée", k:"Action", go:()=>document.getElementById("play").click()});
+  L.push({t:"Thème sombre", k:"Action", go:()=>setTheme("dark")}); L.push({t:"Thème clair", k:"Action", go:()=>setTheme("light")});
+  if(!me) L.push({t:"Se connecter", k:"Compte", go:()=>openAuth("login")}); else L.push({t:"Se déconnecter", k:"Compte", go:logout});
+  return L; }
+function palRender(q){ const all=palAll(), nq=norm(q.trim()); palItems = nq ? all.filter(x=>norm(x.t+" "+x.k).includes(nq)) : all; palSel=Math.min(palSel,Math.max(0,palItems.length-1));
+  pal.querySelector("ul").innerHTML = palItems.length ? palItems.slice(0,40).map((x,i)=>`<li role="option" aria-selected="${i===palSel}" data-i="${i}"><span>${esc(x.t)}</span><small>${x.k}</small></li>`).join("") : `<li><span class="muted">Aucun résultat</span></li>`;
+  pal.querySelectorAll("li[data-i]").forEach(li=>{ li.onclick=()=>palRun(+li.dataset.i); li.onmousemove=()=>{ if(palSel!==+li.dataset.i){ palSel=+li.dataset.i; palRender(pal.querySelector("input").value); } }; }); }
+function palRun(i){ const it=palItems[i]; palClose(); if(it) it.go(); }
+function palOpen(){ pal.innerHTML=`<div class="card" role="dialog" aria-modal="true" aria-label="Recherche rapide"><input id="pal-in" placeholder="Un lieu, une activité, un espace… (ex. Nabeul, grue, éolien)" autocomplete="off"><ul role="listbox"></ul><div class="muted" style="font-size:12px">Flèches pour choisir, Entrée pour ouvrir, Échap pour fermer</div></div>`; pal.hidden=false; palSel=0; const inp=document.getElementById("pal-in"); palRender(""); inp.focus();
+  inp.oninput=()=>{ palSel=0; palRender(inp.value); };
+  inp.onkeydown=e=>{ if(e.key==="ArrowDown"){ palSel=Math.min(palItems.length-1,palSel+1); palRender(inp.value); e.preventDefault(); } else if(e.key==="ArrowUp"){ palSel=Math.max(0,palSel-1); palRender(inp.value); e.preventDefault(); } else if(e.key==="Enter"){ palRun(palSel); } else if(e.key==="Escape"){ palClose(); } };
+  pal.onclick=e=>{ if(e.target===pal) palClose(); }; }
+function palClose(){ pal.hidden=true; }
+document.getElementById("b-search").onclick=palOpen;
+document.addEventListener("keydown", e=>{ if((e.ctrlKey||e.metaKey) && e.key.toLowerCase()==="k"){ e.preventDefault(); pal.hidden?palOpen():palClose(); } else if(e.key==="/" && !/input|select|textarea/i.test(document.activeElement.tagName) && pal.hidden){ e.preventDefault(); palOpen(); } else if(e.key==="Escape"){ palClose(); closeAuth(); } });
+
+// ---------------- visite guidée ----------------
+const TOUR=[["Le vent partout, même sans capteur","ATOM Wind calcule le vent sur tout le Grand Tunis, du sol jusqu'à 1 000 m, à partir des stations météo et de la météo de grande échelle.",'<svg width="200" height="90" viewBox="0 0 200 90"><path d="M10 40c40-25 70 15 110-5s60 5 70 0M10 60c40-20 80 15 120-5s40 5 60 0" stroke="var(--accent)" stroke-width="4" fill="none" stroke-linecap="round"/></svg>'],
+  ["Une question, une réponse","Placez votre position, dites ce que vous voulez faire, et ATOM Wind répond tout de suite : vert, vous pouvez ; orange, attention ; rouge, c'est déconseillé.",'<svg width="200" height="90" viewBox="0 0 200 90"><circle cx="50" cy="45" r="22" fill="var(--go)"/><circle cx="100" cy="45" r="22" fill="var(--warn)"/><circle cx="150" cy="45" r="22" fill="var(--stop)"/></svg>'],
+  ["Toujours dire si c'est sûr","Chaque valeur indique sa fiabilité. Loin des stations, elle est plus faible : la carte devient plus pâle et l'erreur probable est affichée.",'<svg width="200" height="90" viewBox="0 0 200 90"><rect x="20" y="25" width="50" height="40" rx="8" fill="var(--go)"/><rect x="75" y="25" width="50" height="40" rx="8" fill="var(--warn)" opacity=".7"/><rect x="130" y="25" width="50" height="40" rx="8" fill="var(--stop)" opacity=".35"/></svg>']];
+const tourEl=document.getElementById("tour");
+function tour(i=0){ if(i>=TOUR.length){ tourEl.hidden=true; try{ localStorage.setItem("aw-tour","1"); }catch(e){} return; } const [t,d,ill]=TOUR[i];
+  tourEl.innerHTML=`<div class="card" role="dialog" aria-modal="true" aria-label="Visite guidée"><div class="ill">${ill}</div><h2>${t}</h2><p style="margin:0">${d}</p><div class="row"><div class="dots">${TOUR.map((_,j)=>`<i class="${j===i?"on":""}"></i>`).join("")}</div><span style="margin-left:auto"></span><button class="btn" id="tskip">Passer</button><button class="btn primary" id="tnext">${i===TOUR.length-1?"Commencer":"Suivant"}</button></div></div>`;
+  tourEl.hidden=false; document.getElementById("tnext").onclick=()=>tour(i+1); document.getElementById("tskip").onclick=()=>tour(TOUR.length); document.getElementById("tnext").focus(); }
+document.getElementById("retour").onclick=()=>tour(0);
+
+// ---------------- Nesma : assistante du grand public ----------------
+const NES={open:false, emo:"content"};
+const SKIN="#e8b48f", HAIR="#3b2416";
+function faceSvg(emo, sp){
+  const amp = Math.min(9, 1 + sp*0.7), dur = Math.max(.9, 3.2 - sp*.15);
+  const E={
+    joie:{eyes:'<path class="feat" d="M70 98q10-10 20 0M110 98q10-10 20 0" stroke="#2a1a12" stroke-width="4" fill="none" stroke-linecap="round"/>', brows:'<path class="feat" d="M66 80q12-8 24-2M110 78q12-6 24 2" stroke="#2a1a12" stroke-width="4" fill="none" stroke-linecap="round"/>', mouth:'<path class="feat" d="M78 128q22 26 44 0z" fill="#8d2f2f"/><path d="M84 131q16 6 32 0" stroke="#fff" stroke-width="4" fill="none"/>', blush:.6},
+    content:{eyes:'<g class="blink"><ellipse cx="80" cy="98" rx="6" ry="7" fill="#2a1a12"/><ellipse cx="120" cy="98" rx="6" ry="7" fill="#2a1a12"/><circle cx="82" cy="95" r="2" fill="#fff"/><circle cx="122" cy="95" r="2" fill="#fff"/></g>', brows:'<path class="feat" d="M68 82q12-6 22-2M110 80q12-4 22 2" stroke="#2a1a12" stroke-width="4" fill="none" stroke-linecap="round"/>', mouth:'<path class="feat" d="M84 130q16 12 32 0" stroke="#8d2f2f" stroke-width="5" fill="none" stroke-linecap="round"/>', blush:.4},
+    inquiete:{eyes:'<g class="blink"><ellipse cx="80" cy="99" rx="6" ry="7" fill="#2a1a12"/><ellipse cx="120" cy="99" rx="6" ry="7" fill="#2a1a12"/><circle cx="82" cy="96" r="2" fill="#fff"/><circle cx="122" cy="96" r="2" fill="#fff"/></g>', brows:'<path class="feat" d="M68 84q10-2 22-8M110 76q12 6 22 8" stroke="#2a1a12" stroke-width="4" fill="none" stroke-linecap="round"/>', mouth:'<path class="feat" d="M84 134q6-6 11 0t11 0t10 0" stroke="#8d2f2f" stroke-width="5" fill="none" stroke-linecap="round"/>', blush:.2},
+    triste:{eyes:'<g class="blink"><ellipse cx="80" cy="101" rx="6" ry="6" fill="#2a1a12"/><ellipse cx="120" cy="101" rx="6" ry="6" fill="#2a1a12"/></g><path d="M76 110q-3 8 0 12q3-4 0-12z" fill="#7cc6ff"/>', brows:'<path class="feat" d="M68 88q12-2 22-12M110 76q10 10 22 12" stroke="#2a1a12" stroke-width="4" fill="none" stroke-linecap="round"/>', mouth:'<path class="feat" d="M84 138q16-14 32 0" stroke="#8d2f2f" stroke-width="5" fill="none" stroke-linecap="round"/>', blush:0},
+    surprise:{eyes:'<circle cx="80" cy="97" r="9" fill="#fff" stroke="#2a1a12" stroke-width="3"/><circle cx="120" cy="97" r="9" fill="#fff" stroke="#2a1a12" stroke-width="3"/><circle cx="80" cy="97" r="4" fill="#2a1a12"/><circle cx="120" cy="97" r="4" fill="#2a1a12"/>', brows:'<path class="feat" d="M66 74q12-8 24-4M110 70q12-4 24 4" stroke="#2a1a12" stroke-width="4" fill="none" stroke-linecap="round"/>', mouth:'<ellipse class="feat" cx="100" cy="134" rx="9" ry="11" fill="#8d2f2f"/>', blush:.3},
+    pensive:{eyes:'<g class="blink"><ellipse cx="83" cy="95" rx="6" ry="7" fill="#2a1a12"/><ellipse cx="123" cy="95" rx="6" ry="7" fill="#2a1a12"/></g>', brows:'<path class="feat" d="M68 84q12-4 22-2M110 74q12-2 22 4" stroke="#2a1a12" stroke-width="4" fill="none" stroke-linecap="round"/>', mouth:'<path class="feat" d="M88 132h24" stroke="#8d2f2f" stroke-width="5" stroke-linecap="round"/>', blush:.2}
+  }[emo] || {};
+  return `<g class="hair" style="--amp:${amp}deg;--dur:${dur}s"><path d="M38 108q-6-74 62-78q68 4 62 78q-4 34-10 64h-104q-6-30-10-64z" fill="${HAIR}"/><path d="M150 120q22 18 34 6q-10 22-34 16z" fill="${HAIR}" opacity=".9"/></g>
+    <path d="M86 150h28v28h-28z" fill="${SKIN}"/><path d="M58 196q42-30 84 0z" fill="var(--accent)"/>
+    <ellipse cx="100" cy="104" rx="46" ry="52" fill="${SKIN}"/>
+    <path d="M54 92q8-46 52-48q36 4 42 40q-26-26-62-20q-20 6-32 28z" fill="${HAIR}"/>
+    <circle cx="70" cy="120" r="8" fill="#ff8a8a" opacity="${E.blush}"/><circle cx="130" cy="120" r="8" fill="#ff8a8a" opacity="${E.blush}"/>
+    ${E.brows}${E.eyes}<path d="M98 108q4 10 0 14" stroke="#c48a66" stroke-width="3" fill="none" stroke-linecap="round"/>${E.mouth}`;
+}
+function nesmaSet(emo, thought, title, sp){ NES.emo=emo; document.getElementById("nesma-face").innerHTML=faceSvg(emo, sp??3); document.getElementById("nesma-mini").innerHTML=`<svg width="42" height="42" viewBox="30 40 140 140">${faceSvg(emo, 2)}</svg>`;
+  const th=document.getElementById("nesma-thought"); th.innerHTML=`<span class="ti">${title||"Je pense…"}</span>${thought}`; th.style.animation="none"; void th.offsetWidth; th.style.animation=""; }
+function nesmaAccess(){ const ok = roleOf()==="visiteur" || roleOf()==="public"; document.getElementById("nesma-btn").hidden = !ok || NES.open; if(!ok){ document.getElementById("nesma").hidden=true; NES.open=false; } }
+const SUGG=["Je veux porter une jupe","Je peux étendre le linge ?","Vélo ce soir ?","Plage cet après-midi ?","Barbecue ce soir ?","Cerf-volant ?","Mes cheveux vont tenir ?","Poussière aujourd'hui ?"];
+function nesmaOpen(){ NES.open=true; document.getElementById("nesma").hidden=false; document.getElementById("nesma-btn").hidden=true;
+  if(!document.getElementById("nesma-chat").children.length){ const [x,y]=state.pin, sp=Math.hypot(...wind(x,y,10,state.hour)); nesmaSet("joie","Aslema ! Dis-moi ce que tu prévois, je regarde le vent pour toi.","Bonjour",sp); botMsg(`Aslema ! Je suis Nesma, la brise. Je regarde le vent à <b>${esc(state.pinName.split(" (")[0])}</b>. Dis-moi ce que tu veux faire aujourd'hui : une tenue, une sortie, le linge…`); }
+  document.getElementById("nesma-in").focus(); }
+function nesmaClose(){ NES.open=false; document.getElementById("nesma").hidden=true; nesmaAccess(); }
+document.getElementById("nesma-btn").onclick=nesmaOpen; document.getElementById("nesma-x").onclick=nesmaClose;
+document.getElementById("nesma-sugg").innerHTML=SUGG.map(q=>`<button type="button">${q}</button>`).join("");
+document.getElementById("nesma-sugg").onclick=e=>{ const b=e.target.closest("button"); if(b) ask(b.textContent); };
+document.getElementById("nesma-form").onsubmit=e=>{ e.preventDefault(); const i=document.getElementById("nesma-in"); const q=i.value.trim(); if(q){ ask(q); i.value=""; } };
+function addMsg(html, who){ const c=document.getElementById("nesma-chat"), d=document.createElement("div"); d.className="msg "+who; d.innerHTML=html; c.appendChild(d); c.scrollTop=c.scrollHeight; return d; }
+const botMsg = html => addMsg(html,"b");
+function parseWhen(q){ const n=norm(q); const m=n.match(/(\d{1,2})\s?h/); if(m) return Math.min(23,+m[1]);
+  if(/ce soir|soiree|ce soir-la|lil|el lil/.test(n)) return 20; if(/apres-midi|apres midi|aprem|3achia|ba3d dhohr/.test(n)) return 15; if(/matin|sbah/.test(n)) return 9; if(/midi|dhohr/.test(n)) return 12; if(/nuit/.test(n)) return 23; return state.hour; }
+function parsePlace(q){ const n=norm(q); for(let i=0;i<PLACES.length;i++){ const nm=norm(PLACES[i][0].split(" (")[0]); if(nm.length>3 && n.includes(nm)) return {p:xy(PLACES[i][1],PLACES[i][2]), name:PLACES[i][0].split(" (")[0]}; } return {p:state.pin, name:state.pinName.split(" (")[0]}; }
+function ask(q){
+  addMsg(esc(q),"u"); const t=addMsg('<span class="typing"><i></i><i></i><i></i></span>',"b");
+  setTimeout(()=>{ t.remove(); const r=answer(q); nesmaSet(r.emo, r.thought, r.title, r.sp); botMsg(r.text + (r.facts?`<div class="facts2">${r.facts}</div>`:"")); }, 650);
+}
+function answer(q){
+  const n=norm(q), h=parseWhen(q), pl=parsePlace(q), [x,y]=pl.p, k=idx(x,y);
+  const [u,v]=wind(x,y,10,h), sp=Math.hypot(u,v), g=sp*gustF(x,y,10), kk=kmh(sp), kg=kmh(g), T=Tair(h,x,y), rh=RHair(h,x,y), pm=PM10(h,x,y);
+  const at=`${pl.name}, ${h} h`, facts=`<span class="pill m">Vent ${fmtSpeed(sp)}</span><span class="pill m">Rafales ${fmtSpeed(g)}</span><span class="pill m">${dirName(u,v)}</span>`;
+  const has=(...w)=>w.some(x=>n.includes(x));
+  if(has("jupe","robe","skirt","jibba","tenue","m'habiller","habiller","porter")){
+    if(kg<25) return {emo:"joie", sp, title:"Tenue", thought:"Jupe légère : parfait, pas de souci !", text:`À ${at}, les rafales restent faibles (${fmtSpeed(g)}). Tu peux porter ta jupe sans crainte. ${T>28?"Il fera chaud : choisis un tissu léger.":""}`, facts};
+    if(kg<40) return {emo:"inquiete", sp, title:"Tenue", thought:"Jupe longue ou plus lourde, ça vole moins !", text:`À ${at}, les rafales montent à ${fmtSpeed(g)}. Une jupe courte risque de s'envoler : préfère une jupe longue, un tissu plus lourd ou un collant. Le vent vient ${dirName(u,v)}.`, facts};
+    return {emo:"triste", sp, title:"Tenue", thought:"Aujourd'hui, plutôt un pantalon…", text:`À ${at}, les rafales atteignent ${fmtSpeed(g)} : une jupe va s'envoler. Pantalon fluide ou combinaison, c'est plus sûr.`, facts}; }
+  if(has("linge","secher","sécher","lessive","ghsil","nchar")){
+    if(pm>80) return {emo:"inquiete", sp, title:"Linge", thought:"Attention, la poussière va le salir.", text:`À ${at}, l'air contient beaucoup de poussière (${Math.round(pm)} µg/m³). Étends plutôt le linge le matin, avant le pic de poussière vers 16 h.`, facts};
+    if(kk>=8 && kk<=35 && rh<75) return {emo:"joie", sp, title:"Linge", thought:`Sec en ${Math.max(1,Math.round(4-kk/12))} h environ !`, text:`Parfait pour étendre : vent de ${fmtSpeed(sp)}, air assez sec (${Math.round(rh)} % d'humidité) et ${Math.round(T)} °C. ${kg>30?"Mets bien les pinces : il y a des rafales.":""}`, facts};
+    if(kk<8) return {emo:"content", sp, title:"Linge", thought:"Ça séchera, mais lentement.", text:`Peu de vent à ${at} : le linge séchera, mais lentement. Étends-le au soleil.`, facts};
+    return {emo:"inquiete", sp, title:"Linge", thought:"Mets beaucoup de pinces !", text:`Le vent est fort à ${at} (rafales ${fmtSpeed(g)}). Le linge séchera vite, mais attache-le bien.`, facts}; }
+  if(has("velo","vélo","bicyclette","courir","footing","course","marche","jogging")){
+    const back=DIRS[(Math.round(fromDeg(u,v)/45))%8].replace(/^du |^de l'|^de /,"");
+    if(kk<12) return {emo:"joie", sp, title:"Sortie", thought:"Vent faible : fonce !", text:`Peu de vent à ${at} (${fmtSpeed(sp)}). Idéal pour rouler ou courir. ${T>30?"Pense à boire : il fait chaud.":""}`, facts};
+    if(kk<30) return {emo:"content", sp, title:"Sortie", thought:`Pars face au vent, côté ${back}.`, text:`Le vent vient ${dirName(u,v)} à ${fmtSpeed(sp)}. Astuce : pars <b>face au vent</b> (vers ${back}) quand tu es en forme, et rentre avec le vent dans le dos.`, facts};
+    return {emo:"triste", sp, title:"Sortie", thought:"Gros vent de face… courage !", text:`Vent fort à ${at} (rafales ${fmtSpeed(g)}). Le vélo sera difficile ; préfère un parcours abrité ou un autre moment.`, facts}; }
+  if(has("plage","mer","baignade","bahr","kite","planche","surf","parasol")){
+    if(sdist[k]>15) return {emo:"pensive", sp, title:"Plage", thought:"La mer est un peu loin d'ici…", text:`Tu es à ${Math.round(sdist[k])} km de la côte. Choisis une plage dans la liste (La Marsa, Hammam-Lif…) pour que je regarde le vent là-bas.`, facts};
+    if(kk>=20 && has("kite","planche","surf")) return {emo:"joie", sp, title:"Kite", thought:"Super conditions pour le kite !", text:`Vent de ${fmtSpeed(sp)} ${dirName(u,v)} : bonnes conditions pour le kite ou la planche. Reste dans la zone surveillée.`, facts};
+    if(kg>30) return {emo:"inquiete", sp, title:"Plage", thought:"Le parasol risque de s'envoler !", text:`À ${at}, rafales de ${fmtSpeed(g)} : plante bien le parasol, ou installe-toi à l'abri d'une dune. La brise de mer forcit l'après-midi.`, facts};
+    return {emo:"joie", sp, title:"Plage", thought:"Belle journée de plage !", text:`Vent tranquille à ${at} (${fmtSpeed(sp)}). Bonne baignade, et pense à la crème solaire.`, facts}; }
+  if(has("barbecue","grillade","feu","mechoui","méchoui","charbon","kanoun")){
+    if(kg<20) return {emo:"joie", sp, title:"Barbecue", thought:"Feu facile, fumée tranquille.", text:`Vent faible à ${at} : barbecue sans souci. Garde un seau d'eau à côté.`, facts};
+    if(kg<35) return {emo:"inquiete", sp, title:"Barbecue", thought:"Attention aux braises qui volent.", text:`Rafales de ${fmtSpeed(g)} : installe le barbecue à l'abri, loin des herbes sèches, avec de l'eau à portée de main. La fumée partira ${dirName(-u,-v).replace("du ","vers le ").replace("de l'","vers l'")}.`, facts};
+    return {emo:"triste", sp, title:"Barbecue", thought:"Trop de vent : risque de feu.", text:`Rafales de ${fmtSpeed(g)} à ${at} : les braises peuvent s'envoler et allumer un feu. Reporte ton barbecue.`, facts}; }
+  if(has("cerf","kite volant","tayara")){
+    if(kk>=12 && kk<=30) return {emo:"joie", sp, title:"Cerf-volant", thought:"Le vent parfait pour le cerf-volant !", text:`${fmtSpeed(sp)} ${dirName(u,v)} : conditions idéales. Éloigne-toi des arbres et des fils électriques.`, facts};
+    if(kk<12) return {emo:"pensive", sp, title:"Cerf-volant", thought:"Un peu mou… essaie plus tard.", text:`Vent faible à ${at}. Essaie vers 14–16 h, quand la brise de mer se lève.`, facts};
+    return {emo:"surprise", sp, title:"Cerf-volant", thought:"Ça tire fort ! Tiens bien la ficelle.", text:`Vent fort (rafales ${fmtSpeed(g)}) : seulement pour un cerf-volant solide, et pas pour les enfants seuls.`, facts}; }
+  if(has("cheveux","coiffure","brushing","cha3r")){
+    if(kg<20) return {emo:"joie", sp, title:"Coiffure", thought:"Ta coiffure va tenir !", text:`Peu de vent à ${at} : tes cheveux resteront en place.`, facts};
+    return {emo:"inquiete", sp, title:"Coiffure", thought:"Une barrette ou un chouchou ?", text:`Rafales de ${fmtSpeed(g)} à ${at} : prends un chouchou, une barrette ou un foulard.`, facts}; }
+  if(has("poussiere","poussière","allergie","asthme","sable","ghbar","3ajja")){
+    if(pm>45) return {emo:"inquiete", sp, title:"Air", thought:"Garde les fenêtres fermées l'après-midi.", text:`À ${at}, poussière à ${Math.round(pm)} µg/m³ (repère de l'OMS : 45). Si tu es sensible, limite l'effort dehors et ferme les fenêtres pendant le pic, vers 16 h. Donnée d'exemple pour le moment.`, facts};
+    return {emo:"joie", sp, title:"Air", thought:"Air plutôt propre, respire !", text:`Peu de poussière à ${at} (${Math.round(pm)} µg/m³). Donnée d'exemple pour le moment.`, facts}; }
+  if(has("pluie","parapluie","pleuvoir","mtar")) return {emo:"pensive", sp, title:"Pluie", thought:"Moi, je ne connais que le vent…", text:`Je ne prévois pas la pluie, seulement le vent. Par contre, à ${at}, le vent sera de ${fmtSpeed(sp)} : ${kg>35?"un parapluie se retournerait !":"un parapluie tiendra sans problème."}`, facts};
+  if(has("drone")) return kg<30 ? {emo:"joie", sp, title:"Drone", thought:"Vol possible, reste à vue.", text:`Rafales de ${fmtSpeed(g)} à 10 m : vol de loisir possible. En hauteur, le vent est plus fort : ${fmtSpeed(Math.hypot(...wind(x,y,100,h)))} à 100 m. Et jamais près de l'aéroport de Tunis-Carthage.`, facts} : {emo:"triste", sp, title:"Drone", thought:"Trop de vent pour voler.", text:`Rafales de ${fmtSpeed(g)} : le drone risque de dériver. Attends que le vent baisse.`, facts};
+  if(has("merci","yaatik","ya3tik","barcha","choukran")) return {emo:"joie", sp, title:"Avec plaisir", thought:"Bonne journée !", text:"Avec plaisir ! Reviens quand tu veux, je surveille le vent pour toi."};
+  if(has("salut","bonjour","aslema","ahla","bonsoir","hello","marhba")) return {emo:"joie", sp, title:"Bonjour", thought:"Que veux-tu faire aujourd'hui ?", text:"Aslema ! Demande-moi par exemple : « je veux porter une jupe », « vélo ce soir ? » ou « je peux étendre le linge ? »."};
+  if(has("vent","meteo","météo","temps","rih")) return {emo: kg>40?"surprise":kg>25?"inquiete":"content", sp, title:"Le vent", thought: kg>40?"Ça souffle fort !":kg>25?"Un peu de vent, couvre-toi.":"Vent calme, belle journée.", text:`À ${at}, vent ${dirName(u,v)} de ${fmtSpeed(sp)}, rafales à ${fmtSpeed(g)}. ${beaufort(kk)}`, facts};
+  return {emo:"pensive", sp, title:"Hmm…", thought:"Je ne suis pas sûre de comprendre…", text:"Je ne connais que le vent et l'air. Essaie par exemple : « je veux porter une jupe », « vélo ce soir ? », « barbecue à La Marsa ? » ou « poussière aujourd'hui ? »."};
+}
+nesmaSet("content","Pose-moi une question sur ta journée !","Je pense…",3);
+
+// ---------------- en-tête compact au défilement ----------------
+const topbar=document.getElementById("topbar"); let compact=false;
+addEventListener("scroll", () => { const y=scrollY; if(!compact && y>140){ compact=true; topbar.classList.add("compact"); } else if(compact && y<30){ compact=false; topbar.classList.remove("compact"); } }, {passive:true});
+
+// ---------------- démarrage ----------------
+applyAccess();
+const th0=store.get("aw-theme","auto"); if(th0!=="auto") setTheme(th0);
+renderAlerts(); setHour(15); renderRel();
+show(location.hash.slice(1)||(me?ROLES[me.role].home:"monvent"));
+let seen=false; try{ seen=localStorage.getItem("aw-tour")==="1"; }catch(e){}
+if(!seen) tour(0);
+})();
+</script>

@@ -31,30 +31,7 @@ ANNEAUX_KM = ((0.0, 1.0), (1.0, 3.0), (3.0, 10.0), (10.0, 1e9))
 HAUTEURS = (10.0, 100.0)
 
 
-def champ_agl(u: np.ndarray, v: np.ndarray, geom, h: float) -> tuple[np.ndarray, np.ndarray]:
-    """u, v (nz, ny, nx ; NaN sous le relief) a h m au-dessus du sol, colonne par colonne :
-    interpolation entre deux noeuds valides, ou profil log depuis le noeud valide le plus bas
-    (z0 de la maille) si h est sous ce noeud — comme pcfno3d.stations_reelles.poids_10m."""
-    valid = geom.valid
-    hk = np.asarray(geom.z_levels, float)[:, None, None] - geom.zt[None]
-    uo = np.full(u.shape[1:], np.nan)
-    vo = np.full(u.shape[1:], np.nan)
-    for k in range(len(geom.z_levels) - 1):
-        m = valid[k] & valid[k + 1] & (hk[k] <= h) & (h <= hk[k + 1]) & np.isnan(uo)
-        a = np.where(m, (h - hk[k]) / np.maximum(hk[k + 1] - hk[k], 1e-6), 0.0)
-        uo = np.where(m, (1 - a) * u[k] + a * u[k + 1], uo)
-        vo = np.where(m, (1 - a) * v[k] + a * v[k + 1], vo)
-    k0 = np.argmax(valid, axis=0)
-    a_un = valid.any(axis=0)
-    h0 = np.take_along_axis(hk, k0[None], 0)[0]
-    bas = a_un & (h < h0) & np.isnan(uo)
-    z0 = np.maximum(geom.z0, 1e-4)
-    f = np.where(bas, np.log(h / z0) / np.log(np.maximum(h0, 1.01 * z0) / z0), 0.0)
-    u0 = np.take_along_axis(u, k0[None], 0)[0]
-    v0 = np.take_along_axis(v, k0[None], 0)[0]
-    uo = np.where(bas, f * u0, uo)
-    vo = np.where(bas, f * v0, vo)
-    return uo, vo
+from pcfno3d.atom_wind import champ_agl  # noqa: E402  (partagee avec ATOM Wind)
 
 
 def stats_anneaux(carte: np.ndarray, geom, cellules: dict) -> dict:
