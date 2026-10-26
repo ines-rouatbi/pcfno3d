@@ -138,12 +138,36 @@ function banniere(){
   if(!src) return;
   if(A.pret()){
     const I = A.jour.instants, hh = I.map(x => `${String(Math.floor(x.heure_locale)).padStart(2,"0")} h`).join(", ");
-    src.innerHTML = `Vent calculé par le modèle <b>PC-FNO3D</b> (${A.jour.modele || A.grille.modele}) sur le Grand Tunis, `
-      + `journée du <b>${fmtDate(A.jour.date)}</b> (jeu de test, jamais vu à l'entraînement). `
-      + `Sorties du modèle à ${hh} (heure de Tunis), interpolées heure par heure. Ce ne sont pas des mesures en direct.`;
-    if(fr) fr.textContent = `Modèle : ${A.jour.modele || A.grille.modele}`;
+    const modele = A.jour.modele || A.grille.modele;
+    if(A.jour.temps_reel && A.jour.prevision){
+      const maj = new Date(A.jour.mis_a_jour_utc), hm = maj.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", timeZone: "Africa/Tunis" });
+      src.innerHTML = `<b>Prévision</b> du vent pour le <b>${fmtDate(A.jour.date)}</b>, calculée par <b>PC-FNO3D</b> (${modele}) `
+        + `à partir de la prévision ECMWF IFS (pas encore de mesure des stations pour ce jour). Calculée à ${hm}.`
+        + (A.jour.avertissement ? ` <span class="muted">(${A.jour.avertissement})</span>` : "");
+      if(fr) fr.textContent = `Prévision · ${hm}`;
+    } else if(A.jour.temps_reel){
+      const maj = new Date(A.jour.mis_a_jour_utc), hm = maj.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", timeZone: "Africa/Tunis" });
+      const passees = I.filter(x => x.source === "temps reel"), st = new Set(passees.flatMap(x => x.stations));
+      const noms = { DTTA: "Tunis-Carthage", INM60729: "Zaghouan", INM60728: "Nabeul" };
+      src.innerHTML = `<b>Temps réel</b> : vent d'aujourd'hui (${fmtDate(A.jour.date)}) calculé par <b>PC-FNO3D</b> (${modele}) `
+        + `à partir de la grande échelle ECMWF IFS et des anémomètres ${[...st].map(c => noms[c] || c).join(", ") || "(aucune mesure reçue)"}. `
+        + `Heures passées : temps réel ; heures à venir : prévision. Mis à jour à ${hm}.`
+        + (A.jour.avertissement ? ` <span class="muted">(${A.jour.avertissement})</span>` : "");
+      if(fr) fr.textContent = `Temps réel · ${hm}`;
+    } else {
+      src.innerHTML = `Vent calculé par le modèle <b>PC-FNO3D</b> (${modele}) sur le Grand Tunis, `
+        + `journée du <b>${fmtDate(A.jour.date)}</b> (jeu de test, jamais vu à l'entraînement). `
+        + `Sorties du modèle à ${hh} (heure de Tunis), interpolées heure par heure. Ce ne sont pas des mesures en direct.`;
+      if(fr) fr.textContent = `Modèle : ${modele}`;
+    }
     if(sel){
-      sel.innerHTML = A.jours.map(d => `<option value="${d.date}"${d.date === A.jour.date ? " selected" : ""}>${fmtDate(d.date)} (${d.instants.length} instants)</option>`).join("");
+      const cle = A.jour.cle || A.jour.date;
+      const opt = (v, t) => `<option value="${v}"${cle === v ? " selected" : ""}>${t}</option>`;
+      const pv = (A.direct && A.direct.previsions) || [];
+      sel.innerHTML = (A.direct ? opt("direct", "Aujourd'hui, temps réel")
+          + (pv[0] ? opt("prev1", `Demain ${fmtDate(pv[0])} (prévision)`) : "")
+          + (pv[1] ? opt("prev2", `Après-demain ${fmtDate(pv[1])} (prévision)`) : "") : "")
+        + A.jours.map(d => `<option value="${d.date}"${d.date === cle ? " selected" : ""}>${fmtDate(d.date)} (${d.instants.length} instants)</option>`).join("");
       sel.hidden = false;
     }
   } else {
@@ -159,14 +183,19 @@ A.banniere = banniere;
 
 // ------------------------------------------------------------------ chargement
 async function chargerJour(date){
-  const d = await get(`/atom-wind/jour?date=${encodeURIComponent(date)}`, 180000);
+  const j = { direct: 0, prev1: 1, prev2: 2 }[date];
+  const d = j !== undefined ? await get(`/atom-wind/direct?j=${j}`, 240000)
+                            : await get(`/atom-wind/jour?date=${encodeURIComponent(date)}`, 180000);
+  d.cle = date;
   A.ventV = decoder(d.vent);
   A.sigmaV = d.sigma_vitesse ? decoder(d.sigma_vitesse) : null;
   A.jour = d;
 }
 A.choisirJour = async date => {
   const src = document.getElementById("aw-source");
-  if(src) src.innerHTML = `Calcul du vent du ${fmtDate(date)} par le modèle…`;
+  if(src) src.innerHTML = date === "direct" ? "Calcul du vent d'aujourd'hui par le modèle…"
+    : /^prev/.test(date) ? "Calcul de la prévision par le modèle…"
+    : `Calcul du vent du ${fmtDate(date)} par le modèle…`;
   try { await chargerJour(date); A.erreur = null; }
   catch(e){ A.erreur = e; }
   banniere();
@@ -199,6 +228,12 @@ function lancerPage(){
   banniere();
   const sel = document.getElementById("aw-jour");
   if(sel) sel.onchange = () => A.choisirJour(sel.value);
+  if(A.pret() && A.jour.temps_reel && !A.jour.prevision && A.setHour) A.setHour(heureLocale());
+  // temps réel : nouvelles mesures et nouvelle échéance toutes les 30 min
+  setInterval(() => { if(A.jour && A.jour.temps_reel) A.choisirJour(A.jour.cle || "direct"); }, 30 * 60 * 1000);
+}
+function heureLocale(){
+  return Number(new Intl.DateTimeFormat("fr-FR", { hour: "numeric", hour12: false, timeZone: "Africa/Tunis" }).format(new Date())) % 24;
 }
 
 async function demarrer(){
@@ -206,15 +241,24 @@ async function demarrer(){
   try {
     A.grille = await get("/atom-wind/grille", 20000);
     A.z0 = Float32Array.from(A.grille.z0_m.flat());
-    A.jours = (await get("/atom-wind/jours", 20000)).jours;
-    if(!A.jours.length) throw new Error("aucune journée servie");
+    const J = await get("/atom-wind/jours", 20000);
+    A.jours = J.jours || []; A.direct = J.direct || null;
+    if(!A.jours.length && !A.direct) throw new Error("aucune journée servie");
     try { const p = await get("/atom-wind/reseau-aneo", 20000);
           A.plan = p.features.filter(f => f.properties.type === "capteur ANEO propose")
                              .map(f => ({ lat: f.geometry.coordinates[1], lon: f.geometry.coordinates[0], ...f.properties })); }
     catch(e){ A.plan = null; }
-    const jd = journeeParDefaut();
-    chargement(`Calcul du vent du ${fmtDate(jd)} par le modèle (jusqu'à une minute au premier chargement)…`);
-    await chargerJour(jd);
+    let fait = false;
+    if(A.direct && P.get("jour") === null){
+      chargement("Calcul du vent d'aujourd'hui en temps réel par le modèle (jusqu'à une minute)…");
+      try { await chargerJour("direct"); fait = true; }
+      catch(e){ if(e.auth) throw e; console.warn("ATOM Wind : temps réel indisponible", e); A.avertDirect = e.message; }
+    }
+    if(!fait){
+      const jd = journeeParDefaut();
+      chargement(`Calcul du vent du ${fmtDate(jd)} par le modèle (jusqu'à une minute au premier chargement)…`);
+      await chargerJour(jd);
+    }
   } catch(e){
     A.erreur = e; A.grille = null; A.jour = null; A.ventV = null;   // tout ou rien : journée d'exemple
     console.warn("ATOM Wind : API PC-FNO3D indisponible, journée d'exemple", e);

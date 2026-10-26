@@ -926,9 +926,55 @@ def atom_grille(_: ApiKeyRecord | None = Depends(require_read)) -> Response:
 
 @router.get("/atom-wind/jours", tags=["atom-wind"])
 def atom_jours(_: ApiKeyRecord | None = Depends(require_read)) -> dict:
-    """Les journees servies (instants de test du cache), en heure locale de Tunis (UTC+1)."""
+    """Les journees servies (instants de test du cache), en heure locale de Tunis (UTC+1), et
+    la journee en temps reel (`direct`) quand le modele recoit le forcage ERA5."""
+    from pcfno3d import atom_wind
     wf = model()
-    return {"modele": wf.checkpoint_path.name, "jours": _atom_jours(wf)}
+    out = {"modele": wf.checkpoint_path.name, "jours": _atom_jours(wf)}
+    if wf.geom.forcage is not None and wf.cfg.real.origin_lat is not None:
+        out["direct"] = {"date": atom_wind.date_locale_aujourdhui(),
+                         "route": "/api/atom-wind/direct",
+                         "previsions": [atom_wind.date_locale_aujourdhui(j) for j in (1, 2)]}
+    return out
+
+
+_ATOM_DIRECT_TTL_S = 1800.0             # le temps reel est recalcule au plus toutes les 30 min
+
+
+@router.get("/atom-wind/direct", tags=["atom-wind"])
+def atom_direct(j: int = Query(0, ge=0, le=2, description="0 = aujourd'hui (temps reel), "
+                               "1 = demain, 2 = apres-demain (prevision)"),
+                _: ApiKeyRecord | None = Depends(require_read)) -> Response:
+    """Le vent d'AUJOURD'HUI (heure locale de Tunis), heure par heure : grande echelle ECMWF IFS
+    (Open-Meteo) aux mailles et par les formules du forcage ERA5, vraies mesures des stations
+    (METAR, SYNOP) pour les heures passees, prevision pour les heures a venir. Meme format que
+    /atom-wind/jour, avec `temps_reel: true` et la source de chaque heure."""
+    from pcfno3d import atom_wind, temps_reel
+    wf = model()
+    if wf.geom.forcage is None:
+        raise HTTPException(409, "temps reel : modele sans forcage ERA5 (paths.forcage_era5)")
+    date = atom_wind.date_locale_aujourdhui(j)
+    caches = STATE.setdefault("atom_direct", {})
+    e = caches.get(date)
+    if e is None or time.time() - e["t"] > _ATOM_DIRECT_TTL_S:
+        with _ATOM_LOCK:
+            e = caches.get(date)
+            if e is None or time.time() - e["t"] > _ATOM_DIRECT_TTL_S:
+                source = STATE.get("atom_source")
+                if source is None:
+                    source = STATE["atom_source"] = temps_reel.SourceDirect(
+                        wf.geom, ttl_s=_ATOM_DIRECT_TTL_S)
+                try:
+                    out = atom_wind.jour_direct(wf, source, date)
+                except Exception as exc:        # source externe muette, echeance absente...
+                    if e is not None:
+                        return _gzip_json({**e["out"], "avertissement": f"donnees de "
+                                           f"{e['out']['mis_a_jour_utc']} : {exc}"})
+                    raise HTTPException(503, f"temps reel indisponible : {exc}") from exc
+                for vieux in [d for d in caches if d < atom_wind.date_locale_aujourdhui()]:
+                    caches.pop(vieux)
+                e = caches[date] = {"date": date, "t": time.time(), "out": out}
+    return _gzip_json(e["out"])
 
 
 @router.get("/atom-wind/jour", tags=["atom-wind"])

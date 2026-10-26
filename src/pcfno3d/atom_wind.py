@@ -189,3 +189,52 @@ def plan_aneo(run_dir: Path) -> Path | None:
         if f.exists():
             return f
     return None
+
+
+# ---------------------------------------------------------------------- temps reel
+def jour_direct(wf, source, date_locale: str, maintenant: pd.Timestamp | None = None) -> dict:
+    """Les 24 heures locales d'aujourd'hui (pcfno3d.temps_reel) : heures passees = forcage ECMWF
+    IFS + vraies mesures des stations ; heures a venir = prevision IFS, sans station."""
+    from . import temps_reel as tr
+
+    geom = wf.geom
+    e = source.journee(date_locale)
+    f, c, obs = e["forcage"], e["champs"], e["obs"]
+    maintenant = maintenant if maintenant is not None else \
+        pd.Timestamp.now(tz="UTC").tz_localize(None)
+    index_t = {int(s): i for i, s in enumerate(c["temps"])}
+    instants, blocs_vent = [], []
+    for h in range(24):
+        t = pd.Timestamp(date_locale) + pd.Timedelta(hours=h - UTC_LOCAL_H)
+        it = index_t.get(int(t.value // 10 ** 9))
+        if it is None:
+            continue
+        passe = t <= maintenant
+        mesures = tr.mesures_a(obs, t) if passe else {}
+        S = tr.entree(geom, c, f, it, mesures)
+        stamp = t.strftime("%Y-%m-%dT%H:%M:%SZ")
+        vol = wf.predict(S, t.hour + t.minute / 60, int(t.dayofyear), timestamp=stamp,
+                         forcage=f.vecteur(t), reliability=False)
+        blocs_vent.append(instant(vol, geom))
+        instants.append({"stem": f"direct_{t:%Y%m%dT%H}", "timestamp_utc": stamp,
+                         "heure_locale": float(h), "source": "temps reel" if passe else "prevision",
+                         "stations": sorted(mesures), "inference_s": round(float(vol.inference_s), 3),
+                         "capteurs_utilises": int(vol.n_sensors)})
+    if not instants:
+        raise ValueError(f"aucune echeance IFS pour le {date_locale}")
+    a = np.stack(blocs_vent)
+    prevision = all(i["source"] == "prevision" for i in instants)
+    return {"format": "atom-wind/1", "date": date_locale, "temps_reel": True,
+            "prevision": prevision,
+            "instants": instants, "hauteurs_agl_m": list(HAUTEURS_AGL), "forme": list(a.shape),
+            "unite": "cm/s, int16 petit-boutiste, -32768 = sans valeur",
+            "ordre": "instant, hauteur, (u, v), y, x", "vent": encoder(a),
+            "grande_echelle": "ECMWF IFS 0,25 deg (Open-Meteo), formules du forcage ERA5",
+            "stations_sources": "METAR DTTA (aviationweather.gov), SYNOP 60729 / 60728 (OGIMET)",
+            "mis_a_jour_utc": maintenant.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "modele": wf.checkpoint_path.name}
+
+
+def date_locale_aujourdhui(decalage_j: int = 0) -> str:
+    return (pd.Timestamp.now(tz="UTC").tz_localize(None) + pd.Timedelta(hours=UTC_LOCAL_H)
+            + pd.Timedelta(days=decalage_j)).strftime("%Y-%m-%d")

@@ -1426,7 +1426,7 @@ addEventListener("scroll", () => { const y=scrollY; if(!compact && y>140){ compa
 // ---------------- démarrage ----------------
 applyAccess();
 const th0=store.get("aw-theme","auto"); if(th0!=="auto") setTheme(th0);
-if(window.ATOM) ATOM.rafraichir = () => { for(const k in DSTAT) delete DSTAT[k]; MAPS.forEach(m=>m.redraw()); setHour(state.hour); renderRel(); };
+if(window.ATOM) ATOM.rafraichir = () => { for(const k in DSTAT) delete DSTAT[k]; MAPS.forEach(m=>m.redraw()); setHour(state.hour); renderRel(); }; if(window.ATOM) ATOM.setHour = setHour;
 renderAlerts(); setHour(15); renderRel();
 show(location.hash.slice(1)||(me?ROLES[me.role].home:"monvent"));
 let seen=false; try{ seen=localStorage.getItem("aw-tour")==="1"; }catch(e){}

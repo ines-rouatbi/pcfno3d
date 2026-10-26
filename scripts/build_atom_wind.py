@@ -47,7 +47,7 @@ ACCROCHES = [
     # 7. changement de journee : caches vides, cartes et vues redessinees
     ('\nrenderAlerts(); setHour(15); renderRel();\n',
      '\nif(window.ATOM) ATOM.rafraichir = () => { for(const k in DSTAT) delete DSTAT[k]; '
-     'MAPS.forEach(m=>m.redraw()); setHour(state.hour); renderRel(); };'
+     'MAPS.forEach(m=>m.redraw()); setHour(state.hour); renderRel(); }; if(window.ATOM) ATOM.setHour = setHour;'
      '\nrenderAlerts(); setHour(15); renderRel();\n'),
     # 8. nombre de capteurs ANEO : celui du plan OS6 (ou de la disposition d'exemple)
     ('["Réseau ANEO prévu","36 capteurs",', '["Réseau ANEO prévu",`${ANEO.length} capteurs`,'),

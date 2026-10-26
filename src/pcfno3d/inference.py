@@ -520,7 +520,7 @@ class WindFieldModel:
                 keep: float = 1.0, seed: int = 0, mask_nan: bool = True,
                 tta: int | None = None, tta_keep: float | None = None,
                 reliability: bool | None = None, real_sensors: bool = False,
-                defer: bool = False) -> Volume:
+                defer: bool = False, forcage: np.ndarray | None = None) -> Volume:
         """Reconstruit le volume a partir de la surface agregee S (8, ny, nx).
 
         tta / tta_keep : moyenne de plusieurs passes (voir `ensemble_forward`). Par defaut,
@@ -545,7 +545,8 @@ class WindFieldModel:
         k_keep = self.cfg.inference.tta_keep if tta_keep is None else float(tta_keep)
         rng = np.random.default_rng(seed)
         sensor = (S[7] > 0.5) & (rng.random(S[7].shape) < keep)
-        extra = self._forcage(timestamp)
+        # forcage : vecteur deja calcule (temps reel, pcfno3d.temps_reel), sinon celui du fichier
+        extra = forcage if forcage is not None else self._forcage(timestamp)
         tfeat = caracteristiques(S, sensor, hour, doy, geom, extra)
 
         s_t = torch.from_numpy(np.ascontiguousarray(S[:N_SURF]))[None].to(self.device)

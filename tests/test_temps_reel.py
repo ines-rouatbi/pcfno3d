@@ -1,0 +1,173 @@
+"""Temps reel (pcfno3d.temps_reel, atom_wind.jour_direct, /api/atom-wind/direct) : decodage SYNOP,
+formules du forcage sur les champs IFS, journee complete avec des reponses reseau simulees."""
+
+from __future__ import annotations
+
+import base64
+import json
+import math
+import urllib.parse
+
+import numpy as np
+import pandas as pd
+import pytest
+
+from test_forcage_era5 import _jeu_reel, cfg_era5, forcage  # noqa: F401  (fixtures)
+
+
+# ---------------------------------------------------------------------- SYNOP
+def test_lire_synop():
+    from pcfno3d.temps_reel import lire_synop
+
+    texte = "\n".join([
+        # noeuds (iw = 4), 100 deg, 5 kt
+        "60729,2026,10,26,09,00,AAXX 26094 60729 26/// /1005 10228 20147 3//// 4//// 5//// 222// 2//// 333 60007 910// 91116=",
+        # m/s (iw = 1), calme
+        "60728,2026,10,26,06,00,AAXX 26061 60728 32970 80000 10155=",
+        # direction variable : ignoree
+        "60728,2026,10,26,09,00,AAXX 26091 60728 32970 89903 10155=",
+        # ff >= 99 : groupe 00fff (m/s), 270 deg, 102 m/s (fictif, pour le format)
+        "60728,2026,10,26,12,00,AAXX 26121 60728 32970 82799 00102 10155=",
+        # station inconnue
+        "60715,2026,10,26,09,00,AAXX 26094 60715 26/// /1005 10228=",
+    ])
+    t = lire_synop(texte)
+    assert list(t["station_id"]) == ["INM60729", "INM60728", "INM60728"]
+    u, v = t.iloc[0][["wind_u_m_s", "wind_v_m_s"]]
+    ff = 5 * 0.514444
+    assert u == pytest.approx(-ff * math.sin(math.radians(100))) and v == pytest.approx(-ff * math.cos(math.radians(100)))
+    assert (t.iloc[1]["wind_u_m_s"], t.iloc[1]["wind_v_m_s"]) == (0.0, 0.0)
+    assert t.iloc[2]["wind_u_m_s"] == pytest.approx(102.0) and abs(t.iloc[2]["wind_v_m_s"]) < 1e-9
+
+
+# ---------------------------------------------------------------------- reponses simulees
+NIV = {1000: (8.0, 270.0, 110.0), 925: (10.0, 275.0, 800.0), 850: (12.0, 280.0, 1500.0),
+       700: (15.0, 285.0, 3100.0)}
+
+
+def fausse_source(url: str) -> bytes:
+    u = urllib.parse.urlparse(url)
+    q = dict(urllib.parse.parse_qsl(u.query))
+    if "open-meteo" in u.netloc:
+        lats = q["latitude"].split(",")
+        temps = pd.date_range(q["start_date"], pd.Timestamp(q["end_date"]) + pd.Timedelta(hours=23), freq="h")
+        n = len(temps)
+        pts = []
+        for i, _ in enumerate(lats):
+            h = {"time": [t.strftime("%Y-%m-%dT%H:%M") for t in temps],
+                 "wind_speed_10m": [5.0] * n, "wind_direction_10m": [260.0] * n,
+                 "wind_speed_100m": [7.0] * n, "wind_direction_100m": [265.0] * n,
+                 "temperature_2m": [20.0 + (i % 2)] * n, "relative_humidity_2m": [60.0] * n,
+                 "surface_pressure": [1010.0] * n, "pressure_msl": [1015.0] * n}
+            for p, (s, d, z) in NIV.items():
+                h[f"wind_speed_{p}hPa"] = [s] * n
+                h[f"wind_direction_{p}hPa"] = [d] * n
+                h[f"geopotential_height_{p}hPa"] = [z] * n
+            pts.append({"elevation": 0.0 if i % 2 else 50.0, "hourly": h})
+        return json.dumps(pts).encode()
+    if "aviationweather" in u.netloc:
+        t0 = pd.Timestamp("2026-10-26T00:00:00Z")
+        return json.dumps([{"icaoId": "DTTA", "reportTime": (t0 + pd.Timedelta(hours=k)).isoformat(),
+                            "wspd": 10, "wdir": 290} for k in range(0, 12)]).encode()
+    if "ogimet" in u.netloc:
+        return b"60729,2026,10,26,06,00,AAXX 26064 60729 16/// /0604 10174 20112=\n"
+    raise AssertionError(url)
+
+
+def test_forcage_ifs_formules():
+    from pcfno3d.forcage import SCALAIRES
+    from pcfno3d.temps_reel import forcage_ifs, telecharger_ifs
+
+    c = telecharger_ifs(np.array([36.0, 36.25]), np.array([10.0, 10.25]), "2026-10-26", "2026-10-26",
+                        lire=fausse_source)
+    assert c["wind_speed_850hPa"].shape == (24, 2, 2)
+    temps, scal, u, v = forcage_ifs(c, (10.0, 100.0, 500.0, 1200.0))
+    k = dict(SCALAIRES)
+    u850 = -12 * math.sin(math.radians(280))
+    assert scal[0, 0] == pytest.approx(u850 * k["ug"], rel=1e-6)
+    dz = 3100.0 - 1500.0
+    u700 = -15 * math.sin(math.radians(285))
+    assert scal[0, 2] == pytest.approx((u700 - u850) / dz * k["shear_u"], rel=1e-6)
+    assert 0.0 <= scal[0, 4] / k["veer_deg"] <= 45.0
+    assert scal[0, 6] != 0.0                       # terres a 21 deg, mer a 20 (fausse source)
+    assert u.shape == (24, 4, 2, 2)
+    # 10 m au-dessus du sol : exactement le vent a 10 m
+    assert u[0, 0, 0, 0] == pytest.approx(-5 * math.sin(math.radians(260)), rel=1e-5)
+
+
+@pytest.fixture(scope="module")
+def jeu(cfg_era5, index, tmp_path_factory):  # noqa: F811
+    from pcfno3d.train import Trainer
+
+    c, _ = _jeu_reel(cfg_era5, index, tmp_path_factory.mktemp("direct"))
+    Trainer(c, device="cpu", verbose=False).fit()
+    return c
+
+
+def test_journee_temps_reel(jeu):
+    from pcfno3d import atom_wind, temps_reel
+    from pcfno3d.inference import WindFieldModel
+
+    wf = WindFieldModel(jeu, device="cpu", verbose=False)
+    src = temps_reel.SourceDirect(wf.geom, lire=fausse_source)
+    maintenant = pd.Timestamp("2026-10-26T07:20:00")
+    d = atom_wind.jour_direct(wf, src, "2026-10-26", maintenant=maintenant)
+    assert d["temps_reel"] is True and len(d["instants"]) == 24
+    hl = [i["heure_locale"] for i in d["instants"]]
+    assert hl == list(range(24))
+    # 07 h locale = 06 h UTC : METAR DTTA et SYNOP 60729 ; apres « maintenant » : prevision
+    i7 = d["instants"][7]
+    assert i7["source"] == "temps reel" and set(i7["stations"]) == {"DTTA", "INM60729"}
+    assert d["instants"][12]["source"] == "prevision" and d["instants"][12]["stations"] == []
+    a = np.frombuffer(base64.b64decode(d["vent"]), dtype="<i2").reshape(d["forme"])
+    assert (a != -32768).mean() > 0.5
+
+
+def test_forcage_direct_meme_forme(jeu):
+    from pcfno3d import temps_reel
+    from pcfno3d.geometry import Geometry
+
+    g = Geometry(jeu)
+    src = temps_reel.SourceDirect(g, lire=fausse_source)
+    e = src.journee("2026-10-26")
+    vec = e["forcage"].vecteur(pd.Timestamp("2026-10-26T06:00:00"))
+    assert vec.shape == (g.forcage.n_extra,) and np.isfinite(vec).all()
+    S = temps_reel.entree(g, e["champs"], e["forcage"], 6, {"DTTA": (3.0, -1.0)})
+    assert S.shape[0] == 8 and S[7].sum() > 0
+    from pcfno3d.stations_reelles import cellules_codes
+    iy, ix = cellules_codes(g)["DTTA"]
+    assert (S[0, iy, ix], S[1, iy, ix], S[7, iy, ix]) == (3.0, -1.0, 1.0)
+    assert np.isfinite(S[:7][:, S[7] > 0]).all()
+
+
+def test_route_direct(jeu, monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from pcfno3d import temps_reel
+    monkeypatch.setattr(temps_reel, "_get", fausse_source)
+    for var, val in (("PCFNO3D_DATA_DIR", jeu.paths.data_dir), ("PCFNO3D_CACHE_DIR", jeu.paths.cache_dir),
+                     ("PCFNO3D_RUN_DIR", jeu.paths.run_dir), ("PCFNO3D_DEVICE", "cpu")):
+        monkeypatch.setenv(var, str(val))
+    import pcfno3d.config as cm
+    monkeypatch.setattr(cm.Config, "load", classmethod(lambda cls, _n: jeu))
+    for var in ("PCFNO3D_API_KEYS", "PCFNO3D_INSECURE_OPEN"):
+        monkeypatch.delenv(var, raising=False)
+    from service.auth import ApiKeyStore, default_store_path
+    chemin = default_store_path(jeu.paths.run_dir)
+    chemin.unlink(missing_ok=True)
+    cle, _ = ApiKeyStore(chemin).create("tests-direct", scope="read")
+    from service.app import create_app
+    with TestClient(create_app(), headers={"X-API-Key": cle}) as c:
+        j = c.get("/api/atom-wind/jours").json()
+        assert j["direct"]["route"] == "/api/atom-wind/direct"
+        r = c.get("/api/atom-wind/direct")
+        assert r.status_code == 200, r.text
+        d = r.json()
+        assert d["temps_reel"] is True and d["date"] == j["direct"]["date"]
+        assert c.get("/api/atom-wind/direct").json()["mis_a_jour_utc"] == d["mis_a_jour_utc"]   # cache
+        # prevision : demain, toutes les heures en prevision, sans station
+        assert len(j["direct"]["previsions"]) == 2
+        p1 = c.get("/api/atom-wind/direct", params={"j": 1}).json()
+        assert p1["prevision"] is True and p1["date"] == j["direct"]["previsions"][0]
+        assert all(i["source"] == "prevision" and i["stations"] == [] for i in p1["instants"])
+        assert c.get("/api/atom-wind/direct", params={"j": 5}).status_code == 422
