@@ -193,8 +193,11 @@ def plan_aneo(run_dir: Path) -> Path | None:
 
 # ---------------------------------------------------------------------- temps reel
 def jour_direct(wf, source, date_locale: str, maintenant: pd.Timestamp | None = None) -> dict:
-    """Les 24 heures locales d'aujourd'hui (pcfno3d.temps_reel) : heures passees = forcage ECMWF
-    IFS + vraies mesures des stations ; heures a venir = prevision IFS, sans station."""
+    """Les 24 heures locales d'une journee (pcfno3d.temps_reel) : heures passees = forcage GFS +
+    vraies mesures des stations ; heures a venir = prevision GFS, sans station. Avec, pour
+    l'espace agriculteur, la temperature et l'humidite a 2 m de GFS (ramenees au relief, grille de
+    500 m) et le rayonnement solaire moyen du domaine : grandeurs que le modele ne calcule pas,
+    signalees comme telles."""
     from . import temps_reel as tr
 
     geom = wf.geom
@@ -203,7 +206,8 @@ def jour_direct(wf, source, date_locale: str, maintenant: pd.Timestamp | None = 
     maintenant = maintenant if maintenant is not None else \
         pd.Timestamp.now(tz="UTC").tz_localize(None)
     index_t = {int(s): i for i, s in enumerate(c["temps"])}
-    instants, blocs_vent = [], []
+    instants, blocs_vent, blocs_t, blocs_hr = [], [], [], []
+    b = facteur(geom)
     for h in range(24):
         t = pd.Timestamp(date_locale) + pd.Timedelta(hours=h - UTC_LOCAL_H)
         it = index_t.get(int(t.value // 10 ** 9))
@@ -216,12 +220,16 @@ def jour_direct(wf, source, date_locale: str, maintenant: pd.Timestamp | None = 
         vol = wf.predict(S, t.hour + t.minute / 60, int(t.dayofyear), timestamp=stamp,
                          forcage=f.vecteur(t), reliability=False)
         blocs_vent.append(instant(vol, geom))
+        blocs_t.append(blocs(S[3], b))           # temperature a 2 m (GFS), deg C
+        blocs_hr.append(blocs(S[5], b))          # humidite relative a 2 m (GFS), %
+        ray = c.get("shortwave_radiation")
         instants.append({"stem": f"direct_{t:%Y%m%dT%H}", "timestamp_utc": stamp,
+                         "rayonnement_w_m2": None if ray is None else round(float(np.nanmean(ray[it])), 1),
                          "heure_locale": float(h), "source": "temps reel" if passe else "prevision",
                          "stations": sorted(mesures), "inference_s": round(float(vol.inference_s), 3),
                          "capteurs_utilises": int(vol.n_sensors)})
     if not instants:
-        raise ValueError(f"aucune echeance IFS pour le {date_locale}")
+        raise ValueError(f"aucune echeance GFS pour le {date_locale}")
     a = np.stack(blocs_vent)
     prevision = all(i["source"] == "prevision" for i in instants)
     return {"format": "atom-wind/1", "date": date_locale, "temps_reel": True,
@@ -229,7 +237,10 @@ def jour_direct(wf, source, date_locale: str, maintenant: pd.Timestamp | None = 
             "instants": instants, "hauteurs_agl_m": list(HAUTEURS_AGL), "forme": list(a.shape),
             "unite": "cm/s, int16 petit-boutiste, -32768 = sans valeur",
             "ordre": "instant, hauteur, (u, v), y, x", "vent": encoder(a),
-            "grande_echelle": "ECMWF IFS 0,25 deg (Open-Meteo), formules du forcage ERA5",
+            # espace agriculteur : grandeurs de GFS, PAS calculees par le modele (cahier v12, 16.4)
+            "t2m": encoder(np.stack(blocs_t)), "hr2m": encoder(np.stack(blocs_hr)),
+            "unite_t2m_hr2m": "t2m en deg C, hr2m en % ; meme codage int16 x100 que le vent ; source GFS (pas ATOM Wind)",
+            "grande_echelle": "GFS 0,25 deg (NOAA, via Open-Meteo), formules du forcage ERA5",
             "stations_sources": "METAR DTTA (aviationweather.gov), SYNOP 60729 / 60728 (OGIMET)",
             "mis_a_jour_utc": maintenant.strftime("%Y-%m-%dT%H:%M:%SZ"),
             "modele": wf.checkpoint_path.name}

@@ -1,5 +1,5 @@
 """Temps reel (pcfno3d.temps_reel, atom_wind.jour_direct, /api/atom-wind/direct) : decodage SYNOP,
-formules du forcage sur les champs IFS, journee complete avec des reponses reseau simulees."""
+formules du forcage sur les champs GFS, journee complete avec des reponses reseau simulees."""
 
 from __future__ import annotations
 
@@ -41,8 +41,10 @@ def test_lire_synop():
 
 
 # ---------------------------------------------------------------------- reponses simulees
-NIV = {1000: (8.0, 270.0, 110.0), 925: (10.0, 275.0, 800.0), 850: (12.0, 280.0, 1500.0),
-       700: (15.0, 285.0, 3100.0)}
+NIV = {1000: (8.0, 270.0, 110.0), 975: (8.5, 271.0, 330.0), 950: (9.0, 272.0, 560.0),
+       925: (10.0, 275.0, 800.0), 900: (10.5, 276.0, 1030.0), 875: (11.0, 278.0, 1270.0),
+       850: (12.0, 280.0, 1500.0), 800: (13.0, 282.0, 1970.0), 775: (13.5, 283.0, 2210.0),
+       750: (14.0, 284.0, 2460.0), 700: (15.0, 285.0, 3100.0)}
 
 
 def fausse_source(url: str) -> bytes:
@@ -58,7 +60,8 @@ def fausse_source(url: str) -> bytes:
                  "wind_speed_10m": [5.0] * n, "wind_direction_10m": [260.0] * n,
                  "wind_speed_100m": [7.0] * n, "wind_direction_100m": [265.0] * n,
                  "temperature_2m": [20.0 + (i % 2)] * n, "relative_humidity_2m": [60.0] * n,
-                 "surface_pressure": [1010.0] * n, "pressure_msl": [1015.0] * n}
+                 "surface_pressure": [1010.0] * n, "pressure_msl": [1015.0] * n,
+                 "shortwave_radiation": [300.0] * n}
             for p, (s, d, z) in NIV.items():
                 h[f"wind_speed_{p}hPa"] = [s] * n
                 h[f"wind_direction_{p}hPa"] = [d] * n
@@ -74,14 +77,14 @@ def fausse_source(url: str) -> bytes:
     raise AssertionError(url)
 
 
-def test_forcage_ifs_formules():
+def test_forcage_gfs_formules():
     from pcfno3d.forcage import SCALAIRES
-    from pcfno3d.temps_reel import forcage_ifs, telecharger_ifs
+    from pcfno3d.temps_reel import forcage_gfs, telecharger_gfs
 
-    c = telecharger_ifs(np.array([36.0, 36.25]), np.array([10.0, 10.25]), "2026-10-26", "2026-10-26",
+    c = telecharger_gfs(np.array([36.0, 36.25]), np.array([10.0, 10.25]), "2026-10-26", "2026-10-26",
                         lire=fausse_source)
     assert c["wind_speed_850hPa"].shape == (24, 2, 2)
-    temps, scal, u, v = forcage_ifs(c, (10.0, 100.0, 500.0, 1200.0))
+    temps, scal, u, v = forcage_gfs(c, (10.0, 100.0, 500.0, 1200.0))
     k = dict(SCALAIRES)
     u850 = -12 * math.sin(math.radians(280))
     assert scal[0, 0] == pytest.approx(u850 * k["ug"], rel=1e-6)
@@ -121,6 +124,11 @@ def test_journee_temps_reel(jeu):
     assert d["instants"][12]["source"] == "prevision" and d["instants"][12]["stations"] == []
     a = np.frombuffer(base64.b64decode(d["vent"]), dtype="<i2").reshape(d["forme"])
     assert (a != -32768).mean() > 0.5
+    # espace agriculteur : temperature et humidite a 2 m de GFS (20-21 deg C, 60 % dans la fausse source)
+    t2m = np.frombuffer(base64.b64decode(d["t2m"]), dtype="<i2").astype(float) / 100
+    hr = np.frombuffer(base64.b64decode(d["hr2m"]), dtype="<i2").astype(float) / 100
+    assert 10.0 < np.median(t2m) < 25.0 and np.median(hr) == pytest.approx(60.0, abs=0.5)
+    assert all(i["rayonnement_w_m2"] == pytest.approx(300.0) for i in d["instants"])
 
 
 def test_forcage_direct_meme_forme(jeu):

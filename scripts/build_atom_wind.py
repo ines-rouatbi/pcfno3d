@@ -38,7 +38,7 @@ ACCROCHES = [
      "  if(mode===\"reel\" && window.ATOM && ATOM.aSigma()){ const sg=ATOM.sigma(x,y,ACTS[state.act].z,"
      "state.hour); if(sg!==null && isFinite(sg)) return {s:sg, d, who}; }"),
     # 6. bandeau : source des donnees et choix de la journee
-    ('<span>Mis à jour il y a 2 min</span>', '<span id="aw-fresh">Mis à jour il y a 2 min</span>'),
+    ("<span>Démonstration : journée d'exemple</span>", "<span id=\"aw-fresh\">Démonstration : journée d'exemple</span>"),
     ("<div class=\"proto\">Prototype : <b>journée d'exemple d'été</b>, calculée sur la zone réelle du "
      "Grand Tunis. Ce ne sont pas des mesures en direct. ",
      "<div class=\"proto\"><span id=\"aw-source\">Prototype : <b>journée d'exemple d'été</b>, calculée "
@@ -57,6 +57,17 @@ ACCROCHES = [
     ('document.getElementById("relstats").innerHTML = relMode==="reel"',
      'document.getElementById("relstats").innerHTML = (window.ATOM ? ATOM.noteFiabilite() : "") + (relMode==="reel"'),
     ("Zones d'eau exclues.</p>`;", "Zones d'eau exclues.</p>`);"),
+    # 10. espace agriculteur (cahier v12, OS8) : J0, J+1, J+2 du temps reel ; temperature, humidite et
+    #     rayonnement de GFS (grandeurs que le modele ne calcule pas, signalees par la page)
+    ("function windD(x,y,z,h,d){ const [u,v]=wind(x,y,z,h), m=DAYMOD[d]",
+     "function windD(x,y,z,h,d){ if(window.ATOM && ATOM.pretJour(d)) return ATOM.ventJour(d,x,y,z,h); "
+     "const [u,v]=wind(x,y,z,h), m=DAYMOD[d]"),
+    ("const Tair = (h,x,y,d=0) => ",
+     "const Tair = (h,x,y,d=0) => (window.ATOM && ATOM.aT(d)) ? ATOM.tJour(d,x,y,h) : "),
+    ("const RHair = (h,x,y,d=0) => ",
+     "const RHair = (h,x,y,d=0) => (window.ATOM && ATOM.aT(d)) ? ATOM.hrJour(d,x,y,h) : "),
+    ("Rs=.72*Ra", "Rs=(window.ATOM && ATOM.rsJour(d)!==null) ? ATOM.rsJour(d) : .72*Ra"),
+    ("const J=200+d", "const J=(window.ATOM && ATOM.doyJour(d)) || 200+d"),
 ]
 
 

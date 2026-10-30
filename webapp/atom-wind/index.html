@@ -198,6 +198,13 @@ table.t{width:100%; border-collapse:collapse; font-size:15px}
 input.inp{border:1px solid var(--line); background:var(--surface-2); border-radius:10px; padding:9px 10px; width:100%}
 .big{font-family:var(--f-display); font-weight:800; font-size:clamp(26px,4vw,38px); line-height:1.1}
 .src{font-size:13px; color:var(--muted)}
+.srctag{display:inline-flex; align-items:center; font-size:12px; font-weight:700; border:1px solid var(--line); border-radius:999px; padding:1px 8px; color:var(--muted); white-space:nowrap; margin-inline-end:6px}
+.srctag.atom{border-color:var(--accent); color:var(--accent)}
+.srcrow{display:flex; gap:4px; flex-wrap:wrap; margin-top:8px}
+.agsrc{margin:0; padding-inline-start:18px; display:grid; gap:8px; font-size:15px}
+.gisbox{border-radius:12px; overflow:hidden; border:1px solid var(--line); cursor:crosshair}
+#gis{display:block; width:100%; height:auto}
+.gisramp{background:linear-gradient(90deg,#d7e3e8,#9fd3b5,#e8d36a,#f0a03c,#d9472f)}
 .agcards{display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:16px}
 .drop{display:inline-block; animation:drip 1.6s ease-in-out infinite}
 @keyframes drip{0%,100%{transform:translateY(0)}50%{transform:translateY(3px)}}
@@ -256,37 +263,681 @@ input.inp{border:1px solid var(--line); background:var(--surface-2); border-radi
 .top.compact .skywrap{padding-top:0}
 .top.compact nav.tabs a{padding:5px 12px}
 @media (max-width:700px){ .top:not(.compact) .proto{display:none} .top.compact #play{display:none} }
-/* Nesma, l'assistante du grand public */
-.nesma-btn{position:fixed; left:max(16px, env(safe-area-inset-left,0px)); bottom:max(16px, env(safe-area-inset-bottom,0px)); z-index:35; display:flex; gap:10px; align-items:center; border:0; border-radius:999px; padding:6px 16px 6px 6px; background:var(--accent); color:var(--accent-ink); font-weight:800; box-shadow:0 10px 26px rgba(10,110,125,.35); cursor:pointer; animation:float 3s ease-in-out infinite}
-.nesma-btn .mini{width:42px; height:42px; border-radius:50%; background:#fff; overflow:hidden; display:grid; place-items:center}
-@keyframes float{50%{transform:translateY(-4px)}}
-.nesma{position:fixed; left:max(16px, env(safe-area-inset-left,0px)); bottom:max(16px, env(safe-area-inset-bottom,0px)); z-index:36; width:min(400px, calc(100vw - 32px)); max-height:min(86vh,760px); display:grid; grid-template-columns:minmax(0,1fr); grid-template-rows:auto minmax(0,1fr) auto auto; padding:0; overflow:hidden; animation:fadein .25s}
-.nesma .stage{position:relative; height:230px; background:linear-gradient(180deg, color-mix(in srgb,var(--accent) 22%,var(--surface)) 0%, var(--surface) 100%); display:grid; justify-items:start; align-items:end; padding-left:10px}
-.nesma .stage .close{position:absolute; right:10px; top:10px}
-.nesma .who{position:absolute; left:14px; top:12px; font-weight:800; font-family:var(--f-display); font-size:18px}
-.nesma .who small{display:block; font-weight:400; font-size:12px; color:var(--muted); font-family:var(--f-body)}
-.thought{position:absolute; right:12px; top:48px; width:min(200px,50%); background:var(--surface); border:2px solid var(--line); border-radius:22px; padding:10px 12px; font-weight:700; font-size:14px; line-height:1.3; box-shadow:var(--shadow); animation:pop .45s cubic-bezier(.2,1.6,.4,1)}
-.thought::before,.thought::after{content:""; position:absolute; background:var(--surface); border:2px solid var(--line); border-radius:50%}
-.thought::before{width:15px; height:15px; left:-18px; bottom:10px}
-.thought::after{width:9px; height:9px; left:-32px; bottom:2px}
-.thought .ti{display:block; font-size:12px; color:var(--muted); font-weight:700; margin-bottom:2px}
-.face{width:170px; height:170px; overflow:visible}
-.face .hair{transform-origin:50% 30%; animation:sway var(--dur,3s) ease-in-out infinite}
-@keyframes sway{0%,100%{transform:rotate(calc(var(--amp,2deg) * -1))}50%{transform:rotate(var(--amp,2deg))}}
-.face .blink{animation:blink2 5s infinite; transform-origin:center; transform-box:fill-box}
-@keyframes blink2{0%,94%,100%{transform:scaleY(1)}97%{transform:scaleY(.1)}}
-.face .feat{transition:all .35s ease}
-.chat{overflow:auto; padding:12px; display:grid; gap:8px; align-content:start; min-height:120px}
-.msg{max-width:85%; padding:8px 12px; border-radius:16px; font-size:15px; line-height:1.4; animation:fadein .25s}
-.msg.u{justify-self:end; background:var(--accent); color:var(--accent-ink); border-bottom-right-radius:4px}
-.msg.b{justify-self:start; background:var(--surface-2); border-bottom-left-radius:4px}
-.msg .facts2{display:flex; gap:6px; flex-wrap:wrap; margin-top:6px}
-.typing{display:inline-flex; gap:4px} .typing i{width:7px; height:7px; border-radius:50%; background:var(--muted); animation:wv 1s infinite} .typing i:nth-child(2){animation-delay:.15s} .typing i:nth-child(3){animation-delay:.3s}
-.sugg{display:flex; gap:6px; overflow-x:auto; padding:0 12px 8px; scrollbar-width:none}
-.sugg button{flex:none; border:1px solid var(--line); background:var(--surface); border-radius:999px; padding:5px 10px; font-size:13px; cursor:pointer; font-weight:700}
-.sugg button:hover{border-color:var(--accent)}
-.nform{display:flex; gap:8px; padding:10px 12px; border-top:1px solid var(--line)}
-.nform input{flex:1; min-width:0; border:1px solid var(--line); background:var(--surface-2); border-radius:999px; padding:9px 14px}
+/* Leaflet 1.9.4 (feuille de style intégrée) */
+/* required styles */
+
+.leaflet-pane,
+.leaflet-tile,
+.leaflet-marker-icon,
+.leaflet-marker-shadow,
+.leaflet-tile-container,
+.leaflet-pane > svg,
+.leaflet-pane > canvas,
+.leaflet-zoom-box,
+.leaflet-image-layer,
+.leaflet-layer {
+	position: absolute;
+	left: 0;
+	top: 0;
+	}
+.leaflet-container {
+	overflow: hidden;
+	}
+.leaflet-tile,
+.leaflet-marker-icon,
+.leaflet-marker-shadow {
+	-webkit-user-select: none;
+	   -moz-user-select: none;
+	        user-select: none;
+	  -webkit-user-drag: none;
+	}
+/* Prevents IE11 from highlighting tiles in blue */
+.leaflet-tile::selection {
+	background: transparent;
+}
+/* Safari renders non-retina tile on retina better with this, but Chrome is worse */
+.leaflet-safari .leaflet-tile {
+	image-rendering: -webkit-optimize-contrast;
+	}
+/* hack that prevents hw layers "stretching" when loading new tiles */
+.leaflet-safari .leaflet-tile-container {
+	width: 1600px;
+	height: 1600px;
+	-webkit-transform-origin: 0 0;
+	}
+.leaflet-marker-icon,
+.leaflet-marker-shadow {
+	display: block;
+	}
+/* .leaflet-container svg: reset svg max-width decleration shipped in Joomla! (joomla.org) 3.x */
+/* .leaflet-container img: map is broken in FF if you have max-width: 100% on tiles */
+.leaflet-container .leaflet-overlay-pane svg {
+	max-width: none !important;
+	max-height: none !important;
+	}
+.leaflet-container .leaflet-marker-pane img,
+.leaflet-container .leaflet-shadow-pane img,
+.leaflet-container .leaflet-tile-pane img,
+.leaflet-container img.leaflet-image-layer,
+.leaflet-container .leaflet-tile {
+	max-width: none !important;
+	max-height: none !important;
+	width: auto;
+	padding: 0;
+	}
+
+.leaflet-container img.leaflet-tile {
+	/* See: https://bugs.chromium.org/p/chromium/issues/detail?id=600120 */
+	mix-blend-mode: plus-lighter;
+}
+
+.leaflet-container.leaflet-touch-zoom {
+	-ms-touch-action: pan-x pan-y;
+	touch-action: pan-x pan-y;
+	}
+.leaflet-container.leaflet-touch-drag {
+	-ms-touch-action: pinch-zoom;
+	/* Fallback for FF which doesn't support pinch-zoom */
+	touch-action: none;
+	touch-action: pinch-zoom;
+}
+.leaflet-container.leaflet-touch-drag.leaflet-touch-zoom {
+	-ms-touch-action: none;
+	touch-action: none;
+}
+.leaflet-container {
+	-webkit-tap-highlight-color: transparent;
+}
+.leaflet-container a {
+	-webkit-tap-highlight-color: rgba(51, 181, 229, 0.4);
+}
+.leaflet-tile {
+	filter: inherit;
+	visibility: hidden;
+	}
+.leaflet-tile-loaded {
+	visibility: inherit;
+	}
+.leaflet-zoom-box {
+	width: 0;
+	height: 0;
+	-moz-box-sizing: border-box;
+	     box-sizing: border-box;
+	z-index: 800;
+	}
+/* workaround for https://bugzilla.mozilla.org/show_bug.cgi?id=888319 */
+.leaflet-overlay-pane svg {
+	-moz-user-select: none;
+	}
+
+.leaflet-pane         { z-index: 400; }
+
+.leaflet-tile-pane    { z-index: 200; }
+.leaflet-overlay-pane { z-index: 400; }
+.leaflet-shadow-pane  { z-index: 500; }
+.leaflet-marker-pane  { z-index: 600; }
+.leaflet-tooltip-pane   { z-index: 650; }
+.leaflet-popup-pane   { z-index: 700; }
+
+.leaflet-map-pane canvas { z-index: 100; }
+.leaflet-map-pane svg    { z-index: 200; }
+
+.leaflet-vml-shape {
+	width: 1px;
+	height: 1px;
+	}
+.lvml {
+	behavior: url(#default#VML);
+	display: inline-block;
+	position: absolute;
+	}
+
+
+/* control positioning */
+
+.leaflet-control {
+	position: relative;
+	z-index: 800;
+	pointer-events: visiblePainted; /* IE 9-10 doesn't have auto */
+	pointer-events: auto;
+	}
+.leaflet-top,
+.leaflet-bottom {
+	position: absolute;
+	z-index: 1000;
+	pointer-events: none;
+	}
+.leaflet-top {
+	top: 0;
+	}
+.leaflet-right {
+	right: 0;
+	}
+.leaflet-bottom {
+	bottom: 0;
+	}
+.leaflet-left {
+	left: 0;
+	}
+.leaflet-control {
+	float: left;
+	clear: both;
+	}
+.leaflet-right .leaflet-control {
+	float: right;
+	}
+.leaflet-top .leaflet-control {
+	margin-top: 10px;
+	}
+.leaflet-bottom .leaflet-control {
+	margin-bottom: 10px;
+	}
+.leaflet-left .leaflet-control {
+	margin-left: 10px;
+	}
+.leaflet-right .leaflet-control {
+	margin-right: 10px;
+	}
+
+
+/* zoom and fade animations */
+
+.leaflet-fade-anim .leaflet-popup {
+	opacity: 0;
+	-webkit-transition: opacity 0.2s linear;
+	   -moz-transition: opacity 0.2s linear;
+	        transition: opacity 0.2s linear;
+	}
+.leaflet-fade-anim .leaflet-map-pane .leaflet-popup {
+	opacity: 1;
+	}
+.leaflet-zoom-animated {
+	-webkit-transform-origin: 0 0;
+	    -ms-transform-origin: 0 0;
+	        transform-origin: 0 0;
+	}
+svg.leaflet-zoom-animated {
+	will-change: transform;
+}
+
+.leaflet-zoom-anim .leaflet-zoom-animated {
+	-webkit-transition: -webkit-transform 0.25s cubic-bezier(0,0,0.25,1);
+	   -moz-transition:    -moz-transform 0.25s cubic-bezier(0,0,0.25,1);
+	        transition:         transform 0.25s cubic-bezier(0,0,0.25,1);
+	}
+.leaflet-zoom-anim .leaflet-tile,
+.leaflet-pan-anim .leaflet-tile {
+	-webkit-transition: none;
+	   -moz-transition: none;
+	        transition: none;
+	}
+
+.leaflet-zoom-anim .leaflet-zoom-hide {
+	visibility: hidden;
+	}
+
+
+/* cursors */
+
+.leaflet-interactive {
+	cursor: pointer;
+	}
+.leaflet-grab {
+	cursor: -webkit-grab;
+	cursor:    -moz-grab;
+	cursor:         grab;
+	}
+.leaflet-crosshair,
+.leaflet-crosshair .leaflet-interactive {
+	cursor: crosshair;
+	}
+.leaflet-popup-pane,
+.leaflet-control {
+	cursor: auto;
+	}
+.leaflet-dragging .leaflet-grab,
+.leaflet-dragging .leaflet-grab .leaflet-interactive,
+.leaflet-dragging .leaflet-marker-draggable {
+	cursor: move;
+	cursor: -webkit-grabbing;
+	cursor:    -moz-grabbing;
+	cursor:         grabbing;
+	}
+
+/* marker & overlays interactivity */
+.leaflet-marker-icon,
+.leaflet-marker-shadow,
+.leaflet-image-layer,
+.leaflet-pane > svg path,
+.leaflet-tile-container {
+	pointer-events: none;
+	}
+
+.leaflet-marker-icon.leaflet-interactive,
+.leaflet-image-layer.leaflet-interactive,
+.leaflet-pane > svg path.leaflet-interactive,
+svg.leaflet-image-layer.leaflet-interactive path {
+	pointer-events: visiblePainted; /* IE 9-10 doesn't have auto */
+	pointer-events: auto;
+	}
+
+/* visual tweaks */
+
+.leaflet-container {
+	background: #ddd;
+	outline-offset: 1px;
+	}
+.leaflet-container a {
+	color: #0078A8;
+	}
+.leaflet-zoom-box {
+	border: 2px dotted #38f;
+	background: rgba(255,255,255,0.5);
+	}
+
+
+/* general typography */
+.leaflet-container {
+	font-family: "Helvetica Neue", Arial, Helvetica, sans-serif;
+	font-size: 12px;
+	font-size: 0.75rem;
+	line-height: 1.5;
+	}
+
+
+/* general toolbar styles */
+
+.leaflet-bar {
+	box-shadow: 0 1px 5px rgba(0,0,0,0.65);
+	border-radius: 4px;
+	}
+.leaflet-bar a {
+	background-color: #fff;
+	border-bottom: 1px solid #ccc;
+	width: 26px;
+	height: 26px;
+	line-height: 26px;
+	display: block;
+	text-align: center;
+	text-decoration: none;
+	color: black;
+	}
+.leaflet-bar a,
+.leaflet-control-layers-toggle {
+	background-position: 50% 50%;
+	background-repeat: no-repeat;
+	display: block;
+	}
+.leaflet-bar a:hover,
+.leaflet-bar a:focus {
+	background-color: #f4f4f4;
+	}
+.leaflet-bar a:first-child {
+	border-top-left-radius: 4px;
+	border-top-right-radius: 4px;
+	}
+.leaflet-bar a:last-child {
+	border-bottom-left-radius: 4px;
+	border-bottom-right-radius: 4px;
+	border-bottom: none;
+	}
+.leaflet-bar a.leaflet-disabled {
+	cursor: default;
+	background-color: #f4f4f4;
+	color: #bbb;
+	}
+
+.leaflet-touch .leaflet-bar a {
+	width: 30px;
+	height: 30px;
+	line-height: 30px;
+	}
+.leaflet-touch .leaflet-bar a:first-child {
+	border-top-left-radius: 2px;
+	border-top-right-radius: 2px;
+	}
+.leaflet-touch .leaflet-bar a:last-child {
+	border-bottom-left-radius: 2px;
+	border-bottom-right-radius: 2px;
+	}
+
+/* zoom control */
+
+.leaflet-control-zoom-in,
+.leaflet-control-zoom-out {
+	font: bold 18px 'Lucida Console', Monaco, monospace;
+	text-indent: 1px;
+	}
+
+.leaflet-touch .leaflet-control-zoom-in, .leaflet-touch .leaflet-control-zoom-out  {
+	font-size: 22px;
+	}
+
+
+/* layers control */
+
+.leaflet-control-layers {
+	box-shadow: 0 1px 5px rgba(0,0,0,0.4);
+	background: #fff;
+	border-radius: 5px;
+	}
+.leaflet-control-layers-toggle {
+	background-image: url(images/layers.png);
+	width: 36px;
+	height: 36px;
+	}
+.leaflet-retina .leaflet-control-layers-toggle {
+	background-image: url(images/layers-2x.png);
+	background-size: 26px 26px;
+	}
+.leaflet-touch .leaflet-control-layers-toggle {
+	width: 44px;
+	height: 44px;
+	}
+.leaflet-control-layers .leaflet-control-layers-list,
+.leaflet-control-layers-expanded .leaflet-control-layers-toggle {
+	display: none;
+	}
+.leaflet-control-layers-expanded .leaflet-control-layers-list {
+	display: block;
+	position: relative;
+	}
+.leaflet-control-layers-expanded {
+	padding: 6px 10px 6px 6px;
+	color: #333;
+	background: #fff;
+	}
+.leaflet-control-layers-scrollbar {
+	overflow-y: scroll;
+	overflow-x: hidden;
+	padding-right: 5px;
+	}
+.leaflet-control-layers-selector {
+	margin-top: 2px;
+	position: relative;
+	top: 1px;
+	}
+.leaflet-control-layers label {
+	display: block;
+	font-size: 13px;
+	font-size: 1.08333em;
+	}
+.leaflet-control-layers-separator {
+	height: 0;
+	border-top: 1px solid #ddd;
+	margin: 5px -10px 5px -6px;
+	}
+
+/* Default icon URLs */
+.leaflet-default-icon-path { /* used only in path-guessing heuristic, see L.Icon.Default */
+	background-image: url(images/marker-icon.png);
+	}
+
+
+/* attribution and scale controls */
+
+.leaflet-container .leaflet-control-attribution {
+	background: #fff;
+	background: rgba(255, 255, 255, 0.8);
+	margin: 0;
+	}
+.leaflet-control-attribution,
+.leaflet-control-scale-line {
+	padding: 0 5px;
+	color: #333;
+	line-height: 1.4;
+	}
+.leaflet-control-attribution a {
+	text-decoration: none;
+	}
+.leaflet-control-attribution a:hover,
+.leaflet-control-attribution a:focus {
+	text-decoration: underline;
+	}
+.leaflet-attribution-flag {
+	display: inline !important;
+	vertical-align: baseline !important;
+	width: 1em;
+	height: 0.6669em;
+	}
+.leaflet-left .leaflet-control-scale {
+	margin-left: 5px;
+	}
+.leaflet-bottom .leaflet-control-scale {
+	margin-bottom: 5px;
+	}
+.leaflet-control-scale-line {
+	border: 2px solid #777;
+	border-top: none;
+	line-height: 1.1;
+	padding: 2px 5px 1px;
+	white-space: nowrap;
+	-moz-box-sizing: border-box;
+	     box-sizing: border-box;
+	background: rgba(255, 255, 255, 0.8);
+	text-shadow: 1px 1px #fff;
+	}
+.leaflet-control-scale-line:not(:first-child) {
+	border-top: 2px solid #777;
+	border-bottom: none;
+	margin-top: -2px;
+	}
+.leaflet-control-scale-line:not(:first-child):not(:last-child) {
+	border-bottom: 2px solid #777;
+	}
+
+.leaflet-touch .leaflet-control-attribution,
+.leaflet-touch .leaflet-control-layers,
+.leaflet-touch .leaflet-bar {
+	box-shadow: none;
+	}
+.leaflet-touch .leaflet-control-layers,
+.leaflet-touch .leaflet-bar {
+	border: 2px solid rgba(0,0,0,0.2);
+	background-clip: padding-box;
+	}
+
+
+/* popup */
+
+.leaflet-popup {
+	position: absolute;
+	text-align: center;
+	margin-bottom: 20px;
+	}
+.leaflet-popup-content-wrapper {
+	padding: 1px;
+	text-align: left;
+	border-radius: 12px;
+	}
+.leaflet-popup-content {
+	margin: 13px 24px 13px 20px;
+	line-height: 1.3;
+	font-size: 13px;
+	font-size: 1.08333em;
+	min-height: 1px;
+	}
+.leaflet-popup-content p {
+	margin: 17px 0;
+	margin: 1.3em 0;
+	}
+.leaflet-popup-tip-container {
+	width: 40px;
+	height: 20px;
+	position: absolute;
+	left: 50%;
+	margin-top: -1px;
+	margin-left: -20px;
+	overflow: hidden;
+	pointer-events: none;
+	}
+.leaflet-popup-tip {
+	width: 17px;
+	height: 17px;
+	padding: 1px;
+
+	margin: -10px auto 0;
+	pointer-events: auto;
+
+	-webkit-transform: rotate(45deg);
+	   -moz-transform: rotate(45deg);
+	    -ms-transform: rotate(45deg);
+	        transform: rotate(45deg);
+	}
+.leaflet-popup-content-wrapper,
+.leaflet-popup-tip {
+	background: white;
+	color: #333;
+	box-shadow: 0 3px 14px rgba(0,0,0,0.4);
+	}
+.leaflet-container a.leaflet-popup-close-button {
+	position: absolute;
+	top: 0;
+	right: 0;
+	border: none;
+	text-align: center;
+	width: 24px;
+	height: 24px;
+	font: 16px/24px Tahoma, Verdana, sans-serif;
+	color: #757575;
+	text-decoration: none;
+	background: transparent;
+	}
+.leaflet-container a.leaflet-popup-close-button:hover,
+.leaflet-container a.leaflet-popup-close-button:focus {
+	color: #585858;
+	}
+.leaflet-popup-scrolled {
+	overflow: auto;
+	}
+
+.leaflet-oldie .leaflet-popup-content-wrapper {
+	-ms-zoom: 1;
+	}
+.leaflet-oldie .leaflet-popup-tip {
+	width: 24px;
+	margin: 0 auto;
+
+	-ms-filter: "progid:DXImageTransform.Microsoft.Matrix(M11=0.70710678, M12=0.70710678, M21=-0.70710678, M22=0.70710678)";
+	filter: progid:DXImageTransform.Microsoft.Matrix(M11=0.70710678, M12=0.70710678, M21=-0.70710678, M22=0.70710678);
+	}
+
+.leaflet-oldie .leaflet-control-zoom,
+.leaflet-oldie .leaflet-control-layers,
+.leaflet-oldie .leaflet-popup-content-wrapper,
+.leaflet-oldie .leaflet-popup-tip {
+	border: 1px solid #999;
+	}
+
+
+/* div icon */
+
+.leaflet-div-icon {
+	background: #fff;
+	border: 1px solid #666;
+	}
+
+
+/* Tooltip */
+/* Base styles for the element that has a tooltip */
+.leaflet-tooltip {
+	position: absolute;
+	padding: 6px;
+	background-color: #fff;
+	border: 1px solid #fff;
+	border-radius: 3px;
+	color: #222;
+	white-space: nowrap;
+	-webkit-user-select: none;
+	-moz-user-select: none;
+	-ms-user-select: none;
+	user-select: none;
+	pointer-events: none;
+	box-shadow: 0 1px 3px rgba(0,0,0,0.4);
+	}
+.leaflet-tooltip.leaflet-interactive {
+	cursor: pointer;
+	pointer-events: auto;
+	}
+.leaflet-tooltip-top:before,
+.leaflet-tooltip-bottom:before,
+.leaflet-tooltip-left:before,
+.leaflet-tooltip-right:before {
+	position: absolute;
+	pointer-events: none;
+	border: 6px solid transparent;
+	background: transparent;
+	content: "";
+	}
+
+/* Directions */
+
+.leaflet-tooltip-bottom {
+	margin-top: 6px;
+}
+.leaflet-tooltip-top {
+	margin-top: -6px;
+}
+.leaflet-tooltip-bottom:before,
+.leaflet-tooltip-top:before {
+	left: 50%;
+	margin-left: -6px;
+	}
+.leaflet-tooltip-top:before {
+	bottom: 0;
+	margin-bottom: -12px;
+	border-top-color: #fff;
+	}
+.leaflet-tooltip-bottom:before {
+	top: 0;
+	margin-top: -12px;
+	margin-left: -6px;
+	border-bottom-color: #fff;
+	}
+.leaflet-tooltip-left {
+	margin-left: -6px;
+}
+.leaflet-tooltip-right {
+	margin-left: 6px;
+}
+.leaflet-tooltip-left:before,
+.leaflet-tooltip-right:before {
+	top: 50%;
+	margin-top: -6px;
+	}
+.leaflet-tooltip-left:before {
+	right: 0;
+	margin-right: -12px;
+	border-left-color: #fff;
+	}
+.leaflet-tooltip-right:before {
+	left: 0;
+	margin-left: -12px;
+	border-right-color: #fff;
+	}
+
+/* Printing */
+
+@media print {
+	/* Prevent printers from removing background-images of controls. */
+	.leaflet-control {
+		-webkit-print-color-adjust: exact;
+		print-color-adjust: exact;
+		}
+	}
+
+.lmapbox{position:relative; border-radius:12px; overflow:hidden; border:1px solid var(--line); height:min(62vh,520px); min-height:340px; background:var(--water)}
+.lmapbox #lmap{position:absolute; inset:0}
+.leaflet-container{font-family:var(--f-body); background:var(--water)}
+.lnotice{position:absolute; left:10px; right:10px; bottom:26px; z-index:500; font-size:12.5px; padding:6px 34px 6px 10px}
+.lnotice button{position:absolute; right:4px; top:50%; transform:translateY(-50%); border:0; background:none; font-size:18px; line-height:1; padding:4px 8px; cursor:pointer; color:inherit}
+.leaflet-tooltip.llbl{background:none; border:0; box-shadow:none; padding:0 0 0 2px; font-weight:600; font-size:12px; color:#14232b; text-shadow:0 0 3px #fff,0 0 3px #fff,0 0 2px #fff}
+.leaflet-tooltip.llbl::before{display:none}
+.lmap-nolbl .leaflet-tooltip.llbl{display:none}
+.mapbar{display:flex; gap:8px; flex-wrap:wrap; align-items:center}
+.pinicon{width:26px; height:34px; position:relative}
+.pinicon::before{content:""; position:absolute; left:3px; top:0; width:20px; height:20px; border-radius:50% 50% 50% 0; transform:rotate(-45deg); background:var(--accent); border:2px solid #fff; box-shadow:0 2px 6px rgba(0,0,0,.35)}
+.pinicon::after{content:""; position:absolute; left:10px; top:7px; width:6px; height:6px; border-radius:50%; background:#fff}
 @media (prefers-reduced-motion: reduce){*{animation:none!important; transition:none!important}}
 </style>
 
@@ -297,7 +948,7 @@ input.inp{border:1px solid var(--line); background:var(--surface-2); border-radi
         <svg width="38" height="38" viewBox="0 0 38 38" aria-hidden="true"><circle cx="19" cy="19" r="18" fill="var(--accent)"/><path d="M8 15c6-4 11 3 18-1M8 21c7-4 12 3 22-1M10 27c5-3 9 2 14-1" stroke="var(--accent-ink)" stroke-width="2.4" fill="none" stroke-linecap="round"/></svg>
         <div><b>ATOM Wind</b><small>Le vent du Grand Tunis, partout et à toute hauteur</small></div>
       </div>
-      <div class="fresh"><span class="dot" aria-hidden="true"></span><span id="aw-fresh">Mis à jour il y a 2 min</span></div>
+      <div class="fresh"><span class="dot" aria-hidden="true" style="background:var(--sand);animation:none"></span><span id="aw-fresh">Démonstration : journée d'exemple</span></div>
       <div class="userbox umenu" id="userbox"></div>
       <div class="seg" role="group" aria-label="Unité de vitesse"><button id="u-kmh" aria-pressed="true">km/h</button><button id="u-ms" aria-pressed="false">m/s</button></div>
       <button class="btn" id="b-sound" aria-pressed="false" aria-label="Écouter le vent">Écouter le vent</button>
@@ -335,7 +986,9 @@ input.inp{border:1px solid var(--line); background:var(--surface-2); border-radi
         <div class="row">
           <select class="inp" id="town" aria-label="Choisir une ville" style="flex:1;min-width:180px"></select>
         </div>
+        <div class="mapbar"><div class="seg" role="group" aria-label="Fond de carte"><button id="bm-relief" aria-pressed="true">Relief</button><button id="bm-osm" aria-pressed="false">Vraie carte</button></div><button class="btn" id="locate" hidden>Me localiser</button></div>
         <div class="mapbox" id="map1"><canvas id="c1"></canvas><div class="maphint" id="hint1">Touchez la carte pour placer votre position</div></div>
+        <div class="lmapbox" id="lmapbox" hidden><div id="lmap"></div><div class="glass lnotice" id="lnotice" hidden></div></div>
         <div class="legend"><span>Calme</span><span class="ramp"></span><span>Très fort</span><span class="tip" tabindex="0" data-tip="Les traits qui bougent montrent le vent : leur couleur indique sa force, leur mouvement sa direction.">?</span></div>
       </div>
     </div>
@@ -357,18 +1010,30 @@ input.inp{border:1px solid var(--line); background:var(--surface-2); border-radi
 <section class="view" id="v-agri">
   <div class="card">
     <h2>Espace agriculteur</h2>
-    <p class="muted" style="margin-top:0">Choisissez votre lieu, votre milieu et votre culture : ATOM Wind calcule l'eau à apporter aujourd'hui et vous dit quand arroser, quand traiter et quand aérer votre dépôt.</p>
+    <p class="muted" style="margin-top:0">Choisissez votre lieu, votre culture et le jour : ATOM Wind vous dit quand traiter, quand et combien arroser, et vous prévient du vent fort ou du vent chaud et sec.</p>
     <div class="agform">
       <label for="ag-place">Lieu<select class="inp" id="ag-place"></select></label>
       <label for="ag-crop">Culture<select class="inp" id="ag-crop"></select></label>
       <label for="ag-area">Surface (hectares)<input class="inp" id="ag-area" type="number" min="0.1" max="500" step="0.1" value="2"></label>
       <label for="ag-irr">Arrosage<select class="inp" id="ag-irr"><option value="0.9">Goutte-à-goutte</option><option value="0.75">Aspersion</option><option value="0.6">Gravitaire (rigoles)</option></select></label>
     </div>
-    <div style="margin-top:10px"><b style="font-size:14px">Milieu</b><div class="chips" id="ag-milieu" style="margin-top:4px"></div></div>
+    <div style="margin-top:12px;display:flex;gap:12px 24px;flex-wrap:wrap;align-items:flex-end">
+      <div><b style="font-size:14px">Jour</b><div class="chips" id="ag-day" style="margin-top:4px"></div></div>
+      <div><b style="font-size:14px">Milieu</b><div class="chips" id="ag-milieu" style="margin-top:4px"></div></div>
+    </div>
   </div>
-  <div id="ag-water"></div>
+  <div class="alerts" id="ag-alerts"></div>
+  <div class="agcards" id="ag-top"></div>
   <div class="agcards" id="ag-cards"></div>
-  <p class="src">Sources : vent calculé par ATOM Wind ; température, humidité et rayonnement d'une journée d'été d'exemple (source prévue : ERA5 et capteurs ANEO) ; poussière d'exemple (source prévue : Copernicus CAMS et capteurs SPH-AIR). Besoin en eau selon la méthode FAO-56 de Penman-Monteith.</p>
+  <div class="card">
+    <h3>D'où viennent les chiffres</h3>
+    <ul class="agsrc">
+      <li><span class="srctag atom">Vent : ATOM Wind</span> Vent à votre emplacement, à 2 m et à 10 m, calculé par le modèle PC-FNO3D. En service, il viendra de la prévision GFS affinée par le modèle, à 24 et 48 h. Dans ce prototype, aujourd'hui est une journée d'été d'exemple, demain et après-demain en sont des variantes simulées.</li>
+      <li><span class="srctag">Température, humidité : GFS</span> Ces grandeurs ne sont pas calculées par ATOM Wind ; elles viendront de la prévision GFS. Ici, valeurs d'exemple.</li>
+      <li><span class="srctag">Méthode FAO-56</span> Besoin en eau calculé par la méthode de Penman-Monteith de la FAO.</li>
+    </ul>
+    <p class="src" style="margin:8px 0 0">Perspectives : qualité de l'air, poussière et conditions de stockage des récoltes, quand les capteurs ANEO mesureront ces grandeurs.</p>
+  </div>
 </section>
 
 <!-- TABLEAU DE BORD -->
@@ -403,9 +1068,9 @@ input.inp{border:1px solid var(--line); background:var(--surface-2); border-radi
     <div class="ov tl"><div class="glass" style="max-width:340px"><b>Le vent en 3D au-dessus du relief</b><br><span class="muted" style="font-size:14px">Faites tourner avec la souris ou le doigt. Touchez le relief pour voir le vent à cet endroit.</span></div></div>
     <div class="ov tr"><button class="btn" id="recenter">Recentrer</button><button class="btn" id="relbtn" aria-pressed="false">Afficher la fiabilité</button><button class="btn" id="cutbtn" aria-pressed="false">Tracer une coupe</button><button class="btn primary" id="breeze">Voir la brise de mer</button><select class="inp" id="seedtype" aria-label="Objet à lâcher"><option value="graine">Graine de pissenlit</option><option value="sable">Grain de sable</option><option value="ballon">Ballon</option></select><button class="btn" id="seedbtn">Lâcher dans le vent</button></div>
     <div class="ov tc glass" id="cap3" hidden></div>
-    <div class="ov bl"><div class="glass hslider"><label for="h3"><b>Hauteur au-dessus du sol : <span id="h3txt">100 m</span></b></label>
+    <div class="ov bl"><div class="glass hslider"><label for="h3"><b>Hauteur au-dessus du sol : <span id="h3txt">80 m</span></b></label>
       <input type="range" id="h3" min="0" max="7" step="1" value="3">
-      <div class="marks"><span>10 m<br>anémomètre</span><span>30 m<br>immeuble</span><span>45 m<br>grue</span><span>100 m<br>éolienne</span><span>200 m</span><span>300 m</span><span>500 m</span><span>1 000 m</span></div>
+      <div class="marks"><span>10 m<br>cultures</span><span>30 m<br>mât ANEO</span><span>50 m</span><span>80 m<br>moyeu</span><span>150 m<br>haut des pales</span><span>300 m</span><span>500 m</span><span>1 000 m</span></div>
       <div class="legend" style="margin:0"><span>Calme</span><span class="ramp"></span><span>Très fort</span></div></div></div>
   </div>
   <div class="card" id="cutcard" hidden>
@@ -439,7 +1104,9 @@ input.inp{border:1px solid var(--line); background:var(--surface-2); border-radi
 
 <!-- EOLIEN -->
 <section class="view" id="v-eolien">
-  <div class="card"><h2>Parc éolien virtuel de la crête du djebel Ressas</h2><p class="muted" style="margin:0">Trois éoliennes d'exemple de 2 MW, moyeu à 80 m. La production est calculée avec le vent à hauteur de moyeu.</p></div>
+  <div class="card"><h2>Espace éolien</h2><p class="muted" style="margin:0 0 10px">C'est ici que la 3D sert : le vent entre 30 et 150 m, sur toute la hauteur du rotor. Exemple : parc virtuel de trois éoliennes de 2 MW sur la crête du djebel Ressas, moyeu à 80 m.</p>
+    <div><b style="font-size:14px">Jour</b><div class="chips" id="eo-day" style="margin-top:4px"></div></div>
+    <p class="src" style="margin:8px 0 0">Prototype : aujourd'hui est une journée d'exemple, demain et après-demain en sont des variantes simulées. En service : prévision GFS affinée par ATOM Wind, à 24 et 48 h.</p></div>
   <div class="kpis" id="kpis"></div>
   <div class="card"><h3>Production du parc sur la journée</h3><div id="prodchart"></div></div>
   <div class="turb" id="turbs"></div>
@@ -452,8 +1119,18 @@ input.inp{border:1px solid var(--line); background:var(--surface-2); border-radi
     </div>
     <div class="steps">
       <div class="card"><h3>Le vent sur toute la hauteur du rotor</h3><div id="rotor"></div></div>
-      <div class="card"><h3>D'où vient le vent au moyeu aujourd'hui ?</h3><div id="rose"></div></div>
+      <div class="card"><h3 id="rose-t">D'où vient le vent au moyeu ?</h3><div id="rose"></div></div>
     </div>
+  </div>
+  <div class="grid2">
+    <div class="card"><h3>Carte du gisement : où installer une éolienne ?</h3><p class="muted" style="font-size:14px;margin:0 0 8px">Taux de charge estimé sur la journée, à hauteur de moyeu du modèle choisi. Touchez la carte pour y placer votre éolienne.</p>
+      <div class="gisbox"><canvas id="gis"></canvas></div>
+      <div class="legend"><span>Faible</span><span class="ramp gisramp"></span><span>Fort</span><span>· calculé tous les 1 km pour l'aperçu</span></div>
+      <div id="gisbest" style="margin-top:8px"></div></div>
+    <div class="card"><h3>Peut-on se fier au vent en altitude ? <span class="pill m">résultats réels</span></h3>
+      <p style="margin:0 0 8px">Seule mesure disponible en altitude : les ballons-sondes de Tunis-Carthage, deux fois par jour.</p>
+      <div class="dsos"><div><span>Erreur moyenne de 0 à 250 m, ATOM Wind</span><b>2,22 m/s</b></div><div><span>Même mesure, ERA5</span><b>2,29 m/s</b></div></div>
+      <p class="muted" style="font-size:14px;margin:8px 0 0">Le gain sur ERA5 est réel mais faible, et les mesures sont rares : la validation en altitude est la limite principale de l'espace éolien. Les mâts ANEO de 30 m et un mât de mesure sur site la renforceront.</p></div>
   </div>
 </section>
 
@@ -505,13 +1182,6 @@ input.inp{border:1px solid var(--line); background:var(--surface-2); border-radi
 <div class="toast" id="toast" hidden></div>
 <div class="gtip" id="gtip" hidden></div>
 <div class="palette" id="palette" hidden></div>
-<button class="nesma-btn" id="nesma-btn" hidden aria-label="Demander à Nesma"><span class="mini" id="nesma-mini"></span>Demande à Nesma</button>
-<aside class="nesma card" id="nesma" hidden aria-label="Nesma, l'assistante du vent">
-  <div class="stage"><div class="who">Nesma<small>La brise qui te conseille</small></div><button class="x close" id="nesma-x" aria-label="Fermer">×</button><div class="thought" id="nesma-thought"><span class="ti">Je pense…</span>Pose-moi une question sur ta journée !</div><svg class="face" id="nesma-face" viewBox="0 0 200 200" aria-hidden="true"></svg></div>
-  <div class="chat" id="nesma-chat" aria-live="polite"></div>
-  <div class="sugg" id="nesma-sugg"></div>
-  <form class="nform" id="nesma-form"><label for="nesma-in" style="position:absolute;left:-9999px">Ta question</label><input id="nesma-in" placeholder="Ex. : je veux porter une jupe cet après-midi" autocomplete="off"><button class="btn primary" type="submit">Envoyer</button></form>
-</aside>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
@@ -600,9 +1270,6 @@ const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).
 const ICONS = {
   spray:'<path d="M4 20h7M7 20V9h4l3-3h5M14 6v5M17 13c0 1.5-1 2-1 3M20 12c0 1.5-1 2-1 3M17 18c0 1.5-1 2-1 3" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/>',
   irr:'<path d="M12 3c3 4 5 7 5 10a5 5 0 0 1-10 0c0-3 2-6 5-10z" stroke="currentColor" stroke-width="2" fill="none"/>',
-  crane:'<path d="M5 21V4M5 4h15M5 4l4 4M18 4v6M16 10h4v3h-4zM3 21h6M5 9l4-5" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/>',
-  drone:'<path d="M9 12h6M12 10v4M4 7h5M15 7h5M6.5 7v3l3 2M17.5 7v3l-3 2" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/>',
-  boat:'<path d="M3 16h18l-3 4H6zM12 4v12M12 4l6 9h-6" stroke="currentColor" stroke-width="2" fill="none" stroke-linejoin="round"/>',
   turbine:'<path d="M12 10v11M9 21h6M12 10L12 3M12 10l6 3.5M12 10l-6 3.5" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/><circle cx="12" cy="10" r="1.6" fill="currentColor"/>'
 };
 const ACTS = {
@@ -610,12 +1277,6 @@ const ACTS = {
     todo:{go:"Traitez maintenant ; gardez une bande sans traitement près des voisins et des points d'eau.", warn:"Utilisez des buses anti-dérive et baissez la rampe, ou attendez le prochain créneau vert.", stop:"Reportez le traitement : le produit partirait chez les voisins."}},
   irr:{n:"Arroser par aspersion", z:10, kind:"speed", rule:k => k<=15 ? ["go","Oui, bon moment pour arroser"] : k<=25 ? ["warn","Attention : l'eau est emportée en partie"] : ["stop","Non, trop de vent pour l'aspersion"],
     todo:{go:"Arrosez maintenant : l'eau tombera là où il faut.", warn:"Préférez le goutte-à-goutte ou attendez le soir, quand le vent baisse.", stop:"Attendez : une grande partie de l'eau serait perdue."}},
-  crane:{n:"Lever avec une grue", z:45, kind:"gust", rule:k => k<50 ? ["go","Oui, levage autorisé"] : k<72 ? ["warn","Attention : rafales fortes à 45 m"] : ["stop","Arrêt : rafales au-dessus de la limite"],
-    todo:{go:"Levage possible. Restez attentif aux annonces de rafales.", warn:"Pas de charges à grande surface (panneaux, coffrages). Préparez l'arrêt.", stop:"Arrêtez le levage et mettez la flèche en girouette."}},
-  drone:{n:"Faire voler un drone", z:50, kind:"gust", rule:k => k<20 ? ["go","Oui, vol possible"] : k<30 ? ["warn","Attention : rafales gênantes"] : ["stop","Non, vol déconseillé"],
-    todo:{go:"Vol possible. Gardez une réserve de batterie pour le retour face au vent.", warn:"Volez bas et près de vous ; le retour face au vent consommera plus.", stop:"Ne décollez pas : le drone risque de dériver."}},
-  boat:{n:"Sortir en petit bateau", z:10, kind:"gust", rule:k => k<20 ? ["go","Oui, mer favorable"] : k<30 ? ["warn","Attention : mer agitée possible"] : ["stop","Non, restez au port"],
-    todo:{go:"Sortie possible. Prévenez quelqu'un de votre heure de retour.", warn:"Restez près de la côte et rentrez avant le renforcement du vent.", stop:"Restez au port : vent et vagues trop forts pour un petit bateau."}},
   turbine:{n:"Produire avec une éolienne", z:80, kind:"power", rule:k => k<11 ? ["info","Production très faible : vent trop faible"] : k<90 ? ["go","Bonne production"] : ["stop","Arrêt de sécurité : vent trop fort"],
     todo:{go:"Bonne période pour produire ; reportez la maintenance.", info:"Bon moment pour la maintenance : l'éolienne produit peu.", stop:"L'éolienne se met en sécurité automatiquement."}}
 };
@@ -690,9 +1351,10 @@ function makeMap(canvasId, boxId, opts){
 const townSel = document.getElementById("town");
 townSel.innerHTML = `<option value="">Choisir ma ville ou mon lieu…</option>` + PLACES.map((p,i)=>`<option value="${i}">${p[0]}</option>`).join("") + `<option value="pin" hidden>Ma position sur la carte</option>`;
 townSel.value = "5";
-townSel.addEventListener("change", () => { if(townSel.value===""||townSel.value==="pin") return; const p=PLACES[+townSel.value]; state.pin=xy(p[1],p[2]); state.pinName=p[0]; renderAnswer(); });
-const map1 = makeMap("c1","map1",{ pin:true, z:()=>ACTS[state.act].z, onClick:(x,y) => { const k=idx(x,y); state.pin=[x,y]; let near=PLACES.map(p=>[p[0],Math.hypot(x-xy(p[1],p[2])[0],y-xy(p[1],p[2])[1])]).sort((a,b)=>a[1]-b[1])[0];
-  state.pinName = wat[k]===1 ? `En mer, à ${Math.round(near[1])} km de ${near[0].split(" (")[0]}` : near[1]<2 ? near[0] : `À ${Math.round(near[1])} km de ${near[0].split(" (")[0]}`; townSel.value="pin"; townSel.querySelector('[value="pin"]').hidden=false; document.getElementById("hint1").textContent="Position placée. Touchez ailleurs pour la déplacer."; renderAnswer(); } });
+townSel.addEventListener("change", () => { if(townSel.value===""||townSel.value==="pin") return; const p=PLACES[+townSel.value]; state.pin=xy(p[1],p[2]); state.pinName=p[0]; renderAnswer(); if(typeof syncLeafletPin==="function") syncLeafletPin(true); });
+const map1 = makeMap("c1","map1",{ pin:true, z:()=>ACTS[state.act].z, onClick:(x,y) => placePin(x,y) });
+function placePin(x,y){ const k=idx(x,y); state.pin=[x,y]; let near=PLACES.map(p=>[p[0],Math.hypot(x-xy(p[1],p[2])[0],y-xy(p[1],p[2])[1])]).sort((a,b)=>a[1]-b[1])[0];
+  state.pinName = wat[k]===1 ? `En mer, à ${Math.round(near[1])} km de ${near[0].split(" (")[0]}` : near[1]<2 ? near[0] : `À ${Math.round(near[1])} km de ${near[0].split(" (")[0]}`; townSel.value="pin"; townSel.querySelector('[value="pin"]').hidden=false; document.getElementById("hint1").textContent="Position placée. Touchez ailleurs pour la déplacer."; renderAnswer(); if(typeof syncLeafletPin==="function") syncLeafletPin(); }
 document.getElementById("acts").innerHTML = Object.entries(ACTS).map(([k,a]) => `<button class="act" data-a="${k}" aria-pressed="${k===state.act}"><svg width="28" height="28" viewBox="0 0 24 24" aria-hidden="true">${ICONS[k]}</svg>${a.n}</button>`).join("");
 document.getElementById("acts").addEventListener("click", e => { const b=e.target.closest(".act"); if(!b) return; state.act=b.dataset.a; document.querySelectorAll(".act").forEach(x=>x.setAttribute("aria-pressed", x===b)); renderAnswer(); });
 
@@ -739,20 +1401,20 @@ function setUnit(u){ unit=u; document.getElementById("u-kmh").setAttribute("aria
 document.getElementById("u-kmh").onclick=()=>setUnit("kmh"); document.getElementById("u-ms").onclick=()=>setUnit("ms");
 
 // ---------------- ALERTES ----------------
-const CRANES = [{n:"Grue G1, chantier de Ben Arous", p:xy(36.75,10.23)},{n:"Grue G2, Les Berges du Lac", p:xy(36.835,10.27)}];
 let ALERTS=[], selAlert=-1, MY=[];
 try{ MY=JSON.parse(localStorage.getItem("aw-alertes")||"[]"); if(!Array.isArray(MY)) MY=[]; }catch(e){ MY=[]; }
 const saveMy=()=>{ try{ localStorage.setItem("aw-alertes",JSON.stringify(MY)); }catch(e){} };
 const LV={stop:"Danger",warn:"Attention",info:"Information",go:"Tout va bien"}, PILL={stop:"bad",warn:"mid",info:"m",go:"good"};
 function buildAlerts(){
   const L=[];
-  for(const c of CRANES){ let peak=0, ph=0; for(let h=0;h<24;h++){ const r=evalAt("crane",...c.p,h); if(r.val>peak){peak=r.val; ph=h;} } const rule=ACTS.crane.rule(peak);
-    if(rule[0]!=="go") L.push({cls:rule[0], p:c.p, at:ph, t:rule[0]==="stop"?"Rafales dangereuses pour la grue":"Rafales fortes attendues sur la grue", where:c.n, when:`vers ${ph} h (rafales jusqu'à ${fmtSpeed(peak/3.6)} à 45 m)`, what:"La brise de mer de l'après-midi renforce le vent en hauteur.", todo: rule[0]==="stop" ? `Arrêter le levage avant ${ph-1} h et mettre la flèche en girouette.` : `Éviter les charges à grande surface entre ${ph-2} h et ${ph+2} h.`}); }
   const mp=xy(36.68,10.29); let last=-1; for(let h=6;h<20;h++) if(evalAt("spray",...mp,h).cls==="go") last=h;
   const sprayNow = evalAt("spray",...mp,state.hour);
   L.push({cls: sprayNow.cls==="stop"?"warn":"info", p:mp, at:last+1, t:"Créneau de traitement des vignes", where:"Mornag", when: last>0 ? `favorable jusqu'à ${last+1} h environ` : "pas de créneau favorable aujourd'hui", what:"Au-delà, le vent dépasse 15 km/h et le produit peut dériver.", todo:"Traiter tôt le matin ; reprendre en fin de soirée si le vent retombe."});
-  const sea=xy(36.80,10.42), rb=evalAt("boat",...sea,state.hour);
-  if(rb.cls!=="go") L.push({cls:rb.cls, p:sea, r:5, at:state.hour, t:"Mer agitée dans le golfe de Tunis", where:"Golfe de Tunis, au large de Hammam-Lif", when:`maintenant (${state.hour} h) : rafales ${fmtSpeed(rb.g)}`, what:"Vent de mer établi, vagues courtes et creuses pour les petites embarcations.", todo:"Petits bateaux : rester au port ou près de la côte."});
+  { const hub=Array.from({length:24},(_,h)=>TURB.reduce((m,t)=>Math.max(m,Math.hypot(...wind(...t.p,80,h))),0));
+    const cut=hub.map((v,h)=>v>=25?h:-1).filter(h=>h>=0), calm=hub.map((v,h)=>h>=7&&h<=18&&v<4?h:-1).filter(h=>h>=0);
+    if(cut.length) L.push({cls:"stop", p:TURB[1].p, r:2, at:cut[0], t:"Arrêt de sécurité des éoliennes", where:"Parc virtuel du djebel Ressas", when:`à partir de ${cut[0]} h (vent au moyeu au-dessus de 90 km/h)`, what:"Au-delà de 25 m/s au moyeu, les éoliennes se mettent en drapeau.", todo:"Prévoir la perte de production et l'inspection après l'épisode."});
+    else if(calm.length) L.push({cls:"info", p:TURB[1].p, r:2, at:calm[0], t:"Créneau de maintenance du parc", where:"Parc virtuel du djebel Ressas", when:`de ${calm[0]} h à ${calm[calm.length-1]+1} h (vent faible au moyeu)`, what:"La production est presque nulle : c'est le moment d'intervenir sans perte.", todo:"Planifier les interventions sur ce créneau."});
+    else { const pk=hub.indexOf(Math.max(...hub)); L.push({cls:"go", p:TURB[1].p, r:2, at:pk, t:"Bonne journée de production", where:"Parc virtuel du djebel Ressas", when:`pic vers ${pk} h (${fmtSpeed(hub[pk])} au moyeu)`, what:"Le vent au moyeu reste dans la plage de production.", todo:"Reporter la maintenance à un jour plus calme."}); } }
   L.push({cls:"info", p:STATIONS[2].p, t:"Station de Nabeul : vent mesuré plus faible que la zone", where:"Nabeul (station de l'INM)", when:"toute la journée", what:"L'anémomètre est abrité en ville ; il mesure moins que le vent réel alentour.", todo:"Aucune action : ATOM Wind tient compte de cet écart dans la fiabilité."});
   for(const m of MY){ const pl=PLACES[m.place], p=xy(pl[1],pl[2]), a=ACTS[m.act]; let hit=null;
     for(let k=0;k<24;k++){ const h=(state.hour+k)%24, r=evalAt(m.act,...p,h); if(r.cls==="stop"||r.cls==="warn"){ hit={h,r}; break; } }
@@ -774,14 +1436,16 @@ function renderAlerts(){
 }
 // ---------------- ÉOLIEN ----------------
 const TURB = [["E1",36.618,10.315],["E2",36.612,10.33],["E3",36.605,10.345]].map(([n,a,b])=>({n,p:xy(a,b)}));
+const eo={day:0}; const EODAYS=["aujourd'hui","demain","après-demain"];
+const windE=(x,y,z,h)=>windD(x,y,z,h,eo.day);
 function renderEol(){
-  const now = TURB.map(t=>{ const [u,v]=wind(...t.p,80,state.hour), sp=Math.hypot(u,v); return {...t,u,v,sp,P:power(sp)}; });
-  const tot = now.reduce((s,t)=>s+t.P,0), day=Array.from({length:24},(_,h)=>TURB.reduce((s,t)=>s+power(Math.hypot(...wind(...t.p,80,h))),0)), energy=day.reduce((a,b)=>a+b,0);
+  const now = TURB.map(t=>{ const [u,v]=windE(...t.p,80,state.hour), sp=Math.hypot(u,v); return {...t,u,v,sp,P:power(sp)}; });
+  const tot = now.reduce((s,t)=>s+t.P,0), day=Array.from({length:24},(_,h)=>TURB.reduce((s,t)=>s+power(Math.hypot(...windE(...t.p,80,h))),0)), energy=day.reduce((a,b)=>a+b,0);
   const avg = now.reduce((s,t)=>s+t.sp,0)/3;
   document.getElementById("kpis").innerHTML = [
-    ["Production maintenant", `${tot.toFixed(1).replace(".",",")} MW`, `${Math.round(tot/6*100)} % de la capacité`],
+    [`Production à ${state.hour} h ${EODAYS[eo.day]}`, `${tot.toFixed(1).replace(".",",")} MW`, `${Math.round(tot/6*100)} % de la capacité`],
     ["Vent au moyeu (80 m)", fmtSpeed(avg), `vient ${dirName(now[0].u,now[0].v)}`],
-    ["Énergie de la journée", `${energy.toFixed(0)} MWh`, `≈ ${Math.round(energy*1000/8)} foyers pour une journée`],
+    [`Énergie prévue ${EODAYS[eo.day]}`, `${energy.toFixed(0)} MWh`, `≈ ${Math.round(energy*1000/8)} foyers pour une journée`],
     ["État du parc", "3 / 3 en service", "Aucune alerte d'arrêt"]].map(([k,v,s])=>`<div class="card kpi"><div class="k">${k}</div><div class="v">${v}</div><div class="s muted">${s}</div></div>`).join("");
   const Wd=640,Hd=200,pl=36,pb=24, mx=6, X=h=>pl+h*(Wd-pl-8)/23, Y=p=>Hd-pb-p/mx*(Hd-pb-10);
   const path = day.map((p,h)=>`${h?"L":"M"}${X(h).toFixed(1)},${Y(p).toFixed(1)}`).join("");
@@ -846,30 +1510,57 @@ function renderTB(){
 const TMOD={s:{n:"petite éolienne",z:30,pr:.1,d:20},m:{n:"éolienne moyenne",z:50,pr:.8,d:50},l:{n:"grande éolienne",z:80,pr:2,d:90}};
 const myT={p:xy(36.69,10.40), m:"l"};
 const powerM=(ms,pr)=> ms<3||ms>=25 ? 0 : ms>=12 ? pr : pr*(ms**3-27)/(1728-27);
-const dayEnergy=(p,m)=>{ let e=0; for(let h=0;h<24;h++) e+=powerM(Math.hypot(...wind(...p,TMOD[m].z,h)),TMOD[m].pr); return e; };
+const dayEnergy=(p,m)=>{ let e=0; for(let h=0;h<24;h++) e+=powerM(Math.hypot(...windE(...p,TMOD[m].z,h)),TMOD[m].pr); return e; };
 function renderMyT(){
   const t=TMOD[myT.m], e=dayEnergy(myT.p,myT.m), ref=dayEnergy(TURB[1].p,myT.m), cf=e/(t.pr*24), ratio=ref>0?e/ref:0, k=idx(...myT.p);
   const verdict = wat[k]===1 ? ["info","En mer : ce prototype estime surtout les éoliennes à terre."] : cf>.3 ? ["go","Très bon emplacement"] : cf>.18 ? ["warn","Emplacement moyen"] : ["stop","Emplacement peu venté"];
   document.getElementById("myt").innerHTML = `<div class="answer ${verdict[0]}" style="padding:14px"><div class="verdict"><div class="badge-big" style="width:42px;height:42px"><svg width="22" height="22" viewBox="0 0 24 24">${VERD_ICON[verdict[0]]}</svg></div><div><div class="muted" style="font-size:13px;font-weight:700">${t.n[0].toUpperCase()+t.n.slice(1)} près de ${nearestName(myT.p)}, sol à ${Math.round(elev[k])} m</div><h2 style="font-size:21px">${verdict[1]}</h2></div></div>
     <div class="facts"><div class="fact"><div class="k">Énergie sur la journée</div><div class="v">${e>=1?e.toFixed(1).replace(".",",")+" MWh":Math.round(e*1000)+" kWh"}</div></div><div class="fact"><div class="k">Taux de charge</div><div class="v">${Math.round(cf*100)} %</div></div><div class="fact"><div class="k">Par rapport à la crête du djebel Ressas</div><div class="v">${Math.round(ratio*100)} %</div></div></div>
-    <p class="muted" style="font-size:14px">${ratio<.7?"Le vent est plus faible ici que sur la crête : une tour plus haute ou un site plus exposé produirait davantage.":"Cet emplacement produit presque autant que la crête, la meilleure zone de l'exemple."} Estimation sur la journée d'exemple.</p></div>`;
+    <p class="muted" style="font-size:14px">${ratio<.7?"Le vent est plus faible ici que sur la crête : une tour plus haute ou un site plus exposé produirait davantage.":"Cet emplacement produit presque autant que la crête, la meilleure zone de l'exemple."} Estimation pour ${EODAYS[eo.day]}.</p></div>`;
   // rotor
-  const z0h=t.z, R=t.d/2, hs=[]; for(let i=0;i<=8;i++){ const z=Math.max(5,z0h-R+i*(2*R/8)); hs.push([z,Math.hypot(...wind(...myT.p,z,state.hour))]); }
-  const top=hs[8][1], bot=hs[0][1], hub=Math.hypot(...wind(...myT.p,z0h,state.hour)), cx=110, cy=110, rp=82;
+  const z0h=t.z, R=t.d/2, hs=[]; for(let i=0;i<=8;i++){ const z=Math.max(5,z0h-R+i*(2*R/8)); hs.push([z,Math.hypot(...windE(...myT.p,z,state.hour))]); }
+  const top=hs[8][1], bot=hs[0][1], hub=Math.hypot(...windE(...myT.p,z0h,state.hour)), cx=110, cy=110, rp=82;
   const bands=hs.slice(0,8).map(([z,sp],i)=>{ const y=cy+rp-(i+1)*(2*rp/8), c=speedColor(kmh((sp+hs[i+1][1])/2)); return `<rect x="${cx-rp}" y="${y.toFixed(1)}" width="${2*rp}" height="${(2*rp/8+.5).toFixed(1)}" fill="rgb(${c})"/>`; }).join("");
   document.getElementById("rotor").innerHTML = `<div style="display:grid;grid-template-columns:auto minmax(0,1fr);gap:14px;align-items:center"><svg width="220" height="260" viewBox="0 0 220 260" aria-hidden="true"><defs><clipPath id="disk"><circle cx="${cx}" cy="${cy}" r="${rp}"/></clipPath></defs><path d="M106 ${cy}h8l5 148h-18z" fill="var(--muted)"/><g clip-path="url(#disk)">${bands}</g><circle cx="${cx}" cy="${cy}" r="${rp}" fill="none" stroke="var(--ink)" stroke-width="2"/><g class="rotor" style="animation-duration:${hub>3?Math.max(.8,5-hub/3):0}s"><path d="M${cx} ${cy}V${cy-rp+4}M${cx} ${cy}L${cx+71} ${cy+41}M${cx} ${cy}L${cx-71} ${cy+41}" stroke="var(--ink)" stroke-width="5" stroke-linecap="round" opacity=".75"/></g><circle cx="${cx}" cy="${cy}" r="6" fill="var(--accent)"/></svg>
     <div style="display:grid;gap:8px"><div><span class="muted">En haut des pales (${Math.round(z0h+R)} m)</span><br><b style="font-size:20px">${fmtSpeed(top)}</b></div><div><span class="muted">Au moyeu (${z0h} m)</span><br><b style="font-size:20px">${fmtSpeed(hub)}</b></div><div><span class="muted">En bas des pales (${Math.round(Math.max(5,z0h-R))} m)</span><br><b style="font-size:20px">${fmtSpeed(bot)}</b></div>
     <p style="margin:0">En haut des pales, le vent est <b>${Math.round((top/bot-1)*100)} %</b> plus fort qu'en bas. Cet écart fatigue les pales : seule une carte du vent en 3D permet de le connaître.</p></div></div>`;
   // rose
-  const sec=Array.from({length:8},()=>({n:0,s:0})); for(let h=0;h<24;h++){ const [u,v]=wind(...myT.p,z0h,h), i=Math.round(fromDeg(u,v)/45)%8; sec[i].n++; sec[i].s+=Math.hypot(u,v); }
+  const sec=Array.from({length:8},()=>({n:0,s:0})); for(let h=0;h<24;h++){ const [u,v]=windE(...myT.p,z0h,h), i=Math.round(fromDeg(u,v)/45)%8; sec[i].n++; sec[i].s+=Math.hypot(u,v); }
   const mxn=Math.max(...sec.map(x=>x.n)), c0=120, rr=95, NAMES=["N","NE","E","SE","S","SO","O","NO"];
   const wedges=sec.map((x,i)=>{ if(!x.n) return ""; const r=18+(rr-18)*x.n/mxn, a0=(i*45-20)*Math.PI/180, a1=(i*45+20)*Math.PI/180, c=speedColor(kmh(x.s/x.n));
     return `<path d="M${c0} ${c0} L${(c0+r*Math.sin(a0)).toFixed(1)} ${(c0-r*Math.cos(a0)).toFixed(1)} A${r.toFixed(1)} ${r.toFixed(1)} 0 0 1 ${(c0+r*Math.sin(a1)).toFixed(1)} ${(c0-r*Math.cos(a1)).toFixed(1)} Z" fill="rgb(${c})" stroke="var(--surface)" stroke-width="2" data-h="<b>Vent ${DIRS[i]}</b><br>${x.n} h sur 24, ${fmtSpeed(x.s/x.n)} en moyenne"></path>`; }).join("");
   const best=sec.map((x,i)=>[x.n,i]).sort((a,b)=>b[0]-a[0])[0][1];
   document.getElementById("rose").innerHTML = `<div style="display:grid;grid-template-columns:auto minmax(0,1fr);gap:14px;align-items:center"><svg width="240" height="240" viewBox="0 0 240 240" role="img" aria-label="Rose des vents"><circle cx="${c0}" cy="${c0}" r="${rr}" fill="none" stroke="var(--line)"/><circle cx="${c0}" cy="${c0}" r="${rr/2}" fill="none" stroke="var(--line)"/>${wedges}${NAMES.map((n,i)=>`<text x="${c0+(rr+14)*Math.sin(i*Math.PI/4)}" y="${c0-(rr+14)*Math.cos(i*Math.PI/4)+4}" text-anchor="middle" style="font-weight:700">${n}</text>`).join("")}</svg>
-    <p style="margin:0">Aujourd'hui, au moyeu de votre éolienne, le vent vient surtout <b>${DIRS[best]}</b> (${sec[best].n} heures sur 24). La longueur indique la durée, la couleur la force. Orientez les rangées d'éoliennes face à ce vent.</p></div>`;
+    <p style="margin:0">${EODAYS[eo.day][0].toUpperCase()+EODAYS[eo.day].slice(1)}, au moyeu de votre éolienne, le vent vient surtout <b>${DIRS[best]}</b> (${sec[best].n} heures sur 24). La longueur indique la durée, la couleur la force. Orientez les rangées d'éoliennes face à ce vent.</p></div>`;
 }
-document.getElementById("tm").onchange=e=>{ myT.m=e.target.value; renderMyT(); };
+document.getElementById("tm").onchange=e=>{ myT.m=e.target.value; renderMyT(); renderGis(); };
+// ---- carte du gisement
+const gisCache={};
+function gisGrid(m,d){ const key=m+"|"+d; if(gisCache[key]) return gisCache[key]; const t=TMOD[m], g=new Float32Array(W*H);
+  for(let j=0;j<H;j++) for(let i=0;i<W;i++){ const x=i+.5, y=j+.5; if(wat[idx(x,y)]){ g[j*W+i]=-1; continue; } let e=0; for(let h=0;h<24;h+=2) e+=powerM(Math.hypot(...windD(x,y,t.z,h,d)),t.pr); g[j*W+i]=e*2/(t.pr*24); }
+  return gisCache[key]=g; }
+const GRAMP=[[0,[215,227,232]],[.1,[159,211,181]],[.2,[232,211,106]],[.32,[240,160,60]],[.45,[217,71,47]]];
+const gcol=v=>{ for(let i=1;i<GRAMP.length;i++) if(v<=GRAMP[i][0]){ const [a,ca]=GRAMP[i-1],[b,cb]=GRAMP[i], q=(v-a)/(b-a); return ca.map((c,k)=>Math.round(c+(cb[k]-c)*q)); } return GRAMP[GRAMP.length-1][1]; };
+function renderGis(){ const cv=document.getElementById("gis"); if(!cv || !cv.clientWidth) return; const g=gisGrid(myT.m,eo.day), S=8;
+  const small=document.createElement("canvas"); small.width=W; small.height=H; const sc=small.getContext("2d"), img=sc.createImageData(W,H), wa=css("--water").match(/#(..)(..)(..)/).slice(1).map(h=>parseInt(h,16));
+  for(let j=0;j<H;j++) for(let i=0;i<W;i++){ const v=g[j*W+i], c=v<0?wa:gcol(v), o=((H-1-j)*W+i)*4; img.data[o]=c[0]; img.data[o+1]=c[1]; img.data[o+2]=c[2]; img.data[o+3]=255; }
+  sc.putImageData(img,0,0); cv.width=W*S; cv.height=H*S; const c=cv.getContext("2d"); c.imageSmoothingEnabled=true; c.drawImage(small,0,0,W*S,H*S);
+  const cells=[]; for(let j=0;j<H;j++) for(let i=0;i<W;i++) if(g[j*W+i]>=0) cells.push([g[j*W+i],i+.5,j+.5]); cells.sort((a,b)=>b[0]-a[0]);
+  const best=[]; for(const q of cells){ if(best.every(b=>Math.hypot(b[1]-q[1],b[2]-q[2])>6)) best.push(q); if(best.length===3) break; }
+  const P=(x,y)=>[x/W*cv.width,(1-y/H)*cv.height];
+  for(const s2 of STATIONS){ const [px,py]=P(...s2.p); c.fillStyle="#3a6fd2"; c.beginPath(); c.arc(px,py,7,0,7); c.fill(); c.strokeStyle="#fff"; c.lineWidth=2; c.stroke(); }
+  c.font="700 22px sans-serif"; c.textAlign="center"; c.textBaseline="middle";
+  best.forEach((b,n)=>{ const [px,py]=P(b[1],b[2]); c.fillStyle="#14232b"; c.beginPath(); c.arc(px,py,15,0,7); c.fill(); c.strokeStyle="#fff"; c.lineWidth=3; c.stroke(); c.fillStyle="#fff"; c.fillText(String(n+1),px,py+1); });
+  { const [px,py]=P(...myT.p); c.strokeStyle="#0a6e7d"; c.lineWidth=5; c.beginPath(); c.arc(px,py,13,0,7); c.stroke(); c.fillStyle="#0a6e7d"; c.beginPath(); c.arc(px,py,5,0,7); c.fill(); }
+  document.getElementById("gisbest").innerHTML = `<b>Meilleurs emplacements ${EODAYS[eo.day]} :</b> `+best.map((b,n)=>`<button class="btn" data-gb="${n}" style="margin:4px 6px 0 0">${n+1}. près de ${nearestName([b[1],b[2]])} · ${Math.round(b[0]*100)} %</button>`).join("");
+  document.querySelectorAll("[data-gb]").forEach(bt=>bt.onclick=()=>{ const b=best[+bt.dataset.gb]; myT.p=[b[1],b[2]]; renderMyT(); renderGis(); }); }
+document.getElementById("gis").addEventListener("click",e=>{ const r=e.target.getBoundingClientRect(), x=(e.clientX-r.left)/r.width*W, y=(1-(e.clientY-r.top)/r.height)*H; myT.p=[x,y]; renderMyT(); renderGis(); });
+document.getElementById("gis").addEventListener("mousemove",e=>{ const r=e.target.getBoundingClientRect(), x=(e.clientX-r.left)/r.width*W, y=(1-(e.clientY-r.top)/r.height)*H; if(x<0||x>W||y<0||y>H) return; const v=gisGrid(myT.m,eo.day)[Math.min(H-1,Math.floor(y))*W+Math.min(W-1,Math.floor(x))];
+  showTip(v<0?"En mer":`<b>Taux de charge ${Math.round(v*100)} %</b><br><span class="sub">${TMOD[myT.m].n}, moyeu à ${TMOD[myT.m].z} m · près de ${nearestName([x,y])}</span>`, e.clientX, e.clientY, "gis"); });
+document.getElementById("gis").addEventListener("mouseleave",()=>hideTip("gis"));
+new ResizeObserver(()=>renderGis()).observe(document.getElementById("gis").parentElement);
+document.getElementById("eo-day").innerHTML=["Aujourd'hui","Demain","Après-demain"].map((n,i)=>`<button class="chip" data-d="${i}" aria-pressed="${i===0}">${n}</button>`).join("");
+document.getElementById("eo-day").onclick=e=>{ const b=e.target.closest(".chip"); if(!b) return; eo.day=+b.dataset.d; document.querySelectorAll("#eo-day .chip").forEach(x=>x.setAttribute("aria-pressed",x===b)); renderEol(); renderMyT(); renderGis(); };
 makeMap("c4","map4",{ pin:()=>myT.p, z:()=>TMOD[myT.m].z, marks:()=>TURB.map(t=>({p:t.p, r:.8, cls:"go"})), onClick:(x,y)=>{ myT.p=[x,y]; renderMyT(); } });
 
 // ---------------- coupe verticale ----------------
@@ -896,76 +1587,81 @@ function renderCut(A,B){
 document.getElementById("cutclose").onclick=()=>{ document.getElementById("cutcard").hidden=true; lastCut=null; };
 
 // ---------------- AGRICULTEUR ----------------
-const CROPS = { tomate:["Tomate",1.15,"mildiou"], pdt:["Pomme de terre",1.15,"mildiou"], pasteque:["Pastèque, melon",1.0,"oïdium"], piment:["Piment, poivron",1.05,"oïdium"], fraise:["Fraise",0.85,"botrytis"], agrumes:["Agrumes",0.65,"gommose"], olivier:["Olivier",0.7,"œil de paon"], vigne:["Vigne",0.7,"mildiou"], artichaut:["Artichaut",1.0,"oïdium"], palmier:["Palmier dattier",0.95,"bayoud"] };
-const MILIEUX = { champ:"Plein champ", serre:"Serre", verger:"Verger", depot:"Dépôt de récolte" };
-const ag = { place:5, crop:"tomate", area:2, eff:.9, milieu:"champ" };
+const CROPS = { tomate:["Tomate",1.15], pdt:["Pomme de terre",1.15], pasteque:["Pastèque, melon",1.0], piment:["Piment, poivron",1.05], fraise:["Fraise",0.85], agrumes:["Agrumes",0.65], olivier:["Olivier",0.7], vigne:["Vigne",0.7], artichaut:["Artichaut",1.0], palmier:["Palmier dattier",0.95] };
+const MILIEUX = { champ:"Plein champ", serre:"Serre ou tunnel", verger:"Verger" };
+const AGDAYS = ["Aujourd'hui","Demain","Après-demain"];
+const ag = { place:5, crop:"tomate", area:2, eff:.9, milieu:"champ", day:0 };
 const agP = () => { const q=PLACES[ag.place]; return xy(q[1],q[2]); };
-const Tair = (h,x,y) => 26.5 + 6.5*Math.sin((h-9)*Math.PI/12) - .0065*elev[idx(x,y)];
-const RHair = (h,x,y) => Math.max(25, Math.min(98, 62 - 18*Math.sin((h-9)*Math.PI/12) + (sdist[idx(x,y)]<4 ? 8 : 0)));
-const PM10 = (h,x,y) => 28 + 48*Math.exp(-(((h-16)/3.2)**2)) + (sdist[idx(x,y)]>8 ? 6 : 0);
+// Prototype : demain et après-demain sont des variantes simulées de la journée d'exemple. En service : prévision GFS à +24 h et +48 h, affinée par ATOM Wind.
+const DAYMOD = [{f:1,rot:0,dT:0,dRH:0},{f:1.35,rot:20,dT:4,dRH:-16},{f:.7,rot:-30,dT:-2,dRH:6}];
+function windD(x,y,z,h,d){ if(window.ATOM && ATOM.pretJour(d)) return ATOM.ventJour(d,x,y,z,h); const [u,v]=wind(x,y,z,h), m=DAYMOD[d], a=m.rot*Math.PI/180; return [m.f*(u*Math.cos(a)-v*Math.sin(a)), m.f*(u*Math.sin(a)+v*Math.cos(a))]; }
+const Tair = (h,x,y,d=0) => (window.ATOM && ATOM.aT(d)) ? ATOM.tJour(d,x,y,h) : 26.5 + 6.5*Math.sin((h-9)*Math.PI/12) - .0065*elev[idx(x,y)] + DAYMOD[d].dT;
+const RHair = (h,x,y,d=0) => (window.ATOM && ATOM.aT(d)) ? ATOM.hrJour(d,x,y,h) : Math.max(15, Math.min(98, 62 - 18*Math.sin((h-9)*Math.PI/12) + (sdist[idx(x,y)]<4 ? 8 : 0) + DAYMOD[d].dRH));
 const esat = T => .6108*Math.exp(17.27*T/(T+237.3));
-function et0Day(x,y,du=0){ // FAO-56 Penman-Monteith, pas journalier ; du = vent ajouté (m/s) pour mesurer l'effet du vent
-  const Ts=[], RH=[], U=[]; for(let h=0;h<24;h++){ Ts.push(Tair(h,x,y)); RH.push(RHair(h,x,y)); U.push(Math.hypot(...wind(x,y,10,h))*0.748 + du); }
+function et0Day(x,y,d=0,du=0){ // FAO-56 Penman-Monteith, pas journalier ; du = vent ajouté (m/s) pour mesurer l'effet du vent
+  const Ts=[], RH=[], U=[]; for(let h=0;h<24;h++){ Ts.push(Tair(h,x,y,d)); RH.push(RHair(h,x,y,d)); U.push(Math.hypot(...windD(x,y,10,h,d))*0.748 + du); }
   const Tmax=Math.max(...Ts), Tmin=Math.min(...Ts), T=(Tmax+Tmin)/2, u2=U.reduce((a,b)=>a+b)/24, rh=RH.reduce((a,b)=>a+b)/24, z=elev[idx(x,y)];
   const D=4098*esat(T)/((T+237.3)**2), P=101.3*((293-.0065*z)/293)**5.26, g=.000665*P, es=(esat(Tmax)+esat(Tmin))/2, ea=es*rh/100;
-  const J=200, phi=36.65*Math.PI/180, dr=1+.033*Math.cos(2*Math.PI*J/365), dl=.409*Math.sin(2*Math.PI*J/365-1.39), ws=Math.acos(-Math.tan(phi)*Math.tan(dl));
-  const Ra=24*60/Math.PI*.082*dr*(ws*Math.sin(phi)*Math.sin(dl)+Math.cos(phi)*Math.cos(dl)*Math.sin(ws)), Rs=.72*Ra, Rso=(.75+2e-5*z)*Ra;
+  const J=(window.ATOM && ATOM.doyJour(d)) || 200+d, phi=36.65*Math.PI/180, dr=1+.033*Math.cos(2*Math.PI*J/365), dl=.409*Math.sin(2*Math.PI*J/365-1.39), ws=Math.acos(-Math.tan(phi)*Math.tan(dl));
+  const Ra=24*60/Math.PI*.082*dr*(ws*Math.sin(phi)*Math.sin(dl)+Math.cos(phi)*Math.cos(dl)*Math.sin(ws)), Rs=(window.ATOM && ATOM.rsJour(d)!==null) ? ATOM.rsJour(d) : .72*Ra, Rso=(.75+2e-5*z)*Ra;
   const Rnl=4.903e-9*(((Tmax+273.16)**4+(Tmin+273.16)**4)/2)*(.34-.14*Math.sqrt(ea))*(1.35*Rs/Rso-.35), Rn=.77*Rs-Rnl;
   const et0=(.408*D*Rn + g*900/(T+273)*u2*(es-ea))/(D+g*(1+.34*u2));
   return {et0, Tmax, Tmin, u2, rh};
 }
-function hourBars(id, rows, legend){ const el=document.getElementById(id); const mx=Math.max(...rows.map(r=>r.v),1);
+function hourBars(id, rows, legend){ const el=document.getElementById(id); if(!el) return; const mx=Math.max(...rows.map(r=>r.v),1);
   el.innerHTML = `<div class="day">${rows.map((r,h)=>`<button class="${r.cls}${h===state.hour?" now":""}" style="height:${Math.round(16+60*r.v/mx)}px" data-h="<b>${h} h</b><br>${r.t}" aria-label="${h} h : ${r.t}">​</button>`).join("")}</div><div class="dayaxis">${Array.from({length:24},(_,h)=>`<span>${h%3===0?h:""}</span>`).join("")}</div>${legend||""}`;
   el.querySelectorAll(".day button").forEach((b,h)=>b.onclick=()=>setHour(h)); }
 function windowsOf(rows, cls="go"){ const out=[]; let st=null; rows.forEach((r,h)=>{ if(r.cls===cls){ if(st===null) st=h; } else if(st!==null){ out.push([st,h]); st=null; } }); if(st!==null) out.push([st,24]); return out; }
 const winTxt = ws => ws.length ? ws.map(([a,b])=>`<span class="pill good">${a} h – ${b} h</span>`).join(" ") : `<span class="pill bad">Aucun créneau favorable</span>`;
+const SRC_ATOM = '<span class="srctag atom">Vent : ATOM Wind</span>', SRC_GFS = '<span class="srctag">Température, humidité : GFS</span>', SRC_FAO = '<span class="srctag">Méthode FAO-56</span>';
+const AIC = { stop:'<path d="M12 5v9M12 18v.5" stroke="#fff" stroke-width="3" stroke-linecap="round"/>', warn:'<path d="M12 6v8M12 17.5v.5" stroke="#fff" stroke-width="3" stroke-linecap="round"/>', go:'<path d="M5 12l5 5 9-10" stroke="#fff" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/>' };
+const spanTxt = hs => { const w=[]; let a=null; hs.forEach((h,i)=>{ if(a===null) a=h; if(hs[i+1]!==h+1){ w.push(a===h?`${a} h`:`${a} h à ${h+1} h`); a=null; } }); return w.join(", "); };
 function renderAgri(){
-  const [x,y]=agP(), c=CROPS[ag.crop], d=et0Day(x,y), etc=d.et0*c[1], gross=etc/ag.eff, m3ha=gross*10, tot=m3ha*ag.area;
-  const fmt1=v=>v.toFixed(1).replace(".",",");
-  const showWater = ag.milieu!=="depot";
-  document.getElementById("ag-water").innerHTML = showWater ? `<div class="answer info"><div class="verdict"><div class="badge-big"><svg width="28" height="28" viewBox="0 0 24 24"><path class="drop" d="M12 3c3 4 5 7 5 10a5 5 0 0 1-10 0c0-3 2-6 5-10z" fill="#fff"/></svg></div><div><div class="muted" style="font-size:14px;font-weight:700">${PLACES[ag.place][0]} · ${c[0]} · ${MILIEUX[ag.milieu].toLowerCase()} · aujourd'hui</div><div class="big">Apportez ${Math.round(m3ha)} m³ par hectare</div></div></div>
-    <p>Soit <b>${Math.round(tot).toLocaleString("fr-FR")} m³</b> pour vos ${fmt1(ag.area)} ha (${fmt1(gross)} mm d'eau). ${ag.milieu==="serre"?"Sous serre, le besoin réel est souvent 20 à 30 % plus faible : ajustez selon l'aération.":""}</p>
-    <div class="facts"><div class="fact"><div class="k">Évaporation de référence <span class="tip" tabindex="0" data-tip="Quantité d'eau qu'un gazon perdrait aujourd'hui, calculée avec le vent, la chaleur, l'humidité et le soleil (méthode FAO-56).">?</span></div><div class="v">${fmt1(d.et0)} mm</div></div>
-      <div class="fact"><div class="k">Besoin de la culture</div><div class="v">${fmt1(etc)} mm</div></div>
-      <div class="fact"><div class="k">Vent moyen à 2 m</div><div class="v">${fmtSpeed(d.u2)}</div></div>
-      <div class="fact"><div class="k">Chaleur du jour</div><div class="v">${Math.round(d.Tmin)} à ${Math.round(d.Tmax)} °C</div></div></div>
-    <p class="muted" style="font-size:14px">Le vent compte : avec 10 km/h de vent en plus, cette parcelle aurait besoin d'environ ${Math.round((et0Day(x,y,10/3.6).et0/d.et0-1)*100)} % d'eau en plus. C'est pourquoi le calcul utilise le vent d'ATOM Wind à votre emplacement.</p></div>` : "";
-  const cards=[];
-  // meilleure heure pour arroser
+  const [x,y]=agP(), d=ag.day, c=CROPS[ag.crop], jour=AGDAYS[d].toLowerCase(), fmt1=v=>v.toFixed(1).replace(".",","), place=PLACES[ag.place][0].split(" (")[0];
+  const H=[]; for(let h=0;h<24;h++){ const [u,v]=windD(x,y,10,h,d), [u2,v2]=windD(x,y,2,h,d), k=kmh(Math.hypot(u,v)); H.push({u,v,k:Math.round(k), k2:Math.round(kmh(Math.hypot(u2,v2))), g:Math.round(k*gustF(x,y,10)), T:Tair(h,x,y,d), RH:RHair(h,x,y,d)}); }
+  const rel=sigma(x,y), [rc,rl]=relClass(rel.s);
+  // ---- alertes du jour
+  const gmax=Math.max(...H.map(r=>r.g)), hg=H.findIndex(r=>r.g===gmax);
+  const hot=H.map((r,h)=>r.T>=35&&r.RH<=30&&r.k>=20?h:-1).filter(h=>h>=0), warm=H.map((r,h)=>r.T>=32&&r.RH<=40&&r.k>=15?h:-1).filter(h=>h>=0);
+  const AL=[];
+  if(gmax>=60) AL.push(["stop",`Vent fort ${jour} : rafales jusqu'à ${gmax} km/h vers ${hg} h`,"Fermez et arrimez serres et tunnels, reportez la taille et tous les traitements, vérifiez les brise-vent et les tuteurs.",SRC_ATOM]);
+  else if(gmax>=45) AL.push(["warn",`Rafales assez fortes ${jour} : jusqu'à ${gmax} km/h vers ${hg} h`,"Vérifiez la fixation des films plastiques et des filets ; évitez les travaux en hauteur à ce moment.",SRC_ATOM]);
+  if(hot.length) AL.push(["stop",`Vent chaud et sec ${jour} : ${spanTxt(hot)}`,"Arrosez tôt le matin et augmentez la dose, ne traitez pas, ombrez et aérez les serres : les plantes perdent beaucoup d'eau et les fleurs peuvent tomber.",SRC_ATOM+SRC_GFS]);
+  else if(warm.length) AL.push(["warn",`Air chaud, sec et venté ${jour} : ${spanTxt(warm)}`,"Prévoyez l'arrosage avant ces heures et surveillez les jeunes plants.",SRC_ATOM+SRC_GFS]);
+  if(!AL.length) AL.push(["go",`Pas d'alerte vent pour ${jour} à ${place}`,"Ni rafales fortes, ni vent chaud et sec prévus.",SRC_ATOM]);
+  document.getElementById("ag-alerts").innerHTML = AL.map(([cls,tt,todo,src])=>`<div class="alert ${cls}" style="cursor:default"><div class="ic"><svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true">${AIC[cls]}</svg></div><div><h3>${tt}</h3><div class="todo">${todo}</div><div class="srcrow">${src}</div></div></div>`).join("");
+  // ---- traitement
+  const rowsT=H.map(r=>({v:r.k, cls: r.k>19?"stop" : (r.k>15||r.g>30||r.k<3)?"warn":"go", t:`${r.k} km/h, rafales ${r.g} km/h`}));
+  // ---- eau
+  const e=et0Day(x,y,d), etc=e.et0*c[1], gross=etc/ag.eff, m3ha=gross*10, tot=m3ha*ag.area, plus=Math.round((et0Day(x,y,d,10/3.6).et0/e.et0-1)*100);
   const asp = ag.eff<.8 && ag.eff>.7;
-  const rowsIrr=[]; for(let h=0;h<24;h++){ const k=kmh(Math.hypot(...wind(x,y,10,h))), T=Tair(h,x,y), loss=k*.8+Math.max(0,T-22)*2;
-    rowsIrr.push({v:loss, cls: (asp ? (k>20||T>32) : T>32) ? "stop" : (asp ? (k>12||T>28) : T>29) ? "warn" : "go", t:`${Math.round(k)} km/h, ${Math.round(T)} °C`}); }
-  if(showWater) cards.push(`<div class="card"><h3>Quand arroser aujourd'hui ?</h3><div id="ag-irrbars"></div><p style="margin:8px 0 4px">Meilleurs moments : ${winTxt(windowsOf(rowsIrr))}</p><p class="muted" style="font-size:14px;margin:0">${asp?"En aspersion, le vent emporte l'eau et la chaleur l'évapore : arrosez quand le vent est faible et l'air frais.":"Avec ce mode d'arrosage, l'heure compte moins ; évitez seulement les heures les plus chaudes."}</p></div>`);
-  // poussière
-  const rowsPM=[]; for(let h=0;h<24;h++){ const pm=PM10(h,x,y); rowsPM.push({v:pm, cls: pm>100?"stop":pm>45?"warn":"go", t:`${Math.round(pm)} µg/m³`}); }
-  const pmNow=PM10(state.hour,x,y), pmMax=Math.max(...rowsPM.map(r=>r.v)), pmH=rowsPM.findIndex(r=>r.v===pmMax);
-  cards.push(`<div class="card"><h3>Poussière dans l'air</h3><div class="row" style="margin-bottom:6px"><span class="pill ${pmNow>100?"bad":pmNow>45?"mid":"good"}">${pmNow>100?"Mauvaise":pmNow>45?"Moyenne":"Bonne"} à ${state.hour} h</span><span class="muted" style="font-size:14px">${Math.round(pmNow)} µg/m³ de particules (PM10)</span></div><div id="ag-pmbars"></div>
-    <p style="margin:8px 0 0">${pmMax>45?`Pic de poussière vers <b>${pmH} h</b> (${Math.round(pmMax)} µg/m³). Ne traitez pas à ce moment : le produit colle à la poussière. Nettoyez les filtres du goutte-à-goutte ce soir, et couvrez les jeunes plants si le vent forcit.`:"Air peu poussiéreux aujourd'hui : rien à prévoir."}</p><p class="src" style="margin:6px 0 0">Seuil de l'OMS : 45 µg/m³ en moyenne sur 24 h.</p></div>`);
-  // maladie
-  let wet=0; for(let h=0;h<24;h++){ const T=Tair(h,x,y), rh=RHair(h,x,y), w=Math.hypot(...wind(x,y,10,h)); if(rh>=85 && T>=12 && T<=28 && w<2.5) wet++; }
-  const risk = wet>=5 ? ["stop","Élevé"] : wet>=2 ? ["warn","Moyen"] : ["go","Faible"];
-  if(ag.milieu!=="depot") cards.push(`<div class="card"><h3>Risque de maladie</h3><div class="row"><span class="pill ${risk[0]==="stop"?"bad":risk[0]==="warn"?"mid":"good"}">Risque ${risk[1].toLowerCase()} de ${c[2]}</span></div>
-    <p style="margin:8px 0 0">${wet===0?"Aucune heure cette nuit avec un air à la fois très humide, doux et sans vent : le champignon a peu de chances de se développer.":`${wet} heure${wet>1?"s":""} cette nuit avec un air très humide, doux et sans vent : ce sont les conditions où le champignon se développe.`}</p>
-    <p class="muted" style="font-size:14px;margin:6px 0 0">${risk[0]==="stop"?"Traitement préventif conseillé en début de matinée, quand le vent est faible.":risk[0]==="warn"?"Surveillez les feuilles demain matin ; aérez bien les rangs.":"Pas d'action particulière aujourd'hui."} ${ag.milieu==="serre"?"En serre, aérez tôt le matin pour faire baisser l'humidité.":""}</p></div>`);
-  // dépôt
-  const rowsDep=[]; for(let h=0;h<24;h++){ const T=Tair(h,x,y), rh=RHair(h,x,y), pm=PM10(h,x,y), k=kmh(Math.hypot(...wind(x,y,10,h)));
-    const ok = T<=25 && rh<=78 && pm<50 && k>=3 && k<=30, mid = T<=28 && rh<=85 && pm<80; rowsDep.push({v:Math.max(1,40-T+ (ok?10:0)), cls: ok?"go":mid?"warn":"stop", t:`${Math.round(T)} °C, ${Math.round(rh)} %, ${Math.round(pm)} µg/m³`}); }
-  const depCard = `<div class="card"><h3>Quand aérer le dépôt de récolte ?</h3><div id="ag-depbars"></div><p style="margin:8px 0 4px">Ouvrir : ${winTxt(windowsOf(rowsDep))}</p><p class="muted" style="font-size:14px;margin:0">On aère quand l'air dehors est frais, pas trop humide et peu poussiéreux. Fermez pendant les heures chaudes et les pics de poussière. Avec un capteur de CO₂ dans le dépôt, ATOM Wind pourra aussi signaler un début de pourriture.</p></div>`;
-  if(ag.milieu==="depot") cards.unshift(depCard); else cards.push(depCard);
-  // serre : aération selon le vent
-  if(ag.milieu==="serre"){ const [u,v]=wind(x,y,10,state.hour), k=kmh(Math.hypot(u,v)), lee=DIRS[(Math.round(fromDeg(u,v)/45)+4)%8].replace(/^du |^de l'|^de /,"");
-    cards.unshift(`<div class="card"><h3>Aérer la serre maintenant</h3><p style="margin:0 0 6px"><b>${k>35?"Fermez les ouvrants : vent trop fort.":`Ouvrez les ouvrants côté ${lee}`}</b></p><p class="muted" style="font-size:14px;margin:0">Le vent vient ${dirName(u,v)} à ${fmtSpeed(Math.hypot(u,v))}. ${k>35?"Le film et les arceaux risquent de souffrir.":"En ouvrant à l'abri du vent, l'air se renouvelle sans courant violent sur les plantes."}</p></div>`); }
-  // verger : abeilles
-  if(ag.milieu==="verger"){ const rowsB=[]; for(let h=0;h<24;h++){ const k=kmh(Math.hypot(...wind(x,y,10,h))), T=Tair(h,x,y), day=h>=7&&h<=19; rowsB.push({v:day?Math.max(1,30-k):1, cls: !day?"info": (k<20&&T>=15&&T<=35)?"go":"warn", t:`${Math.round(k)} km/h`}); }
-    cards.push(`<div class="card"><h3>Les abeilles butinent-elles ?</h3><div id="ag-beebars"></div><p style="margin:8px 0 0">Bons moments pour la pollinisation : ${winTxt(windowsOf(rowsB))}</p><p class="muted" style="font-size:14px;margin:4px 0 0">Les abeilles sortent peu au-dessus de 20 km/h de vent. Ne traitez jamais pendant ces créneaux.</p></div>`);
-    setTimeout(()=>hourBars("ag-beebars",rowsB),0); }
+  const rowsIrr=H.map(r=>({v:r.k*.8+Math.max(0,r.T-22)*2, cls:(asp ? (r.k>25||r.T>32) : r.T>32) ? "stop" : (asp ? (r.k>15||r.T>28) : r.T>29) ? "warn" : "go", t:`${r.k} km/h, ${Math.round(r.T)} °C`}));
+  document.getElementById("ag-top").innerHTML = `
+    <div class="card"><h3>Quand traiter ${jour} ?</h3><div id="ag-trbars"></div><p style="margin:8px 0 4px">Créneaux conseillés : ${winTxt(windowsOf(rowsT))}</p>
+      <p class="muted" style="font-size:14px;margin:0">Non au-dessus de 19 km/h à 10 m ; attention entre 15 et 19 km/h, si les rafales dépassent 30 km/h, ou sous 3 km/h. Vent au niveau de la rampe (2 m) à ${state.hour} h : ${H[state.hour].k2} km/h. Fiabilité ici : <span class="pill ${rc}">${rl}</span></p><div class="srcrow">${SRC_ATOM}</div></div>
+    <div class="answer info"><div class="verdict"><div class="badge-big"><svg width="28" height="28" viewBox="0 0 24 24"><path class="drop" d="M12 3c3 4 5 7 5 10a5 5 0 0 1-10 0c0-3 2-6 5-10z" fill="#fff"/></svg></div><div><div class="muted" style="font-size:14px;font-weight:700">${place} · ${c[0]} · ${MILIEUX[ag.milieu].toLowerCase()} · ${jour}</div><div class="big">Apportez ${Math.round(m3ha)} m³ par hectare</div></div></div>
+      <p>Soit <b>${Math.round(tot).toLocaleString("fr-FR")} m³</b> pour vos ${fmt1(ag.area)} ha (${fmt1(gross)} mm d'eau). ${ag.milieu==="serre"?"Sous serre, le besoin réel est souvent 20 à 30 % plus faible : ajustez selon l'aération.":""}</p>
+      <div class="facts"><div class="fact"><div class="k">Évaporation de référence <span class="tip" tabindex="0" data-tip="Quantité d'eau qu'un gazon perdrait ce jour-là, calculée avec le vent, la chaleur, l'humidité et le soleil (méthode FAO-56).">?</span></div><div class="v">${fmt1(e.et0)} mm</div></div>
+        <div class="fact"><div class="k">Besoin de la culture</div><div class="v">${fmt1(etc)} mm</div></div>
+        <div class="fact"><div class="k">Vent moyen à 2 m</div><div class="v">${fmtSpeed(e.u2)}</div></div>
+        <div class="fact"><div class="k">Chaleur du jour</div><div class="v">${Math.round(e.Tmin)} à ${Math.round(e.Tmax)} °C</div></div></div>
+      <p class="muted" style="font-size:14px">Le vent compte : avec 10 km/h de vent en plus, cette parcelle aurait besoin d'environ ${plus} % d'eau en plus.</p><div class="srcrow">${SRC_ATOM}${SRC_GFS}${SRC_FAO}</div></div>`;
+  const cards=[];
+  cards.push(`<div class="card"><h3>Quand arroser ${jour} ?</h3><div id="ag-irrbars"></div><p style="margin:8px 0 4px">Meilleurs moments : ${winTxt(windowsOf(rowsIrr))}</p><p class="muted" style="font-size:14px;margin:0">${asp?"En aspersion, le vent emporte l'eau et la chaleur l'évapore : arrosez quand le vent est faible et l'air frais.":"Avec ce mode d'arrosage, l'heure compte moins ; évitez seulement les heures les plus chaudes."}</p><div class="srcrow">${SRC_ATOM}${SRC_GFS}</div></div>`);
+  if(ag.milieu==="serre"){ const r=H[state.hour], lee=DIRS[(Math.round(fromDeg(r.u,r.v)/45)+4)%8].replace(/^du |^de l'|^de /,"");
+    cards.push(`<div class="card"><h3>Aérer la serre ${d===0?"":jour+" "}à ${state.hour} h</h3><p style="margin:0 0 6px"><b>${r.g>50?"Fermez les ouvrants : rafales trop fortes.":`Ouvrez les ouvrants côté ${lee}`}</b></p><p class="muted" style="font-size:14px;margin:0">Le vent viendra ${dirName(r.u,r.v)} à ${r.k} km/h, rafales ${r.g} km/h. ${r.g>50?"Le film et les arceaux risquent de souffrir.":"En ouvrant à l'abri du vent, l'air se renouvelle sans courant violent sur les plantes."}</p><div class="srcrow">${SRC_ATOM}</div></div>`); }
+  let rowsB=null;
+  if(ag.milieu==="verger"){ rowsB=H.map((r,h)=>{ const day=h>=7&&h<=19; return {v:day?Math.max(1,30-r.k):1, cls:!day?"info":(r.k<20&&r.T>=15&&r.T<=35)?"go":"warn", t:`${r.k} km/h`}; });
+    cards.push(`<div class="card"><h3>Les abeilles butineront-elles ${jour} ?</h3><div id="ag-beebars"></div><p style="margin:8px 0 0">Bons moments pour la pollinisation : ${winTxt(windowsOf(rowsB))}</p><p class="muted" style="font-size:14px;margin:4px 0 0">Les abeilles sortent peu au-dessus de 20 km/h de vent. Ne traitez jamais pendant ces créneaux.</p><div class="srcrow">${SRC_ATOM}</div></div>`); }
   document.getElementById("ag-cards").innerHTML = cards.join("");
-  if(showWater) hourBars("ag-irrbars",rowsIrr); hourBars("ag-pmbars",rowsPM); hourBars("ag-depbars",rowsDep);
+  hourBars("ag-trbars",rowsT); hourBars("ag-irrbars",rowsIrr); if(rowsB) hourBars("ag-beebars",rowsB);
 }
 document.getElementById("ag-place").innerHTML = PLACES.map((p,i)=>`<option value="${i}">${p[0]}</option>`).join(""); document.getElementById("ag-place").value="5";
 document.getElementById("ag-crop").innerHTML = Object.entries(CROPS).map(([k,c])=>`<option value="${k}">${c[0]}</option>`).join("");
 document.getElementById("ag-milieu").innerHTML = Object.entries(MILIEUX).map(([k,n])=>`<button class="chip" data-m="${k}" aria-pressed="${k===ag.milieu}">${n}</button>`).join("");
+document.getElementById("ag-day").innerHTML = AGDAYS.map((n,i)=>`<button class="chip" data-d="${i}" aria-pressed="${i===ag.day}">${n}</button>`).join("");
 document.getElementById("ag-milieu").onclick=e=>{ const b=e.target.closest(".chip"); if(!b) return; ag.milieu=b.dataset.m; document.querySelectorAll("#ag-milieu .chip").forEach(x=>x.setAttribute("aria-pressed",x===b)); renderAgri(); };
+document.getElementById("ag-day").onclick=e=>{ const b=e.target.closest(".chip"); if(!b) return; ag.day=+b.dataset.d; document.querySelectorAll("#ag-day .chip").forEach(x=>x.setAttribute("aria-pressed",x===b)); renderAgri(); };
 document.getElementById("ag-place").onchange=e=>{ ag.place=+e.target.value; renderAgri(); };
 document.getElementById("ag-crop").onchange=e=>{ ag.crop=e.target.value; renderAgri(); };
 document.getElementById("ag-area").oninput=e=>{ const v=parseFloat(e.target.value); if(v>0){ ag.area=v; renderAgri(); } };
@@ -1004,7 +1700,7 @@ function openSheet(x,y,zSel){
 }
 
 // ---------------- CARTE 3D ----------------
-let update3dColors=null; const H3=[10,30,45,100,200,300,500,1000]; let z3=100, relOn=false;
+let update3dColors=null; const H3=[10,30,50,80,150,300,500,1000]; let z3=80, relOn=false;
 function init3d(){
   const host=document.getElementById("three");
   if(!window.THREE){ host.insertAdjacentHTML("beforeend",`<div class="nogl"><div class="card"><b>La vue 3D n'a pas pu se charger.</b><br><span class="muted">Vérifiez la connexion, puis rechargez la page.</span></div></div>`); return; }
@@ -1105,13 +1801,11 @@ let threeReady=false;
 // ---------------- comptes, rôles et accès ----------------
 const ROLES = {
   public:{n:"Grand public", auto:true, home:"monvent", d:"Vent près de chez soi, alertes"},
-  agri:{n:"Agriculteur", auto:true, home:"agri", d:"Irrigation, traitements, dépôt"},
-  chantier:{n:"Chef de chantier", auto:false, home:"monvent", d:"Grues, travail en hauteur"},
-  eolien:{n:"Exploitant éolien", auto:false, home:"eolien", d:"Parcs, production, emplacements"},
-  rd:{n:"Chercheur (R&D)", auto:false, home:"tableau", d:"Toutes les données, fiabilité, API"},
+  agri:{n:"Agriculteur", auto:true, home:"agri", d:"Traitements, irrigation, alertes vent"},
+  eolien:{n:"Exploitant éolien", auto:false, home:"eolien", d:"Production prévue, rotor, gisement"},
   admin:{n:"Administrateur", auto:false, home:"admin", d:"Comptes, rôles, clés d'API"}
 };
-const ACCESS = { monvent:"*", carte3d:"*", alertes:"*", agri:["agri","rd","admin"], tableau:["chantier","eolien","rd","admin"], eolien:["eolien","rd","admin"], fiabilite:["eolien","rd","admin"], admin:["admin"] };
+const ACCESS = { monvent:"*", carte3d:"*", alertes:"*", agri:["agri","admin"], tableau:["eolien","admin"], eolien:["eolien","admin"], fiabilite:["eolien","admin"], admin:["admin"] };
 const TABNAME = { monvent:"Mon vent", agri:"Agriculteur", tableau:"Tableau de bord", carte3d:"Carte 3D", alertes:"Alertes", eolien:"Éolien", fiabilite:"Fiabilité", admin:"Administration" };
 const store = { get(k,d){ try{ const v=localStorage.getItem(k); return v?JSON.parse(v):d; }catch(e){ return d; } }, set(k,v){ try{ localStorage.setItem(k,JSON.stringify(v)); }catch(e){} } };
 let USERS = store.get("aw-users", null);
@@ -1119,8 +1813,8 @@ if(!Array.isArray(USERS)){ USERS = [
   {id:"u1", name:"Admin ATOM Wind", email:"admin@demo.atomwind.tn", role:"admin", status:"actif", demo:true, created:"2026-10-01"},
   {id:"u2", name:"Hédi, agriculteur à Mornag", email:"agri@demo.atomwind.tn", role:"agri", status:"actif", demo:true, created:"2026-10-05"},
   {id:"u3", name:"Société Vent du Cap", email:"eolien@demo.atomwind.tn", role:"eolien", status:"actif", demo:true, created:"2026-10-08"},
-  {id:"u4", name:"Chantier Ben Arous", email:"chantier@demo.atomwind.tn", role:"public", requested:"chantier", status:"en attente", demo:true, created:"2026-10-20"},
-  {id:"u5", name:"Labo R&D Nuthora", email:"rd@demo.atomwind.tn", role:"rd", status:"actif", demo:true, created:"2026-10-02"} ]; store.set("aw-users",USERS); }
+  {id:"u4", name:"Domaine de Grombalia", email:"grombalia@demo.atomwind.tn", role:"public", requested:"eolien", status:"en attente", demo:true, created:"2026-10-20"} ]; store.set("aw-users",USERS); }
+USERS = USERS.filter(u=>!(u.demo && (u.role==="rd"||u.requested==="chantier"))); if(!USERS.some(u=>u.demo&&u.role==="eolien")) USERS.push({id:"u3", name:"Société Vent du Cap", email:"eolien@demo.atomwind.tn", role:"eolien", status:"actif", demo:true, created:"2026-10-08"});
 USERS.forEach(u=>{ if(!ROLES[u.role]) u.role="public"; if(u.requested && !ROLES[u.requested]) u.requested=null; });
 let KEYS = store.get("aw-keys", []); if(!Array.isArray(KEYS)) KEYS=[];
 let me = USERS.find(u=>u.id===store.get("aw-session",null) && u.status!=="désactivé") || null;
@@ -1131,7 +1825,7 @@ function toast(msg){ toastEl.textContent=msg; toastEl.hidden=false; clearTimeout
 async function hashPw(salt,pw){ try{ const b=await crypto.subtle.digest("SHA-256", new TextEncoder().encode(salt+":"+pw)); return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,"0")).join(""); }catch(e){ let h=0; for(const c of salt+pw) h=(h*31+c.charCodeAt(0))|0; return "f"+h; } }
 const esc = t => String(t).replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const initials = n => n.split(/\s+/).filter(Boolean).slice(0,2).map(w=>w[0].toUpperCase()).join("");
-function applyAccess(){ document.querySelectorAll("nav.tabs a").forEach(a=>{ a.hidden = !allowed(a.dataset.v); }); if(typeof nesmaAccess==="function") nesmaAccess(); renderUserBox(); }
+function applyAccess(){ document.querySelectorAll("nav.tabs a").forEach(a=>{ a.hidden = !allowed(a.dataset.v); }); renderUserBox(); }
 function renderUserBox(){ const ub=document.getElementById("userbox");
   if(!me){ ub.innerHTML=`<button class="btn" id="b-login">Se connecter</button><button class="btn primary" id="b-reg">Créer un compte</button>`; document.getElementById("b-login").onclick=()=>openAuth("login"); document.getElementById("b-reg").onclick=()=>openAuth("register"); return; }
   ub.innerHTML=`<button class="btn" id="b-user" aria-haspopup="true" aria-expanded="false"><span class="avatar">${esc(initials(me.name))}</span><span style="text-align:left;line-height:1.15"><span style="display:block">${esc(me.name.split(",")[0])}</span><span class="muted" style="font-size:12px;font-weight:400">${ROLES[me.role].n}${me.requested?" · demande en cours":""}</span></span></button><div class="menu card" id="umenu" hidden>
@@ -1143,8 +1837,7 @@ function renderUserBox(){ const ub=document.getElementById("userbox");
   bu.onclick=e=>{ e.stopPropagation(); mn.hidden=!mn.hidden; bu.setAttribute("aria-expanded",!mn.hidden); };
   document.addEventListener("click",e=>{ if(!e.target.closest("#userbox")) mn.hidden=true; },{once:true});
   document.getElementById("b-out").onclick=logout; }
-function login(u, msg){ me=u; store.set("aw-session",u.id); applyAccess(); closeAuth(); const home=ROLES[u.role].home; show(home); toast(msg||`Bienvenue, ${u.name.split(",")[0]}`);
-  if(u.role==="chantier"){ state.act="crane"; document.querySelectorAll(".act").forEach(x=>x.setAttribute("aria-pressed",x.dataset.a==="crane")); renderAnswer(); } }
+function login(u, msg){ me=u; store.set("aw-session",u.id); applyAccess(); closeAuth(); const home=ROLES[u.role].home; show(home); toast(msg||`Bienvenue, ${u.name.split(",")[0]}`); }
 function logout(){ me=null; store.set("aw-session",null); applyAccess(); show("monvent"); toast("Vous êtes déconnecté."); }
 const authEl=document.getElementById("authm");
 function closeAuth(){ authEl.hidden=true; }
@@ -1159,7 +1852,7 @@ function openAuth(mode){
       <div class="err" id="l-err" role="alert"></div>
       <button class="btn primary" type="submit">Se connecter</button>
       <button class="btn" type="button" id="l-forgot">Mot de passe oublié ?</button></form>
-      <div><b style="font-size:14px">Démonstration : entrer directement en tant que</b><div class="demo" style="margin-top:6px">${["agri","eolien","rd","admin"].map(r=>`<button class="btn" data-demo="${r}">${ROLES[r].n}</button>`).join("")}</div></div>`
+      <div><b style="font-size:14px">Démonstration : entrer directement en tant que</b><div class="demo" style="margin-top:6px">${["agri","eolien","admin"].map(r=>`<button class="btn" data-demo="${r}">${ROLES[r].n}</button>`).join("")}</div></div>`
     : `<form class="form" id="f-reg" novalidate>
       <label for="r-name">Nom ou raison sociale<input class="inp" id="r-name" autocomplete="name" required></label>
       <label for="r-mail">Adresse e-mail<input class="inp" id="r-mail" type="email" autocomplete="email" required></label>
@@ -1313,7 +2006,7 @@ function palRender(q){ const all=palAll(), nq=norm(q.trim()); palItems = nq ? al
   pal.querySelector("ul").innerHTML = palItems.length ? palItems.slice(0,40).map((x,i)=>`<li role="option" aria-selected="${i===palSel}" data-i="${i}"><span>${esc(x.t)}</span><small>${x.k}</small></li>`).join("") : `<li><span class="muted">Aucun résultat</span></li>`;
   pal.querySelectorAll("li[data-i]").forEach(li=>{ li.onclick=()=>palRun(+li.dataset.i); li.onmousemove=()=>{ if(palSel!==+li.dataset.i){ palSel=+li.dataset.i; palRender(pal.querySelector("input").value); } }; }); }
 function palRun(i){ const it=palItems[i]; palClose(); if(it) it.go(); }
-function palOpen(){ pal.innerHTML=`<div class="card" role="dialog" aria-modal="true" aria-label="Recherche rapide"><input id="pal-in" placeholder="Un lieu, une activité, un espace… (ex. Nabeul, grue, éolien)" autocomplete="off"><ul role="listbox"></ul><div class="muted" style="font-size:12px">Flèches pour choisir, Entrée pour ouvrir, Échap pour fermer</div></div>`; pal.hidden=false; palSel=0; const inp=document.getElementById("pal-in"); palRender(""); inp.focus();
+function palOpen(){ pal.innerHTML=`<div class="card" role="dialog" aria-modal="true" aria-label="Recherche rapide"><input id="pal-in" placeholder="Un lieu, une activité, un espace… (ex. Nabeul, traiter, éolien)" autocomplete="off"><ul role="listbox"></ul><div class="muted" style="font-size:12px">Flèches pour choisir, Entrée pour ouvrir, Échap pour fermer</div></div>`; pal.hidden=false; palSel=0; const inp=document.getElementById("pal-in"); palRender(""); inp.focus();
   inp.oninput=()=>{ palSel=0; palRender(inp.value); };
   inp.onkeydown=e=>{ if(e.key==="ArrowDown"){ palSel=Math.min(palItems.length-1,palSel+1); palRender(inp.value); e.preventDefault(); } else if(e.key==="ArrowUp"){ palSel=Math.max(0,palSel-1); palRender(inp.value); e.preventDefault(); } else if(e.key==="Enter"){ palRun(palSel); } else if(e.key==="Escape"){ palClose(); } };
   pal.onclick=e=>{ if(e.target===pal) palClose(); }; }
@@ -1331,93 +2024,57 @@ function tour(i=0){ if(i>=TOUR.length){ tourEl.hidden=true; try{ localStorage.se
   tourEl.hidden=false; document.getElementById("tnext").onclick=()=>tour(i+1); document.getElementById("tskip").onclick=()=>tour(TOUR.length); document.getElementById("tnext").focus(); }
 document.getElementById("retour").onclick=()=>tour(0);
 
-// ---------------- Nesma : assistante du grand public ----------------
-const NES={open:false, emo:"content"};
-const SKIN="#e8b48f", HAIR="#3b2416";
-function faceSvg(emo, sp){
-  const amp = Math.min(9, 1 + sp*0.7), dur = Math.max(.9, 3.2 - sp*.15);
-  const E={
-    joie:{eyes:'<path class="feat" d="M70 98q10-10 20 0M110 98q10-10 20 0" stroke="#2a1a12" stroke-width="4" fill="none" stroke-linecap="round"/>', brows:'<path class="feat" d="M66 80q12-8 24-2M110 78q12-6 24 2" stroke="#2a1a12" stroke-width="4" fill="none" stroke-linecap="round"/>', mouth:'<path class="feat" d="M78 128q22 26 44 0z" fill="#8d2f2f"/><path d="M84 131q16 6 32 0" stroke="#fff" stroke-width="4" fill="none"/>', blush:.6},
-    content:{eyes:'<g class="blink"><ellipse cx="80" cy="98" rx="6" ry="7" fill="#2a1a12"/><ellipse cx="120" cy="98" rx="6" ry="7" fill="#2a1a12"/><circle cx="82" cy="95" r="2" fill="#fff"/><circle cx="122" cy="95" r="2" fill="#fff"/></g>', brows:'<path class="feat" d="M68 82q12-6 22-2M110 80q12-4 22 2" stroke="#2a1a12" stroke-width="4" fill="none" stroke-linecap="round"/>', mouth:'<path class="feat" d="M84 130q16 12 32 0" stroke="#8d2f2f" stroke-width="5" fill="none" stroke-linecap="round"/>', blush:.4},
-    inquiete:{eyes:'<g class="blink"><ellipse cx="80" cy="99" rx="6" ry="7" fill="#2a1a12"/><ellipse cx="120" cy="99" rx="6" ry="7" fill="#2a1a12"/><circle cx="82" cy="96" r="2" fill="#fff"/><circle cx="122" cy="96" r="2" fill="#fff"/></g>', brows:'<path class="feat" d="M68 84q10-2 22-8M110 76q12 6 22 8" stroke="#2a1a12" stroke-width="4" fill="none" stroke-linecap="round"/>', mouth:'<path class="feat" d="M84 134q6-6 11 0t11 0t10 0" stroke="#8d2f2f" stroke-width="5" fill="none" stroke-linecap="round"/>', blush:.2},
-    triste:{eyes:'<g class="blink"><ellipse cx="80" cy="101" rx="6" ry="6" fill="#2a1a12"/><ellipse cx="120" cy="101" rx="6" ry="6" fill="#2a1a12"/></g><path d="M76 110q-3 8 0 12q3-4 0-12z" fill="#7cc6ff"/>', brows:'<path class="feat" d="M68 88q12-2 22-12M110 76q10 10 22 12" stroke="#2a1a12" stroke-width="4" fill="none" stroke-linecap="round"/>', mouth:'<path class="feat" d="M84 138q16-14 32 0" stroke="#8d2f2f" stroke-width="5" fill="none" stroke-linecap="round"/>', blush:0},
-    surprise:{eyes:'<circle cx="80" cy="97" r="9" fill="#fff" stroke="#2a1a12" stroke-width="3"/><circle cx="120" cy="97" r="9" fill="#fff" stroke="#2a1a12" stroke-width="3"/><circle cx="80" cy="97" r="4" fill="#2a1a12"/><circle cx="120" cy="97" r="4" fill="#2a1a12"/>', brows:'<path class="feat" d="M66 74q12-8 24-4M110 70q12-4 24 4" stroke="#2a1a12" stroke-width="4" fill="none" stroke-linecap="round"/>', mouth:'<ellipse class="feat" cx="100" cy="134" rx="9" ry="11" fill="#8d2f2f"/>', blush:.3},
-    pensive:{eyes:'<g class="blink"><ellipse cx="83" cy="95" rx="6" ry="7" fill="#2a1a12"/><ellipse cx="123" cy="95" rx="6" ry="7" fill="#2a1a12"/></g>', brows:'<path class="feat" d="M68 84q12-4 22-2M110 74q12-2 22 4" stroke="#2a1a12" stroke-width="4" fill="none" stroke-linecap="round"/>', mouth:'<path class="feat" d="M88 132h24" stroke="#8d2f2f" stroke-width="5" stroke-linecap="round"/>', blush:.2}
-  }[emo] || {};
-  return `<g class="hair" style="--amp:${amp}deg;--dur:${dur}s"><path d="M38 108q-6-74 62-78q68 4 62 78q-4 34-10 64h-104q-6-30-10-64z" fill="${HAIR}"/><path d="M150 120q22 18 34 6q-10 22-34 16z" fill="${HAIR}" opacity=".9"/></g>
-    <path d="M86 150h28v28h-28z" fill="${SKIN}"/><path d="M58 196q42-30 84 0z" fill="var(--accent)"/>
-    <ellipse cx="100" cy="104" rx="46" ry="52" fill="${SKIN}"/>
-    <path d="M54 92q8-46 52-48q36 4 42 40q-26-26-62-20q-20 6-32 28z" fill="${HAIR}"/>
-    <circle cx="70" cy="120" r="8" fill="#ff8a8a" opacity="${E.blush}"/><circle cx="130" cy="120" r="8" fill="#ff8a8a" opacity="${E.blush}"/>
-    ${E.brows}${E.eyes}<path d="M98 108q4 10 0 14" stroke="#c48a66" stroke-width="3" fill="none" stroke-linecap="round"/>${E.mouth}`;
+// ---------------- vraie carte (Leaflet + OpenStreetMap) ----------------
+const toLL = (x,y) => [LAT0 + y/KY, LON0 + x/KX];
+const toXY = (lat,lon) => xy(lat,lon);
+let lmap=null, lpin=null, lwind=null, tilesFailed=false;
+function loadLeaflet(){ return new Promise((ok,ko)=>{ if(window.L) return ok(); const sc=document.createElement("script"); sc.src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"; sc.onload=ok; sc.onerror=ko; document.head.appendChild(sc); }); }
+function reliefDataURL(){ const RW=340, RH=280, c=document.createElement("canvas"); c.width=RW; c.height=RH; const g=c.getContext("2d"), img=g.createImageData(RW,RH);
+  for(let j=0;j<RH;j++) for(let i=0;i<RW;i++){ const x=(i+.5)/RW*W, y=(1-(j+.5)/RH)*H, k=idx(x,y), o=(j*RW+i)*4; let col, a=150;
+    if(wat[k]){ col=[0,0,0]; a=0; } else { const t=Math.min(1,elev[k]/700); col=[150+40*t, 185-55*t, 120-30*t]; const kE=idx(x+.4,y), sh=Math.max(-.3,Math.min(.3,(elev[kE]-elev[k])*.004)); col=col.map(q=>q*(1-sh)); a=Math.round(70+120*Math.min(1,t*1.6)); }
+    img.data[o]=col[0]; img.data[o+1]=col[1]; img.data[o+2]=col[2]; img.data[o+3]=a; }
+  g.putImageData(img,0,0); return c.toDataURL(); }
+function makeWindLayer(){ return L.Layer.extend({
+  onAdd(map){ this._map=map; this._c=L.DomUtil.create("canvas","leaflet-zoom-hide"); this._c.style.pointerEvents="none"; map.getPanes().overlayPane.appendChild(this._c); this._parts=[]; map.on("moveend zoomend resize", this._reset, this); map.on("zoomstart movestart", this._clear, this); this._reset(); this._run=true; const f=()=>{ if(!this._run) return; this._frame(); requestAnimationFrame(f); }; requestAnimationFrame(f); },
+  onRemove(map){ this._run=false; map.off("moveend zoomend resize", this._reset, this); map.off("zoomstart movestart", this._clear, this); this._c.remove(); },
+  _clear(){ const g=this._c.getContext("2d"); g.clearRect(0,0,this._c.width,this._c.height); this._moving=true; },
+  _reset(){ const m=this._map, sz=m.getSize(), dpr=Math.min(2,devicePixelRatio||1); this._dpr=dpr; L.DomUtil.setPosition(this._c, m.containerPointToLayerPoint([0,0])); this._c.width=sz.x*dpr; this._c.height=sz.y*dpr; this._c.style.width=sz.x+"px"; this._c.style.height=sz.y+"px"; this._moving=false;
+    const b=m.getBounds(), sw=toXY(b.getSouth(),b.getWest()), ne=toXY(b.getNorth(),b.getEast()); this._box=[Math.max(0,sw[0]),Math.max(0,sw[1]),Math.min(W,ne[0]),Math.min(H,ne[1])];
+    const n=Math.round(Math.min(2200, sz.x*sz.y/420)); this._parts=Array.from({length:n},()=>this._np()); },
+  _np(){ const [x0,y0,x1,y1]=this._box; return {x:x0+Math.random()*Math.max(.1,x1-x0), y:y0+Math.random()*Math.max(.1,y1-y0), a:Math.random()*60|0}; },
+  _frame(){ if(this._moving || !this._map || !document.getElementById("lmapbox").offsetParent) return; const g=this._c.getContext("2d"), dpr=this._dpr, m=this._map, z=ACTS[state.act].z, dt=.055*Math.pow(2,10-m.getZoom());
+    g.globalCompositeOperation="destination-out"; g.fillStyle="rgba(0,0,0,.1)"; g.fillRect(0,0,this._c.width,this._c.height); g.globalCompositeOperation="source-over"; g.lineWidth=2*dpr; g.lineCap="round";
+    for(const p of this._parts){ const [u,v]=wind(p.x,p.y,z,state.hour), nx=p.x+u*dt, ny=p.y+v*dt, a=m.latLngToContainerPoint(toLL(p.x,p.y)), b2=m.latLngToContainerPoint(toLL(nx,ny)), c=speedColor(kmh(Math.hypot(u,v)));
+      g.strokeStyle=`rgb(${c[0]},${c[1]},${c[2]})`; g.beginPath(); g.moveTo(a.x*dpr,a.y*dpr); g.lineTo(b2.x*dpr,b2.y*dpr); g.stroke();
+      p.x=nx; p.y=ny; const [x0,y0,x1,y1]=this._box; if(++p.a>80 || p.x<x0||p.x>x1||p.y<y0||p.y>y1) Object.assign(p,this._np(),{a:0}); } }
+}); }
+function pinIcon(){ return L.divIcon({className:"", html:'<div class="pinicon"></div>', iconSize:[26,34], iconAnchor:[13,34]}); }
+function syncLeafletPin(pan){ if(!lmap) return; const ll=toLL(...state.pin); if(!lpin) lpin=L.marker(ll,{icon:pinIcon(), keyboard:false}).addTo(lmap); else lpin.setLatLng(ll); if(pan) lmap.panTo(ll); }
+async function initLeaflet(){
+  try{ await loadLeaflet(); }catch(e){ const n=document.getElementById("lnotice"); n.hidden=false; n.textContent="La bibliothèque de carte n'a pas pu se charger. Vérifiez la connexion."; return; }
+  const bounds=L.latLngBounds(toLL(0,0), toLL(W,H));
+  lmap=L.map("lmap",{zoomControl:true, minZoom:8, maxZoom:16, maxBounds:bounds.pad(.4), zoomSnap:.25}).fitBounds(bounds,{padding:[4,4]});
+  const tiles=L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:19, attribution:'© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'}).addTo(lmap);
+  tiles.on("tileerror",()=>{ if(tilesFailed) return; tilesFailed=true; const n=document.getElementById("lnotice"); n.hidden=false; n.innerHTML='Les rues OpenStreetMap ne s\'affichent pas dans cet aperçu ; elles apparaîtront sur atom.zelqane.com.<button aria-label="Fermer">×</button>'; n.querySelector("button").onclick=ev=>{ ev.stopPropagation(); n.hidden=true; }; });
+  L.imageOverlay(reliefDataURL(), bounds, {opacity:.75, interactive:false}).addTo(lmap);
+  L.rectangle(bounds,{color:"#0a6e7d", weight:2, fill:false, dashArray:"6 6", interactive:false}).addTo(lmap);
+  for(const st of STATIONS) L.circleMarker(toLL(...st.p),{radius:7, color:"#fff", weight:2, fillColor:"#3a6fd2", fillOpacity:1}).addTo(lmap).bindTooltip(`Station ${st.n} (INM)`);
+  for(const p of PLACES){ const ll=[p[1],p[2]]; L.circleMarker(ll,{radius:3, color:"#14232b", weight:1, fillColor:"#fff", fillOpacity:1, interactive:false}).addTo(lmap).bindTooltip(p[0].split(" (")[0],{permanent:true, direction:"right", offset:[4,0], className:"llbl"}); }
+  const lblZoom=()=>document.getElementById("lmap").classList.toggle("lmap-nolbl", lmap.getZoom() < (innerWidth<700?11:10)); lmap.on("zoomend", lblZoom); lblZoom();
+  lwind=new (makeWindLayer())(); lwind.addTo(lmap); syncLeafletPin();
+  lmap.on("click", e=>{ const [x,y]=toXY(e.latlng.lat,e.latlng.lng); if(x<0||x>W||y<0||y>H){ toast("Ce point est en dehors de la zone calculée (Grand Tunis)."); return; } placePin(x,y); });
+  lmap.on("mousemove", e=>{ const [x,y]=toXY(e.latlng.lat,e.latlng.lng); if(x<0||x>W||y<0||y>H){ hideTip("map"); return; } const z=ACTS[state.act].z, k=idx(x,y), [u,v]=wind(x,y,z,state.hour), deg=(fromDeg(u,v)+180)%360, [,rl]=relClass(sigma(x,y).s);
+    showTip(`<div style="display:flex;gap:8px;align-items:center"><b>${fmtSpeed(Math.hypot(u,v))}</b>${arrowSvg(deg,18,"currentColor")}</div>Vent ${dirName(u,v)}, à ${z} m du sol<br><span class="sub">${wat[k]===1?"En mer":`Sol à ${Math.round(elev[k])} m`} · fiabilité ${rl} · près de ${nearestName([x,y])}</span>`, e.originalEvent.clientX, e.originalEvent.clientY, "map"); });
+  lmap.on("mouseout", ()=>hideTip("map"));
+  lmap.on("locationfound", e=>{ const [x,y]=toXY(e.latlng.lat,e.latlng.lng); if(x<0||x>W||y<0||y>H){ toast("Vous êtes en dehors du Grand Tunis : ATOM Wind ne calcule pas encore votre zone."); return; } placePin(x,y); syncLeafletPin(true); toast("Position trouvée."); });
+  lmap.on("locationerror", ()=>toast("Position indisponible : autorisez la localisation ou choisissez votre ville dans la liste."));
 }
-function nesmaSet(emo, thought, title, sp){ NES.emo=emo; document.getElementById("nesma-face").innerHTML=faceSvg(emo, sp??3); document.getElementById("nesma-mini").innerHTML=`<svg width="42" height="42" viewBox="30 40 140 140">${faceSvg(emo, 2)}</svg>`;
-  const th=document.getElementById("nesma-thought"); th.innerHTML=`<span class="ti">${title||"Je pense…"}</span>${thought}`; th.style.animation="none"; void th.offsetWidth; th.style.animation=""; }
-function nesmaAccess(){ const ok = roleOf()==="visiteur" || roleOf()==="public"; document.getElementById("nesma-btn").hidden = !ok || NES.open; if(!ok){ document.getElementById("nesma").hidden=true; NES.open=false; } }
-const SUGG=["Je veux porter une jupe","Je peux étendre le linge ?","Vélo ce soir ?","Plage cet après-midi ?","Barbecue ce soir ?","Cerf-volant ?","Mes cheveux vont tenir ?","Poussière aujourd'hui ?"];
-function nesmaOpen(){ NES.open=true; document.getElementById("nesma").hidden=false; document.getElementById("nesma-btn").hidden=true;
-  if(!document.getElementById("nesma-chat").children.length){ const [x,y]=state.pin, sp=Math.hypot(...wind(x,y,10,state.hour)); nesmaSet("joie","Aslema ! Dis-moi ce que tu prévois, je regarde le vent pour toi.","Bonjour",sp); botMsg(`Aslema ! Je suis Nesma, la brise. Je regarde le vent à <b>${esc(state.pinName.split(" (")[0])}</b>. Dis-moi ce que tu veux faire aujourd'hui : une tenue, une sortie, le linge…`); }
-  document.getElementById("nesma-in").focus(); }
-function nesmaClose(){ NES.open=false; document.getElementById("nesma").hidden=true; nesmaAccess(); }
-document.getElementById("nesma-btn").onclick=nesmaOpen; document.getElementById("nesma-x").onclick=nesmaClose;
-document.getElementById("nesma-sugg").innerHTML=SUGG.map(q=>`<button type="button">${q}</button>`).join("");
-document.getElementById("nesma-sugg").onclick=e=>{ const b=e.target.closest("button"); if(b) ask(b.textContent); };
-document.getElementById("nesma-form").onsubmit=e=>{ e.preventDefault(); const i=document.getElementById("nesma-in"); const q=i.value.trim(); if(q){ ask(q); i.value=""; } };
-function addMsg(html, who){ const c=document.getElementById("nesma-chat"), d=document.createElement("div"); d.className="msg "+who; d.innerHTML=html; c.appendChild(d); c.scrollTop=c.scrollHeight; return d; }
-const botMsg = html => addMsg(html,"b");
-function parseWhen(q){ const n=norm(q); const m=n.match(/(\d{1,2})\s?h/); if(m) return Math.min(23,+m[1]);
-  if(/ce soir|soiree|ce soir-la|lil|el lil/.test(n)) return 20; if(/apres-midi|apres midi|aprem|3achia|ba3d dhohr/.test(n)) return 15; if(/matin|sbah/.test(n)) return 9; if(/midi|dhohr/.test(n)) return 12; if(/nuit/.test(n)) return 23; return state.hour; }
-function parsePlace(q){ const n=norm(q); for(let i=0;i<PLACES.length;i++){ const nm=norm(PLACES[i][0].split(" (")[0]); if(nm.length>3 && n.includes(nm)) return {p:xy(PLACES[i][1],PLACES[i][2]), name:PLACES[i][0].split(" (")[0]}; } return {p:state.pin, name:state.pinName.split(" (")[0]}; }
-function ask(q){
-  addMsg(esc(q),"u"); const t=addMsg('<span class="typing"><i></i><i></i><i></i></span>',"b");
-  setTimeout(()=>{ t.remove(); const r=answer(q); nesmaSet(r.emo, r.thought, r.title, r.sp); botMsg(r.text + (r.facts?`<div class="facts2">${r.facts}</div>`:"")); }, 650);
-}
-function answer(q){
-  const n=norm(q), h=parseWhen(q), pl=parsePlace(q), [x,y]=pl.p, k=idx(x,y);
-  const [u,v]=wind(x,y,10,h), sp=Math.hypot(u,v), g=sp*gustF(x,y,10), kk=kmh(sp), kg=kmh(g), T=Tair(h,x,y), rh=RHair(h,x,y), pm=PM10(h,x,y);
-  const at=`${pl.name}, ${h} h`, facts=`<span class="pill m">Vent ${fmtSpeed(sp)}</span><span class="pill m">Rafales ${fmtSpeed(g)}</span><span class="pill m">${dirName(u,v)}</span>`;
-  const has=(...w)=>w.some(x=>n.includes(x));
-  if(has("jupe","robe","skirt","jibba","tenue","m'habiller","habiller","porter")){
-    if(kg<25) return {emo:"joie", sp, title:"Tenue", thought:"Jupe légère : parfait, pas de souci !", text:`À ${at}, les rafales restent faibles (${fmtSpeed(g)}). Tu peux porter ta jupe sans crainte. ${T>28?"Il fera chaud : choisis un tissu léger.":""}`, facts};
-    if(kg<40) return {emo:"inquiete", sp, title:"Tenue", thought:"Jupe longue ou plus lourde, ça vole moins !", text:`À ${at}, les rafales montent à ${fmtSpeed(g)}. Une jupe courte risque de s'envoler : préfère une jupe longue, un tissu plus lourd ou un collant. Le vent vient ${dirName(u,v)}.`, facts};
-    return {emo:"triste", sp, title:"Tenue", thought:"Aujourd'hui, plutôt un pantalon…", text:`À ${at}, les rafales atteignent ${fmtSpeed(g)} : une jupe va s'envoler. Pantalon fluide ou combinaison, c'est plus sûr.`, facts}; }
-  if(has("linge","secher","sécher","lessive","ghsil","nchar")){
-    if(pm>80) return {emo:"inquiete", sp, title:"Linge", thought:"Attention, la poussière va le salir.", text:`À ${at}, l'air contient beaucoup de poussière (${Math.round(pm)} µg/m³). Étends plutôt le linge le matin, avant le pic de poussière vers 16 h.`, facts};
-    if(kk>=8 && kk<=35 && rh<75) return {emo:"joie", sp, title:"Linge", thought:`Sec en ${Math.max(1,Math.round(4-kk/12))} h environ !`, text:`Parfait pour étendre : vent de ${fmtSpeed(sp)}, air assez sec (${Math.round(rh)} % d'humidité) et ${Math.round(T)} °C. ${kg>30?"Mets bien les pinces : il y a des rafales.":""}`, facts};
-    if(kk<8) return {emo:"content", sp, title:"Linge", thought:"Ça séchera, mais lentement.", text:`Peu de vent à ${at} : le linge séchera, mais lentement. Étends-le au soleil.`, facts};
-    return {emo:"inquiete", sp, title:"Linge", thought:"Mets beaucoup de pinces !", text:`Le vent est fort à ${at} (rafales ${fmtSpeed(g)}). Le linge séchera vite, mais attache-le bien.`, facts}; }
-  if(has("velo","vélo","bicyclette","courir","footing","course","marche","jogging")){
-    const back=DIRS[(Math.round(fromDeg(u,v)/45))%8].replace(/^du |^de l'|^de /,"");
-    if(kk<12) return {emo:"joie", sp, title:"Sortie", thought:"Vent faible : fonce !", text:`Peu de vent à ${at} (${fmtSpeed(sp)}). Idéal pour rouler ou courir. ${T>30?"Pense à boire : il fait chaud.":""}`, facts};
-    if(kk<30) return {emo:"content", sp, title:"Sortie", thought:`Pars face au vent, côté ${back}.`, text:`Le vent vient ${dirName(u,v)} à ${fmtSpeed(sp)}. Astuce : pars <b>face au vent</b> (vers ${back}) quand tu es en forme, et rentre avec le vent dans le dos.`, facts};
-    return {emo:"triste", sp, title:"Sortie", thought:"Gros vent de face… courage !", text:`Vent fort à ${at} (rafales ${fmtSpeed(g)}). Le vélo sera difficile ; préfère un parcours abrité ou un autre moment.`, facts}; }
-  if(has("plage","mer","baignade","bahr","kite","planche","surf","parasol")){
-    if(sdist[k]>15) return {emo:"pensive", sp, title:"Plage", thought:"La mer est un peu loin d'ici…", text:`Tu es à ${Math.round(sdist[k])} km de la côte. Choisis une plage dans la liste (La Marsa, Hammam-Lif…) pour que je regarde le vent là-bas.`, facts};
-    if(kk>=20 && has("kite","planche","surf")) return {emo:"joie", sp, title:"Kite", thought:"Super conditions pour le kite !", text:`Vent de ${fmtSpeed(sp)} ${dirName(u,v)} : bonnes conditions pour le kite ou la planche. Reste dans la zone surveillée.`, facts};
-    if(kg>30) return {emo:"inquiete", sp, title:"Plage", thought:"Le parasol risque de s'envoler !", text:`À ${at}, rafales de ${fmtSpeed(g)} : plante bien le parasol, ou installe-toi à l'abri d'une dune. La brise de mer forcit l'après-midi.`, facts};
-    return {emo:"joie", sp, title:"Plage", thought:"Belle journée de plage !", text:`Vent tranquille à ${at} (${fmtSpeed(sp)}). Bonne baignade, et pense à la crème solaire.`, facts}; }
-  if(has("barbecue","grillade","feu","mechoui","méchoui","charbon","kanoun")){
-    if(kg<20) return {emo:"joie", sp, title:"Barbecue", thought:"Feu facile, fumée tranquille.", text:`Vent faible à ${at} : barbecue sans souci. Garde un seau d'eau à côté.`, facts};
-    if(kg<35) return {emo:"inquiete", sp, title:"Barbecue", thought:"Attention aux braises qui volent.", text:`Rafales de ${fmtSpeed(g)} : installe le barbecue à l'abri, loin des herbes sèches, avec de l'eau à portée de main. La fumée partira ${dirName(-u,-v).replace("du ","vers le ").replace("de l'","vers l'")}.`, facts};
-    return {emo:"triste", sp, title:"Barbecue", thought:"Trop de vent : risque de feu.", text:`Rafales de ${fmtSpeed(g)} à ${at} : les braises peuvent s'envoler et allumer un feu. Reporte ton barbecue.`, facts}; }
-  if(has("cerf","kite volant","tayara")){
-    if(kk>=12 && kk<=30) return {emo:"joie", sp, title:"Cerf-volant", thought:"Le vent parfait pour le cerf-volant !", text:`${fmtSpeed(sp)} ${dirName(u,v)} : conditions idéales. Éloigne-toi des arbres et des fils électriques.`, facts};
-    if(kk<12) return {emo:"pensive", sp, title:"Cerf-volant", thought:"Un peu mou… essaie plus tard.", text:`Vent faible à ${at}. Essaie vers 14–16 h, quand la brise de mer se lève.`, facts};
-    return {emo:"surprise", sp, title:"Cerf-volant", thought:"Ça tire fort ! Tiens bien la ficelle.", text:`Vent fort (rafales ${fmtSpeed(g)}) : seulement pour un cerf-volant solide, et pas pour les enfants seuls.`, facts}; }
-  if(has("cheveux","coiffure","brushing","cha3r")){
-    if(kg<20) return {emo:"joie", sp, title:"Coiffure", thought:"Ta coiffure va tenir !", text:`Peu de vent à ${at} : tes cheveux resteront en place.`, facts};
-    return {emo:"inquiete", sp, title:"Coiffure", thought:"Une barrette ou un chouchou ?", text:`Rafales de ${fmtSpeed(g)} à ${at} : prends un chouchou, une barrette ou un foulard.`, facts}; }
-  if(has("poussiere","poussière","allergie","asthme","sable","ghbar","3ajja")){
-    if(pm>45) return {emo:"inquiete", sp, title:"Air", thought:"Garde les fenêtres fermées l'après-midi.", text:`À ${at}, poussière à ${Math.round(pm)} µg/m³ (repère de l'OMS : 45). Si tu es sensible, limite l'effort dehors et ferme les fenêtres pendant le pic, vers 16 h. Donnée d'exemple pour le moment.`, facts};
-    return {emo:"joie", sp, title:"Air", thought:"Air plutôt propre, respire !", text:`Peu de poussière à ${at} (${Math.round(pm)} µg/m³). Donnée d'exemple pour le moment.`, facts}; }
-  if(has("pluie","parapluie","pleuvoir","mtar")) return {emo:"pensive", sp, title:"Pluie", thought:"Moi, je ne connais que le vent…", text:`Je ne prévois pas la pluie, seulement le vent. Par contre, à ${at}, le vent sera de ${fmtSpeed(sp)} : ${kg>35?"un parapluie se retournerait !":"un parapluie tiendra sans problème."}`, facts};
-  if(has("drone")) return kg<30 ? {emo:"joie", sp, title:"Drone", thought:"Vol possible, reste à vue.", text:`Rafales de ${fmtSpeed(g)} à 10 m : vol de loisir possible. En hauteur, le vent est plus fort : ${fmtSpeed(Math.hypot(...wind(x,y,100,h)))} à 100 m. Et jamais près de l'aéroport de Tunis-Carthage.`, facts} : {emo:"triste", sp, title:"Drone", thought:"Trop de vent pour voler.", text:`Rafales de ${fmtSpeed(g)} : le drone risque de dériver. Attends que le vent baisse.`, facts};
-  if(has("merci","yaatik","ya3tik","barcha","choukran")) return {emo:"joie", sp, title:"Avec plaisir", thought:"Bonne journée !", text:"Avec plaisir ! Reviens quand tu veux, je surveille le vent pour toi."};
-  if(has("salut","bonjour","aslema","ahla","bonsoir","hello","marhba")) return {emo:"joie", sp, title:"Bonjour", thought:"Que veux-tu faire aujourd'hui ?", text:"Aslema ! Demande-moi par exemple : « je veux porter une jupe », « vélo ce soir ? » ou « je peux étendre le linge ? »."};
-  if(has("vent","meteo","météo","temps","rih")) return {emo: kg>40?"surprise":kg>25?"inquiete":"content", sp, title:"Le vent", thought: kg>40?"Ça souffle fort !":kg>25?"Un peu de vent, couvre-toi.":"Vent calme, belle journée.", text:`À ${at}, vent ${dirName(u,v)} de ${fmtSpeed(sp)}, rafales à ${fmtSpeed(g)}. ${beaufort(kk)}`, facts};
-  return {emo:"pensive", sp, title:"Hmm…", thought:"Je ne suis pas sûre de comprendre…", text:"Je ne connais que le vent et l'air. Essaie par exemple : « je veux porter une jupe », « vélo ce soir ? », « barbecue à La Marsa ? » ou « poussière aujourd'hui ? »."};
-}
-nesmaSet("content","Pose-moi une question sur ta journée !","Je pense…",3);
+function setBasemap(b){ const osm=b==="osm"; document.getElementById("bm-relief").setAttribute("aria-pressed",!osm); document.getElementById("bm-osm").setAttribute("aria-pressed",osm);
+  document.getElementById("map1").hidden=osm; document.getElementById("lmapbox").hidden=!osm; document.getElementById("locate").hidden=!osm; store.set("aw-basemap",b);
+  if(osm){ if(!lmap) initLeaflet(); else setTimeout(()=>lmap.invalidateSize(),50); } }
+document.getElementById("bm-relief").onclick=()=>setBasemap("relief"); document.getElementById("bm-osm").onclick=()=>setBasemap("osm");
+document.getElementById("locate").onclick=()=>{ if(lmap) lmap.locate({setView:false, maxZoom:14, enableHighAccuracy:true}); };
+if(store.get("aw-basemap","relief")==="osm") setTimeout(()=>setBasemap("osm"),0);
 
 // ---------------- en-tête compact au défilement ----------------
 const topbar=document.getElementById("topbar"); let compact=false;

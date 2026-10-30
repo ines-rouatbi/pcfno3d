@@ -30,6 +30,9 @@ async function get(path, ms = 90000){
       let d = ""; try { const j = await r.json(); d = j.message || j.detail || ""; } catch(e) {}
       throw new Error(r.status === 503 && d ? d : `${path} : ${r.status} ${d}`);
     }
+    // Worker atom.zelqane.com : service hors ligne, dernier état réel connu (cahier v12, 17.1)
+    const de = r.headers.get("x-atom-dernier-etat");
+    if(de !== null) A.dernierEtat = de || "date inconnue";
     return await r.json();
   } catch(e){
     if(e.name === "AbortError") throw new Error("le service PC-FNO3D ne répond pas (Colab endormi ?)");
@@ -47,60 +50,87 @@ function decoder(b64){
   return out;
 }
 
-const A = { grille: null, jours: [], jour: null, ventV: null, sigmaV: null, plan: null,
+const A = { grille: null, jours: [], jour: null, plan: null,
             erreur: null, rafraichir: null };
 window.ATOM = A;
 
-A.pret = () => !!(A.grille && A.jour && A.ventV);
-A.aSigma = () => !!(A.pret() && A.sigmaV);
+A.pret = () => !!(A.grille && A.jour && A.jour._vent);
+A.aSigma = () => !!(A.pret() && A.jour._sigma);
 
 // ------------------------------------------------------------------ échantillonnage
+// Une journée J = la réponse de /atom-wind/jour ou /atom-wind/direct, avec ses tableaux décodés
+// (J._vent, J._sigma, J._t, J._hr). A.jour est la journée affichée ; A.trois[0..2] les journées
+// aujourd'hui / demain / après-demain du temps réel (espace agriculteur, J0 à J+2).
 function cellule(x, y){
   const g = A.grille, p = g.pas_km;
   return [Math.min(g.nx-1, Math.max(0, Math.floor(x/p))), Math.min(g.ny-1, Math.max(0, Math.floor(y/p)))];
 }
-function crochets(h){                      // instants encadrant l'heure locale h, et poids
-  const I = A.jour.instants, n = I.length;
+function crochets(J, h){                   // instants encadrant l'heure locale h, et poids
+  const I = J.instants, n = I.length;
   if(n === 1 || h <= I[0].heure_locale) return [0, 0, 0];
   if(h >= I[n-1].heure_locale) return [n-1, n-1, 0];
   let a = 0; while(a < n-2 && I[a+1].heure_locale <= h) a++;
   const t0 = I[a].heure_locale, t1 = I[a+1].heure_locale;
   return [a, a+1, (h - t0) / Math.max(t1 - t0, 1e-6)];
 }
-function lire(arr, nComp, it, ih, c, i, j){
-  const g = A.grille, nH = A.jour.hauteurs_agl_m.length;
+function lire(J, arr, nComp, it, ih, c, i, j){
+  const g = A.grille, nH = J.hauteurs_agl_m.length;
   return arr[((((it*nH + ih)*nComp + c)*g.ny + j)*g.nx) + i];
 }
-function auNiveau(arr, nComp, it, z, i, j, c, z0){
-  const H = A.jour.hauteurs_agl_m, nH = H.length;
+function auNiveau(J, arr, nComp, it, z, i, j, c, z0){
+  const H = J.hauteurs_agl_m, nH = H.length;
   if(z <= H[0]){
     // sous la première hauteur : profil logarithmique avec la rugosité de la maille
-    let ih = 0, v = lire(arr, nComp, it, 0, c, i, j);
-    while(!isFinite(v) && ih < nH-1){ ih++; v = lire(arr, nComp, it, ih, c, i, j); }
+    let ih = 0, v = lire(J, arr, nComp, it, 0, c, i, j);
+    while(!isFinite(v) && ih < nH-1){ ih++; v = lire(J, arr, nComp, it, ih, c, i, j); }
     if(!isFinite(v)) return 0;
     const zz = Math.max(z, z0 * 1.5), f = Math.log(zz / z0) / Math.log(H[ih] / z0);
     return v * Math.max(0, f);
   }
   let k = 0; while(k < nH-2 && H[k+1] < z) k++;
   const a = Math.min(1, (z - H[k]) / (H[k+1] - H[k]));
-  const v0 = lire(arr, nComp, it, k, c, i, j), v1 = lire(arr, nComp, it, k+1, c, i, j);
+  const v0 = lire(J, arr, nComp, it, k, c, i, j), v1 = lire(J, arr, nComp, it, k+1, c, i, j);
   if(isFinite(v0) && isFinite(v1)) return (1-a)*v0 + a*v1;
   return isFinite(v1) ? v1 : isFinite(v0) ? v0 : 0;
 }
-A.vent = (x, y, z, h) => {
+function ventDe(J, x, y, z, h){
   const [i, j] = cellule(x, y), z0 = A.z0[j*A.grille.nx + i];
-  const [a, b, w] = crochets(h);
-  const ua = auNiveau(A.ventV, 2, a, z, i, j, 0, z0), va = auNiveau(A.ventV, 2, a, z, i, j, 1, z0);
+  const [a, b, w] = crochets(J, h);
+  const ua = auNiveau(J, J._vent, 2, a, z, i, j, 0, z0), va = auNiveau(J, J._vent, 2, a, z, i, j, 1, z0);
   if(w === 0 || a === b) return [ua, va];
-  const ub = auNiveau(A.ventV, 2, b, z, i, j, 0, z0), vb = auNiveau(A.ventV, 2, b, z, i, j, 1, z0);
+  const ub = auNiveau(J, J._vent, 2, b, z, i, j, 0, z0), vb = auNiveau(J, J._vent, 2, b, z, i, j, 1, z0);
   return [(1-w)*ua + w*ub, (1-w)*va + w*vb];
-};
+}
+function surfaceDe(J, arr, x, y, h){         // champ 2D par instant (t2m, hr2m), interpolé en temps
+  const g = A.grille, [i, j] = cellule(x, y), [a, b, w] = crochets(J, h), n = g.nx * g.ny;
+  const va = arr[a*n + j*g.nx + i], vb = arr[b*n + j*g.nx + i];
+  return isFinite(va) && isFinite(vb) ? (1-w)*va + w*vb : (isFinite(va) ? va : vb);
+}
+A.vent = (x, y, z, h) => ventDe(A.jour, x, y, z, h);
 A.sigma = (x, y, z, h) => {
-  if(!A.sigmaV) return null;
-  const [i, j] = cellule(x, y), [a, b, w] = crochets(h), z0 = A.z0[j*A.grille.nx + i];
-  const sa = auNiveau(A.sigmaV, 1, a, Math.max(z, A.jour.hauteurs_agl_m[0]), i, j, 0, z0);
-  const sb = auNiveau(A.sigmaV, 1, b, Math.max(z, A.jour.hauteurs_agl_m[0]), i, j, 0, z0);
+  const J = A.jour; if(!J || !J._sigma) return null;
+  const [i, j] = cellule(x, y), [a, b, w] = crochets(J, h), z0 = A.z0[j*A.grille.nx + i];
+  const zz = Math.max(z, J.hauteurs_agl_m[0]);
+  const sa = auNiveau(J, J._sigma, 1, a, zz, i, j, 0, z0), sb = auNiveau(J, J._sigma, 1, b, zz, i, j, 0, z0);
   return (1-w)*sa + w*sb;
+};
+// espace agriculteur, jour d = 0 (aujourd'hui), 1 (demain), 2 (après-demain) : seulement en temps
+// réel ; sinon la page garde ses valeurs d'exemple (et le dit)
+A.trois = {};
+A.pretJour = d => !!(A.grille && A.jour && A.jour.temps_reel && A.trois[d] && A.trois[d]._vent);
+A.ventJour = (d, x, y, z, h) => ventDe(A.trois[d], x, y, z, h);
+A.aT = d => A.pretJour(d) && !!A.trois[d]._t;
+A.tJour = (d, x, y, h) => surfaceDe(A.trois[d], A.trois[d]._t, x, y, h);
+A.hrJour = (d, x, y, h) => surfaceDe(A.trois[d], A.trois[d]._hr, x, y, h);
+A.rsJour = d => {                            // rayonnement solaire du jour (MJ/m²/j), GFS
+  if(!A.pretJour(d)) return null;
+  const r = A.trois[d].instants.map(i => i.rayonnement_w_m2).filter(v => v !== null && v !== undefined);
+  return r.length >= 20 ? r.reduce((s, v) => s + v, 0) * 3600 / 1e6 * (24 / r.length) : null;
+};
+A.doyJour = d => {
+  if(!A.pretJour(d)) return null;
+  const t = new Date(A.trois[d].date + "T12:00:00Z"), d0 = Date.UTC(t.getUTCFullYear(), 0, 0);
+  return Math.floor((t - d0) / 86400000);
 };
 
 // ------------------------------------------------------------------ relief réel
@@ -131,31 +161,36 @@ A.noteFiabilite = () => {
 A.planXY = xy => (A.plan && A.plan.length) ? A.plan.map(p => xy(p.lat, p.lon)) : null;
 
 // ------------------------------------------------------------------ bandeau
+function fmtInstant(iso){
+  const t = new Date(iso);
+  return isNaN(t) ? iso : t.toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", timeZone: "Africa/Tunis" });
+}
 function fmtDate(d){ const [y, m, j] = d.split("-"); return `${j}/${m}/${y}`; }
 function banniere(){
   const src = document.getElementById("aw-source"), fr = document.getElementById("aw-fresh");
   const sel = document.getElementById("aw-jour");
   if(!src) return;
   if(A.pret()){
+    const horsLigne = A.dernierEtat ? `<b>Service hors ligne</b> : dernier état réel connu, reçu le ${fmtInstant(A.dernierEtat)}. ` : "";
     const I = A.jour.instants, hh = I.map(x => `${String(Math.floor(x.heure_locale)).padStart(2,"0")} h`).join(", ");
     const modele = A.jour.modele || A.grille.modele;
     if(A.jour.temps_reel && A.jour.prevision){
       const maj = new Date(A.jour.mis_a_jour_utc), hm = maj.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", timeZone: "Africa/Tunis" });
-      src.innerHTML = `<b>Prévision</b> du vent pour le <b>${fmtDate(A.jour.date)}</b>, calculée par <b>PC-FNO3D</b> (${modele}) `
-        + `à partir de la prévision ECMWF IFS (pas encore de mesure des stations pour ce jour). Calculée à ${hm}.`
+      src.innerHTML = horsLigne + `<b>Prévision</b> du vent pour le <b>${fmtDate(A.jour.date)}</b>, calculée par <b>PC-FNO3D</b> (${modele}) `
+        + `à partir de la prévision GFS (pas encore de mesure des stations pour ce jour). Calculée à ${hm}.`
         + (A.jour.avertissement ? ` <span class="muted">(${A.jour.avertissement})</span>` : "");
       if(fr) fr.textContent = `Prévision · ${hm}`;
     } else if(A.jour.temps_reel){
       const maj = new Date(A.jour.mis_a_jour_utc), hm = maj.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", timeZone: "Africa/Tunis" });
       const passees = I.filter(x => x.source === "temps reel"), st = new Set(passees.flatMap(x => x.stations));
       const noms = { DTTA: "Tunis-Carthage", INM60729: "Zaghouan", INM60728: "Nabeul" };
-      src.innerHTML = `<b>Temps réel</b> : vent d'aujourd'hui (${fmtDate(A.jour.date)}) calculé par <b>PC-FNO3D</b> (${modele}) `
-        + `à partir de la grande échelle ECMWF IFS et des anémomètres ${[...st].map(c => noms[c] || c).join(", ") || "(aucune mesure reçue)"}. `
+      src.innerHTML = horsLigne + `<b>Temps réel</b> : vent d'aujourd'hui (${fmtDate(A.jour.date)}) calculé par <b>PC-FNO3D</b> (${modele}) `
+        + `à partir de la grande échelle GFS et des anémomètres ${[...st].map(c => noms[c] || c).join(", ") || "(aucune mesure reçue)"}. `
         + `Heures passées : temps réel ; heures à venir : prévision. Mis à jour à ${hm}.`
         + (A.jour.avertissement ? ` <span class="muted">(${A.jour.avertissement})</span>` : "");
       if(fr) fr.textContent = `Temps réel · ${hm}`;
     } else {
-      src.innerHTML = `Vent calculé par le modèle <b>PC-FNO3D</b> (${modele}) sur le Grand Tunis, `
+      src.innerHTML = horsLigne + `Vent calculé par le modèle <b>PC-FNO3D</b> (${modele}) sur le Grand Tunis, `
         + `journée du <b>${fmtDate(A.jour.date)}</b> (jeu de test, jamais vu à l'entraînement). `
         + `Sorties du modèle à ${hh} (heure de Tunis), interpolées heure par heure. Ce ne sont pas des mesures en direct.`;
       if(fr) fr.textContent = `Modèle : ${modele}`;
@@ -182,15 +217,33 @@ function banniere(){
 A.banniere = banniere;
 
 // ------------------------------------------------------------------ chargement
-async function chargerJour(date){
-  const j = { direct: 0, prev1: 1, prev2: 2 }[date];
+const RELATIF = { direct: 0, prev1: 1, prev2: 2 };
+async function telechargerJour(date){
+  const j = RELATIF[date];
   const d = j !== undefined ? await get(`/atom-wind/direct?j=${j}`, 240000)
                             : await get(`/atom-wind/jour?date=${encodeURIComponent(date)}`, 180000);
   d.cle = date;
-  A.ventV = decoder(d.vent);
-  A.sigmaV = d.sigma_vitesse ? decoder(d.sigma_vitesse) : null;
-  A.jour = d;
+  d._vent = decoder(d.vent);
+  d._sigma = d.sigma_vitesse ? decoder(d.sigma_vitesse) : null;
+  d._t = d.t2m ? decoder(d.t2m) : null;
+  d._hr = d.hr2m ? decoder(d.hr2m) : null;
+  if(j !== undefined) A.trois[j] = d;
+  return d;
 }
+async function chargerJour(date){ A.jour = await telechargerJour(date); }
+// demain et après-demain pour l'espace agriculteur : en arrière-plan, l'un après l'autre
+let troisEnCours = false;
+async function chargerTrois(){
+  if(troisEnCours || !A.direct) return;
+  troisEnCours = true;
+  try {
+    for(const [cle, j] of [["prev1", 1], ["prev2", 2]]){
+      try { await telechargerJour(cle); } catch(e){ console.warn("ATOM Wind : prévision J+" + j, e); }
+      if(A.rafraichir) A.rafraichir();
+    }
+  } finally { troisEnCours = false; }
+}
+A.chargerTrois = chargerTrois;
 A.choisirJour = async date => {
   const src = document.getElementById("aw-source");
   if(src) src.innerHTML = date === "direct" ? "Calcul du vent d'aujourd'hui par le modèle…"
@@ -229,8 +282,13 @@ function lancerPage(){
   const sel = document.getElementById("aw-jour");
   if(sel) sel.onchange = () => A.choisirJour(sel.value);
   if(A.pret() && A.jour.temps_reel && !A.jour.prevision && A.setHour) A.setHour(heureLocale());
+  if(A.pret() && A.jour.temps_reel) chargerTrois();
   // temps réel : nouvelles mesures et nouvelle échéance toutes les 30 min
-  setInterval(() => { if(A.jour && A.jour.temps_reel) A.choisirJour(A.jour.cle || "direct"); }, 30 * 60 * 1000);
+  setInterval(() => {
+    if(!A.jour || !A.jour.temps_reel) return;
+    A.trois = {};
+    A.choisirJour(A.jour.cle || "direct").then(chargerTrois);
+  }, 30 * 60 * 1000);
 }
 function heureLocale(){
   return Number(new Intl.DateTimeFormat("fr-FR", { hour: "numeric", hour12: false, timeZone: "Africa/Tunis" }).format(new Date())) % 24;
@@ -260,7 +318,7 @@ async function demarrer(){
       await chargerJour(jd);
     }
   } catch(e){
-    A.erreur = e; A.grille = null; A.jour = null; A.ventV = null;   // tout ou rien : journée d'exemple
+    A.erreur = e; A.grille = null; A.jour = null;   // tout ou rien : journée d'exemple
     console.warn("ATOM Wind : API PC-FNO3D indisponible, journée d'exemple", e);
   }
   lancerPage();

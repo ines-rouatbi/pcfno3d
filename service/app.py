@@ -945,7 +945,7 @@ _ATOM_DIRECT_TTL_S = 1800.0             # le temps reel est recalcule au plus to
 def atom_direct(j: int = Query(0, ge=0, le=2, description="0 = aujourd'hui (temps reel), "
                                "1 = demain, 2 = apres-demain (prevision)"),
                 _: ApiKeyRecord | None = Depends(require_read)) -> Response:
-    """Le vent d'AUJOURD'HUI (heure locale de Tunis), heure par heure : grande echelle ECMWF IFS
+    """Le vent d'AUJOURD'HUI (heure locale de Tunis), heure par heure : grande echelle GFS
     (Open-Meteo) aux mailles et par les formules du forcage ERA5, vraies mesures des stations
     (METAR, SYNOP) pour les heures passees, prevision pour les heures a venir. Meme format que
     /atom-wind/jour, avec `temps_reel: true` et la source de chaque heure."""

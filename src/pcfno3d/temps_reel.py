@@ -1,7 +1,8 @@
 """Entree TEMPS REEL du modele reel (Grand Tunis) : le vent d'aujourd'hui, heure par heure.
 
-ERA5 arrive avec ~5 jours de retard : en temps reel, la grande echelle vient du modele ECMWF IFS
-a 0,25 deg (la resolution d'ERA5, meme modele que la reanalyse) servi par Open-Meteo, sur les MEMES
+ERA5 arrive avec ~5 jours de retard : en temps reel, la grande echelle vient de la prevision
+mondiale GFS (NOAA) a 0,25 deg servie par Open-Meteo (cahier v12, OS7 : GFS, archive depuis 2021,
+la ou ECMWF n'est archive que depuis 2024), sur les MEMES
 mailles que le forcage d'entrainement (`geom.forcage.lat/lon`) et calcule par les MEMES formules
 que scripts/forcage_era5.py :
 
@@ -10,14 +11,15 @@ que scripts/forcage_era5.py :
     = t2m terres - t2m mer (la regle « sans slx » du script) ; profil par maille aux hauteurs
     au-dessus du sol (10 m, 100 m et niveaux de pression, interpolation lineaire).
 
-Differences assumees, dites dans les reponses : niveaux de pression 1000/925/850/700 hPa
-seulement (ERA5 : 11 niveaux de 1000 a 700), relief des mailles = altitude Open-Meteo du point
-(MNT 90 m) au lieu du geopotentiel de surface ERA5 ; heures passees = previsions IFS a courte
-echeance (l'analyse operationnelle n'est pas publique), heures a venir = prevision.
+Differences assumees, dites dans les reponses : relief des mailles = altitude Open-Meteo du
+point (MNT 90 m) au lieu du geopotentiel de surface ERA5 ; heures passees = previsions GFS a
+courte echeance, heures a venir = prevision. Les 11 niveaux de pression d'ERA5 (1000 a 700 hPa)
+existent dans GFS. Le modele a appris avec ERA5 : l'ecart ERA5 / GFS n'est pas corrige tant que
+l'affinage OS7 sur les previsions GFS archivees n'est pas fait.
 
 Stations : METAR de Tunis-Carthage (aviationweather.gov, comme pcfno3d.metar) et SYNOP de
 Zaghouan (60729) et Nabeul (60728) (OGIMET), la mesure la plus proche a 30 min au plus, comme
-`stations_reelles.obs_a`. La surface hors stations (T, p, HR, rho) vient des champs IFS ramenes
+`stations_reelles.obs_a`. La surface hors stations (T, p, HR, rho) vient des champs GFS ramenes
 au relief de la grille ; seul le vent des points d'entree compte pour le modele (les autres
 cellules sont masquees).
 """
@@ -37,10 +39,10 @@ from .forcage import SCALAIRES, ForcageERA5
 from .geometry import N_SURF
 
 OPEN_METEO = "https://api.open-meteo.com/v1/forecast"
-MODELE_IFS = "ecmwf_ifs025"
+MODELE_GFS = "gfs_global"
 OGIMET = "https://www.ogimet.com/cgi-bin/getsynop"
 URL_METAR = "https://aviationweather.gov/api/data/metar"
-NIVEAUX_P = (1000, 925, 850, 700)
+NIVEAUX_P = (1000, 975, 950, 925, 900, 875, 850, 800, 775, 750, 700)   # ERA5
 G, R_AIR, KAPPA, LAPSE = 9.80665, 287.05, 0.2857, 0.0065
 NOEUD = 0.514444
 SYNOP_CODES = {"60729": "INM60729", "60728": "INM60728"}
@@ -76,23 +78,24 @@ def _get(url: str, timeout: float = 30.0) -> bytes:
         return r.read()
 
 
-# ---------------------------------------------------------------------- ECMWF IFS (Open-Meteo)
-def _vars_ifs() -> list[str]:
+# ---------------------------------------------------------------------- GFS (Open-Meteo)
+def _vars_gfs() -> list[str]:
     v = ["wind_speed_10m", "wind_direction_10m", "wind_speed_100m", "wind_direction_100m",
-         "temperature_2m", "relative_humidity_2m", "surface_pressure", "pressure_msl"]
+         "temperature_2m", "relative_humidity_2m", "surface_pressure", "pressure_msl",
+         "shortwave_radiation"]
     for p in NIVEAUX_P:
         v += [f"wind_speed_{p}hPa", f"wind_direction_{p}hPa", f"geopotential_height_{p}hPa"]
     return v
 
 
-def telecharger_ifs(lat: np.ndarray, lon: np.ndarray, debut: str, fin: str,
+def telecharger_gfs(lat: np.ndarray, lon: np.ndarray, debut: str, fin: str,
                     lire=None) -> dict:
-    """Champs horaires IFS aux mailles (lat x lon) de `debut` a `fin` (AAAA-MM-JJ, UTC).
+    """Champs horaires GFS aux mailles (lat x lon) de `debut` a `fin` (AAAA-MM-JJ, UTC).
     Renvoie {"temps": int64 s, "elevation": (ny, nx), <variable>: (T, ny, nx)}."""
     la, lo = np.meshgrid(lat, lon, indexing="ij")
     q = {"latitude": ",".join(f"{x:.4f}" for x in la.ravel()),
          "longitude": ",".join(f"{x:.4f}" for x in lo.ravel()),
-         "hourly": ",".join(_vars_ifs()), "models": MODELE_IFS, "wind_speed_unit": "ms",
+         "hourly": ",".join(_vars_gfs()), "models": MODELE_GFS, "wind_speed_unit": "ms",
          "timezone": "GMT", "cell_selection": "nearest", "start_date": debut, "end_date": fin}
     d = json.loads((lire or _get)(f"{OPEN_METEO}?{urllib.parse.urlencode(q)}"))
     d = d if isinstance(d, list) else [d]
@@ -101,7 +104,7 @@ def telecharger_ifs(lat: np.ndarray, lon: np.ndarray, debut: str, fin: str,
     temps = pd.to_datetime(d[0]["hourly"]["time"]).values.astype("datetime64[s]").astype(np.int64)
     out = {"temps": temps,
            "elevation": np.array([p.get("elevation", 0.0) for p in d], float).reshape(la.shape)}
-    for v in _vars_ifs():
+    for v in _vars_gfs():
         a = np.array([[np.nan if x is None else x for x in p["hourly"][v]] for p in d], float)
         out[v] = a.T.reshape((len(temps),) + la.shape)
     return out
@@ -112,7 +115,7 @@ def _uv(vitesse, direction):
     return -vitesse * np.sin(r), -vitesse * np.cos(r)
 
 
-def forcage_ifs(c: dict, hauteurs_sol) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+def forcage_gfs(c: dict, hauteurs_sol) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Scalaires (T, 7) MIS A L'ECHELLE comme ForcageERA5, et u, v (T, nh, ny, nx) par maille aux
     hauteurs au-dessus du sol : les formules de scripts/forcage_era5.py."""
     from .tunisie import interpoler_hauteurs
@@ -162,7 +165,7 @@ def forcage_ifs(c: dict, hauteurs_sol) -> tuple[np.ndarray, np.ndarray, np.ndarr
 
 
 class ForcageDirect(ForcageERA5):
-    """Meme interface que ForcageERA5 (vecteur, forme_cellules, n_extra), sur les champs IFS."""
+    """Meme interface que ForcageERA5 (vecteur, forme_cellules, n_extra), sur les champs GFS."""
 
     def __init__(self, temps, scal, u, v, modele: ForcageERA5) -> None:      # noqa: D107
         self.t_csv = self.temps = np.asarray(temps, np.int64)
@@ -172,9 +175,9 @@ class ForcageDirect(ForcageERA5):
         self.u = _boucher(np.asarray(u, np.float32))
         self.v = _boucher(np.asarray(v, np.float32))
         if self.u.shape[1:] != modele.u.shape[1:]:
-            raise ValueError(f"forcage IFS {self.u.shape[1:]} != mailles du modele {modele.u.shape[1:]}")
+            raise ValueError(f"forcage GFS {self.u.shape[1:]} != mailles du modele {modele.u.shape[1:]}")
         if not np.isfinite(self.scal).all():
-            raise ValueError("forcage IFS : scalaires incomplets")
+            raise ValueError("forcage GFS : scalaires incomplets")
         self.forme_cellules = (2,) + self.u.shape[1:]
         self.n_cellules = int(np.prod(self.forme_cellules))
 
@@ -281,7 +284,7 @@ def _bil(champ: np.ndarray, interp) -> np.ndarray:
 
 
 def entree(geom, c: dict, f: ForcageDirect, it: int, mesures: dict) -> np.ndarray:
-    """S (8, ny, nx) de l'instant it des champs IFS : ERA5->IFS 10 m sur le reseau regulier, les
+    """S (8, ny, nx) de l'instant it des champs GFS : GFS 10 m (a la place d'ERA5) sur le reseau regulier, les
     stations mesurees, la surface (T, rho, HR, p) ramenee au relief de la grille."""
     from .stations_reelles import cellules_codes, entree_reelle
 
@@ -305,7 +308,7 @@ def entree(geom, c: dict, f: ForcageDirect, it: int, mesures: dict) -> np.ndarra
 
 
 class SourceDirect:
-    """Les champs IFS et les mesures d'une journee, rafraichis au plus toutes les `ttl` s."""
+    """Les champs GFS et les mesures d'une journee, rafraichis au plus toutes les `ttl` s."""
 
     def __init__(self, geom, ttl_s: float = 1800.0, lire=None) -> None:
         if geom.forcage is None:
@@ -321,8 +324,8 @@ class SourceDirect:
         j = pd.Timestamp(jour_utc)
         debut, fin = (j - pd.Timedelta(days=1)).strftime("%Y-%m-%d"), (j + pd.Timedelta(days=1)).strftime("%Y-%m-%d")
         g = self.geom
-        c = telecharger_ifs(g.forcage.lat, g.forcage.lon, debut, fin, lire=self.lire)
-        temps, scal, u, v = forcage_ifs(c, g.forcage.hauteurs)
+        c = telecharger_gfs(g.forcage.lat, g.forcage.lon, debut, fin, lire=self.lire)
+        temps, scal, u, v = forcage_gfs(c, g.forcage.hauteurs)
         f = ForcageDirect(temps, scal, u, v, g.forcage)
         maintenant = datetime.now(timezone.utc).replace(tzinfo=None)
         d0 = j.to_pydatetime() - timedelta(hours=3)
