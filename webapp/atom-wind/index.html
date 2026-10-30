@@ -1244,7 +1244,7 @@ function wind(x, y, z, h){
   return [u, v];
 }
 function smoothstep(a,b,x){ const t=Math.min(1,Math.max(0,(x-a)/(b-a))); return t*t*(3-2*t); }
-function gustF(x,y,z){ const zr=z0[idx(x,y)], g0 = zr>.5 ? 1.65 : zr>.05 ? 1.45 : 1.22; return 1 + (g0-1)*Math.exp(-z/300); }
+function gustF(x,y,z){ if(window.ATOM && ATOM.facteurRafale){ const f=ATOM.facteurRafale(x,y,z,state.hour); if(f) return f; } const zr=z0[idx(x,y)], g0 = zr>.5 ? 1.65 : zr>.05 ? 1.45 : 1.22; return 1 + (g0-1)*Math.exp(-z/300); }
 
 // fiabilité
 const STATIONS = [{n:"Tunis-Carthage", p:xy(36.8504,10.2156)},{n:"Zaghouan", p:xy(36.4333,10.0833)},{n:"Nabeul", p:xy(36.45,10.7333)}];

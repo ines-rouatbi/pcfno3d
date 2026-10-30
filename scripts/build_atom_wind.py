@@ -119,6 +119,9 @@ ACCROCHES = [
     ("  const ord={stop:0,warn:1,info:2,go:3}; L.sort((a,b)=>ord[a.cls]-ord[b.cls]);",
      "  if(window.ATOM && ATOM.alertesService) L.push(...ATOM.alertesService(xy));\n"
      "  const ord={stop:0,warn:1,info:2,go:3}; L.sort((a,b)=>ord[a.cls]-ord[b.cls]);"),
+    # 18. rafales de GFS en temps reel (BF54, BF80) a la place du facteur heuristique de la page
+    ("function gustF(x,y,z){ ",
+     "function gustF(x,y,z){ if(window.ATOM && ATOM.facteurRafale){ const f=ATOM.facteurRafale(x,y,z,state.hour); if(f) return f; } "),
 ]
 
 

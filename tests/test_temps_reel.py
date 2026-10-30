@@ -56,7 +56,7 @@ def fausse_source(url: str) -> bytes:
         pts = []
         for i, _ in enumerate(lats):
             h = {"time": [t.strftime("%Y-%m-%dT%H:%M") for t in temps],
-                 "wind_speed_10m": [5.0] * n, "wind_direction_10m": [260.0] * n,
+                 "wind_speed_10m": [5.0] * n, "wind_direction_10m": [260.0] * n, "wind_gusts_10m": [7.5] * n,
                  "wind_speed_100m": [7.0] * n, "wind_direction_100m": [265.0] * n,
                  "temperature_2m": [20.0 + (i % 2)] * n, "relative_humidity_2m": [60.0] * n,
                  "surface_pressure": [1010.0] * n, "pressure_msl": [1015.0] * n,
@@ -141,6 +141,9 @@ def test_journee_temps_reel(jeu):
     hr = np.frombuffer(base64.b64decode(d["hr2m"]), dtype="<i2").astype(float) / 100
     assert 10.0 < np.median(t2m) < 25.0 and np.median(hr) == pytest.approx(60.0, abs=0.5)
     assert all(i["rayonnement_w_m2"] == pytest.approx(300.0) for i in d["instants"])
+    # facteur de rafale GFS (7,5 / 5 = 1,5 dans la fausse source)
+    fr = np.frombuffer(base64.b64decode(d["facteur_rafale"]), dtype="<i2").astype(float) / 100
+    assert np.median(fr[fr > -300]) == pytest.approx(1.5, abs=0.01)
     # physique de chaque instant (BF11, BF31) : residu de continuite et condition au sol du champ servi
     assert all(i["residu_masse_rms"] is not None and i["residu_masse_rms"] >= 0 for i in d["instants"])
     assert all(isinstance(i["residu_masse_ok"], bool) for i in d["instants"])

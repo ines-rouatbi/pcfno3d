@@ -59,7 +59,7 @@ Le bilan complet, critère par critère du cahier v12, est produit par `scripts/
 - **Temps réel** : la grande échelle vient de GFS au lieu d'ERA5 ; le modèle n'a pas été entraîné sur
   GFS (c'est l'objet d'OS7, affinage v5, pas encore lancé).
 - Le niveau le plus bas (25 m) reste au-dessus du seuil DSO1 (0,53 m/s).
-- Les rafales affichées par l'application sont un facteur heuristique, pas une sortie du modèle.
+- Les rafales ne sont pas une sortie du modèle : en temps réel, l'application applique au vent du modèle le facteur rafale / vent moyen de GFS à 10 m (0,25°) ; hors temps réel, un facteur heuristique fondé sur la rugosité.
 
 ## Usages
 

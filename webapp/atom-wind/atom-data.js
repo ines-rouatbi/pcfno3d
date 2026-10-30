@@ -237,6 +237,7 @@ async function telechargerJour(date){
   d._sigma = d.sigma_vitesse ? decoder(d.sigma_vitesse) : null;
   d._t = d.t2m ? decoder(d.t2m) : null;
   d._hr = d.hr2m ? decoder(d.hr2m) : null;
+  d._raf = d.facteur_rafale ? decoder(d.facteur_rafale) : null;
   if(j !== undefined) A.trois[j] = d;
   return d;
 }
@@ -396,6 +397,14 @@ async function chargerQualite(){
     + `${q.decision ? ` · ${q.decision.texte}` : ""}.</div>`;
 }
 A.chargerQualite = chargerQualite;
+
+// rafales : facteur rafale / vent moyen de GFS a 10 m, a l'heure affichee, decroissant avec la hauteur
+// comme celui de la page (BF54, BF80) ; null hors temps reel (la page garde alors son facteur)
+A.facteurRafale = (x, y, z, h) => {
+  const J = A.jour; if(!A.pret() || !J._raf) return null;
+  const f = surfaceDe(J, J._raf, x, y, h);
+  return isFinite(f) && f >= 1 ? 1 + (f - 1) * Math.exp(-Math.max(z - 10, 0) / 300) : null;
+};
 
 // ------------------------------------------------------------------ clés d'API du service (BF42)
 // Vue Administration : les vraies clés du service (création, quotas, révocation), seulement si la clé

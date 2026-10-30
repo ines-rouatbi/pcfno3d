@@ -81,7 +81,7 @@ def _get(url: str, timeout: float = 30.0) -> bytes:
 
 # ---------------------------------------------------------------------- GFS (Open-Meteo)
 def _vars_gfs() -> list[str]:
-    v = ["wind_speed_10m", "wind_direction_10m", "wind_speed_100m", "wind_direction_100m",
+    v = ["wind_speed_10m", "wind_direction_10m", "wind_gusts_10m", "wind_speed_100m", "wind_direction_100m",
          "temperature_2m", "relative_humidity_2m", "surface_pressure", "pressure_msl",
          "shortwave_radiation"]
     for p in NIVEAUX_P:
@@ -106,7 +106,8 @@ def telecharger_gfs(lat: np.ndarray, lon: np.ndarray, debut: str, fin: str,
     out = {"temps": temps,
            "elevation": np.array([p.get("elevation", 0.0) for p in d], float).reshape(la.shape)}
     for v in _vars_gfs():
-        a = np.array([[np.nan if x is None else x for x in p["hourly"][v]] for p in d], float)
+        a = np.array([[np.nan if x is None else x for x in p["hourly"].get(v, [None] * len(temps))] for p in d],
+                     float)                      # variable absente (ancienne archive) : NaN
         out[v] = a.T.reshape((len(temps),) + la.shape)
     return out
 

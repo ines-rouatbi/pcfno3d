@@ -210,7 +210,7 @@ def jour_direct(wf, source, date_locale: str, maintenant: pd.Timestamp | None = 
     maintenant = maintenant if maintenant is not None else \
         pd.Timestamp.now(tz="UTC").tz_localize(None)
     index_t = {int(s): i for i, s in enumerate(c["temps"])}
-    instants, blocs_vent, blocs_t, blocs_hr, blocs_sigma = [], [], [], [], []
+    instants, blocs_vent, blocs_t, blocs_hr, blocs_sigma, blocs_raf = [], [], [], [], [], []
     b = facteur(geom)
     fiabilite = bool(fiabilite and wf.cfg.inference.reliability is not None)
     for h in range(24):
@@ -234,6 +234,11 @@ def jour_direct(wf, source, date_locale: str, maintenant: pd.Timestamp | None = 
         rho, src = rho_instant(geom, "extrapolation_surface", S, S[7] > 0.5)
         phys = physique(geom, vol.u, vol.v, vol.w, rho, src, wf.cfg.dso.mass_rms)
         blocs_t.append(blocs(S[3], b))           # temperature a 2 m (GFS), deg C
+        # facteur de rafale a 10 m de GFS (rafale / vent moyen), ramene a la grille : remplace le facteur
+        # heuristique de la page (BF54, BF80) ; borne a [1 ; 3]
+        if "wind_gusts_10m" in c:
+            fr = c["wind_gusts_10m"][it] / np.maximum(c["wind_speed_10m"][it], 0.5)
+            blocs_raf.append(blocs(np.clip(tr._bil(fr, geom.interp_era5), 1.0, 3.0), b))
         blocs_hr.append(blocs(S[5], b))          # humidite relative a 2 m (GFS), %
         ray = c.get("shortwave_radiation")
         instants.append({"stem": f"direct_{t:%Y%m%dT%H}", "timestamp_utc": stamp,
@@ -248,6 +253,9 @@ def jour_direct(wf, source, date_locale: str, maintenant: pd.Timestamp | None = 
     a = np.stack(blocs_vent)
     prevision = all(i["source"] == "prevision" for i in instants)
     extra = {}
+    if blocs_raf and len(blocs_raf) == len(instants) and np.isfinite(np.stack(blocs_raf)).any():
+        extra["facteur_rafale"] = encoder(np.stack(blocs_raf))
+        extra["source_rafale"] = "GFS wind_gusts_10m / wind_speed_10m (0,25 deg), meme codage int16 x100"
     if blocs_sigma and len(blocs_sigma) == len(instants):
         sg = np.stack(blocs_sigma)
         extra = {"sigma_vitesse": encoder(sg), "forme_sigma": list(sg.shape)}
