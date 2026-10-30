@@ -52,7 +52,7 @@ DOCUMENTES = [
      "docs/ALERTES.md : v1 non conforme (16/10) ; v2 conforme en seconde lecture, non indépendante "
      "(dérives 100 %, fausses alertes 2,2 %) ; mesuré sur la v7 synthétique"),
     ("VIS1", "Tableau de bord : reconstruction et indicateurs affichés en moins de 3 s", "à mesurer",
-     "à chronométrer sur atom.zelqane.com une fois le service en ligne"),
+     "docs/PROTOCOLE_UX1_VIS1.md : panneau ?test_ux=1 sur atom.zelqane.com, 90e centile par vue"),
     ("MCP1", "Serveur MCP : simulation lancée et résultat récupéré sans intervention", "conforme",
      "tests/test_webapp_and_mcp.py, tests/test_colab_serving.py (17 outils)"),
     ("API1", "Clé d'API : requête sans clé refusée, clé révoquée inactive aussitôt", "conforme",
@@ -66,7 +66,7 @@ DOCUMENTES = [
     ("REEL4", "Brise de mer : cycle journalier de la direction aux stations côtières", "conforme",
      "porte du 21/10/2026 (scripts/brise_mer.py), figure validée par Ines avant la génération"),
     ("UX1", "Compréhension : 4 utilisateurs sur 5 répondent en moins de 30 s", "à mesurer",
-     "test avec 5 utilisateurs non spécialistes à organiser"),
+     "docs/PROTOCOLE_UX1_VIS1.md : 5 non-spécialistes, tâche de référence, panneau ?test_ux=1"),
     ("DSO7", "Précision à densité réaliste (un capteur tous les 500 m)", "proposé",
      "critère à fixer avec l'entreprise avant les essais (cahier v12, 18.7)"),
 ]
