@@ -861,5 +861,12 @@
  "Vent au moyeu avec intervalle et seuils": "الريح عند محور الدوران مع المجال والعتبات",
  "Vent au moyeu du parc virtuel (80 m), heure par heure": "الريح عند محور دوران الحقل الافتراضي (80 م)، ساعة بساعة",
  "E-mail ou mot de passe incorrect, ou compte désactivé.": "البريد أو كلمة المرور غير صحيحة، أو الحساب معطّل.",
- "Trop d'essais : réessayez dans 15 minutes.": "محاولات كثيرة: أعد المحاولة بعد 15 دقيقة."
+ "Trop d'essais : réessayez dans 15 minutes.": "محاولات كثيرة: أعد المحاولة بعد 15 دقيقة.",
+ "Compte": "الحساب",
+ "Comptes du service": "حسابات الخدمة",
+ "Comptes enregistrés sur le serveur ; un accès éolien demandé attend votre validation.": "الحسابات المسجلة على الخادم؛ طلب الوصول إلى فضاء الرياح ينتظر مصادقتك.",
+ "Demande": "الطلب",
+ "Refuser": "رفض",
+ "Confirmer": "تأكيد",
+ "actif": "نشط"
 }

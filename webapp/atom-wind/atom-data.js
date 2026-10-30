@@ -463,6 +463,40 @@ async function installerClesService(){
 }
 A.installerClesService = installerClesService;
 
+// ------------------------------------------------------------------ comptes du service (BF43), admin
+// Les vrais comptes : validation des demandes d'accès éolien, désactivation et réactivation.
+const NOMS_ROLES = { public: "Grand public", agri: "Agriculteur", eolien: "Exploitant éolien", admin: "Administrateur" };
+async function installerComptesService(){
+  const vue = document.getElementById("v-admin"); if(!vue || document.getElementById("aw-comptes")) return;
+  try { await get("/comptes", 15000); } catch(e){ return; }                     // pas admin : rien
+  const carte = document.createElement("div"); carte.className = "card"; carte.id = "aw-comptes";
+  vue.appendChild(carte);
+  const rendre = async () => {
+    const l = (await get("/comptes", 15000)).comptes;
+    carte.innerHTML = `<h3>Comptes du service</h3>`
+      + `<p class="muted" style="font-size:14px;margin:0 0 8px">Comptes enregistrés sur le serveur ; un accès éolien demandé attend votre validation.</p>`
+      + `<div class="tblwrap"><table class="t"><thead><tr><th>Compte</th><th>Rôle</th><th>Demande</th><th>Statut</th><th></th></tr></thead><tbody>`
+      + l.map(c => `<tr><td>${echapper(c.nom || "")}<br><span class="muted" style="font-size:12px">${echapper(c.email)}</span></td>`
+        + `<td>${NOMS_ROLES[c.role] || c.role}</td><td>${c.demande_role ? NOMS_ROLES[c.demande_role] || c.demande_role : "—"}</td>`
+        + `<td>${c.statut === "actif" ? "actif" : `<span class="pill mid">désactivé</span>`}</td><td style="white-space:nowrap">`
+        + (c.demande_role ? `<button class="btn primary" data-val="${echapper(c.email)}" style="padding:2px 10px;font-size:13px">Valider</button> `
+          + `<button class="btn" data-ref="${echapper(c.email)}" style="padding:2px 10px;font-size:13px">Refuser</button> ` : "")
+        + (c.role === "admin" ? "" : `<button class="btn" data-st="${echapper(c.email)}" data-actif="${c.statut === "actif" ? "0" : "1"}" style="padding:2px 10px;font-size:13px">`
+          + `${c.statut === "actif" ? "Désactiver" : "Réactiver"}</button>`) + `</td></tr>`).join("")
+      + `</tbody></table></div><div id="aw-comptes-res" class="muted" style="font-size:13px;margin-top:6px"></div>`;
+    const res = carte.querySelector("#aw-comptes-res");
+    const agir = async (chemin) => { try { await envoyer("POST", chemin); await rendre(); } catch(err){ res.textContent = err.message; } };
+    carte.querySelectorAll("[data-val]").forEach(b => b.onclick = () => agir(`/comptes/${encodeURIComponent(b.dataset.val)}/validation?accepter=true`));
+    carte.querySelectorAll("[data-ref]").forEach(b => b.onclick = () => agir(`/comptes/${encodeURIComponent(b.dataset.ref)}/validation?accepter=false`));
+    carte.querySelectorAll("[data-st]").forEach(b => b.onclick = () => {
+      if(b.dataset.actif === "0" && b.dataset.ok !== "1"){ b.dataset.ok = "1"; b.textContent = "Confirmer"; return; }
+      agir(`/comptes/${encodeURIComponent(b.dataset.st)}/statut?actif=${b.dataset.actif === "1"}`);
+    });
+  };
+  try { await rendre(); } catch(e){ carte.remove(); }
+}
+A.installerComptesService = installerComptesService;
+
 // ------------------------------------------------------------------ supervision (BF41), admin seulement
 async function installerSupervision(){
   const vue = document.getElementById("v-admin"); if(!vue || document.getElementById("aw-sup")) return;
@@ -760,7 +794,7 @@ function lancerPage(){
   if(sel) sel.onchange = () => A.choisirJour(sel.value);
   if(A.pret() && A.jour.temps_reel && !A.jour.prevision && A.setHour) A.setHour(heureLocale());
   if(A.pret() && A.jour.temps_reel) chargerTrois().then(chargerEnsembles);
-  if(A.pret()){ chargerAtlas(); sourceEolien(); installerAssistant(); installerValeurStations(); installerRapports(); chargerQualite(); installerClesService(); installerSupervision(); }
+  if(A.pret()){ chargerAtlas(); sourceEolien(); installerAssistant(); installerValeurStations(); installerRapports(); chargerQualite(); installerClesService(); installerComptesService(); installerSupervision(); }
   // temps réel : nouvelles mesures et nouvelle échéance toutes les 30 min
   setInterval(() => {
     if(!A.jour || !A.jour.temps_reel || A.jour.archive) return;

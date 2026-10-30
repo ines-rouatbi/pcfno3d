@@ -59,7 +59,8 @@ def test_parcours_http(client, jeu):  # noqa: F811
     assert {c["email"] for c in nu.get("/api/comptes", headers=ha).json()["comptes"]} >= {"agri@exemple.tn", "eol@exemple.tn"}
     cle_eol = client.post("/api/comptes/connexion", json={"email": "eol@exemple.tn", "mot_de_passe": "rotor2026"}).json()["cle"]
     assert nu.get("/api/atom-wind/production", params={"j": 1, **pt}, headers={"X-API-Key": cle_eol}).status_code == 403
-    assert nu.post("/api/comptes/eol@exemple.tn/validation", headers=ha).json()["role"] == "eolien"
+    # la page encode l'adresse dans le chemin (%40) : le serveur la decode
+    assert nu.post("/api/comptes/eol%40exemple.tn/validation", headers=ha).json()["role"] == "eolien"
     assert nu.get("/api/atom-wind/production", params={"j": 1, **pt}, headers={"X-API-Key": cle_eol}).status_code == 200
     # une nouvelle connexion remplace la session ; un compte desactive perd la sienne aussitot
     cle2 = client.post("/api/comptes/connexion", json={"email": "agri@exemple.tn", "mot_de_passe": "champ2026"}).json()["cle"]

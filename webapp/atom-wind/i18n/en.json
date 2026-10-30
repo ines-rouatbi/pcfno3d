@@ -866,5 +866,12 @@
  "Vent au moyeu avec intervalle et seuils": "Hub wind with interval and thresholds",
  "Vent au moyeu du parc virtuel (80 m), heure par heure": "Hub wind of the virtual wind farm (80 m), hour by hour",
  "E-mail ou mot de passe incorrect, ou compte désactivé.": "Incorrect e-mail or password, or account deactivated.",
- "Trop d'essais : réessayez dans 15 minutes.": "Too many attempts: try again in 15 minutes."
+ "Trop d'essais : réessayez dans 15 minutes.": "Too many attempts: try again in 15 minutes.",
+ "Compte": "Account",
+ "Comptes du service": "Service accounts",
+ "Comptes enregistrés sur le serveur ; un accès éolien demandé attend votre validation.": "Accounts registered on the server; a requested wind-energy access awaits your approval.",
+ "Demande": "Request",
+ "Refuser": "Refuse",
+ "Confirmer": "Confirm",
+ "actif": "active"
 }
