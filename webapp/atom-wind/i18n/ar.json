@@ -793,5 +793,14 @@
  "non atteint": "غير محقق",
  "à mesurer": "للقياس",
  "Qualité du modèle servi": "جودة النموذج المُشغَّل",
- "Modèle {0} ({1}), {2} instants du test, évaluation {3}": "النموذج {0} ({1})، {2} لحظة من الاختبار، تقييم {3}"
+ "Modèle {0} ({1}), {2} instants du test, évaluation {3}": "النموذج {0} ({1})، {2} لحظة من الاختبار، تقييم {3}",
+ "au-dessus du seuil (test)": "فوق العتبة (اختبار)",
+ "aucune mesure reçue": "لم يصل أي قياس",
+ "moyenne de la zone": "متوسط المنطقة",
+ "prévision : pas encore de mesure": "توقع: لا قياس بعد",
+ "Résidu de masse": "بقايا الكتلة",
+ "sous le seuil (test)": "تحت العتبة (اختبار)",
+ "Stations actives": "المحطات النشطة",
+ "Temps de reconstruction": "زمن إعادة البناء",
+ "une carte 3D par le modèle": "خريطة ثلاثية الأبعاد واحدة بالنموذج"
 }

@@ -111,6 +111,10 @@ ACCROCHES = [
     ('<button aria-pressed="true">FR</button><button disabled title="Prévu">عربي</button><button disabled title="Prévu">EN</button>',
      '<button data-lang="fr" aria-pressed="true">FR</button><button data-lang="ar" aria-pressed="false" lang="ar">عربي</button>'
      '<button data-lang="en" aria-pressed="false" lang="en">EN</button>'),
+    # 16. bandeau du tableau de bord (cahier v12, TB1) : stations actives, temps de reconstruction, vent au
+    #     moyeu et residu de masse du modele servi, quand l'API repond
+    ("% avec le réseau ANEO prévu`]\n  ].map(",
+     "% avec le réseau ANEO prévu`],\n    ...((window.ATOM && ATOM.kpisReels) ? ATOM.kpisReels(state.hour) : [])\n  ].map("),
 ]
 
 

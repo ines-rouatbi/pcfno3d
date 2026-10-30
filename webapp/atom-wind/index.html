@@ -1485,7 +1485,8 @@ function renderTB(){
     ["Rafale la plus forte", fmtSpeed(d.gmax), `près de ${nearestName(d.gwhere)}`],
     ["Production du parc virtuel", `${prod.toFixed(1).replace(".",",")} MW`, `${Math.round(prod/6*100)} % de la capacité`],
     ["Alertes à suivre", `${na}`, na ? "danger ou attention" : "aucune alerte importante"],
-    ["Zone bien couverte", `${relGood[0]} %`, `${relGood[1]} % avec le réseau ANEO prévu`]
+    ["Zone bien couverte", `${relGood[0]} %`, `${relGood[1]} % avec le réseau ANEO prévu`],
+    ...((window.ATOM && ATOM.kpisReels) ? ATOM.kpisReels(state.hour) : [])
   ].map(([k,v,s2])=>`<div class="card kpi"><div class="k">${k}</div><div class="v">${v}</div><div class="s muted">${s2}</div></div>`).join("");
   const days=Array.from({length:24},(_,h)=>domainStats(h)), Wd=640, Hd=210, pl=66, pb=24, mx=Math.ceil(Math.max(...days.map(x=>kmh(x.gmax)))/10)*10;
   const X=h=>pl+h*(Wd-pl-10)/23, Y=k=>Hd-pb-k/mx*(Hd-pb-12);

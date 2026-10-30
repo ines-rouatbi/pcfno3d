@@ -373,6 +373,7 @@ A.installerRapports = installerRapports;
 async function chargerQualite(){
   const bloc = document.querySelector("#v-tableau .dsos"); if(!bloc) return;
   let q; try { q = await get("/atom-wind/qualite", 20000); } catch(e){ return; }     // page : valeurs de la maquette
+  A.qualite = q; if(A.rafraichir) A.rafraichir();               // le bandeau TB1 reprend le résidu de masse
   const nb = (v, n = 2) => v === null || v === undefined ? "—" : Number(v).toLocaleString("fr-FR", { maximumSignificantDigits: n });
   const pill = c => c === null ? `<span class="pill m">à mesurer</span>` : `<span class="pill ${c ? "good" : "mid"}">${c ? "atteint" : "non atteint"}</span>`;
   const titre = bloc.closest(".card") && bloc.closest(".card").querySelector("h3");
@@ -386,6 +387,33 @@ async function chargerQualite(){
     + `${q.decision ? ` · ${q.decision.texte}` : ""}.</div>`;
 }
 A.chargerQualite = chargerQualite;
+
+// bandeau du tableau de bord (TB1) : ce que le modèle servi a réellement fait à l'heure affichée
+const NOMS_STATIONS = { DTTA: "Tunis-Carthage", INM60729: "Zaghouan", INM60728: "Nabeul" };
+A.kpisReels = h => {
+  if(!A.pret()) return [];
+  const I = A.jour.instants || [], out = [];
+  if(I.length){
+    const x = I.reduce((b, y) => Math.abs(y.heure_locale - h) < Math.abs(b.heure_locale - h) ? y : b, I[0]);
+    if(Array.isArray(x.stations)){
+      const n = x.stations.length;
+      out.push(["Stations actives", `${n} / 3`, n ? x.stations.map(c => NOMS_STATIONS[c] || c).join(", ")
+        : (x.source === "prevision" ? "prévision : pas encore de mesure" : "aucune mesure reçue")]);
+    }
+    if(typeof x.inference_s === "number")
+      out.push(["Temps de reconstruction", `${x.inference_s.toFixed(2).replace(".", ",")} s`, "une carte 3D par le modèle"]);
+  }
+  const g = A.grille; let s = 0, n = 0;
+  for(let j = 0; j < g.ny; j += 3) for(let i = 0; i < g.nx; i += 3){
+    const [u, v] = A.vent((i + .5) * g.pas_km, (j + .5) * g.pas_km, 80, h);
+    if(isFinite(u) && isFinite(v)){ s += Math.hypot(u, v); n++; }
+  }
+  if(n) out.push(["Vent au moyeu (80 m)", `${(s / n).toFixed(1).replace(".", ",")} m/s`, "moyenne de la zone"]);
+  const d2 = A.qualite && A.qualite.dso.find(l => l.code === "DSO2");
+  if(d2 && d2.valeur !== null)
+    out.push(["Résidu de masse", Number(d2.valeur).toExponential(1).replace(".", ","), d2.conforme ? "sous le seuil (test)" : "au-dessus du seuil (test)"]);
+  return out;
+};
 A.htmlInfluence = (x, y) => {
   const d = A.valeurStations; if(!d || !A.grille) return "";
   const [i, j] = cellule(x, y), n = A.grille.nx * A.grille.ny;
