@@ -83,6 +83,18 @@ def test_dimensionnement_mat(wf):
     assert gros["plus_grand_deficit_wh"] > 0 and gros["batterie_wh"] >= gros["plus_grand_deficit_wh"]
 
 
+@pytest.mark.parametrize("type_", ["parcelle", "site", "parc"])
+def test_rapport_pdf(wf, monkeypatch, type_):
+    from service import atom_outils as ao
+    from service import rapport_pdf
+    monkeypatch.setattr(ao, "PARC_VIRTUEL", (("E1", LAT, LON),))
+    pdf = rapport_pdf.construire(wf, type_, lat=LAT, lon=LON)
+    assert pdf.startswith(b"%PDF") and len(pdf) > 5000
+    assert rapport_pdf.nom_fichier(type_, "Mornag (vignes)", None, None).startswith(f"atom_wind_{type_}_mornag_vignes_")
+    with pytest.raises(ValueError, match="type de rapport"):
+        rapport_pdf.construire(wf, "inconnu", lat=LAT, lon=LON)
+
+
 class FauxClaude:
     """Premier tour : appelle vent_au_point ; second tour : repond par du texte."""
 

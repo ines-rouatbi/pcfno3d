@@ -1056,6 +1056,23 @@ def atom_dimensionnement(lieu: str | None = Query(None, max_length=80), lat: flo
         raise HTTPException(422, str(exc)) from exc
 
 
+@router.get("/atom-wind/rapport.pdf", tags=["atom-wind"])
+def atom_rapport(type: str = Query("parcelle", pattern="^(parcelle|site|parc)$"),
+                 lieu: str | None = Query(None, max_length=80), lat: float | None = None, lon: float | None = None,
+                 moyeu_m: float = Query(80.0, ge=30, le=200),
+                 _: ApiKeyRecord | None = Depends(require_read)) -> Response:
+    """Rapport PDF automatique (cahier v12, E9) d'une parcelle, d'un site ou du parc virtuel : vent, rose des
+    vents, production, alertes, recommandations et fiabilite, d'aujourd'hui a apres-demain."""
+    from service import rapport_pdf
+    try:
+        pdf = rapport_pdf.construire(model(), type, lat=lat, lon=lon, lieu=lieu, moyeu_m=moyeu_m)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    nom = rapport_pdf.nom_fichier(type, lieu, lat, lon)
+    return Response(pdf, media_type="application/pdf",
+                    headers={"Content-Disposition": f'attachment; filename="{nom}"'})
+
+
 class QuestionAssistant(BaseModel):
     question: str = Field(..., min_length=1, max_length=2000)
     historique: list[dict] = Field(default_factory=list, max_length=20,

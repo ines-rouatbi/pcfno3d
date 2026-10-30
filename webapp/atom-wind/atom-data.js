@@ -330,6 +330,41 @@ function installerValeurStations(){
   };
 }
 A.installerValeurStations = installerValeurStations;
+
+// ------------------------------------------------------------------ rapports PDF (E9)
+async function telechargerRapport(bt, params, nom){
+  const t = bt.textContent; bt.disabled = true; bt.textContent = "Préparation du PDF…";
+  try {
+    const u = await blob(`/atom-wind/rapport.pdf?${new URLSearchParams(params)}`);
+    const a = document.createElement("a"); a.href = u; a.download = nom; a.click();
+    setTimeout(() => URL.revokeObjectURL(u), 60000);
+    bt.textContent = t;
+  } catch(e){ bt.textContent = "Rapport indisponible"; setTimeout(() => { bt.textContent = t; }, 4000); }
+  bt.disabled = false;
+}
+function installerRapports(){
+  if(!A.pret() || !A.jour.temps_reel || document.getElementById("aw-pdf-agri")) return;
+  const form = document.querySelector("#v-agri .agform"), lieu = document.getElementById("ag-place");
+  if(form && lieu){
+    const bt = document.createElement("button");
+    bt.id = "aw-pdf-agri"; bt.className = "btn"; bt.type = "button"; bt.textContent = "Rapport PDF de la parcelle";
+    bt.style.marginTop = "10px";
+    bt.onclick = () => { const nom = (lieu.selectedOptions[0] || {}).textContent || "Mornag";
+      telechargerRapport(bt, { type: "parcelle", lieu: nom }, "atom_wind_parcelle.pdf"); };
+    form.after(bt);
+  }
+  const src = document.getElementById("aw-eol-src");
+  if(src){
+    const z = document.createElement("div"); z.style.cssText = "display:flex;gap:8px;flex-wrap:wrap;margin-top:8px";
+    const b1 = document.createElement("button"), b2 = document.createElement("button");
+    b1.className = b2.className = "btn"; b1.type = b2.type = "button";
+    b1.textContent = "Rapport PDF du parc virtuel"; b2.textContent = "Rapport PDF du site (Djebel Ressas)";
+    b1.onclick = () => telechargerRapport(b1, { type: "parc" }, "atom_wind_parc.pdf");
+    b2.onclick = () => telechargerRapport(b2, { type: "site", lieu: "Djebel Ressas" }, "atom_wind_site.pdf");
+    z.append(b1, b2); src.after(z);
+  }
+}
+A.installerRapports = installerRapports;
 A.htmlInfluence = (x, y) => {
   const d = A.valeurStations; if(!d || !A.grille) return "";
   const [i, j] = cellule(x, y), n = A.grille.nx * A.grille.ny;
@@ -450,7 +485,7 @@ function lancerPage(){
   if(sel) sel.onchange = () => A.choisirJour(sel.value);
   if(A.pret() && A.jour.temps_reel && !A.jour.prevision && A.setHour) A.setHour(heureLocale());
   if(A.pret() && A.jour.temps_reel) chargerTrois().then(chargerEnsembles);
-  if(A.pret()){ chargerAtlas(); sourceEolien(); installerAssistant(); installerValeurStations(); }
+  if(A.pret()){ chargerAtlas(); sourceEolien(); installerAssistant(); installerValeurStations(); installerRapports(); }
   // temps réel : nouvelles mesures et nouvelle échéance toutes les 30 min
   setInterval(() => {
     if(!A.jour || !A.jour.temps_reel) return;
