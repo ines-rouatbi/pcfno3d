@@ -89,6 +89,23 @@ a terrain correction.
 
 ## 5. Current state (snapshot as of 2026-10-16; model results as of 2026-10-13)
 
+### Update 2026-10-30 — cahier des charges v12
+
+- **Delivered model: Grand Tunis v4** (`decision_v4.json`, 24/10, read on the Drive 30/10): no worse
+  than v2_long within the 1 % rule (global RMSE u 0.380 / v 0.373 m/s, real stations 2.47 m/s), w by
+  continuity (DSO2 1.05e-5), **DSO6 conforming** on v4 (80 % coverage u 0.88, v 0.88, w 0.84).
+- **Code ready, not run yet (needs "start execution" on Colab):** OS6 sensor plan + annual atlas
+  (E8), OS7 forecast fine-tune on archived GFS (PREV1–PREV3, AGRI1/AGRI2), serving notebook.
+- **Front-end v12:** Ines's v12 mockup wired to the API; real time (GFS + METAR/SYNOP) for today and
+  forecast for J+1/J+2; full 3D view V3D1–V3D10; last real state when the service is down (Worker
+  cache); French / Arabic / English interface (TB7, E17).
+- **Excellence ideas done:** E6 assistant (Claude + MCP tools), E7 safe maintenance windows, E8 atlas,
+  E9 PDF reports, E10/E11 station influence and value (data denial), E12 SMS (FR/AR), E13 production
+  ramps, E14 champion/challenger, E15 GeoTIFF export, E16 digital twin (= the 3D view: terrain,
+  turbines, plot, animated wind, day replay), E18 mast energy sizing, E19 GEFS probabilistic forecast.
+- **Waiting on Ines:** Drive upload of the new code zip/notebooks, `wrangler login` for the
+  atom.zelqane.com deploy, Colab runs, optional secrets (ANTHROPIC_API_KEY, Twilio).
+
 ### Delivery state (2026-10-16) — closure lots M0–M8
 
 - **Merged on `main`** (4dcf48c, through PRs): **M0** (DSO3 checked on both bounds

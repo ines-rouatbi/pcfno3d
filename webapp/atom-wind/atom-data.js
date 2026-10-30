@@ -50,8 +50,9 @@ function decoder(b64){
   return out;
 }
 
-const A = { grille: null, jours: [], jour: null, plan: null,
-            erreur: null, rafraichir: null };
+// complète l'objet déjà posé par atom-i18n.js (langue, traduction) au lieu de le remplacer
+const A = Object.assign(window.ATOM || {}, { grille: null, jours: [], jour: null, plan: null,
+                                             erreur: null, rafraichir: null });
 window.ATOM = A;
 
 A.pret = () => !!(A.grille && A.jour && A.jour._vent);
@@ -349,7 +350,8 @@ function installerRapports(){
     const bt = document.createElement("button");
     bt.id = "aw-pdf-agri"; bt.className = "btn"; bt.type = "button"; bt.textContent = "Rapport PDF de la parcelle";
     bt.style.marginTop = "10px";
-    bt.onclick = () => { const nom = (lieu.selectedOptions[0] || {}).textContent || "Mornag";
+    bt.onclick = () => { const o = lieu.selectedOptions[0];
+      const nom = (o && (A.texteFr ? A.texteFr(o) : o.textContent)) || "Mornag";      // nom français : l'API le reconnaît
       telechargerRapport(bt, { type: "parcelle", lieu: nom }, "atom_wind_parcelle.pdf"); };
     form.after(bt);
   }

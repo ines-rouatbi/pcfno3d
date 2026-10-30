@@ -954,7 +954,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
       <button class="btn" id="b-sound" aria-pressed="false" aria-label="Écouter le vent">Écouter le vent</button>
       <button class="btn" id="b-search" aria-label="Rechercher">Rechercher <span class="kbd">Ctrl K</span></button>
       <div class="seg" role="group" aria-label="Thème"><button id="th-auto" aria-pressed="true">Auto</button><button id="th-light" aria-pressed="false">Clair</button><button id="th-dark" aria-pressed="false">Sombre</button></div>
-      <div class="seg" role="group" aria-label="Langue"><button aria-pressed="true">FR</button><button disabled title="Prévu">عربي</button><button disabled title="Prévu">EN</button></div>
+      <div class="seg" role="group" aria-label="Langue"><button data-lang="fr" aria-pressed="true">FR</button><button data-lang="ar" aria-pressed="false" lang="ar">عربي</button><button data-lang="en" aria-pressed="false" lang="en">EN</button></div>
     </div>
     <nav class="tabs" aria-label="Espaces">
       <a href="#monvent" data-v="monvent">Mon vent</a>
@@ -1187,6 +1187,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="atom-i18n.js"></script>
 <script src="atom-data.js"></script>
 <script src="atom-3d.js"></script>
 <script type="text/plain" id="atom-main">

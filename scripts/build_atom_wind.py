@@ -79,7 +79,7 @@ ACCROCHES = [
     ("</section>\n\n<!-- ADMINISTRATION -->",
      "  <div class=\"card\" id=\"aw-atlas\" hidden></div>\n</section>\n\n<!-- ADMINISTRATION -->"),
     # 13. vue 3D complete (cahier v12, V3D1 a V3D10) : atom-3d.js recoit les objets de la scene
-    ('<script src="atom-data.js"></script>', '<script src="atom-data.js"></script>\n<script src="atom-3d.js"></script>'),
+    ('<script src="atom-data.js"></script>', '<script src="atom-i18n.js"></script>\n<script src="atom-data.js"></script>\n<script src="atom-3d.js"></script>'),
     ("cam=new THREE.PerspectiveCamera(45,1,.1,500), EX=11/1000;",
      "cam=new THREE.PerspectiveCamera(45,1,.1,500); let EX=11/1000, AW3=null; const OBJ3={stations:[],turb:[]};"),
     ("m.position.set(s.p[0]-W/2,elev[k]*EX+.6,-(s.p[1]-H/2)); scene.add(m); }",
@@ -107,6 +107,10 @@ ACCROCHES = [
     ("function explainHtml(x,y,z,h){",
      "function explainHtml(x,y,z,h){ return explainHtml0(x,y,z,h) + (window.ATOM && ATOM.htmlInfluence ? ATOM.htmlInfluence(x,y) : \"\"); }\n"
      "function explainHtml0(x,y,z,h){"),
+    # 15. interface en francais, arabe et anglais (cahier v12, E17 et TB7) : atom-i18n.js traduit la page
+    ('<button aria-pressed="true">FR</button><button disabled title="Prévu">عربي</button><button disabled title="Prévu">EN</button>',
+     '<button data-lang="fr" aria-pressed="true">FR</button><button data-lang="ar" aria-pressed="false" lang="ar">عربي</button>'
+     '<button data-lang="en" aria-pressed="false" lang="en">EN</button>'),
 ]
 
 

@@ -1,0 +1,11 @@
+[
+"Hammam-Lif", "Soliman", "Korbous", "Nabeul", "Mohamedia", "Mornag", "Tunis", "Tunis-Carthage", "Grombalia", "Zaghouan",
+"Aujourd'hui", "Demain", "Après-demain", "aujourd'hui", "demain", "après-demain",
+"Tomate", "Fraise", "Agrumes", "Olivier", "Vigne", "Artichaut", "Verger",
+"faible", "moyenne", "bonne", "Information", "Important", "Attention", "Danger",
+"NE", "SE", "SO", "NO", "N", "E", "S", "O",
+"nord", "nord-est", "est", "sud-est", "sud", "sud-ouest", "ouest", "nord-ouest",
+"traiter mes cultures", "plein champ",
+"Administrateur", "particules",
+"{0} · {1}", "{0} · {1} · {2}", "{0} · {1} · {2} · {3}", "{0} – {1}", "{0} h", "{0} m"
+]

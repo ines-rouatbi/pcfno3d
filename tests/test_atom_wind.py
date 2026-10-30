@@ -127,3 +127,26 @@ def test_page_construite_depuis_la_maquette(client):  # noqa: F811
     assert client.get("/app/atom-wind/atom-data.js").status_code == 200
     js3d = client.get("/app/atom-wind/atom-3d.js")
     assert js3d.status_code == 200 and "A.vue3d" in js3d.text
+    for f in ("atom-i18n.js", "i18n/ar.json", "i18n/en.json"):
+        assert client.get(f"/app/atom-wind/{f}").status_code == 200, f
+
+
+def test_dictionnaires_de_traduction():
+    """E17 / TB7 : la liste des textes suit la page, chaque dictionnaire couvre au moins 90 % des textes
+    (le reste : du code que l'extraction ne sait pas ecarter) et garde les memes {n} que la cle."""
+    import re
+    spec = importlib.util.spec_from_file_location("extraire", REPO / "scripts" / "extraire_textes_atom_wind.py")
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    web = REPO / "webapp" / "atom-wind"
+    textes = m.avec_supplements(m.extraire((web / "index.html").read_text(encoding="utf-8"),
+                                           tuple((web / f).read_text(encoding="utf-8") for f in m.MODULES)))
+    stocke = json.loads((web / "i18n" / "textes_fr.json").read_text(encoding="utf-8"))
+    assert textes == stocke, "textes a traduire perimes : python scripts/extraire_textes_atom_wind.py"
+    for langue in ("en", "ar"):
+        d = json.loads((web / "i18n" / f"{langue}.json").read_text(encoding="utf-8"))
+        for k, v in d.items():
+            assert sorted(re.findall(r"\{\d+\}", k)) == sorted(re.findall(r"\{\d+\}", v)), (langue, k)
+        assert sum(t in d for t in textes) >= 0.9 * len(textes), langue
+    html = (web / "index.html").read_text(encoding="utf-8")
+    assert 'src="atom-i18n.js"' in html and 'data-lang="ar"' in html and 'disabled title="Prévu"' not in html
