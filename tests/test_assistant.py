@@ -59,6 +59,9 @@ def test_maintenance_et_variations(wf, monkeypatch):
     for r in v["rampes"]:
         assert r["variation_kw"] == v["puissance_kw"][r["a"]] - v["puissance_kw"][r["de"]]
     assert ao.variations_production(wf, 1, 80.0, seuil_pct=100)["rampes"] == []
+    # sillages (BF72) : jamais plus de production qu'a vent libre
+    assert all(a <= b + 1 for a, b in zip(v["puissance_kw"], v["puissance_sans_sillage_kw"]))
+    assert 0.0 <= v["perte_sillage_pct"] <= 100.0
 
 
 def test_explication_point(wf, monkeypatch):

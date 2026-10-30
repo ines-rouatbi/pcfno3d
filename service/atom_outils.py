@@ -343,8 +343,10 @@ def production_eolienne(wf, j: int, hub_m: float = 80.0, lat=None, lon=None, lie
         s = math.hypot(u, v)
         kw = float(courbe.power((rho / courbe.rho_ref) ** (1 / 3) * s))
         energie += kw
-        heures.append({"heure": h, "vent_moyeu_m_s": round(s, 2), "puissance_kw": round(kw)})
+        heures.append({"heure": h, "vent_moyeu_m_s": round(s, 2), "direction_deg": _direction(u, v),
+                       "puissance_kw": round(kw)})
     return {"lieu": nom, "date": p["date"], "moyeu_m": hub_m, "eolienne": f"{courbe.model} ({courbe.rated_kw / 1000:g} MW)",
+            "x_km": x, "y_km": y, "facteur_densite": (rho / courbe.rho_ref) ** (1 / 3),
             "energie_jour_mwh": round(energie / 1000.0, 2), "facteur_charge": round(energie / (24 * courbe.rated_kw), 3),
             "heures": heures}
 
@@ -374,6 +376,7 @@ def alertes_vent(wf, j: int, seuil_10m_km_h: float = 50.0, seuil_100m_m_s: float
 
 # parc eolien virtuel de l'application (maquette ATOM Wind, TURB : trois eoliennes pres de Djebel Ressas)
 PARC_VIRTUEL = (("E1", 36.618, 10.315), ("E2", 36.612, 10.33), ("E3", 36.605, 10.345))
+ROTOR_PARC_M = 90.0                      # generique-2MW (configs/eolien/parc_demo.yaml)
 
 
 def _plages(heures: list[dict], ok: str, duree_min_h: int) -> list[str]:
@@ -416,9 +419,19 @@ def variations_production(wf, j: int, moyeu_m: float = 80.0, seuil_pct: float = 
     installee d'une heure a l'autre."""
     eol = [production_eolienne(wf, j, moyeu_m, lat=la, lon=lo) for _, la, lo in PARC_VIRTUEL]
     from pcfno3d import atlas
+    from pcfno3d.sillage import jensen
     courbe = atlas.charger_courbe(Path(__file__).resolve().parents[1] / "configs" / "eolien" / "parc_demo.yaml")
     installee = courbe.rated_kw * len(eol)
-    puissance = [sum(e["heures"][h]["puissance_kw"] for e in eol) for h in range(24)]
+    sans_sillage = [sum(e["heures"][h]["puissance_kw"] for e in eol) for h in range(24)]
+    # sillages de Jensen (BF72) : vitesses au moyeu reduites selon la direction de l'heure
+    xm, ym = [e["x_km"] * 1000 for e in eol], [e["y_km"] * 1000 for e in eol]
+    puissance = []
+    for h in range(24):
+        libres = [e["heures"][h]["vent_moyeu_m_s"] for e in eol]
+        dirs = np.radians([e["heures"][h]["direction_deg"] for e in eol])
+        d_moy = float(np.degrees(np.arctan2(np.mean(np.sin(dirs)), np.mean(np.cos(dirs)))) % 360.0)
+        v = jensen(xm, ym, [ROTOR_PARC_M] * len(eol), libres, d_moy)
+        puissance.append(round(sum(float(courbe.power(e["facteur_densite"] * vi)) for e, vi in zip(eol, v))))
     rampes = []
     for h in range(1, 24):
         d = puissance[h] - puissance[h - 1]
@@ -427,7 +440,10 @@ def variations_production(wf, j: int, moyeu_m: float = 80.0, seuil_pct: float = 
             rampes.append({"de": h - 1, "a": h, "variation_kw": round(d), "variation_pct": round(pct, 1),
                            "sens": "hausse" if d > 0 else "chute",
                            "niveau": "important" if abs(pct) >= 2 * seuil_pct else "attention"})
+    perte = 1.0 - sum(puissance) / sum(sans_sillage) if sum(sans_sillage) > 0 else 0.0
     return {"date": eol[0]["date"], "parc": "parc virtuel de Djebel Ressas (3 eoliennes de reference)",
+            "puissance_sans_sillage_kw": sans_sillage, "perte_sillage_pct": round(100.0 * perte, 2),
+            "sillage": f"Jensen, k = 0,075 (terre), rotor {ROTOR_PARC_M:g} m",
             "eoliennes": [n for n, _, _ in PARC_VIRTUEL], "puissance_installee_kw": installee, "moyeu_m": moyeu_m,
             "seuil_pct_par_heure": seuil_pct, "puissance_kw": puissance, "rampes": rampes,
             "energie_jour_mwh": round(sum(puissance) / 1000.0, 2),
