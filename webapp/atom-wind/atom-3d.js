@@ -43,7 +43,7 @@ A.vue3d = ctx => {
   const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
   const cfg = { mode: "sol", couleur: "vitesse", fact: 5,
                 couches: { particules: true, lignes: true, stations: true, aneo: true, eoliennes: true,
-                           parcelle: true, coupes: true, horizontale: false } };
+                           parcelle: true, coupes: true, horizontale: false, colonnes: false } };
   const sol = (x, y) => { const k = idx(x, y); return wat[k] ? 0 : elev[k]; };
   // hauteur du point dans la scène : la maquette étire l'air × 1,4 par rapport au relief
   const ySc = (x, y, zSol) => sol(x, y) * ctx.ex() + Math.max(.15, zSol * ctx.ex() * 1.4);
@@ -108,7 +108,7 @@ A.vue3d = ctx => {
         <label><input type="radio" name="aw3d-mode" value="alt"> altitude</label></div>
       <label>Couleur <select class="inp" id="aw3d-coul"><option value="vitesse">vitesse</option><option value="incertitude">incertitude</option><option value="fiabilite">fiabilité</option></select></label>
       <fieldset style="border:0;padding:0;margin:0;display:grid;gap:2px"><legend class="muted" style="font-size:13px">Couches</legend>
-        ${coche("particules", "particules")}${coche("lignes", "lignes de courant (3 hauteurs)")}${coche("horizontale", "coupe horizontale à la hauteur choisie")}
+        ${coche("particules", "particules")}${coche("lignes", "lignes de courant (3 hauteurs)")}${coche("horizontale", "coupe horizontale à la hauteur choisie")}${coche("colonnes", "colonnes de vent par nœud")}
         ${coche("coupes", "coupe verticale")}${coche("stations", "stations de mesure")}${coche("aneo", "réseau ANEO prévu")}
         ${coche("eoliennes", "éoliennes et moyeu")}${coche("parcelle", "ma parcelle")}</fieldset>
       <div><label for="aw3d-h">Heure : <b id="aw3d-ht">${state.hour} h</b></label>
@@ -272,6 +272,42 @@ A.vue3d = ctx => {
     if(fleches.instanceColor) fleches.instanceColor.needsUpdate = true;
   }
 
+  // ---------------------------------------------------------------- BF32 : colonnes de vent par noeud
+  // Tous les 5 km, une pile de fleches de 10 m a 1 000 m au-dessus du sol : direction et force du vent a
+  // chaque hauteur (couleur selon le reglage de couleur), pour lire le cisaillement et la rotation.
+  const H_COL = [10, 50, 100, 200, 500, 1000], PAS_COL_KM = 5;
+  const nCol = Math.ceil(W / PAS_COL_KM) * Math.ceil(H / PAS_COL_KM) * H_COL.length;
+  const geoFl = new THREE.ConeGeometry(.28, 1.1, 6); geoFl.rotateX(Math.PI / 2);     // pointe vers +z
+  const colonnes = new THREE.InstancedMesh(geoFl, new THREE.MeshBasicMaterial({ color: 0xffffff }), nCol);
+  colonnes.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(nCol * 3), 3);
+  colonnes.frustumCulled = false; colonnes.visible = false; scene.add(colonnes);
+  const mats = new THREE.Group(); scene.add(mats);
+  function construireColonnes(){
+    let n = 0;
+    const tiges = [];
+    for(let gx = PAS_COL_KM / 2; gx < W; gx += PAS_COL_KM) for(let gy = PAS_COL_KM / 2; gy < H; gy += PAS_COL_KM){
+      if(wat[idx(gx, gy)]) continue;
+      const base = sol(gx, gy) * ctx.ex();
+      tiges.push(gx - W/2, base, -(gy - H/2), gx - W/2, ySc(gx, gy, H_COL[H_COL.length - 1]), -(gy - H/2));
+      for(const z of H_COL){
+        const [u, v] = wind(gx, gy, z, state.hour), sp = Math.hypot(u, v);
+        if(!(sp > .2)) continue;
+        POS.set(gx - W/2, ySc(gx, gy, z), -(gy - H/2));
+        DIR.set(u / sp, 0, -v / sp);                       // x vers l'est, -z vers le nord
+        Q.setFromUnitVectors(new THREE.Vector3(0, 0, 1), DIR);
+        const e = .6 + Math.min(sp, 25) / 25 * 1.4;        // longueur selon la force
+        M4.compose(POS, Q, new THREE.Vector3(e, e, e));
+        colonnes.setMatrixAt(n, M4);
+        const c = couleur(gx, gy, z, sp); colonnes.setColorAt(n, C.setRGB(c[0]/255, c[1]/255, c[2]/255));
+        n++;
+      }
+    }
+    colonnes.count = n; colonnes.instanceMatrix.needsUpdate = true; colonnes.instanceColor.needsUpdate = true;
+    mats.clear();
+    const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.Float32BufferAttribute(tiges, 3));
+    mats.add(new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: 0x12263a, transparent: true, opacity: .35 })));
+  }
+
   // ---------------------------------------------------------------- V3D4 : coupe horizontale
   const SX = 96, SY = 80;
   const hg = new THREE.PlaneGeometry(W, H, SX, SY); hg.rotateX(-Math.PI/2);
@@ -349,6 +385,7 @@ A.vue3d = ctx => {
     if(sale && t - tCalc > 350){
       cle = k; sale = false; tCalc = t;
       if(cfg.couches.lignes) construireLignes();
+      if(cfg.couches.colonnes) construireColonnes();
       if(cfg.couches.horizontale) construireHorizontale();
       placerMarqueurs();
     }
@@ -407,6 +444,7 @@ A.vue3d = ctx => {
   function appliquerCouches(){
     const c = cfg.couches;
     pts.visible = c.particules; lignes.visible = fleches.visible = c.lignes; horiz.visible = c.horizontale;
+    colonnes.visible = mats.visible = c.colonnes;
     for(const o of objets.stations) o.m.visible = c.stations;
     for(const o of objets.turb) o.m.visible = c.eoliennes;
     moyeux.visible = c.eoliennes; lblMoyeu.hidden = !c.eoliennes; lMoyeu.cache = !c.eoliennes;

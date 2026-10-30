@@ -846,5 +846,6 @@
  "Notifications déjà envoyées : {0}.": "الإشعارات المرسلة: {0}.",
  "{0} : {1} heures mesurées, stations {2},": "{0}: {1} ساعة مقاسة، المحطات {2}،",
  "{0} clé(s) active(s) ; durée médiane {1} ms.": "{0} مفتاح نشط؛ المدة الوسيطة {1} مللي ثانية.",
- "Écart du modèle aux stations aujourd'hui (contrôle de cohérence) : {0}.": "فرق النموذج عن المحطات اليوم (فحص اتساق): {0}."
+ "Écart du modèle aux stations aujourd'hui (contrôle de cohérence) : {0}.": "فرق النموذج عن المحطات اليوم (فحص اتساق): {0}.",
+ "colonnes de vent par nœud": "أعمدة الريح عند كل عقدة"
 }

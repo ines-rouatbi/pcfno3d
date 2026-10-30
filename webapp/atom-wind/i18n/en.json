@@ -851,5 +851,6 @@
  "{0} km²": "{0} km²",
  "{0} {1} km/h": "{0} {1} km/h",
  "à {0} h : {1} ({2})": "at {0} h: {1} ({2})",
- "Écart du modèle aux stations aujourd'hui (contrôle de cohérence) : {0}.": "Model gap to the stations today (consistency check): {0}."
+ "Écart du modèle aux stations aujourd'hui (contrôle de cohérence) : {0}.": "Model gap to the stations today (consistency check): {0}.",
+ "colonnes de vent par nœud": "wind columns per node"
 }
