@@ -183,7 +183,8 @@ def entree_affinage(S: np.ndarray, chemin_e, geom, rng: np.random.Generator,
     cible = candidates[int(rng.integers(len(candidates)))] if candidates else None
     entrees = {c: uv for c, uv in mesures.items()
                if c != cible and rng.random() < cfg.mask.p_station}
-    E = np.load(chemin_e).astype(np.float32)
+    from .forcage import charger_e
+    E = charger_e(geom, chemin_e)
     dec = (int(rng.integers(0, k)), int(rng.integers(0, k)))
     cellules = cellules_codes(geom)
     S_in, capteur = entree_reelle(S, E, geom, cellules, entrees, decalage=dec)

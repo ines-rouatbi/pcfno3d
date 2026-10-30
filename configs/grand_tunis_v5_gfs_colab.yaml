@@ -1,0 +1,87 @@
+# PC-FNO3D reel (Grand Tunis) v5 : PREVISION a +24 h (cahier v12, OS7). Le MEME modele, nourri par la
+# prevision GFS (NOAA, archive AWS, pcfno3d.gfs) au lieu d'ERA5 : forcage et reseau a 10 m tires de
+# forcage_gfs_f24.csv/.npz, AUCUNE station en entree (leurs mesures de demain n'existent pas).
+# Sortie : la MEME verite que la v2 (champ genere force par ERA5 a l'heure prevue), meme decoupage
+# (entrainement 2023-2025, validation 2021, test 2022). Depart : le modele LIVRE (decision_v4.json),
+# passe par --set train.init_from=... dans le carnet. A +48 h : le meme modele, evalue avec
+# --set paths.forcage_era5=.../forcage_gfs_f48.csv.
+name: grand_tunis_v5_gfs
+
+paths:
+  data_dir: /content/grand_tunis/jeu
+  cache_dir: /content/grand_tunis/cache
+  run_dir: /content/drive/MyDrive/pcfno3d_grand_tunis/runs/grand_tunis_v5_gfs
+  # prevision GFS a +24 h (pcfno3d.gfs), meme format que le forcage ERA5
+  forcage_era5: /content/donnees/grand_tunis/forcage_gfs_f24.csv
+  cache_mirror: null
+  local_dir: /content/run_local_grand_tunis_v5_gfs
+  web_dir: /content/grand_tunis/web
+
+model:                      # architecture v7 exacte : les poids v7 servent de depart
+  width: 48
+  modes: [6, 32, 32]
+  n_layers: 4
+  pad: [4, 8, 8]
+  proj_hidden: 128
+  local_conv: true
+  pool_surface: true
+  recalcul_activations: false   # le carnet passe a true si la memoire du GPU ne suffit pas
+  residuel_era5: true       # u, v = ERA5 au noeud + correction apprise
+
+train:
+  epochs: 12
+  steps_per_epoch: 200
+  val_samples: 64
+  batch_size: 1
+  accum_steps: 2
+  lr: 5.0e-5                # affinage : nouvelle entree, meme sortie
+  weight_decay: 1.0e-4
+  warmup_phys_epochs: 3
+  num_workers: 4
+  ema_decay: 0.999
+  grad_clip: 1.0
+  save_every: 5
+  seed: 42
+  init_from: /content/drive/MyDrive/pcfno3d_grand_tunis/runs/grand_tunis_v2_long/best.pt   # remplace par le modele livre
+  select_by: val_score
+  sync_last: false          # Drive presque plein : seul best.pt est recopie
+
+loss:
+  lambda_mass: 1.0
+  mass_ref: 5.0e-7          # comme la v7 : la verite generee conserve la masse au meme schema
+  lambda_bc: 0.1
+  lambda_smooth: 0.0
+  lambda_grad: 0.15
+  w_weight: 1.0
+  w_level_max: 25.0
+
+mask:
+  entree: era5_stations     # reseau regulier a 10 m tous les 2,5 km...
+  pas_era5_m: 2500.0
+  p_station: 0.0
+  e_source: forcage         # ... tire de la prevision GFS de l'instant
+  stations_entree: false    # pas de station : prevision
+  keep_train: [0.2, 1.0]
+  keep_eval: 1.0
+
+dso:
+  rmse: 0.5
+  r2: 0.95
+  r2_all: 0.95
+  mass_rms: 1.0e-4
+  roughness_range: [0.9, 1.1]
+  time_s: 1.0
+  rmse_25pct: 0.7
+  min_level_cover: 0.05
+
+terrain_smooth_m: 300.0
+f_coriolis: 8.705e-5
+
+real:
+  origin_lat: 36.395
+  origin_lon: 10.04
+  rotation_deg: 0.0
+  origin_assumed: false
+
+inference:
+  w_continuite: true        # w recalcule par continuite, comme le modele livre

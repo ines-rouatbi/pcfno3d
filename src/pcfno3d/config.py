@@ -256,10 +256,19 @@ class MaskCfg:
     entree: str = "capteurs"
     pas_era5_m: float = 2500.0
     p_station: float = 0.8
+    # D'ou vient le vent a 10 m du reseau regulier : « cache » (_E.npy du generateur, ERA5) ou
+    # « forcage » : les cellules du forcage de l'instant (paths.forcage_era5) a 10 m au-dessus du
+    # sol, interpolees comme le profil — c'est ainsi qu'une PREVISION GFS entre (OS7).
+    e_source: str = "cache"
+    # Stations en entree. False : prevision (OS7) — leurs mesures de demain n'existent pas.
+    stations_entree: bool = True
 
     def __post_init__(self) -> None:
         if self.entree not in ("capteurs", "era5_stations"):
             raise ValueError(f"mask.entree : 'capteurs' ou 'era5_stations', recu {self.entree!r}")
+        if self.e_source not in ("cache", "forcage"):
+            raise ValueError(f"mask.e_source : 'cache' ou 'forcage', recu {self.e_source!r}")
+        self.stations_entree = bool(self.stations_entree)
         self.keep_train = tuple(float(k) for k in self.keep_train)   # type: ignore[assignment]
         if not 0.0 <= float(self.p_full) <= 1.0:
             raise ValueError(f"mask.p_full doit etre dans [0, 1], recu {self.p_full}")

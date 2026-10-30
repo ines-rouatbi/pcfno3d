@@ -42,7 +42,8 @@ OPEN_METEO = "https://api.open-meteo.com/v1/forecast"
 MODELE_GFS = "gfs_global"
 OGIMET = "https://www.ogimet.com/cgi-bin/getsynop"
 URL_METAR = "https://aviationweather.gov/api/data/metar"
-NIVEAUX_P = (1000, 975, 950, 925, 900, 875, 850, 800, 775, 750, 700)   # ERA5
+# les niveaux du fichier GFS principal de la NOAA (pgrb2.0p25), ceux de l'affinage OS7 (pcfno3d.gfs)
+NIVEAUX_P = (1000, 975, 950, 925, 900, 850, 800, 750, 700)
 G, R_AIR, KAPPA, LAPSE = 9.80665, 287.05, 0.2857, 0.0065
 NOEUD = 0.514444
 SYNOP_CODES = {"60729": "INM60729", "60728": "INM60728"}
@@ -123,6 +124,8 @@ def forcage_gfs(c: dict, hauteurs_sol) -> tuple[np.ndarray, np.ndarray, np.ndarr
     def niv(nom, p):
         return c[f"{nom}_{p}hPa"]
 
+    niveaux = [p for p in NIVEAUX_P if f"wind_speed_{p}hPa" in c]
+
     u850, v850 = _uv(niv("wind_speed", 850), niv("wind_direction", 850))
     u700, v700 = _uv(niv("wind_speed", 700), niv("wind_direction", 700))
     u10, v10 = _uv(c["wind_speed_10m"], c["wind_direction_10m"])
@@ -139,7 +142,8 @@ def forcage_gfs(c: dict, hauteurs_sol) -> tuple[np.ndarray, np.ndarray, np.ndarr
     t2k = c["temperature_2m"] + 273.15
     th_2m = m(t2k * (1000.0 / c["surface_pressure"]) ** KAPPA)       # hPa / hPa
     stab = np.tanh((th_couche - 1.5 - th_2m) / 3.0)
-    terre = c["elevation"] > 1.0
+    # masque terre-mer du modele (GFS : LAND) s'il est fourni, sinon l'altitude du point
+    terre = np.asarray(c["terre"], bool) if "terre" in c else c["elevation"] > 1.0
     if terre.any() and (~terre).any():
         dt_tm = np.nanmean(c["temperature_2m"][:, terre], 1) - np.nanmean(c["temperature_2m"][:, ~terre], 1)
     else:
@@ -151,13 +155,13 @@ def forcage_gfs(c: dict, hauteurs_sol) -> tuple[np.ndarray, np.ndarray, np.ndarr
 
     oro = c["elevation"]
     T = len(ug)
-    zl = np.stack([niv("geopotential_height", p) for p in NIVEAUX_P])        # (P, T, y, x) ASL
+    zl = np.stack([niv("geopotential_height", p) for p in niveaux])        # (P, T, y, x) ASL
     h = np.concatenate([np.broadcast_to(oro + 10.0, (T,) + oro.shape)[None],
                         np.broadcast_to(oro + 100.0, (T,) + oro.shape)[None],
                         np.where(zl > oro[None, None] + 100.0, zl, np.nan)])
     champs = []
     for a10, a100, comp in ((u10, u100, 0), (v10, v100, 1)):
-        lv = [_uv(niv("wind_speed", p), niv("wind_direction", p))[comp] for p in NIVEAUX_P]
+        lv = [_uv(niv("wind_speed", p), niv("wind_direction", p))[comp] for p in niveaux]
         val = np.concatenate([a10[None], a100[None], np.stack(lv)])
         champs.append(interpoler_hauteurs(h, val, [oro + hh for hh in hauteurs_sol])
                       .transpose(1, 0, 2, 3))                               # (T, nh, y, x)

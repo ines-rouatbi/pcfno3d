@@ -41,6 +41,7 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
+from pcfno3d.forcage import charger_e  # noqa: E402
 from pcfno3d.stations_reelles import (CODES, H_STATION, cellules_codes,  # noqa: E402,F401
                                      entree_reelle, lire_observations, obs_a, vent_a_hauteur)
 
@@ -146,7 +147,7 @@ def valider(cfg, dossier_obs: Path, jeu: str = "test", checkpoint=None,
             continue
         cache = cfg.paths.cache_dir
         S = np.load(cache / f"{stem}_S.npy")
-        E = np.load(cache / f"{stem}_E.npy").astype(np.float32)
+        E = charger_e(geom, cache / f"{stem}_E.npy")      # ERA5, ou prevision GFS (OS7)
         extra = geom.forcage.vecteur(t)
         for code, (uo, vo) in mesures.items():
             iy, ix = cellules[code]

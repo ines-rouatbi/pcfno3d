@@ -121,13 +121,14 @@ def entree_era5_stations(S: np.ndarray, chemin_e, geom: Geometry, rng: np.random
     pseudo-capteur ERA5 et chaque station tire independamment. 1 = entree complete (DSO1) ;
     sans effet a l'entrainement, ou l'entree est tiree comme ci-dessus."""
     m = geom.cfg.mask
-    E = np.load(chemin_e).astype(np.float32)
+    from .forcage import charger_e
+    E = charger_e(geom, chemin_e)
     k = max(int(round(m.pas_era5_m / geom.dx)), 1)
     o = (int(rng.integers(0, k)), int(rng.integers(0, k))) if train else (k // 2, k // 2)
     reseau = np.zeros(S.shape[1:], dtype=bool)
     reseau[o[0]::k, o[1]::k] = True
     st = np.zeros_like(reseau)
-    for iy, ix in cellules_stations(geom):
+    for iy, ix in (cellules_stations(geom) if m.stations_entree else ()):
         if not train or rng.random() < m.p_station:
             st[iy, ix] = True
     if not train and keep < 1.0:

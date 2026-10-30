@@ -101,6 +101,30 @@ class ForcageERA5:
         cv = (1 - b) * self.v[j - 1] + b * self.v[j]
         return np.concatenate([scal, cu.ravel(), cv.ravel()]).astype(np.float32)
 
+    def e_10m(self, stamp, interp: "InterpERA5") -> np.ndarray:
+        """u, v a 10 m au-dessus du sol aux colonnes du modele (2, ny, nx), a l'instant."""
+        k = int(np.argmin(np.abs(self.hauteurs - 10.0)))
+        j, b = self._encadrer(self.temps, secondes_utc(stamp), "forcage (npz)")
+        out = []
+        for c in (self.u, self.v):
+            ch = ((1 - b) * c[j - 1, k] + b * c[j, k]).astype(np.float64)
+            iy, ix, a, bb = interp.iy, interp.ix, interp.a, interp.b
+            out.append((1 - a) * (1 - bb) * ch[iy, ix] + (1 - a) * bb * ch[iy, ix + 1]
+                       + a * (1 - bb) * ch[iy + 1, ix] + a * bb * ch[iy + 1, ix + 1])
+        return np.stack(out).astype(np.float32)
+
+
+def charger_e(geom, chemin_e) -> np.ndarray:
+    """Vent a 10 m du reseau regulier, (2, ny, nx) float32 : le `_E.npy` du cache, ou, avec
+    `mask.e_source: forcage`, les cellules du forcage de l'instant (ERA5 ou prevision GFS) a
+    10 m au-dessus du sol, interpolees en bilineaire aux colonnes (memes poids qu'InterpERA5)."""
+    if geom.cfg.mask.e_source != "forcage":
+        return np.load(chemin_e).astype(np.float32)
+    if geom.forcage is None or geom.interp_era5 is None:
+        raise ValueError("mask.e_source: forcage demande paths.forcage_era5")
+    stem = Path(chemin_e).name[:-len("_E.npy")]
+    return geom.forcage.e_10m(horodatage(geom, stem), geom.interp_era5)
+
 
 class InterpERA5:
     """Operateur fixe cellules ERA5 -> noeuds du modele (bilineaire + lineaire en hauteur)."""

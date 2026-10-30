@@ -936,6 +936,125 @@ Reprise : une étape déjà écrite (placement, courbe) est relue. La session s'
     ], gpu=True, gpu_type="L4")
 
 
+def os7_prevision() -> dict:
+    """OS7 (cahier v12, 18.10) : prevision du vent 3D a +24 et +48 h. Previsions GFS archivees (NOAA,
+    AWS, Herbie) aux instants du cache, reference « modele livre + GFS sans affinage », affinage v5,
+    PREV1 / PREV2 / PREV3 aux stations, test 3D, et AGRI1 / AGRI2 du modele livre."""
+    installe = """
+# Herbie : telechargement partiel des fichiers GFS (index .idx) ; cfgrib / eccodes : lecture GRIB2
+!pip install -q herbie-data cfgrib eccodes 2>&1 | tail -1
+"""
+    chaine = r"""
+from google.colab import runtime
+import traceback
+RUNS = GT / "runs"
+OS7 = GT / "os7"
+OS7.mkdir(exist_ok=True)
+DECISION = RUNS / "decision_v4.json"
+livre = json.loads(DECISION.read_text())["modele_livre"] if DECISION.exists() else "grand_tunis_v2_long"
+CONF_LIVRE = {"grand_tunis_v4_dso": "grand_tunis_v4_dso_colab",
+              "grand_tunis_v2_long": "grand_tunis_v2_long_colab"}[livre]
+V5 = "grand_tunis_v5_gfs_colab"
+R5 = RUNS / "grand_tunis_v5_gfs"
+DONNEES = DON / "grand_tunis"
+F = {e: OS7 / f"forcage_gfs_f{e}.csv" for e in (24, 48)}
+print("modele livre :", livre)
+
+def forcage(e):                    # le forcage GFS d'une echeance, copie la ou la configuration le lit
+    return f"--set paths.forcage_era5={DONNEES / F[e].name}"
+
+def copier_forcages():
+    for e, f in F.items():
+        for suffixe in (".csv", ".npz"):
+            src = f.with_suffix(suffixe)
+            if src.exists():
+                shutil.copy2(src, DONNEES / src.name)
+
+try:
+    # 1. previsions GFS archivees : reprise par instant sur le Drive (quelques Ko chacun)
+    for e in (24, 48):
+        if not F[e].exists():
+            lancer(f"gfs_f{e}", f"python -u -m pcfno3d.gfs --config {CONF_LIVRE} --echeance {e} "
+                                f"--sortie {F[e]} --reprise {OS7 / f'gfs_f{e}_instants'} --travailleurs 8")
+    copier_forcages()
+
+    # 2. reference : le modele LIVRE nourri par GFS, sans affinage (meme entree que la v5)
+    INIT = RUNS / livre / "best.pt"
+    for e in (24, 48):
+        d = OS7 / f"sans_affinage_f{e}"
+        if not (d / "prevision_bilan.json").exists():
+            try:
+                lancer(f"prevision_sans_affinage_f{e}",
+                       f"python -u scripts/evaluer_prevision.py -c {V5} {OPTS} {forcage(e)} --checkpoint {INIT} "
+                       f"--obs {OBS} --echeance {e} --sortie {d}")
+            except RuntimeError as exc:                 # code 3 = PREV non conforme : resultat ecrit
+                print(exc)
+
+    # 3. affinage v5 (GFS +24 h en entree, meme verite) depuis le modele livre
+    h = R5 / "history.json"
+    if not (h.exists() and any(r.get("epoch") == 11 for r in json.loads(h.read_text()))):
+        lancer("entrainer_v5", f"python -u -m pcfno3d -c {V5} {OPTS} {forcage(24)} --set train.init_from={INIT} train")
+
+    # 4. PREV1 (+24 h), PREV2 (+48 h) avec la v5 ; PREV3 : decisions de la veille
+    for e in (24, 48):
+        d = OS7 / f"v5_f{e}"
+        if not (d / "prevision_bilan.json").exists():
+            try:
+                lancer(f"prevision_v5_f{e}", f"python -u scripts/evaluer_prevision.py -c {V5} {OPTS} {forcage(e)} "
+                                             f"--obs {OBS} --echeance {e} --sortie {d}")
+            except RuntimeError as exc:
+                print(exc)
+        if (d / "prevision_paires.csv").exists() and not (d / "decisions" / "decisions_agricoles.json").exists():
+            lancer(f"prev3_f{e}", f"python -u scripts/verifier_decisions.py --paires {d / 'prevision_paires.csv'} "
+                                  f"--sources prevision,gfs,persistance --sortie {d / 'decisions'}")
+
+    # 5. le champ 3D prevu contre la verite generee (test 2022), a +24 h
+    if not (R5 / "eval_pcfno3d" / "best_wcont" / "test_summary.json").exists():
+        lancer("evaluer_v5_f24", f"python -u -m pcfno3d -c {V5} {OPTS} {forcage(24)} evaluate")
+
+    # 6. AGRI1 / AGRI2 du modele livre : decisions a station cachee (validation reelle) contre les stations
+    paires = RUNS / livre / "validation_reelle" / "test" / "stations_paires.csv"
+    if paires.exists() and not (RUNS / livre / "decisions_agricoles" / "decisions_agricoles.json").exists():
+        lancer("agri1_agri2", f"python -u scripts/verifier_decisions.py --paires {paires} "
+                              f"--sources modele,era5,generateur --sortie {RUNS / livre / 'decisions_agricoles'}")
+    for f in sorted(OS7.glob("*/prevision_bilan.json")):
+        print(f.parent.name, json.dumps(json.loads(f.read_text())["verdicts"].get("toutes", {}), ensure_ascii=False))
+except Exception:
+    traceback.print_exc()
+finally:
+    runtime.unassign()
+"""
+    mem = MEM.replace("configs/grand_tunis_colab.yaml", "configs/grand_tunis_v5_gfs_colab.yaml")
+    return carnet([
+        md("""
+# PC-FNO3D réel (Grand Tunis) — OS7 : prévision du vent 3D à +24 et +48 h (Colab, A100)
+
+Le **même modèle**, nourri par la **prévision GFS** au lieu d'ERA5 (cahier v12, section 18.10) :
+
+1. prévisions GFS archivées (NOAA, AWS, depuis 2021) aux instants du cache, à +24 h et +48 h :
+   seuls 38 champs par échéance (~34 Mo), découpés aussitôt sur les mailles du Grand Tunis
+   (`pcfno3d.gfs`) ; reprise par instant sur le Drive (`os7/`) ;
+2. **référence** : le modèle livré nourri par GFS, **sans affinage** ;
+3. **affinage v5** : GFS +24 h en entrée, la même vérité, le même découpage, aucune station en entrée ;
+4. **PREV1** (+24 h) et **PREV2** (+48 h) aux stations de l'INM sur le test 2022, contre GFS brut et
+   la persistance ; **PREV3** : décision de traitement de la veille contre la décision mesurée ;
+5. le champ 3D prévu contre la vérité générée (DSO1 à DSO5 du test) ;
+6. **AGRI1 / AGRI2** du modèle livré (décisions à station cachée contre les stations).
+
+Le test 2022 n'est lu qu'une fois par étape ; une étape déjà faite est sautée. La session s'arrête à
+la fin. Limite : la qualité dépend de celle de GFS (le modèle n'avance pas l'atmosphère lui-même).
+"""),
+        md("## 1. Drive, code et données"),
+        code(COMMUN + installe),
+        md("## 2. Cache (3 parties) et observations"),
+        code(ENT.replace("grand_tunis_colab", "grand_tunis_v2_long_colab") + OBS),
+        md("## 3. Mémoire du GPU"),
+        code(mem),
+        md("## 4. GFS, référence, affinage v5, PREV1-3, test 3D, AGRI1-2, fin de la session"),
+        code(chaine),
+    ], gpu=True)
+
+
 def main() -> int:
     out = REPO / "notebooks" / "current"
     for nom, nb in (("pcfno3d_grand_tunis_generation_colab.ipynb", generation()),
@@ -953,7 +1072,8 @@ def main() -> int:
                     ("pcfno3d_grand_tunis_v3b_colab.ipynb", v3b()),
                     ("pcfno3d_grand_tunis_atom_colab.ipynb", service_v2()),
                     ("pcfno3d_grand_tunis_v4_dso_colab.ipynb", v4_dso()),
-                    ("pcfno3d_grand_tunis_os6_colab.ipynb", os6_reseau())):
+                    ("pcfno3d_grand_tunis_os6_colab.ipynb", os6_reseau()),
+                    ("pcfno3d_grand_tunis_os7_colab.ipynb", os7_prevision())):
         (out / nom).write_text(json.dumps(nb, indent=1, ensure_ascii=False), encoding="utf-8")
         print(out / nom)
     return 0
