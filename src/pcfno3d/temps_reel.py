@@ -315,6 +315,36 @@ def entree(geom, c: dict, f: ForcageDirect, it: int, mesures: dict, exclue: str 
     return S_in
 
 
+def entree_production(wf, source, timestamp, points) -> tuple[np.ndarray, np.ndarray, pd.Timestamp]:
+    """Entree de PRODUCTION du modele reel (mask.entree = era5_stations) a un instant quelconque, pour des
+    mesures venues d'ailleurs (API, fichier ANEO) : grande echelle GFS de l'heure (Open-Meteo, environ
+    3 mois en arriere a 16 jours en avant, `source` : SourceDirect) sur le reseau regulier, chaque mesure de
+    vent a 10 m dans sa maille, comme une station. points : [(iy, ix, u10, v10)].
+    Renvoie (S, vecteur de forcage, instant arrondi a l'heure)."""
+    t = pd.Timestamp(timestamp)
+    t = (t.tz_convert(None) if t.tzinfo else t).round("h")
+    date_locale = (t + pd.Timedelta(hours=1)).strftime("%Y-%m-%d")        # Tunisie : UTC+1
+    e = source.journee(date_locale)
+    f, c = e["forcage"], e["champs"]
+    it = {int(x): i for i, x in enumerate(c["temps"])}.get(int(t.value // 10 ** 9))
+    if it is None:
+        raise ValueError(f"pas de champ GFS pour {t} (heure hors de la fenetre d'Open-Meteo)")
+    cellules, mesures = {}, {}
+    for k, (iy, ix, u, v) in enumerate(points):
+        cellules[f"p{k}"], mesures[f"p{k}"] = (int(iy), int(ix)), (float(u), float(v))
+    return entree(wf.geom, c, f, it, mesures, cellules=cellules), f.vecteur(t), t
+
+
+def points_capteurs(S: np.ndarray) -> list[tuple[int, int, float, float]]:
+    """Capteurs presents d'une surface S (8, ny, nx) -> [(iy, ix, u, v)] (fichier ANEO : capteur = station)."""
+    jj, ii = np.nonzero(S[7] > 0.5)
+    return [(int(a), int(b), float(S[0, a, b]), float(S[1, a, b])) for a, b in zip(jj, ii)]
+
+
+def entree_production_active(wf) -> bool:
+    return wf.cfg.mask.entree == "era5_stations" and wf.geom.forcage is not None
+
+
 class SourceDirect:
     """Les champs GFS et les mesures d'une journee, rafraichis au plus toutes les `ttl` s."""
 

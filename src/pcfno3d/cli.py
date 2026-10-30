@@ -374,6 +374,76 @@ def cmd_windrose(args) -> int:
     return 0
 
 
+def cmd_surveiller(args) -> int:
+    """Chaine sans intervention (cahier v12, BF6, PROD1) : chaque nouveau fichier de mesures ANEO depose
+    dans le dossier est valide (contrat M3), reconstruit, publie dans le depot local (contrat ATOM rev. 2)
+    et exporte (NetCDF + CSV des noeuds, DE3), puis RANGE : traites/ s'il est publie, quarantaine/ avec
+    son motif sinon. Rien n'est supprime. Journal : <dossier>/surveillance.jsonl.
+    Codes : 0 ; 1 si --une-fois et au moins un fichier en quarantaine."""
+    import shutil
+    import time as _time
+
+    from .export_noeuds import exporter_dossier
+    from .inference import WindFieldModel
+    from .publish import DepotLocal, instantane_du_csv
+    from .temps_reel import SourceDirect
+
+    cfg = _load_cfg(args)
+    dossier = Path(args.dossier)
+    traites, quarantaine = dossier / "traites", dossier / "quarantaine"
+    for d in (traites, quarantaine):
+        d.mkdir(parents=True, exist_ok=True)
+    racine = Path(args.sortie) if args.sortie else cfg.paths.run_dir / "publication"
+    depot = DepotLocal(racine)
+    wf = WindFieldModel(cfg, checkpoint=args.checkpoint, device=args.device, verbose=False)
+    source = SourceDirect(wf.geom) if wf.geom.forcage is not None else None   # modele reel seulement
+    moteur = None
+    if cfg.alerts.enabled:
+        from .alerts import MoteurAlertes
+        moteur = MoteurAlertes(cfg)
+    journal = dossier / "surveillance.jsonl"
+
+    def noter(**d) -> None:
+        with open(journal, "a", encoding="utf-8") as f:
+            f.write(json.dumps({"t": _time.strftime("%Y-%m-%dT%H:%M:%SZ", _time.gmtime()), **d},
+                               ensure_ascii=False) + "\n")
+
+    def ranger(f: Path, vers: Path) -> Path:
+        cible = vers / f.name
+        if cible.exists():                       # deja un fichier de ce nom : suffixe horodate
+            cible = vers / f"{f.stem}_{_time.strftime('%Y%m%dT%H%M%S')}{f.suffix}"
+        shutil.move(str(f), str(cible))
+        return cible
+
+    rejets = 0
+    print(f"surveillance de {dossier} -> depot {racine} (Ctrl+C pour arreter)")
+    while True:
+        fichiers = sorted((f for f in dossier.iterdir() if f.is_file() and f.name.endswith((".csv", ".csv.gz"))),
+                          key=lambda f: f.stat().st_mtime)
+        for f in fichiers:
+            t0 = _time.time()
+            try:
+                inst = instantane_du_csv(wf, f, data_kind=args.data_kind, depot=depot, moteur=moteur, source=source)
+                depot.ecrire(inst)
+                rel = cfg.reliability
+                exports = exporter_dossier(depot.dossier(inst.snapshot_id), wf.geom, racine / "exports",
+                                           rel.class_high, rel.class_mid) if args.exports else {}
+                cible = ranger(f, traites)
+                noter(fichier=f.name, statut="publie", instantane=inst.snapshot_id, qualite=inst.data_status,
+                      exports=sorted(str(Path(x).name) for x in (exports or {}).values()),
+                      duree_s=round(_time.time() - t0, 2), range_dans=str(cible.parent.name))
+                print(f"{f.name} -> {inst.snapshot_id} ({inst.data_status})")
+            except Exception as exc:                                  # noqa: BLE001 — un fichier, pas tout
+                rejets += 1
+                cible = ranger(f, quarantaine)
+                cible.with_name(cible.name + ".motif.txt").write_text(str(exc), encoding="utf-8")
+                noter(fichier=f.name, statut="quarantaine", motif=str(exc)[:500])
+                print(f"{f.name} -> quarantaine : {exc}", file=sys.stderr)
+        if args.une_fois:
+            return 1 if rejets else 0
+        _time.sleep(args.intervalle)
+
+
 def cmd_publish(args) -> int:
     """Instantane au format du contrat ATOM rev. 2 (lot M6), ecrit en local ; avec --remote,
     publie ensuite vers le Worker (jeton : variable d'environnement ATOM_PUBLISH_TOKEN).
@@ -935,6 +1005,17 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--keep", type=float, default=1.0, help="fraction de capteurs utilises")
     s.add_argument("--checkpoint"), s.add_argument("--device")
     s.set_defaults(func=cmd_windrose)
+
+    s = sub.add_parser("surveiller", help="dossier de depot : chaque nouveau CSV ANEO valide, reconstruit, "
+                                          "publie et exporte sans intervention (BF6, PROD1)")
+    s.add_argument("dossier")
+    s.add_argument("--sortie", help="depot local (defaut : run_dir/publication)")
+    s.add_argument("--data-kind", default="reel", choices=("synthetique", "reel", "test"))
+    s.add_argument("--sans-exports", dest="exports", action="store_false", help="pas de NetCDF / CSV")
+    s.add_argument("--une-fois", action="store_true", help="traiter les fichiers presents puis s'arreter")
+    s.add_argument("--intervalle", type=float, default=30.0, help="secondes entre deux passages")
+    s.add_argument("--checkpoint"), s.add_argument("--device")
+    s.set_defaults(func=cmd_surveiller)
 
     s = sub.add_parser("publish", help="instantane du contrat ATOM rev. 2, local ou Worker (M6)")
     src = s.add_mutually_exclusive_group()

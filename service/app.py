@@ -701,13 +701,10 @@ def _entree_stations_production(wf, geo, clean, ts):
 
 def _entree_csv_production(wf, S0, stamp):
     """Capteurs d'un CSV ANEO -> entree de production du modele reel (capteur = station a sa maille)."""
-    import numpy as np
-
     from service import atom_outils
-    jj, ii = np.nonzero(S0[7] > 0.5)
-    pts = [(a, b, float(S0[0, a, b]), float(S0[1, a, b])) for a, b in zip(jj, ii)]
+    from pcfno3d.temps_reel import points_capteurs
     try:
-        S, vec, _ = atom_outils.entree_production(wf, stamp, pts)
+        S, vec, _ = atom_outils.entree_production(wf, stamp, points_capteurs(S0))
     except ValueError as exc:
         raise HTTPException(409, str(exc)) from exc
     except Exception as exc:                                   # noqa: BLE001

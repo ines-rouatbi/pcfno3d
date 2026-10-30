@@ -788,7 +788,7 @@ def instantane_du_cache(wf, stem: str, *, data_kind: str, depot: "DepotLocal | N
 def instantane_du_csv(wf, path: str | Path, *, data_kind: str,
                       depot: "DepotLocal | None" = None, moteur=None,
                       dso6: dict | None = None, generated_at: str | None = None,
-                      garder_champs: bool = False) -> Instantane:
+                      garder_champs: bool = False, source=None) -> Instantane:
     """Un fichier de mesures ANEO (premier instant) -> Instantane du DIRECT (stem
     live_AAAAMMJJ_HHMMSS), par le meme chemin que POST /api/reconstruct/upload : contrat
     M3 (Seuils.upload), stations fausses masquees, rapport repris dans data-quality.json
@@ -803,7 +803,13 @@ def instantane_du_csv(wf, path: str | Path, *, data_kind: str,
         raise ValueError("CSV rejete par le contrat ANEO : " + " ; ".join(rapport["motifs"]))
     comptage: dict = {}
     S, hour, doy, stamp = wf.surface_from_csv(path, masque, comptage=comptage)
-    vol = wf.predict(S, hour, doy, timestamp=stamp)
+    from . import temps_reel as tr
+    if tr.entree_production_active(wf):
+        # modele reel : capteurs du fichier comme stations + GFS de l'heure (entree de production)
+        S, vec, _ = tr.entree_production(wf, source or tr.SourceDirect(wf.geom), stamp, tr.points_capteurs(S))
+        vol = wf.predict(S, hour, doy, timestamp=stamp, forcage=vec)
+    else:
+        vol = wf.predict(S, hour, doy, timestamp=stamp)
     res = None
     if moteur is not None:
         from .alerts import stations_hors_plage

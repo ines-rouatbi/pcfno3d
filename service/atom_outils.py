@@ -136,31 +136,15 @@ def lire_historique(wf, nom: str) -> bytes:
     return f.read_bytes()
 
 
-def entree_production(wf, timestamp, points) -> tuple[np.ndarray, np.ndarray, object]:
-    """Entree de PRODUCTION du modele reel (mask.entree = era5_stations) a un instant quelconque, pour des
-    mesures envoyees a l'API : grande echelle GFS de l'heure (Open-Meteo, environ 3 mois en arriere a
-    16 jours en avant) sur le reseau regulier, et chaque mesure de vent a 10 m dans sa maille, comme une
-    station. points : [(iy, ix, u10, v10)]. Renvoie (S, vecteur de forcage, instant arrondi a l'heure)."""
-    import pandas as pd
-
+def entree_production(wf, timestamp, points):
+    """pcfno3d.temps_reel.entree_production avec la source GFS partagee du service."""
     from pcfno3d import temps_reel as tr
-    from pcfno3d.atom_wind import UTC_LOCAL_H
-    t = pd.Timestamp(timestamp)
-    t = (t.tz_convert(None) if t.tzinfo else t).round("h")
-    date_locale = (t + pd.Timedelta(hours=UTC_LOCAL_H)).strftime("%Y-%m-%d")
-    e = source(wf).journee(date_locale)
-    f, c = e["forcage"], e["champs"]
-    it = {int(x): i for i, x in enumerate(c["temps"])}.get(int(t.value // 10 ** 9))
-    if it is None:
-        raise ValueError(f"pas de champ GFS pour {t} (heure hors de la fenetre d'Open-Meteo)")
-    cellules, mesures = {}, {}
-    for k, (iy, ix, u, v) in enumerate(points):
-        cellules[f"p{k}"], mesures[f"p{k}"] = (int(iy), int(ix)), (float(u), float(v))
-    return tr.entree(wf.geom, c, f, it, mesures, cellules=cellules), f.vecteur(t), t
+    return tr.entree_production(wf, source(wf), timestamp, points)
 
 
 def entree_production_active(wf) -> bool:
-    return wf.cfg.mask.entree == "era5_stations" and wf.geom.forcage is not None
+    from pcfno3d import temps_reel as tr
+    return tr.entree_production_active(wf)
 
 
 def jour(wf, j: int) -> dict:

@@ -979,3 +979,32 @@ def test_cli_instantane_existant(trained, tmp_path):
     assert main(base + ["--data-kind", "test", "--exports"]) == 0
     assert (racine / "snapshots" / sid / "publish-manifest.json").read_bytes() == avant
     assert (racine / "exports" / sid / f"{sid}_noeuds.csv").exists()
+
+
+def test_cli_surveiller_un_dossier(trained, tmp_path):
+    """BF6 / PROD1 : un CSV ANEO depose est valide, reconstruit, publie, exporte puis range dans traites/ ;
+    un fichier invalide va en quarantaine/ avec son motif ; rien n'est supprime ; journal JSONL."""
+    import shutil
+
+    from pcfno3d.cli import main
+    depot = tmp_path / "depot"
+    entree = tmp_path / "arrivees"
+    entree.mkdir()
+    csv = sorted(Path(trained.paths.data_dir).glob("aneo_observations_day_*"))[-1]
+    shutil.copy(csv, entree / csv.name)
+    (entree / "casse.csv").write_text("pas,un,fichier\n1,2,3\n", encoding="utf-8")
+    base = ["--data-dir", str(trained.paths.data_dir), "--cache-dir", str(trained.paths.cache_dir),
+            "--run-dir", str(trained.paths.run_dir), "-c", "test", *ANCRE]
+    rc = main(base + ["surveiller", str(entree), "--sortie", str(depot), "--data-kind", "test",
+                      "--device", "cpu", "--une-fois"])
+    assert rc == 1                                           # un fichier en quarantaine
+    assert (entree / "traites" / csv.name).exists() and not (entree / csv.name).exists()
+    assert (entree / "quarantaine" / "casse.csv").exists()
+    assert (entree / "quarantaine" / "casse.csv.motif.txt").read_text(encoding="utf-8")
+    sid = json.loads((depot / "latest.json").read_text(encoding="utf-8"))["snapshot_id"]
+    assert sid.startswith("live_") and (depot / "exports" / sid / f"{sid}.nc").exists()
+    lignes = [json.loads(x) for x in (entree / "surveillance.jsonl").read_text(encoding="utf-8").splitlines()]
+    assert sorted(x["statut"] for x in lignes) == ["publie", "quarantaine"]
+    # deuxieme passage : plus rien a traiter
+    assert main(base + ["surveiller", str(entree), "--sortie", str(depot), "--data-kind", "test",
+                        "--device", "cpu", "--une-fois"]) == 0
