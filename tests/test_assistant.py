@@ -43,6 +43,23 @@ def test_lecture_en_un_point(wf):
         ao.position(wf, lieu="Paris")
 
 
+def test_maintenance_et_variations(wf, monkeypatch):
+    from service import atom_outils as ao
+    m = ao.fenetres_maintenance(wf, 1, 80.0, 12.0, 2, lat=LAT, lon=LON)
+    assert len(m["heures"]) == 24 and m["seuil_m_s"] == 12.0
+    sures = {h["heure"] for h in m["heures"] if h["sur"]}
+    for c in m["creneaux_surs"]:                       # chaque plage : heures sures et au moins 2 h
+        a, b = (int(t.split()[0]) for t in c.split(" - "))
+        assert b - a >= 2 and set(range(a, b)) <= sures
+    assert ao.fenetres_maintenance(wf, 1, 80.0, 0.01, 2, lat=LAT, lon=LON)["creneaux_surs"] == []
+    monkeypatch.setattr(ao, "PARC_VIRTUEL", (("E1", LAT, LON), ("E2", LAT + 0.002, LON + 0.002)))
+    v = ao.variations_production(wf, 1, 80.0, seuil_pct=0.001)
+    assert len(v["puissance_kw"]) == 24 and v["puissance_installee_kw"] == 4000
+    for r in v["rampes"]:
+        assert r["variation_kw"] == v["puissance_kw"][r["a"]] - v["puissance_kw"][r["de"]]
+    assert ao.variations_production(wf, 1, 80.0, seuil_pct=100)["rampes"] == []
+
+
 class FauxClaude:
     """Premier tour : appelle vent_au_point ; second tour : repond par du texte."""
 

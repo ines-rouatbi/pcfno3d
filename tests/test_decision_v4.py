@@ -131,3 +131,23 @@ def test_evaluations_incompletes(tmp_path):
         assert mod.main() == 2
     finally:
         sys.argv = argv
+
+
+@pytest.mark.parametrize("challenger, stations, attendu", [
+    (dict(rmse=0.35, r2_w=0.96), {"A": 2.4, "B": 2.6}, 0),
+    (dict(rmse=0.42, r2_w=0.96), {"A": 2.5, "B": 2.7}, 3),
+])
+def test_champion_challenger(tmp_path, challenger, stations, attendu):
+    """E14 : la regle v4 appliquee a deux runs quelconques."""
+    spec = importlib.util.spec_from_file_location("cc", REPO / "scripts" / "champion_challenger.py")
+    cc = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(cc)
+    s1, l1 = _jeu()
+    s2, l2 = _jeu(**challenger)
+    _ecrire(tmp_path, "champion", s1, l1, {"A": 2.5, "B": 2.7})
+    _ecrire(tmp_path, "nouveau", s2, l2, stations)
+    assert cc.main(["--runs", str(tmp_path), "--champion", "champion", "--challenger", "nouveau"]) == attendu
+    r = json.loads((tmp_path / "champion_challenger_nouveau.json").read_text(encoding="utf-8"))
+    assert r["modele_en_service"] == ("nouveau" if attendu == 0 else "champion")
+    assert "| DSO1 |" in (tmp_path / "champion_challenger_nouveau.md").read_text(encoding="utf-8")
+    assert cc.main(["--runs", str(tmp_path), "--champion", "champion", "--challenger", "absent"]) == 2

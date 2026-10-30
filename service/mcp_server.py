@@ -493,6 +493,36 @@ def decision_agricole(jour: int, lieu: str | None = None, lat: float | None = No
     return atom_outils.decision_agricole(get_model(), int(jour), lat=lat, lon=lon, lieu=lieu)
 
 
+@mcp.tool()
+def fenetres_maintenance(jour: int, hauteur_m: float = 80.0, seuil_m_s: float = 12.0, lieu: str | None = None,
+                         lat: float | None = None, lon: float | None = None) -> dict:
+    """Creneaux surs pour le travail en hauteur sur une eolienne ou un mat (cahier v12, E7) : heures ou le
+    vent moyen a la hauteur donnee reste sous le seuil (12 m/s par defaut ; vent moyen, sans rafales).
+
+    Args:
+        jour: 0 aujourd'hui, 1 demain, 2 apres-demain.
+        hauteur_m: hauteur de la nacelle ou du mat au-dessus du sol.
+        seuil_m_s: vent moyen maximal autorise par la procedure du site.
+        lieu: lieu de l'application (parc virtuel de Djebel Ressas si rien n'est donne), ou lat / lon.
+    """
+    from service import atom_outils
+    return atom_outils.fenetres_maintenance(get_model(), int(jour), float(hauteur_m), float(seuil_m_s),
+                                            lat=lat, lon=lon, lieu=lieu)
+
+
+@mcp.tool()
+def variations_production(jour: int, seuil_pct: float = 20.0) -> dict:
+    """Hausses et chutes rapides de production du parc virtuel (cahier v12, E13) : puissance heure par heure
+    et rampes d'au moins `seuil_pct` % de la puissance installee d'une heure a l'autre.
+
+    Args:
+        jour: 0 aujourd'hui, 1 demain, 2 apres-demain.
+        seuil_pct: rampe minimale signalee, en % de la puissance installee par heure.
+    """
+    from service import atom_outils
+    return atom_outils.variations_production(get_model(), int(jour), seuil_pct=float(seuil_pct))
+
+
 def main() -> int:
     """Transport stdio, pour un client MCP local."""
     mcp.run()

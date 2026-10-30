@@ -291,3 +291,65 @@ def alertes_vent(wf, j: int, seuil_10m_km_h: float = 50.0, seuil_100m_m_s: float
         if vmax >= seuil:
             sortie["alertes"].append({**info, "niveau": "important", "cause": f"vent fort a {z} m"})
     return sortie
+
+
+# parc eolien virtuel de l'application (maquette ATOM Wind, TURB : trois eoliennes pres de Djebel Ressas)
+PARC_VIRTUEL = (("E1", 36.618, 10.315), ("E2", 36.612, 10.33), ("E3", 36.605, 10.345))
+
+
+def _plages(heures: list[dict], ok: str, duree_min_h: int) -> list[str]:
+    plages, debut = [], None
+    for r in heures + [{"heure": 24, ok: False}]:
+        if r[ok] and debut is None:
+            debut = r["heure"]
+        elif not r[ok] and debut is not None:
+            if r["heure"] - debut >= duree_min_h:
+                plages.append(f"{debut} h - {r['heure']} h")
+            debut = None
+    return plages
+
+
+def fenetres_maintenance(wf, j: int, hauteur_m: float = 80.0, seuil_m_s: float = 12.0, duree_min_h: int = 2,
+                         lat=None, lon=None, lieu=None) -> dict:
+    """Creneaux surs pour le travail en hauteur (cahier v12, E7) : heures ou le vent moyen a la hauteur
+    de la nacelle ou du mat reste sous le seuil, en plages d'au moins `duree_min_h` heures. Le seuil est
+    celui du constructeur ou de la procedure du site (12 m/s par defaut, a confirmer) ; le modele donne un
+    vent moyen horaire, pas les rafales : une marge reste necessaire."""
+    if lieu is None and (lat is None or lon is None):
+        lieu = "djebel ressas"                                   # le parc virtuel de l'application
+    x, y, nom = position(wf, lat, lon, lieu)
+    p = jour(wf, j)
+    heures = []
+    for h in range(24):
+        u, v = vent(wf, p, x, y, hauteur_m, float(h))
+        s = math.hypot(u, v)
+        heures.append({"heure": h, "vent_m_s": round(s, 1), "sur": bool(s < seuil_m_s),
+                       "marge_m_s": round(seuil_m_s - s, 1)})
+    return {"lieu": nom, "date": p["date"], "source": "prevision" if p.get("prevision") else "temps reel",
+            "hauteur_sol_m": hauteur_m, "seuil_m_s": seuil_m_s, "duree_min_h": duree_min_h,
+            "creneaux_surs": _plages(heures, "sur", duree_min_h), "heures": heures,
+            "note": "vent moyen horaire ATOM Wind, sans rafales : garder une marge et suivre la procedure du site"}
+
+
+def variations_production(wf, j: int, moyeu_m: float = 80.0, seuil_pct: float = 20.0) -> dict:
+    """Hausses et chutes rapides de production du parc virtuel (cahier v12, E13), utiles au gestionnaire
+    du reseau : puissance du parc heure par heure et rampes d'au moins `seuil_pct` % de la puissance
+    installee d'une heure a l'autre."""
+    eol = [production_eolienne(wf, j, moyeu_m, lat=la, lon=lo) for _, la, lo in PARC_VIRTUEL]
+    from pcfno3d import atlas
+    courbe = atlas.charger_courbe(Path(__file__).resolve().parents[1] / "configs" / "eolien" / "parc_demo.yaml")
+    installee = courbe.rated_kw * len(eol)
+    puissance = [sum(e["heures"][h]["puissance_kw"] for e in eol) for h in range(24)]
+    rampes = []
+    for h in range(1, 24):
+        d = puissance[h] - puissance[h - 1]
+        pct = 100.0 * d / installee
+        if abs(pct) >= seuil_pct:
+            rampes.append({"de": h - 1, "a": h, "variation_kw": round(d), "variation_pct": round(pct, 1),
+                           "sens": "hausse" if d > 0 else "chute",
+                           "niveau": "important" if abs(pct) >= 2 * seuil_pct else "attention"})
+    return {"date": eol[0]["date"], "parc": "parc virtuel de Djebel Ressas (3 eoliennes de reference)",
+            "eoliennes": [n for n, _, _ in PARC_VIRTUEL], "puissance_installee_kw": installee, "moyeu_m": moyeu_m,
+            "seuil_pct_par_heure": seuil_pct, "puissance_kw": puissance, "rampes": rampes,
+            "energie_jour_mwh": round(sum(puissance) / 1000.0, 2),
+            "note": "estimation sans mesure de production ; pas horaire (les rampes plus courtes ne sont pas vues)"}

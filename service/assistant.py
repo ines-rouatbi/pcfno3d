@@ -66,6 +66,12 @@ OUTILS = [
            {**_LIEU, **_JOUR, "moyeu_m": {"type": "number", "description": "Hauteur de moyeu au-dessus du sol (30 a 150 m)"}}),
     _outil("alertes_vent", "Vent le plus fort de la journee sur tout le Grand Tunis, a 10 m et a 100 m, avec le lieu "
            "et l'heure, et les alertes de vent fort.", {**_JOUR}),
+    _outil("fenetres_maintenance", "Creneaux surs pour le travail en hauteur sur une eolienne ou un mat : heures ou "
+           "le vent moyen a la hauteur donnee reste sous un seuil (vent moyen, sans rafales).",
+           {**_LIEU, **_JOUR, "hauteur_m": {"type": "number", "description": "Hauteur de nacelle ou de mat (m)"},
+            "seuil_m_s": {"type": "number", "description": "Vent moyen maximal de la procedure du site, 12 m/s si inconnu"}}),
+    _outil("variations_production", "Hausses et chutes rapides de production du parc eolien virtuel de Djebel "
+           "Ressas, heure par heure, pour le gestionnaire du reseau.", {**_JOUR}),
 ]
 OUTILS[-1]["cache_control"] = {"type": "ephemeral"}       # le prefixe outils + systeme est stable
 
@@ -86,6 +92,12 @@ def executer(wf, nom: str, entree: dict) -> dict:
         return ao.production_eolienne(wf, j, float(entree["moyeu_m"]), **lieu)
     if nom == "alertes_vent":
         return ao.alertes_vent(wf, j)
+    if nom == "fenetres_maintenance":
+        d = ao.fenetres_maintenance(wf, j, float(entree["hauteur_m"]), float(entree["seuil_m_s"]), **lieu)
+        d["heures"] = [h for h in d["heures"] if 5 <= h["heure"] <= 20]
+        return d
+    if nom == "variations_production":
+        return ao.variations_production(wf, j)
     raise ValueError(f"outil inconnu : {nom}")
 
 

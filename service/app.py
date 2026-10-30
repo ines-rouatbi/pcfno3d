@@ -988,6 +988,34 @@ def atom_ensemble(j: int = Query(0, ge=0, le=2, description="0 = aujourd'hui, 1 
         raise HTTPException(503, f"ensemble indisponible : {exc}") from exc
 
 
+@router.get("/atom-wind/maintenance", tags=["atom-wind"])
+def atom_maintenance(j: int = Query(0, ge=0, le=2, description="0 = aujourd'hui, 1 = demain, 2 = apres-demain"),
+                     lieu: str | None = Query(None, max_length=80), lat: float | None = None, lon: float | None = None,
+                     hauteur_m: float = Query(80.0, ge=2, le=1000), seuil_m_s: float = Query(12.0, gt=0, le=40),
+                     duree_min_h: int = Query(2, ge=1, le=12),
+                     _: ApiKeyRecord | None = Depends(require_read)) -> dict:
+    """Creneaux surs pour le travail en hauteur (cahier v12, E7) : vent moyen a la nacelle ou au mat sous
+    le seuil du site, en plages d'au moins `duree_min_h` heures (parc virtuel par defaut)."""
+    from service import atom_outils
+    try:
+        return atom_outils.fenetres_maintenance(model(), j, hauteur_m, seuil_m_s, duree_min_h, lat=lat, lon=lon, lieu=lieu)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+@router.get("/atom-wind/variations", tags=["atom-wind"])
+def atom_variations(j: int = Query(0, ge=0, le=2, description="0 = aujourd'hui, 1 = demain, 2 = apres-demain"),
+                    moyeu_m: float = Query(80.0, ge=30, le=200), seuil_pct: float = Query(20.0, gt=0, le=100),
+                    _: ApiKeyRecord | None = Depends(require_read)) -> dict:
+    """Variations brusques de production du parc virtuel (cahier v12, E13) : puissance heure par heure et
+    rampes d'au moins `seuil_pct` % de la puissance installee par heure."""
+    from service import atom_outils
+    try:
+        return atom_outils.variations_production(model(), j, moyeu_m, seuil_pct)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
 class QuestionAssistant(BaseModel):
     question: str = Field(..., min_length=1, max_length=2000)
     historique: list[dict] = Field(default_factory=list, max_length=20,
