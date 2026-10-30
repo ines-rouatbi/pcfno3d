@@ -873,5 +873,22 @@
  "Demande": "Request",
  "Refuser": "Refuse",
  "Confirmer": "Confirm",
- "actif": "active"
+ "actif": "active",
+ "Abandon": "Give up",
+ "chargement direct": "real-time load",
+ "Combien d'eau faut-il pour 2 hectares de tomates aujourd'hui ?": "How much water do 2 hectares of tomatoes need today?",
+ "Confirmer l'effacement": "Confirm deletion",
+ "D'où vient le vent à Nabeul maintenant, et à quelle vitesse ?": "Where does the wind come from in Nabeul now, and how fast?",
+ "Démarrer": "Start",
+ "Effacer": "Clear",
+ "Exporter": "Export",
+ "Le vent est-il plus fort à 100 m qu'au sol au-dessus de Djebel Ressas ?": "Is the wind stronger at 100 m than at ground level above Djebel Ressas?",
+ "participant (P1 à P5)": "participant (P1 to P5)",
+ "Peut-on traiter les vignes de Mornag demain matin ?": "Can we spray the Mornag vineyards tomorrow morning?",
+ "tableau de bord": "dashboard",
+ "Test UX1 / VIS1": "UX1 / VIS1 test",
+ "Trouvé": "Found",
+ "vent 3D": "3D wind",
+ "Y a-t-il une alerte de vent fort aujourd'hui ?": "Is there a strong wind alert today?",
+ "{0} mesure(s) UX1, {1} mesure(s) VIS1.": "{0} UX1 measurement(s), {1} VIS1 measurement(s)."
 }

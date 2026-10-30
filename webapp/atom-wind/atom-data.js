@@ -31,8 +31,10 @@ function entetes(){
 async function get(path, ms = 90000){
   const h = {}; Object.assign(h, entetes());
   const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), ms);
+  const debut = performance.now();
   try {
     const r = await fetch(`${BASE}/api${path}`, { headers: h, signal: ctl.signal });
+    if(A.mesureRequete) A.mesureRequete(path, performance.now() - debut);
     if(r.status === 401 || r.status === 403){ const e = new Error("clé d'API refusée ou absente"); e.auth = true; throw e; }
     if(!r.ok){
       // 503 du Worker atom.zelqane.com quand le Colab dort : {error, message, detail}
@@ -497,6 +499,64 @@ async function installerComptesService(){
 }
 A.installerComptesService = installerComptesService;
 
+// ------------------------------------------------------------------ mode test UX1 / VIS1 (?test_ux=1)
+// docs/PROTOCOLE_UX1_VIS1.md : chronometre des taches (UX1) et temps d'affichage des vues (VIS1), gardes dans
+// ce navigateur et exportes en CSV ; rien n'est envoye au service.
+const TACHES_UX = ["Peut-on traiter les vignes de Mornag demain matin ?", "D'où vient le vent à Nabeul maintenant, et à quelle vitesse ?",
+  "Y a-t-il une alerte de vent fort aujourd'hui ?", "Combien d'eau faut-il pour 2 hectares de tomates aujourd'hui ?",
+  "Le vent est-il plus fort à 100 m qu'au sol au-dessus de Djebel Ressas ?"];
+const CLE_UX = "aw-test-ux";
+function lignesUX(){ try { return JSON.parse(localStorage.getItem(CLE_UX) || "[]"); } catch(e){ return []; } }
+function noterUX(l){ const t = lignesUX(); t.push({ t: new Date().toISOString(), ...l }); try { localStorage.setItem(CLE_UX, JSON.stringify(t)); } catch(e){} }
+// des le chargement (le premier calcul de la journee arrive avant la page) : temps de /atom-wind/direct
+A.mesureRequete = P.get("test_ux") === "1"
+  ? (chemin, ms) => { if(/\/atom-wind\/direct/.test(chemin)) noterUX({ type: "VIS1", vue: "chargement direct", ms: Math.round(ms) }); }
+  : null;
+function installerTestUX(){
+  if(P.get("test_ux") !== "1" || document.getElementById("aw-ux")) return;
+  // VIS1 : clic sur une vue -> deux images plus tard (rendu fait)
+  const VUES = { tableau: "tableau de bord", carte3d: "vent 3D", fiabilite: "fiabilité" };
+  window.addEventListener("hashchange", () => {
+    const v = location.hash.slice(1); if(!VUES[v]) return;
+    const t0 = performance.now();
+    requestAnimationFrame(() => requestAnimationFrame(() => noterUX({ type: "VIS1", vue: VUES[v], ms: Math.round(performance.now() - t0) })));
+  });
+  const pan = document.createElement("aside");
+  pan.id = "aw-ux"; pan.className = "card";
+  pan.style.cssText = "position:fixed;left:12px;bottom:12px;z-index:70;width:min(360px,calc(100vw - 24px));max-height:60vh;overflow:auto;font-size:13px";
+  let courante = null, t0 = 0;
+  const rendre = () => {
+    const L = lignesUX(), ux = L.filter(l => l.type === "UX1");
+    pan.innerHTML = `<b>Test UX1 / VIS1</b> <span class="muted">(docs/PROTOCOLE_UX1_VIS1.md)</span>`
+      + `<div style="display:flex;gap:6px;margin:6px 0"><input class="inp" id="aw-ux-p" placeholder="participant (P1 à P5)" style="flex:1" value="${echapper(pan.dataset.p || "")}"></div>`
+      + TACHES_UX.map((q, i) => `<div style="margin:4px 0"><b>${i + 1}.</b> ${q}<br>`
+        + (courante === i ? `<button class="btn primary" data-fin="ok">Trouvé</button> <button class="btn" data-fin="abandon">Abandon</button>`
+                          : `<button class="btn" data-go="${i}">Démarrer</button>`) + `</div>`).join("")
+      + `<p style="margin:6px 0">${ux.length} mesure(s) UX1, ${L.length - ux.length} mesure(s) VIS1.</p>`
+      + `<button class="btn" id="aw-ux-csv">Exporter</button> <button class="btn" id="aw-ux-raz">Effacer</button>`;
+    pan.querySelector("#aw-ux-p").oninput = e => { pan.dataset.p = e.target.value.trim(); };
+    pan.querySelectorAll("[data-go]").forEach(b => b.onclick = () => { courante = +b.dataset.go; t0 = performance.now(); rendre(); });
+    pan.querySelectorAll("[data-fin]").forEach(b => b.onclick = () => {
+      const s = (performance.now() - t0) / 1000;
+      noterUX({ type: "UX1", participant: pan.dataset.p || "?", tache: courante + 1, resultat: b.dataset.fin,
+                secondes: Math.round(s * 10) / 10, sous_30_s: b.dataset.fin === "ok" && s < 30 });
+      courante = null; rendre();
+    });
+    pan.querySelector("#aw-ux-csv").onclick = () => {
+      const L2 = lignesUX(), cols = ["t", "type", "participant", "tache", "resultat", "secondes", "sous_30_s", "vue", "ms"];
+      const csv = [cols.join(";")].concat(L2.map(l => cols.map(c => l[c] ?? "").join(";"))).join("\n");
+      const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
+      a.download = `atom_wind_test_ux_${new Date().toISOString().slice(0, 10)}.csv`; a.click();
+    };
+    pan.querySelector("#aw-ux-raz").onclick = e => {
+      if(e.target.dataset.ok !== "1"){ e.target.dataset.ok = "1"; e.target.textContent = "Confirmer l'effacement"; return; }
+      try { localStorage.removeItem(CLE_UX); } catch(err){} rendre();
+    };
+  };
+  document.body.appendChild(pan); rendre();
+}
+A.installerTestUX = installerTestUX;
+
 // ------------------------------------------------------------------ supervision (BF41), admin seulement
 async function installerSupervision(){
   const vue = document.getElementById("v-admin"); if(!vue || document.getElementById("aw-sup")) return;
@@ -786,6 +846,7 @@ function chargement(msg){
   el.innerHTML = `<div style="font-size:22px;font-weight:700">ATOM Wind</div><div>${msg}</div>`;
 }
 function lancerPage(){
+  installerTestUX();
   const ov = document.getElementById("aw-chargement"); if(ov) ov.remove();
   const s = document.getElementById("atom-main"), x = document.createElement("script");
   x.textContent = s.textContent; document.body.appendChild(x);

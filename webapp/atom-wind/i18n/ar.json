@@ -868,5 +868,22 @@
  "Demande": "الطلب",
  "Refuser": "رفض",
  "Confirmer": "تأكيد",
- "actif": "نشط"
+ "actif": "نشط",
+ "Abandon": "تخلٍّ",
+ "chargement direct": "تحميل الوقت الحقيقي",
+ "Combien d'eau faut-il pour 2 hectares de tomates aujourd'hui ?": "كم من الماء يلزم لهكتارين من الطماطم اليوم؟",
+ "Confirmer l'effacement": "تأكيد المسح",
+ "D'où vient le vent à Nabeul maintenant, et à quelle vitesse ?": "من أين تهب الريح في نابل الآن، وبأي سرعة؟",
+ "Démarrer": "ابدأ",
+ "Effacer": "مسح",
+ "Exporter": "تصدير",
+ "Le vent est-il plus fort à 100 m qu'au sol au-dessus de Djebel Ressas ?": "هل الريح أقوى على ارتفاع 100 م منها عند سطح الأرض فوق جبل الرصاص؟",
+ "participant (P1 à P5)": "المشارك (P1 إلى P5)",
+ "Peut-on traiter les vignes de Mornag demain matin ?": "هل يمكن رش كروم مرناق صباح الغد؟",
+ "tableau de bord": "لوحة القيادة",
+ "Test UX1 / VIS1": "اختبار UX1 / VIS1",
+ "Trouvé": "وُجد",
+ "vent 3D": "الريح ثلاثية الأبعاد",
+ "Y a-t-il une alerte de vent fort aujourd'hui ?": "هل هناك تنبيه لرياح قوية اليوم؟",
+ "{0} mesure(s) UX1, {1} mesure(s) VIS1.": "{0} قياس UX1، {1} قياس VIS1."
 }
