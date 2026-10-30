@@ -67,3 +67,11 @@ def test_bilan(tmp_path):
     texte = m.rapport(b)
     assert "| REEL1 |" in texte and "Bilan de conformité" in texte
     assert m.main(["--runs", str(tmp_path)]) == 0 and (tmp_path / "bilan_conformite.md").exists()
+
+
+def test_references_de_tests_existent():
+    import re
+    m = _script()
+    for code, _, _, source in m.DOCUMENTES:
+        for f in re.findall(r"tests/[\w*]+\.py", source):
+            assert (REPO / f).exists(), (code, f)

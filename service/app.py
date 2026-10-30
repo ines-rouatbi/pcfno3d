@@ -1085,6 +1085,34 @@ def atom_qualite(_: ApiKeyRecord | None = Depends(require_read)) -> dict:
         raise HTTPException(404, str(exc)) from exc
 
 
+@router.get("/atom-wind/agricole", tags=["atom-wind"])
+def atom_agricole(j: int = Query(0, ge=0, le=2, description="0 = aujourd'hui, 1 = demain, 2 = apres-demain"),
+                  lieu: str | None = Query(None, max_length=80), lat: float | None = None, lon: float | None = None,
+                  _: ApiKeyRecord | None = Depends(require_read)) -> dict:
+    """Decision agricole d'une parcelle (cahier v12, S16) : creneaux de traitement et d'aspersion heure par
+    heure (regle de l'application, vent a 10 m) et probabilite GEFS si elle est calculee."""
+    from service import atom_outils
+    try:
+        return atom_outils.decision_agricole(model(), j, lat=lat, lon=lon, lieu=lieu)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+@router.get("/atom-wind/production", tags=["atom-wind"])
+def atom_production(j: int = Query(0, ge=0, le=2, description="0 = aujourd'hui, 1 = demain, 2 = apres-demain"),
+                    moyeu_m: float = Query(80.0, ge=30, le=200), lieu: str | None = Query(None, max_length=80),
+                    lat: float | None = None, lon: float | None = None,
+                    _: ApiKeyRecord | None = Depends(require_read)) -> dict:
+    """Production prevue d'une eolienne de reference en un point (cahier v12, S16), heure par heure."""
+    from service import atom_outils
+    if lieu is None and (lat is None or lon is None):
+        lieu = "djebel ressas"
+    try:
+        return atom_outils.production_eolienne(model(), j, moyeu_m, lat=lat, lon=lon, lieu=lieu)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
 class QuestionAssistant(BaseModel):
     question: str = Field(..., min_length=1, max_length=2000)
     historique: list[dict] = Field(default_factory=list, max_length=20,
