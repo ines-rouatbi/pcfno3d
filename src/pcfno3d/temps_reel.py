@@ -287,10 +287,12 @@ def _bil(champ: np.ndarray, interp) -> np.ndarray:
             + a * (1 - b) * champ[iy + 1, ix] + a * b * champ[iy + 1, ix + 1])
 
 
-def entree(geom, c: dict, f: ForcageDirect, it: int, mesures: dict, exclue: str | None = None) -> np.ndarray:
+def entree(geom, c: dict, f: ForcageDirect, it: int, mesures: dict, exclue: str | None = None,
+           cellules: dict | None = None) -> np.ndarray:
     """S (8, ny, nx) de l'instant it des champs GFS : GFS 10 m (a la place d'ERA5) sur le reseau regulier, les
     stations mesurees, la surface (T, rho, HR, p) ramenee au relief de la grille. `exclue` : station retiree
-    de l'entree (deni de donnees, E10 / E11)."""
+    de l'entree (deni de donnees, E10 / E11). `cellules` : {code: (iy, ix)} des mesures, si ce ne sont pas
+    les stations du domaine (capteurs ANEO, stations envoyees a l'API)."""
     from .stations_reelles import cellules_codes, entree_reelle
 
     interp = geom.interp_era5
@@ -307,7 +309,8 @@ def entree(geom, c: dict, f: ForcageDirect, it: int, mesures: dict, exclue: str 
     S[4] = p / (R_AIR * tk)
     S[5] = np.clip(bil(c["relative_humidity_2m"][it]), 1.0, 100.0)
     S[6] = p
-    S_in, capteur = entree_reelle(S, E, geom, cellules_codes(geom), mesures, exclue=exclue)
+    S_in, capteur = entree_reelle(S, E, geom, cellules if cellules is not None else cellules_codes(geom),
+                                  mesures, exclue=exclue)
     S_in[7] = capteur
     return S_in
 

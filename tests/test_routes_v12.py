@@ -81,3 +81,35 @@ def test_historique(client, jeu, monkeypatch):  # noqa: F811
     assert d.status_code == 200 and d.json()["archive"] == j1[0]["nom"] and d.json()["date"] == j1[0]["date"]
     assert client.get("/api/atom-wind/historique/x.json.gz").status_code == 422
     assert client.get("/api/atom-wind/historique/2000-01-01_temps_reel.json.gz").status_code == 404
+
+
+def test_stations_entree_de_production(client, jeu, monkeypatch):  # noqa: F811
+    """BF1 / BF4 : pour le modele reel, des stations envoyees a l'API entrent comme en production (GFS de
+    l'heure + stations a 10 m dans leur maille), pas dans la couche dense du modele synthetique."""
+    from service import atom_outils
+    vus = {}
+    vrai = atom_outils.entree_production
+
+    def espion(wf, ts, pts):
+        vus["pts"] = pts
+        return vrai(wf, ts, pts)
+    monkeypatch.setattr(atom_outils, "entree_production", espion)
+    corps = {"timestamp_utc": "2026-10-26T06:00:00Z", "stations": [
+        {"station_id": "A", "lat": LAT, "lon": LON, "height_agl_m": 10, "wind_u_m_s": 3.0, "wind_v_m_s": -1.0},
+        {"station_id": "B", "lat": LAT, "lon": LON, "height_agl_m": 30, "wind_u_m_s": 6.0, "wind_v_m_s": 0.0},
+        {"station_id": "loin", "lat": 40.0, "lon": 5.0, "wind_u_m_s": 1.0, "wind_v_m_s": 1.0}]}
+    r = client.post("/api/reconstruct/stations", json=corps)
+    assert r.status_code == 200, r.text
+    d = r.json()["stations"]
+    assert d["entree"].startswith("production") and d["mailles"] == 1 and d["hors_domaine"] >= 1
+    (iy, ix, u, v), = vus["pts"]                   # A et B dans la meme maille : moyenne, B ramene a 10 m
+    assert 3.0 < u < 4.5 and v == -0.5
+    # Open-Meteo injoignable : 503 avec la cause, jamais une reconstruction sur une mauvaise entree
+    from pcfno3d import temps_reel
+
+    def panne(_url, **_kw):
+        raise OSError("reseau coupe")
+    monkeypatch.setattr(temps_reel, "_get", panne)
+    corps["timestamp_utc"] = "2026-09-01T00:00:00Z"
+    r = client.post("/api/reconstruct/stations", json=corps)
+    assert r.status_code == 503 and "GFS" in r.json()["detail"]

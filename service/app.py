@@ -591,7 +591,13 @@ def _upload_calcul(wf: WindFieldModel, data: bytes, filename: str | None, keep: 
                 "qualite": rapport})
         moteur = STATE.get("alertes")
         differee = _differee(wf)
-        if moteur is None:
+        from service import atom_outils
+        if atom_outils.entree_production_active(wf):
+            # modele reel : capteurs du CSV comme stations + GFS de l'heure (entree de production)
+            S0, hour, doy, stamp = wf.surface_from_csv(tmp_path, masque)
+            S, vec = _entree_csv_production(wf, S0, stamp)
+            volume = wf.predict(S, hour, doy, timestamp=stamp, keep=keep, forcage=vec, **_kw_differee(wf))
+        elif moteur is None:
             volume = wf.predict_csv(tmp_path, keep=keep, exclure=masque, **_kw_differee(wf))
         else:
             # meme passe que predict_csv, en gardant S pour les alertes (lot M4)
@@ -662,6 +668,53 @@ class StationsRequest(BaseModel):
     stations: list[StationObs] = Field(..., min_length=1, max_length=5000)
 
 
+def _entree_stations_production(wf, geo, clean, ts):
+    """Stations (lat, lon) -> entree de production du modele reel : vent ramene a 10 m par le profil
+    logarithmique de la maille, une mesure par maille (moyenne), GFS de l'heure en grande echelle."""
+    import numpy as np
+
+    from service import atom_outils
+    g = wf.geom
+    x, y = geo.to_xy(clean["lat"].to_numpy(), clean["lon"].to_numpy())
+    i, j = np.rint(np.asarray(x) / g.dx).astype(int), np.rint(np.asarray(y) / g.dy).astype(int)
+    dedans = (i >= 0) & (i < g.nx) & (j >= 0) & (j < g.ny)
+    if not dedans.any():
+        raise HTTPException(400, "aucune station dans le domaine")
+    par_maille: dict = {}
+    for k in np.flatnonzero(dedans):
+        z0 = max(float(g.z0[j[k], i[k]]), 1e-4)
+        h = max(float(clean["height_agl_m"].iloc[k]), 1.0)
+        f = np.log(10.0 / z0) / np.log(h / z0) if abs(h - 10.0) > 0.5 and h > z0 * 1.5 else 1.0
+        par_maille.setdefault((j[k], i[k]), []).append((clean["wind_u_m_s"].iloc[k] * f,
+                                                        clean["wind_v_m_s"].iloc[k] * f))
+    pts = [(jj, ii, float(np.mean([m[0] for m in ms])), float(np.mean([m[1] for m in ms])))
+           for (jj, ii), ms in par_maille.items()]
+    try:
+        S, vec, t = atom_outils.entree_production(wf, ts, pts)
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except Exception as exc:                                   # noqa: BLE001 — reseau, Open-Meteo
+        raise HTTPException(503, f"grande echelle GFS indisponible : {exc}") from exc
+    return S, vec, {"stations": int(dedans.sum()), "mailles": len(pts), "hors_domaine": int((~dedans).sum()),
+                    "entree": "production : GFS de l'heure + stations a 10 m", "heure_gfs_utc": str(t)}
+
+
+def _entree_csv_production(wf, S0, stamp):
+    """Capteurs d'un CSV ANEO -> entree de production du modele reel (capteur = station a sa maille)."""
+    import numpy as np
+
+    from service import atom_outils
+    jj, ii = np.nonzero(S0[7] > 0.5)
+    pts = [(a, b, float(S0[0, a, b]), float(S0[1, a, b])) for a, b in zip(jj, ii)]
+    try:
+        S, vec, _ = atom_outils.entree_production(wf, stamp, pts)
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except Exception as exc:                                   # noqa: BLE001
+        raise HTTPException(503, f"grande echelle GFS indisponible : {exc}") from exc
+    return S, vec
+
+
 @router.post("/reconstruct/stations", tags=["donnees"])
 def reconstruct_stations(req: StationsRequest,
                          _: ApiKeyRecord | None = Depends(require_read)) -> dict:
@@ -685,16 +738,23 @@ def reconstruct_stations(req: StationsRequest,
         clean, rapport = normalize_stations(df, wf.cfg)
     except (ValueError, TypeError) as exc:
         raise HTTPException(400, f"mesures invalides : {exc}") from exc
-    S, info = stations_to_surface(clean, wf.geom, geo, wf.cfg)
-    if info["mailles"] == 0:
-        raise HTTPException(400, f"aucune station exploitable dans le domaine ({info}, "
-                                 f"controle : {rapport})")
     ts = pd.Timestamp(req.timestamp_utc).tz_localize(None) \
         if pd.Timestamp(req.timestamp_utc).tzinfo else pd.Timestamp(req.timestamp_utc)
     hour = ts.hour + ts.minute / 60 + ts.second / 3600
-    # mesures de stations REELLES (information de fiabilite ; le statut n'en depend pas)
-    volume = wf.predict(S, hour, int(ts.dayofyear), timestamp=str(ts), real_sensors=True,
-                        **_kw_differee(wf))
+    from service import atom_outils
+    if atom_outils.entree_production_active(wf):
+        # modele reel : l'entree de production (GFS de l'heure + stations a 10 m), pas la couche dense
+        S, vec, info = _entree_stations_production(wf, geo, clean, ts)
+        volume = wf.predict(S, hour, int(ts.dayofyear), timestamp=str(ts), real_sensors=True,
+                            forcage=vec, **_kw_differee(wf))
+    else:
+        S, info = stations_to_surface(clean, wf.geom, geo, wf.cfg)
+        if info["mailles"] == 0:
+            raise HTTPException(400, f"aucune station exploitable dans le domaine ({info}, "
+                                     f"controle : {rapport})")
+        # mesures de stations REELLES (information de fiabilite ; le statut n'en depend pas)
+        volume = wf.predict(S, hour, int(ts.dayofyear), timestamp=str(ts), real_sensors=True,
+                            **_kw_differee(wf))
     stem = f"live_{ts.strftime('%Y%m%d_%H%M%S')}"
     _memoriser(f"{stem}:1.000", volume)
     wf.assess_reliability_async(volume)          # fiabilite en arriere-plan, si active
