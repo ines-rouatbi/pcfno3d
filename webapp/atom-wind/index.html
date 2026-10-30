@@ -1187,6 +1187,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
 <script src="atom-data.js"></script>
+<script src="atom-3d.js"></script>
 <script type="text/plain" id="atom-main">
 (() => {
 "use strict";
@@ -1707,7 +1708,7 @@ function init3d(){
   if(!window.THREE){ host.insertAdjacentHTML("beforeend",`<div class="nogl"><div class="card"><b>La vue 3D n'a pas pu se charger.</b><br><span class="muted">Vérifiez la connexion, puis rechargez la page.</span></div></div>`); return; }
   let renderer; try{ renderer=new THREE.WebGLRenderer({antialias:true, alpha:true}); }catch(e){ host.insertAdjacentHTML("beforeend",`<div class="nogl"><div class="card"><b>Votre appareil n'affiche pas la 3D.</b><br><span class="muted">Utilisez l'onglet « Mon vent ».</span></div></div>`); return; }
   renderer.setPixelRatio(Math.min(2,devicePixelRatio)); host.prepend(renderer.domElement);
-  const scene=new THREE.Scene(), cam=new THREE.PerspectiveCamera(45,1,.1,500), EX=11/1000;
+  const scene=new THREE.Scene(), cam=new THREE.PerspectiveCamera(45,1,.1,500); let EX=11/1000, AW3=null; const OBJ3={stations:[],turb:[]};
   scene.add(new THREE.HemisphereLight(0xffffff,0x6b7d6a,.9)); const sun=new THREE.DirectionalLight(0xffffff,.7); sun.position.set(-30,40,20); scene.add(sun);
   const SEG=[136,112], geo=new THREE.PlaneGeometry(W,H,SEG[0],SEG[1]); geo.rotateX(-Math.PI/2);
   const pos=geo.attributes.position, cols=new Float32Array(pos.count*3);
@@ -1725,11 +1726,11 @@ function init3d(){
   const pts=new THREE.Points(pg,new THREE.PointsMaterial({size:.42, vertexColors:true, transparent:true, opacity:.95, depthWrite:false})); scene.add(pts);
   for(let i=0;i<N;i++) P.push({x:Math.random()*W, y:Math.random()*H, a:Math.random()*90|0});
   // stations et éoliennes
-  for(const s of STATIONS){ const k=idx(...s.p), m=new THREE.Mesh(new THREE.CylinderGeometry(.18,.18,1.2,10),new THREE.MeshLambertMaterial({color:0x3a6fd2})); m.position.set(s.p[0]-W/2,elev[k]*EX+.6,-(s.p[1]-H/2)); scene.add(m); }
-  for(const t of TURB){ const k=idx(...t.p), m=new THREE.Mesh(new THREE.CylinderGeometry(.06,.1,80*EX*4,8),new THREE.MeshLambertMaterial({color:0xf2f2f2})); m.position.set(t.p[0]-W/2,elev[k]*EX+80*EX*2,-(t.p[1]-H/2)); scene.add(m); }
+  for(const s of STATIONS){ const k=idx(...s.p), m=new THREE.Mesh(new THREE.CylinderGeometry(.18,.18,1.2,10),new THREE.MeshLambertMaterial({color:0x3a6fd2})); m.position.set(s.p[0]-W/2,elev[k]*EX+.6,-(s.p[1]-H/2)); scene.add(m); OBJ3.stations.push({m,p:s.p}); }
+  for(const t of TURB){ const k=idx(...t.p), m=new THREE.Mesh(new THREE.CylinderGeometry(.06,.1,80*EX*4,8),new THREE.MeshLambertMaterial({color:0xf2f2f2})); m.position.set(t.p[0]-W/2,elev[k]*EX+80*EX*2,-(t.p[1]-H/2)); scene.add(m); OBJ3.turb.push({m,p:t.p}); }
   const pin=new THREE.Mesh(new THREE.ConeGeometry(.5,1.6,16),new THREE.MeshLambertMaterial({color:0x0a6e7d})); pin.rotation.x=Math.PI; pin.visible=false; scene.add(pin);
   const labels=[...STATIONS.map(s=>({t:s.n,p:s.p,st:true})), {t:"Djebel Ressas",p:xy(36.61,10.33)},{t:"Golfe de Tunis",p:xy(36.84,10.42)},{t:"Tunis",p:xy(36.80,10.18)},{t:"Parc éolien virtuel",p:xy(36.612,10.33)}]
-    .map(l=>{ const d=document.createElement("div"); d.className="lbl3d"+(l.st?" st":""); d.textContent=l.t; host.appendChild(d); const k=idx(...l.p); return {d, v:new THREE.Vector3(l.p[0]-W/2, (wat[k]?0:elev[k]*EX)+1.6, -(l.p[1]-H/2))}; });
+    .map(l=>{ const d=document.createElement("div"); d.className="lbl3d"+(l.st?" st":""); d.textContent=l.t; host.appendChild(d); const k=idx(...l.p); return {d, p:l.p, st:!!l.st, v:new THREE.Vector3(l.p[0]-W/2, (wat[k]?0:elev[k]*EX)+1.6, -(l.p[1]-H/2))}; });
   const ctl=new THREE.OrbitControls(cam,renderer.domElement); ctl.enableDamping=true; ctl.maxPolarAngle=Math.PI*.47; ctl.minDistance=12; ctl.maxDistance=140;
   const home=()=>{ cam.position.set(-6,46,58); ctl.target.set(2,0,-2); ctl.update(); }; home();
   document.getElementById("recenter").onclick=home;
@@ -1739,9 +1740,9 @@ function init3d(){
   const hring=new THREE.Mesh(new THREE.RingGeometry(.55,.8,32),new THREE.MeshBasicMaterial({color:0xffffff, transparent:true, opacity:.9, side:THREE.DoubleSide, depthTest:false})); hring.rotation.x=-Math.PI/2; hring.visible=false; hring.renderOrder=5; scene.add(hring);
   renderer.domElement.addEventListener("pointermove", e => { if(e.buttons){ hideTip("3d"); hring.visible=false; return; } if(hovPend) return; hovPend=requestAnimationFrame(()=>{ hovPend=null;
     const r=renderer.domElement.getBoundingClientRect(); m2.set((e.clientX-r.left)/r.width*2-1,-(e.clientY-r.top)/r.height*2+1); ray.setFromCamera(m2,cam); const hit=ray.intersectObject(mesh)[0];
-    if(!hit){ hideTip("3d"); hring.visible=false; return; } const x=hit.point.x+W/2, y=-hit.point.z+H/2, k=idx(x,y), [u,v]=wind(x,y,z3,state.hour), sp=Math.hypot(u,v), deg=(fromDeg(u,v)+180)%360;
+    if(!hit){ hideTip("3d"); hring.visible=false; return; } const x=hit.point.x+W/2, y=-hit.point.z+H/2, k=idx(x,y), zh=AW3?Math.max(2,AW3.zSol(x,y)):z3, [u,v]=wind(x,y,zh,state.hour), sp=Math.hypot(u,v), deg=(fromDeg(u,v)+180)%360;
     hring.position.set(hit.point.x, hit.point.y+.08, hit.point.z); hring.visible=true;
-    showTip(`<div style="display:flex;gap:8px;align-items:center"><b>${fmtSpeed(sp)}</b>${arrowSvg(deg,18,"currentColor")}</div>Vent ${dirName(u,v)}, à ${z3} m du sol<br><span class="sub">${wat[k]===1?"En mer":`Sol à ${Math.round(elev[k])} m`} · près de ${nearestName([x,y])} · cliquez pour le détail</span>`, e.clientX, e.clientY, "3d"); }); });
+    showTip(`<div style="display:flex;gap:8px;align-items:center"><b>${fmtSpeed(sp)}</b>${arrowSvg(deg,18,"currentColor")}</div>Vent ${dirName(u,v)}, ${AW3?AW3.texteHauteur(x,y):`à ${z3} m du sol`}<br><span class="sub">${wat[k]===1?"En mer":`Sol à ${Math.round(elev[k])} m`} · près de ${nearestName([x,y])} · cliquez pour le détail</span>`, e.clientX, e.clientY, "3d"); }); });
   renderer.domElement.addEventListener("pointerleave", () => { hideTip("3d"); hring.visible=false; });
   renderer.domElement.addEventListener("pointerdown",e=>down=[e.clientX,e.clientY]);
   let cutMode=false, cutPts=[], cutObjs=[]; const cb=document.getElementById("cutbtn"), cap=document.getElementById("cap3");
@@ -1753,7 +1754,7 @@ function init3d(){
     if(seedMode){ launchSeed(x,y,hit.point); return; }
     if(cutMode){ cutPts.push([x,y]); const mk=new THREE.Mesh(new THREE.SphereGeometry(.45,16,12),new THREE.MeshLambertMaterial({color:0xc4842f})); mk.position.set(hit.point.x,hit.point.y+.5,hit.point.z); scene.add(mk); cutObjs.push(mk);
       if(cutPts.length===2){ drawCut(...cutPts); renderCut(...cutPts); cutMode=false; cb.setAttribute("aria-pressed",false); cb.textContent="Nouvelle coupe"; cap.hidden=true; document.getElementById("cutcard").scrollIntoView({behavior:"smooth",block:"nearest"}); } else cap.textContent="Touchez maintenant le point d'arrivée B."; return; }
-    pin.position.set(hit.point.x,hit.point.y+1.1,hit.point.z); pin.visible=true; openSheet(x,y,z3); });
+    pin.position.set(hit.point.x,hit.point.y+1.1,hit.point.z); pin.visible=true; if(AW3 && AW3.fiche(x,y)) return; openSheet(x,y,z3); });
   const BREEZE={8:"8 h : le matin, le vent de terre faiblit.",10:"10 h : la terre chauffe plus vite que la mer.",12:"12 h : la brise de mer se lève et entre dans les terres.",14:"14 h : brise de mer forte sur toute la côte du golfe.",16:"16 h : la brise est à son maximum et pénètre à 10 ou 15 km.",18:"18 h : le soleil baisse, la brise faiblit.",20:"20 h : le vent tombe près de la côte.",22:"22 h : la nuit, une faible brise de terre souffle vers la mer."};
   let bT=null; const bb=document.getElementById("breeze");
   bb.onclick=()=>{ if(bT){ clearInterval(bT); bT=null; bb.textContent="Voir la brise de mer"; cap.hidden=true; return; } let h=8; hs.value=0; hs.oninput(); bb.textContent="Arrêter"; cap.hidden=false;
@@ -1790,10 +1791,11 @@ function init3d(){
     ball.position.set(seed.x-W/2, yOf(seed.x,seed.y,seed.z), -(seed.y-H/2)); glow.scale.setScalar(1+.15*Math.sin(performance.now()/200));
     if(!seed.done) cap.textContent=`${SEEDS[seed.type].n[0].toUpperCase()+SEEDS[seed.type].n.slice(1)} vole depuis ${Math.round(seed.t/60)} min : ${seed.dist.toFixed(1).replace(".",",")} km parcourus, à ${Math.round(seed.z)} m du sol.`; }
   function tick(){ requestAnimationFrame(tick); if(!host.offsetParent) return; stepSeed();
-    for(let i=0;i<N;i++){ const p=P[i], [u,v]=wind(p.x,p.y,z3,state.hour), sp=Math.hypot(u,v); if(!reduce){ p.x+=u*.02; p.y+=v*.02; } if(++p.a>140||p.x<0||p.x>W||p.y<0||p.y>H){ p.x=Math.random()*W; p.y=Math.random()*H; p.a=0; }
+    if(!(AW3 && AW3.particules())) for(let i=0;i<N;i++){ const p=P[i], [u,v]=wind(p.x,p.y,z3,state.hour), sp=Math.hypot(u,v); if(!reduce){ p.x+=u*.02; p.y+=v*.02; } if(++p.a>140||p.x<0||p.x>W||p.y<0||p.y>H){ p.x=Math.random()*W; p.y=Math.random()*H; p.a=0; }
       const k=idx(p.x,p.y), gz=(wat[k]?0:elev[k]); pp[i*3]=p.x-W/2; pp[i*3+1]=gz*EX+Math.max(.15,z3*EX*1.4); pp[i*3+2]=-(p.y-H/2); const c=speedColor(kmh(sp)); pc[i*3]=c[0]/255; pc[i*3+1]=c[1]/255; pc[i*3+2]=c[2]/255; }
-    pg.attributes.position.needsUpdate=true; pg.attributes.color.needsUpdate=true; ctl.update(); renderer.render(scene,cam);
-    const r=renderer.domElement.getBoundingClientRect(); for(const l of labels){ tmp.copy(l.v).project(cam); const vis=tmp.z<1&&Math.abs(tmp.x)<1&&Math.abs(tmp.y)<1; l.d.hidden=!vis; if(vis){ l.d.style.left=((tmp.x+1)/2*r.width)+"px"; l.d.style.top=((1-tmp.y)/2*r.height)+"px"; } } }
+    pg.attributes.position.needsUpdate=true; pg.attributes.color.needsUpdate=true; if(AW3) AW3.image(); ctl.update(); renderer.render(scene,cam);
+    const r=renderer.domElement.getBoundingClientRect(); for(const l of labels){ tmp.copy(l.v).project(cam); const vis=tmp.z<1&&Math.abs(tmp.x)<1&&Math.abs(tmp.y)<1; l.d.hidden=!vis||!!l.cache; if(vis){ l.d.style.left=((tmp.x+1)/2*r.width)+"px"; l.d.style.top=((1-tmp.y)/2*r.height)+"px"; } } }
+  if(window.ATOM && ATOM.vue3d) try{ AW3=ATOM.vue3d({THREE, scene, cam, ctl, renderer, host, mesh, geo, pos, pts, pg, pp, pc, P, N, labels, objets:OBJ3, pin, hring, hs, H3, NX, NY, G, ex:()=>EX, setEx:v=>{EX=v}, z3:()=>z3, cutObjs:()=>cutObjs, wind, sigma, relClass, idx, elev, wat, W, H, STATIONS, TURB, ANEO, state, speedColor, kmh, fmtSpeed, dirName, fromDeg, nearestName, openSheet, setHour}); }catch(e){ console.error("vue 3D complète", e); AW3=null; }
   tick(); update3dColors=()=>{};
 }
 

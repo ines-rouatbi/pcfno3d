@@ -116,7 +116,8 @@ def test_page_construite_depuis_la_maquette(client):  # noqa: F811
     servi = (REPO / "webapp" / "atom-wind" / "index.html").read_text(encoding="utf-8")
     assert html == servi, "webapp/atom-wind/index.html n'est pas a jour : python scripts/build_atom_wind.py"
     for a in ('src="atom-data.js"', 'id="atom-main"', "ATOM.appliquerGrille", "ATOM.vent(",
-              "ATOM.planXY(xy)", "ATOM.aSigma()", 'id="aw-jour"', "ATOM.rafraichir"):
+              "ATOM.planXY(xy)", "ATOM.aSigma()", 'id="aw-jour"', "ATOM.rafraichir",
+              'src="atom-3d.js"', "AW3=ATOM.vue3d(", "AW3.particules()", "AW3.fiche(x,y)", "setEx:v=>{EX=v}"):
         assert a in html, a
     assert html.startswith("<!doctype html>")
     with pytest.raises(SystemExit, match="accroche"):
@@ -124,3 +125,5 @@ def test_page_construite_depuis_la_maquette(client):  # noqa: F811
     r = client.get("/app/atom-wind/")
     assert r.status_code == 200 and "atom-data.js" in r.text
     assert client.get("/app/atom-wind/atom-data.js").status_code == 200
+    js3d = client.get("/app/atom-wind/atom-3d.js")
+    assert js3d.status_code == 200 and "A.vue3d" in js3d.text

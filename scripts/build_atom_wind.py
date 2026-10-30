@@ -78,6 +78,30 @@ ACCROCHES = [
      "demain et après-demain en sont des variantes simulées. En service : prévision GFS affinée par ATOM Wind, à 24 et 48 h.</p>"),
     ("</section>\n\n<!-- ADMINISTRATION -->",
      "  <div class=\"card\" id=\"aw-atlas\" hidden></div>\n</section>\n\n<!-- ADMINISTRATION -->"),
+    # 13. vue 3D complete (cahier v12, V3D1 a V3D10) : atom-3d.js recoit les objets de la scene
+    ('<script src="atom-data.js"></script>', '<script src="atom-data.js"></script>\n<script src="atom-3d.js"></script>'),
+    ("cam=new THREE.PerspectiveCamera(45,1,.1,500), EX=11/1000;",
+     "cam=new THREE.PerspectiveCamera(45,1,.1,500); let EX=11/1000, AW3=null; const OBJ3={stations:[],turb:[]};"),
+    ("m.position.set(s.p[0]-W/2,elev[k]*EX+.6,-(s.p[1]-H/2)); scene.add(m); }",
+     "m.position.set(s.p[0]-W/2,elev[k]*EX+.6,-(s.p[1]-H/2)); scene.add(m); OBJ3.stations.push({m,p:s.p}); }"),
+    ("m.position.set(t.p[0]-W/2,elev[k]*EX+80*EX*2,-(t.p[1]-H/2)); scene.add(m); }",
+     "m.position.set(t.p[0]-W/2,elev[k]*EX+80*EX*2,-(t.p[1]-H/2)); scene.add(m); OBJ3.turb.push({m,p:t.p}); }"),
+    ("return {d, v:new THREE.Vector3(l.p[0]-W/2, (wat[k]?0:elev[k]*EX)+1.6, -(l.p[1]-H/2))}; });",
+     "return {d, p:l.p, st:!!l.st, v:new THREE.Vector3(l.p[0]-W/2, (wat[k]?0:elev[k]*EX)+1.6, -(l.p[1]-H/2))}; });"),
+    ("k=idx(x,y), [u,v]=wind(x,y,z3,state.hour), sp=Math.hypot(u,v), deg=",
+     "k=idx(x,y), zh=AW3?Math.max(2,AW3.zSol(x,y)):z3, [u,v]=wind(x,y,zh,state.hour), sp=Math.hypot(u,v), deg="),
+    ("Vent ${dirName(u,v)}, à ${z3} m du sol", "Vent ${dirName(u,v)}, ${AW3?AW3.texteHauteur(x,y):`à ${z3} m du sol`}"),
+    ("pin.visible=true; openSheet(x,y,z3); });", "pin.visible=true; if(AW3 && AW3.fiche(x,y)) return; openSheet(x,y,z3); });"),
+    ("for(let i=0;i<N;i++){ const p=P[i], [u,v]=wind(p.x,p.y,z3,state.hour)",
+     "if(!(AW3 && AW3.particules())) for(let i=0;i<N;i++){ const p=P[i], [u,v]=wind(p.x,p.y,z3,state.hour)"),
+    ("ctl.update(); renderer.render(scene,cam);", "if(AW3) AW3.image(); ctl.update(); renderer.render(scene,cam);"),
+    ("l.d.hidden=!vis;", "l.d.hidden=!vis||!!l.cache;"),
+    ("  tick(); update3dColors=()=>{};\n}",
+     "  if(window.ATOM && ATOM.vue3d) try{ AW3=ATOM.vue3d({THREE, scene, cam, ctl, renderer, host, mesh, geo, pos, pts, pg, pp, pc, P, N,"
+     " labels, objets:OBJ3, pin, hring, hs, H3, NX, NY, G, ex:()=>EX, setEx:v=>{EX=v}, z3:()=>z3, cutObjs:()=>cutObjs,"
+     " wind, sigma, relClass, idx, elev, wat, W, H, STATIONS, TURB, ANEO, state, speedColor, kmh, fmtSpeed, dirName, fromDeg,"
+     " nearestName, openSheet, setHour}); }catch(e){ console.error(\"vue 3D complète\", e); AW3=null; }\n"
+     "  tick(); update3dColors=()=>{};\n}"),
 ]
 
 
