@@ -110,3 +110,24 @@ def test_os6_de_bout_en_bout(jeu, tmp_path, monkeypatch):
     assert "nombre_recommande" in resume and "limites" in resume
     # reprise : un second passage relit placement et courbe sans recalcul
     assert m.main() == 0
+
+
+def test_plan_repris_depuis_les_capteurs_installes(jeu, tmp_path, monkeypatch):
+    """BF78 : avec des capteurs deja poses, le plan repart d'eux (pas recomptes ni reproposes)."""
+    import pcfno3d.config as config_mod
+
+    spec = importlib.util.spec_from_file_location("os6_script", REPO / "scripts" / "os6_reseau_aneo.py")
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    monkeypatch.setattr(config_mod.Config, "load", classmethod(lambda cls, _n: jeu))
+    base = ["os6", "-c", "x", "--device", "cpu", "--contraintes", str(_contraintes(tmp_path)),
+            "--n-val", "2", "--n-test", "2", "--par-etape", "2", "--tailles", "2"]
+    monkeypatch.setattr(sys, "argv", base + ["--sortie", str(tmp_path / "a")])
+    assert m.main() == 0
+    premier = pd.read_csv(tmp_path / "a" / "plan_aneo.csv").iloc[0]
+    pd.DataFrame([{"lat": premier["lat"], "lon": premier["lon"]}]).to_csv(tmp_path / "poses.csv", index=False)
+    monkeypatch.setattr(sys, "argv", base + ["--sortie", str(tmp_path / "b"), "--installes", str(tmp_path / "poses.csv")])
+    assert m.main() == 0
+    p = pd.read_csv(tmp_path / "b" / "plan_aneo.csv")
+    assert len(p) == 4                                         # budget entier pour les nouveaux
+    assert not ((p["iy"] == premier["iy"]) & (p["ix"] == premier["ix"])).any()

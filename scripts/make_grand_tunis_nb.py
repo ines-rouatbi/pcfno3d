@@ -919,7 +919,9 @@ try:
     lancer("os6_reseau_aneo",
            f"python -u scripts/os6_reseau_aneo.py -c {CONF} --set inference.w_continuite=true "
            f"--sortie {SORTIE} --n-val 24 --lot 4"
-           + (f" --contraintes {CONTRAINTES}" if CONTRAINTES.exists() else ""))
+           + (f" --contraintes {CONTRAINTES}" if CONTRAINTES.exists() else "")
+           # capteurs ANEO deja poses (lat, lon) : le plan repart d'eux (BF78)
+           + (f" --installes {GT / 'os6_installes.csv'}" if (GT / "os6_installes.csv").exists() else ""))
     # atlas eolien annuel (E8) et couches GeoTIFF (E15), a partir des reconstructions du cache
     if not (RUNS / "atlas_eolien" / "atlas.json").exists():
         lancer("atlas_eolien", f"python -u scripts/atlas_eolien.py -c {CONF} --set inference.w_continuite=true "

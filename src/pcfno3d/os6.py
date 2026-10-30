@@ -230,21 +230,27 @@ def _choisir(score: np.ndarray, cand: np.ndarray, pris: np.ndarray, n: int, geom
 
 
 def placement_glouton(banc_val: Banc, cand: np.ndarray, c: Contraintes, par_etape: int = 5,
-                      rayon_influence_m: float = 1500.0) -> pd.DataFrame:
-    """Selection gloutonne sur la validation : ordre d'installation et gain de chaque etape."""
+                      rayon_influence_m: float = 1500.0,
+                      installes: list[tuple[int, int]] | None = None) -> pd.DataFrame:
+    """Selection gloutonne sur la validation : ordre d'installation et gain de chaque etape.
+
+    installes : capteurs ANEO DEJA poses [(iy, ix)] (BF78, mise a jour du plan apres les premiers
+    capteurs) : ils font partie du reseau des le depart, ne sont pas recomptes dans le budget `n_max` et
+    le plan propose la suite a partir d'eux."""
     g = banc_val.geom
     pris = cellules_stations(g).reshape(-1, 2)
-    aneo: list[tuple[int, int]] = []
+    aneo: list[tuple[int, int]] = [(int(a), int(b)) for a, b in (installes or [])]
+    n_installes = len(aneo)
     r = banc_val.passe({"reseau": masque(g, aneo)}, carte_erreur=True)["reseau"]
     lignes = []
     etape = 0
-    while len(aneo) < c.n_max:
+    while len(aneo) - n_installes < c.n_max:
         carte = r["carte"]
         lisse_n = gaussian_filter(np.nan_to_num(carte), rayon_influence_m / g.dx)
         lisse_d = gaussian_filter(np.isfinite(carte).astype(float), rayon_influence_m / g.dx)
         score = np.where(lisse_d > 1e-6, lisse_n / np.maximum(lisse_d, 1e-6), np.nan)
         nouveaux = _choisir(score, cand, np.array(pris.tolist() + aneo).reshape(-1, 2),
-                            min(par_etape, c.n_max - len(aneo)), g, c.distance_min_m)
+                            min(par_etape, c.n_max - (len(aneo) - n_installes)), g, c.distance_min_m)
         if not nouveaux:
             break
         avant = r["rmse_vect"]
@@ -378,3 +384,16 @@ def geojson(p: pd.DataFrame, geom, georef, meta: dict) -> dict:
 
 def contraintes_dict(c: Contraintes) -> dict:
     return asdict(c)
+
+
+def cellules_installes(geom, georef, chemin: str | Path) -> list[tuple[int, int]]:
+    """CSV des capteurs ANEO deja poses (colonnes lat, lon) -> cellules (iy, ix) dans le domaine (BF78)."""
+    t = pd.read_csv(chemin)
+    if not {"lat", "lon"} <= set(t.columns):
+        raise ValueError(f"{chemin} : colonnes lat et lon attendues")
+    x, y = georef.to_xy(t["lat"].to_numpy(float), t["lon"].to_numpy(float))
+    ix, iy = np.rint(np.asarray(x) / geom.dx).astype(int), np.rint(np.asarray(y) / geom.dy).astype(int)
+    ok = (ix >= 0) & (ix < geom.nx) & (iy >= 0) & (iy < geom.ny)
+    if not ok.all():
+        print(f"OS6 : {int((~ok).sum())} capteur(s) installe(s) hors du domaine, ignore(s)", flush=True)
+    return sorted({(int(a), int(b)) for a, b in zip(iy[ok], ix[ok])})

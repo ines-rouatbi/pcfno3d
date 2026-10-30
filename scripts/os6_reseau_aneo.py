@@ -39,6 +39,7 @@ def main() -> int:
     ap.add_argument("--checkpoint")
     ap.add_argument("--device")
     ap.add_argument("--contraintes", help="JSON des contraintes d'implantation (BF74-BF77)")
+    ap.add_argument("--installes", help="CSV lat, lon des capteurs ANEO deja poses : le plan repart d'eux (BF78)")
     ap.add_argument("--sortie", required=True)
     ap.add_argument("--n-val", type=int, default=24, help="instants de validation du placement")
     ap.add_argument("--n-test", type=int, default=None, help="instants de test (defaut : tous)")
@@ -79,7 +80,13 @@ def main() -> int:
         ordre = pd.read_csv(f_ordre)
     else:
         val = os6.Banc(wf, "validation", args.n_val)
-        ordre = os6.placement_glouton(val, cand, c, par_etape=args.par_etape)
+        installes = None
+        if args.installes:
+            if georef is None:
+                raise SystemExit("--installes demande un domaine georeference (real.origin_lat/lon)")
+            installes = os6.cellules_installes(g, georef, args.installes)
+            print(f"OS6 : {len(installes)} capteur(s) deja installe(s) au depart du plan", flush=True)
+        ordre = os6.placement_glouton(val, cand, c, par_etape=args.par_etape, installes=installes)
         ordre.to_csv(f_ordre, index=False)
 
     # 3. courbe de dimensionnement (test, une fois)
