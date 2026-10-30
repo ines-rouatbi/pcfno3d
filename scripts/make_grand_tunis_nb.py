@@ -927,6 +927,8 @@ try:
     print(json.dumps({k: v for k, v in json.loads((SORTIE / "os6.json").read_text()).items()
                       if k in ("nombre_recommande", "candidats", "capteurs_places", "reseau_actuel",
                                "comparaison_net1")}, indent=1, ensure_ascii=False))
+    # bilan de conformite au cahier v12 (lecture seule) : runs/bilan_conformite.md
+    lancer("bilan_conformite", f"python -u scripts/bilan_conformite.py --runs {RUNS}")
 except Exception:
     traceback.print_exc()
 finally:
@@ -1044,6 +1046,8 @@ try:
                               f"--sources modele,era5,generateur --sortie {RUNS / livre / 'decisions_agricoles'}")
     for f in sorted(OS7.glob("*/prevision_bilan.json")):
         print(f.parent.name, json.dumps(json.loads(f.read_text())["verdicts"].get("toutes", {}), ensure_ascii=False))
+    # bilan de conformite au cahier v12 (lecture seule) : runs/bilan_conformite.md
+    lancer("bilan_conformite", f"python -u scripts/bilan_conformite.py --runs {RUNS}")
 except Exception:
     traceback.print_exc()
 finally:
