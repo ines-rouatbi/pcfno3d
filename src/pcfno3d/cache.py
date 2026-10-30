@@ -115,9 +115,10 @@ def build_cache(cfg: Config, geom: Geometry, days: Iterable[int] | None = None,
                   + (f" (+ copie : {mirrored} fichiers)" if mirrored else ""))
 
     index = load_index(cfg)
+    ecrire_manifeste(cfg)
     if verbose:
         counts = index["split"].value_counts().to_dict()
-        print(f"cache : {len(index)} instants ({counts})")
+        print(f"cache : {len(index)} instants ({counts}) ; manifeste {MANIFESTE}")
     return index
 
 
@@ -179,3 +180,68 @@ def check_ground_truth(cfg: Config, geom: Geometry, n: int = 3) -> list[dict]:
             "rho_min": float(Y[3][geom.valid].min()),        # doit etre ~1.0-1.3
         })
     return report
+
+
+# ---------------------------------------------------------------------- manifeste (BF15, L2)
+MANIFESTE = "cache_manifest.json"
+
+
+def _sha256(path: Path) -> str | None:
+    import hashlib
+    if not path.exists():
+        return None
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for bloc in iter(lambda: f.read(1 << 20), b""):
+            h.update(bloc)
+    return h.hexdigest()
+
+
+def _commit() -> str | None:
+    import subprocess
+    try:
+        r = subprocess.run(["git", "rev-parse", "HEAD"], cwd=Path(__file__).resolve().parent,
+                           capture_output=True, text=True, timeout=5)
+        return r.stdout.strip() or None
+    except Exception:                                  # noqa: BLE001 — pas de git (Colab, archive)
+        return None
+
+
+def manifeste(cfg: Config) -> dict:
+    """Empreinte du cache : ce qui a servi a le construire (geometrie, decoupage) et ce qu'il contient
+    (index). Deux caches de meme manifeste donnent les memes tenseurs d'entree."""
+    from .geometry import GEOMETRY_CACHE_VERSION
+    idx = cfg.paths.index_csv
+    index = pd.read_csv(idx) if idx.exists() else pd.DataFrame(columns=["split"])
+    return {"meta_json_sha256": _sha256(cfg.paths.data_dir / "meta.json"),
+            "split_days_sha256": _sha256(cfg.paths.data_dir / "split_days.json"),
+            "index_csv_sha256": _sha256(idx),
+            "instants": int(len(index)),
+            "par_split": {str(k): int(v) for k, v in index["split"].value_counts().items()},
+            "geometry_cache_version": GEOMETRY_CACHE_VERSION,
+            "entree": cfg.mask.entree, "forcage": str(cfg.paths.forcage_era5) if cfg.paths.forcage_era5 else None,
+            "commit": _commit()}
+
+
+def ecrire_manifeste(cfg: Config) -> Path:
+    import json
+    import time
+    m = {**manifeste(cfg), "ecrit_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+    f = cfg.paths.cache_dir / MANIFESTE
+    tmp = f.with_suffix(".tmp")
+    tmp.write_text(json.dumps(m, indent=2, ensure_ascii=False), encoding="utf-8")
+    tmp.replace(f)
+    return f
+
+
+def verifier_manifeste(cfg: Config) -> list[str]:
+    """Ecarts entre le manifeste ecrit et le cache actuel ([] = conforme ; absent = un ecart)."""
+    import json
+    f = cfg.paths.cache_dir / MANIFESTE
+    if not f.exists():
+        return [f"manifeste absent : {f} (pcfno3d manifeste-cache)"]
+    ecrit = json.loads(f.read_text(encoding="utf-8"))
+    actuel = manifeste(cfg)
+    return [f"{k} : {ecrit.get(k)} -> {actuel[k]}" for k in
+            ("meta_json_sha256", "split_days_sha256", "index_csv_sha256", "instants", "geometry_cache_version")
+            if ecrit.get(k) != actuel[k]]

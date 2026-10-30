@@ -14,6 +14,7 @@ norm_stats et nombre de threads identiques, la reconstruction est IDENTIQUE BIT 
 from __future__ import annotations
 
 import hashlib
+import json
 
 import numpy as np
 import pytest
@@ -144,3 +145,19 @@ def test_jeu_d_evaluation_masque_toujours_les_memes_capteurs(cfg, geom, index):
         assert np.array_equal(s1, d1[i][1].numpy())
         assert np.array_equal(s1, s2)
         assert not np.array_equal(s1, s3)
+
+
+def test_manifeste_du_cache(cfg, index):
+    """BF15 / L2 : le cache porte l'empreinte de ce qui l'a construit ; un index modifie se voit."""
+    from pcfno3d.cache import ecrire_manifeste, verifier_manifeste
+    f = ecrire_manifeste(cfg)
+    m = json.loads(f.read_text(encoding="utf-8"))
+    assert m["instants"] == len(index) and m["meta_json_sha256"] and m["index_csv_sha256"]
+    assert verifier_manifeste(cfg) == []
+    sauve = cfg.paths.index_csv.read_bytes()
+    try:
+        cfg.paths.index_csv.write_bytes(sauve + b"\n")
+        assert any(e.startswith("index_csv_sha256") for e in verifier_manifeste(cfg))
+    finally:
+        cfg.paths.index_csv.write_bytes(sauve)
+    assert verifier_manifeste(cfg) == []

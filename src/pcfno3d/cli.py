@@ -803,6 +803,24 @@ def cmd_info(args) -> int:
     for label, path in checks:
         mark = "present" if path.exists() else "absent "
         print(f"  [{mark}] {label:18s} {path}")
+    if cfg.paths.index_csv.exists():
+        from .cache import verifier_manifeste
+        ecarts = verifier_manifeste(cfg)
+        print("  manifeste du cache : " + ("conforme" if not ecarts else "ECARTS
+    " + "
+    ".join(ecarts)))
+    return 0
+
+
+def cmd_manifeste_cache(args) -> int:
+    from .cache import ecrire_manifeste, verifier_manifeste
+    cfg = _load_cfg(args)
+    if args.verifier:
+        ecarts = verifier_manifeste(cfg)
+        print("conforme" if not ecarts else "
+".join(ecarts))
+        return 0 if not ecarts else 3
+    print(ecrire_manifeste(cfg))
     return 0
 
 
@@ -815,6 +833,10 @@ def build_parser() -> argparse.ArgumentParser:
                    help="surcharge, ex. --set train.epochs=2")
     p.add_argument("--data-dir"), p.add_argument("--cache-dir"), p.add_argument("--run-dir")
     sub = p.add_subparsers(dest="commande", required=True)
+
+    s = sub.add_parser("manifeste-cache", help="empreinte du cache (meta, decoupage, index) : ecrire ou verifier")
+    s.add_argument("--verifier", action="store_true", help="comparer au manifeste ecrit (code 3 si ecart)")
+    s.set_defaults(func=cmd_manifeste_cache)
 
     s = sub.add_parser("build-cache", help="CSV journaliers -> tenseurs .npy")
     s.add_argument("--days", help="liste de jours, ex. 1,2,3 (defaut : tous)")
