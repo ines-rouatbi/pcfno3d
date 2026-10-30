@@ -348,6 +348,34 @@ contrat ATOM v1 rév. 2 (un fichier Float32 / uint8 par variable, tous niveaux, 
 (`/v1/latest`, `/v1/times`, `/v1/fields/{id}/{level}/{var}`...). Format, protocole,
 atomicité et exports NetCDF / CSV des nœuds virtuels : `docs/PUBLICATION.md`.
 
+## Application ATOM Wind (cahier v12) : routes `/api/atom-wind/*` et suivantes
+
+Servies par le modèle réel du Grand Tunis (`docs/MODEL_CARD_GRAND_TUNIS.md`) ; clé de lecture sauf
+mention « admin ». Grille de 500 m, heures locales de Tunis (UTC+1), vent en int16 cm/s codé en base64
+(`-32768` = sans valeur), réponses gzip.
+
+| Route | Rôle |
+|---|---|
+| `GET /atom-wind/grille` | relief, eau, rugosité, stations sur la grille de 500 m |
+| `GET /atom-wind/jours`, `/jour?date=` | journées de test (instants du cache) |
+| `GET /atom-wind/direct?j=0\|1\|2` | aujourd'hui en temps réel (GFS + anémomètres), demain et après-demain en prévision ; t2m, hr2m (GFS), physique de chaque instant (`residu_masse_rms`) ; sigma si `PCFNO3D_SIGMA_DIRECT=1` |
+| `GET /atom-wind/ensemble?j=` | prévision probabiliste GEFS (probabilité de pouvoir traiter, quantiles) |
+| `GET /atom-wind/agricole`, `/production`, `/maintenance`, `/variations`, `/dimensionnement` | décision agricole, production d'une éolienne de référence, créneaux de maintenance, rampes du parc virtuel, mât de mesure (lieu ou lat / lon) |
+| `GET /atom-wind/valeur-stations`, `/explication` | valeur et influence de chaque station (déni de données), pourquoi ce vent en un point |
+| `GET /atom-wind/alertes` | alertes du service (station muette, résidu de masse, vent fort) |
+| `GET /atom-wind/historique`, `/historique/{nom}` | journées déjà calculées (temps réel et prévisions avec leur date d'émission) |
+| `GET /atom-wind/qualite` | verdicts DSO1 à DSO6 du modèle servi, vraies stations, décision de livraison |
+| `GET /atom-wind/atlas`, `/atlas/{fichier}` | atlas éolien annuel, couches GeoTIFF |
+| `GET /atom-wind/rapport.pdf?type=parcelle\|site\|parc` | rapport PDF |
+| `GET /exports/{instant}.nc\|.csv` | export NetCDF ou CSV des nœuds d'un instant du cache |
+| `POST /assistant` | assistant conversationnel (Claude, outils ATOM Wind ; 503 sans `ANTHROPIC_API_KEY`) |
+| `POST /reconstruct/stations`, `/reconstruct/upload` | mesures envoyées : pour le modèle réel, entrée de production (GFS de l'heure + mesures à 10 m dans leur maille) ; 503 si GFS est injoignable |
+| `GET/POST/PATCH/DELETE /keys` (admin) | clés d'API (secret montré une seule fois) |
+| `GET /supervision` (admin), `POST /notifications/envoyer` (admin), `/sms/*` (admin) | activité du service, notifications, abonnés SMS |
+
+Le Worker d'atom.zelqane.com garde la dernière réponse réussie de chaque `GET /api/atom-wind/*` et la sert
+avec l'en-tête `x-atom-dernier-etat` quand le service est arrêté.
+
 ## Conventions à ne pas se tromper
 
 - `u` positif vers l'**est**, `v` vers le **nord**, `w` vers le **haut**, en m/s.
