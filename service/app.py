@@ -1041,6 +1041,21 @@ def atom_explication(lieu: str | None = Query(None, max_length=80), lat: float |
         raise HTTPException(422, str(exc)) from exc
 
 
+@router.get("/atom-wind/dimensionnement", tags=["atom-wind"])
+def atom_dimensionnement(lieu: str | None = Query(None, max_length=80), lat: float | None = None,
+                         lon: float | None = None, hauteur_m: float = Query(30.0, ge=2, le=150),
+                         conso_w: float = Query(5.0, gt=0, le=2000), autonomie_j: float = Query(3.0, ge=0, le=30),
+                         _: ApiKeyRecord | None = Depends(require_read)) -> dict:
+    """Dimensionnement energetique d'un mat de mesure (cahier v12, E18) : micro-eolienne a la hauteur du mat,
+    bilan avec la consommation de la station et taille de batterie, sur aujourd'hui a apres-demain."""
+    from service import atom_outils
+    try:
+        return atom_outils.dimensionnement_mat(model(), lat=lat, lon=lon, lieu=lieu, hauteur_m=hauteur_m,
+                                               conso_w=conso_w, autonomie_j=autonomie_j)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
 class QuestionAssistant(BaseModel):
     question: str = Field(..., min_length=1, max_length=2000)
     historique: list[dict] = Field(default_factory=list, max_length=20,

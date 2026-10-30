@@ -546,6 +546,25 @@ def explication_point(lieu: str | None = None, lat: float | None = None, lon: fl
     return atom_outils.explication_point(get_model(), lat=lat, lon=lon, lieu=lieu)
 
 
+@mcp.tool()
+def dimensionnement_mat(lieu: str | None = None, lat: float | None = None, lon: float | None = None,
+                        hauteur_m: float = 30.0, conso_w: float = 5.0, autonomie_j: float = 3.0) -> dict:
+    """Dimensionnement energetique d'un mat de mesure (cahier v12, E18) : production d'une micro-eolienne a la
+    hauteur du mat, couverture de la consommation et taille de batterie (aujourd'hui a apres-demain).
+
+    Args:
+        lieu: lieu de l'application, ou lat / lon.
+        hauteur_m: hauteur de la micro-eolienne sur le mat.
+        conso_w: consommation moyenne de la station (W).
+        autonomie_j: jours d'autonomie minimale sans vent.
+    """
+    from service import atom_outils
+    d = atom_outils.dimensionnement_mat(get_model(), lat=lat, lon=lon, lieu=lieu, hauteur_m=float(hauteur_m),
+                                        conso_w=float(conso_w), autonomie_j=float(autonomie_j))
+    d.pop("production_w", None)
+    return d
+
+
 def main() -> int:
     """Transport stdio, pour un client MCP local."""
     mcp.run()

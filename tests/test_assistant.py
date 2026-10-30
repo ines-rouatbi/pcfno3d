@@ -72,6 +72,17 @@ def test_explication_point(wf, monkeypatch):
     assert sum(s["part_pct"] for s in e["stations"]) in (0, 99, 100, 101) and e["texte"]
 
 
+def test_dimensionnement_mat(wf):
+    from service import atom_outils as ao
+    d = ao.dimensionnement_mat(wf, lat=LAT, lon=LON, hauteur_m=30.0, conso_w=5.0, autonomie_j=3.0)
+    assert d["heures"] % 24 == 0 and len(d["production_w"]) == d["heures"]
+    # au moins 3 jours de consommation, ramenes a la profondeur de decharge et au rendement
+    assert d["batterie_wh"] >= round(5.0 * 24 * 3 / (0.8 * 0.9)) - 1
+    assert d["plus_grand_deficit_wh"] >= 0 and 0 <= max(d["production_w"]) <= 400
+    gros = ao.dimensionnement_mat(wf, lat=LAT, lon=LON, conso_w=500.0, autonomie_j=0.0)
+    assert gros["plus_grand_deficit_wh"] > 0 and gros["batterie_wh"] >= gros["plus_grand_deficit_wh"]
+
+
 class FauxClaude:
     """Premier tour : appelle vent_au_point ; second tour : repond par du texte."""
 

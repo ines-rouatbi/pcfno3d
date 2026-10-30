@@ -384,3 +384,49 @@ def explication_point(wf, lat=None, lon=None, lieu=None) -> dict:
                       "Ici, aucune station ne change la valeur de plus de 0,1 m/s : le vent vient surtout de la grande "
                       "echelle (GFS) et du relief."),
             "methode": d["methode"]}
+
+
+# micro-eolienne de mat (E18) : courbe GENERIQUE de 400 W, exemple a remplacer par la fiche du fabricant
+MICRO_EOLIENNE = {"nom": "micro-eolienne generique 400 W (exemple)", "puissance_w": 400.0,
+                  "vitesse_m_s": [0, 2.5, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12.5, 20, 20.01],
+                  "puissance": [0, 0, 10, 30, 60, 100, 160, 230, 300, 350, 390, 400, 400, 0]}
+
+
+def dimensionnement_mat(wf, lat=None, lon=None, lieu=None, hauteur_m: float = 30.0, conso_w: float = 5.0,
+                        autonomie_j: float = 3.0, profondeur: float = 0.8, rendement: float = 0.9) -> dict:
+    """Dimensionnement energetique d'un mat de mesure (cahier v12, E18) : production heure par heure d'une
+    micro-eolienne a la hauteur du mat sur les jours disponibles (aujourd'hui a apres-demain), bilan avec la
+    consommation de la station, et taille de batterie : le plus grand deficit cumule de la periode, au
+    moins `autonomie_j` jours de consommation, ramene a la profondeur de decharge et au rendement."""
+    x, y, nom = position(wf, lat, lon, lieu)
+    vit, prod, dates = [], [], []
+    for j in (0, 1, 2):
+        try:
+            p = jour(wf, j)
+        except Exception:                                       # noqa: BLE001 — jour absent : on s'arrete
+            break
+        dates.append(p["date"])
+        for h in range(24):
+            u, v = vent(wf, p, x, y, hauteur_m, float(h))
+            s = math.hypot(u, v)
+            vit.append(s)
+            prod.append(float(np.interp(s, MICRO_EOLIENNE["vitesse_m_s"], MICRO_EOLIENNE["puissance"])))
+    if not prod:
+        raise ValueError("aucune journee disponible")
+    bilan = np.cumsum(np.asarray(prod) * rendement - conso_w)            # Wh, pas horaire
+    # plus grand deficit cumule : chute maximale de la courbe de bilan depuis un sommet
+    deficit = float(np.max(np.maximum.accumulate(np.concatenate([[0.0], bilan]))[1:] - bilan, initial=0.0))
+    besoin_wh = max(deficit, conso_w * 24 * autonomie_j)
+    batterie_wh = besoin_wh / (profondeur * rendement)
+    e_prod, e_conso = sum(prod) * rendement, conso_w * len(prod)
+    return {"lieu": nom, "dates": dates, "heures": len(prod), "hauteur_mat_m": hauteur_m,
+            "eolienne": MICRO_EOLIENNE["nom"], "vent_moyen_m_s": round(float(np.mean(vit)), 2),
+            "production_wh_par_jour": round(e_prod * 24 / len(prod)), "consommation_wh_par_jour": round(conso_w * 24),
+            "couverture_pct": round(100.0 * e_prod / e_conso) if e_conso > 0 else None,
+            "plus_grand_deficit_wh": round(deficit), "batterie_wh": round(batterie_wh),
+            "batterie_ah_12v": round(batterie_wh / 12.0),
+            "hypotheses": {"conso_w": conso_w, "autonomie_j": autonomie_j, "profondeur_decharge": profondeur,
+                           "rendement": rendement},
+            "production_w": [round(w) for w in prod],
+            "limite": (f"{len(prod) // 24} jour(s) de vent ATOM Wind seulement : un dimensionnement definitif se fait "
+                       "sur l'atlas annuel et la courbe du fabricant ; la micro-eolienne est un exemple generique")}
