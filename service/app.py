@@ -1010,6 +1010,73 @@ def assistant(q: QuestionAssistant, _: ApiKeyRecord | None = Depends(require_rea
         raise HTTPException(502, f"assistant indisponible : {type(exc).__name__}") from exc
 
 
+class AbonneSms(BaseModel):
+    numero: str = Field(..., description="numero E.164, ex. +21612345678")
+    langue: str = Field("fr", pattern="^(fr|ar)$")
+    lieu: str | None = None
+    lat: float | None = None
+    lon: float | None = None
+
+
+def _dossier_sms() -> Path:
+    return model().cfg.paths.run_dir / "sms"
+
+
+@router.get("/sms/abonnes", tags=["sms"])
+def sms_abonnes(_: ApiKeyRecord | None = Depends(require_admin)) -> dict:
+    """Abonnes aux alertes SMS (E12), numeros masques. Portee administrateur."""
+    from service import sms
+    ab = sms.Abonnes(_dossier_sms()).lire()
+    return {"abonnes": [{**a, "numero": sms.masquer(a["numero"])} for a in ab]}
+
+
+@router.post("/sms/abonnes", tags=["sms"])
+def sms_abonner(a: AbonneSms, _: ApiKeyRecord | None = Depends(require_admin)) -> dict:
+    from service import sms
+    try:
+        r = sms.Abonnes(_dossier_sms()).ajouter(a.numero, a.langue, a.lieu, a.lat, a.lon)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {**r, "numero": sms.masquer(r["numero"])}
+
+
+@router.delete("/sms/abonnes/{numero}", tags=["sms"])
+def sms_desabonner(numero: str, _: ApiKeyRecord | None = Depends(require_admin)) -> dict:
+    from service import sms
+    if not sms.Abonnes(_dossier_sms()).retirer(numero):
+        raise HTTPException(404, "abonne inconnu")
+    return {"retire": sms.masquer(numero)}
+
+
+@router.post("/sms/envoyer", tags=["sms"])
+def sms_envoyer(jour: int = Query(1, ge=0, le=2), simulation: bool = Query(True),
+                _: ApiKeyRecord | None = Depends(require_admin)) -> dict:
+    """Compose et envoie le SMS du jour `jour` a chaque abonne. simulation=true (defaut) : journal
+    seulement ; false : fournisseur configure (PCFNO3D_SMS=twilio et ses identifiants)."""
+    from service import sms
+    try:
+        return sms.envoyer_tous(model(), _dossier_sms(), jour=jour, simulation=simulation)
+    except KeyError as exc:
+        raise HTTPException(503, f"fournisseur SMS non configure : {exc}") from exc
+
+
+def _sms_quotidien(stop: threading.Event) -> None:
+    """Envoi automatique des SMS du lendemain a PCFNO3D_SMS_HEURE (heure de Tunis), une fois par jour."""
+    from service import sms
+    heure = int(os.environ["PCFNO3D_SMS_HEURE"])
+    dernier = None
+    while not stop.wait(60):
+        t = time.gmtime(time.time() + 3600)                     # heure de Tunis (UTC+1)
+        jour = time.strftime("%Y-%m-%d", t)
+        if t.tm_hour == heure and dernier != jour and STATE.get("model") is not None:
+            dernier = jour
+            try:
+                r = sms.envoyer_tous(STATE["model"], STATE["model"].cfg.paths.run_dir / "sms", jour=1)
+                LOG.info("SMS quotidiens : %s abonnes (%s)", r["abonnes"], r["fournisseur"])
+            except Exception as exc:                            # noqa: BLE001
+                LOG.warning("SMS quotidiens : %s", exc)
+
+
 def _atlas_dossier(wf: WindFieldModel) -> Path | None:
     for d in (wf.cfg.paths.run_dir / "atlas_eolien", wf.cfg.paths.run_dir.parent / "atlas_eolien"):
         if (d / "atlas.json").exists() and (d / "atlas.npz").exists():
@@ -1129,8 +1196,13 @@ def create_app() -> FastAPI:
             from pcfno3d.alerts import MoteurAlertes
             STATE["alertes"] = MoteurAlertes(cfg)
         mcp_server.set_alertes(STATE.get("alertes"))
+        # SMS quotidiens (E12) : seulement si PCFNO3D_SMS_HEURE est donnee
+        arret_sms = threading.Event()
+        if os.environ.get("PCFNO3D_SMS_HEURE"):
+            threading.Thread(target=_sms_quotidien, args=(arret_sms,), daemon=True, name="sms").start()
         async with mcp_app.router.lifespan_context(mcp_app):
             yield
+        arret_sms.set()
         STATE.clear()
 
     app = FastAPI(
