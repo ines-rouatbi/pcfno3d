@@ -242,3 +242,21 @@ def test_traitement_possible():
     from pcfno3d.atom_wind import traitement_possible
     k = np.array([2.9, 3.0, 15.0, 15.1]) / 3.6
     assert traitement_possible(k).tolist() == [False, True, True, False]
+
+
+def test_scenario_de_panne(jeu):
+    """BF88 : une heure mesuree recalculee sans une station ; elle seule est marquee retiree."""
+    from pcfno3d import atom_wind, temps_reel
+    from pcfno3d.inference import WindFieldModel
+
+    wf = WindFieldModel(jeu, device="cpu", verbose=False)
+    src = temps_reel.SourceDirect(wf.geom, lire=fausse_source)
+    d = atom_wind.scenario_panne(wf, src, "2026-10-26", 7, ["DTTA"], maintenant=pd.Timestamp("2026-10-26T07:20:00"))
+    assert d["retirees"] == ["Tunis-Carthage"] and set(d["mesurees"]) == {"Tunis-Carthage", "Zaghouan"}
+    assert d["stations"]["Tunis-Carthage"]["retiree"] and not d["stations"]["Zaghouan"]["retiree"]
+    assert d["domaine"]["10m"]["ecart_max_m_s"] > 0
+    assert "erreur_sans_m_s" in d["stations"]["Tunis-Carthage"]
+    with pytest.raises(ValueError, match="pas encore mesuree"):
+        atom_wind.scenario_panne(wf, src, "2026-10-26", 20, ["DTTA"], maintenant=pd.Timestamp("2026-10-26T07:20:00"))
+    with pytest.raises(ValueError, match="inconnues"):
+        atom_wind.scenario_panne(wf, src, "2026-10-26", 7, ["XX"], maintenant=pd.Timestamp("2026-10-26T07:20:00"))

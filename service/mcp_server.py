@@ -574,6 +574,19 @@ def historique_atom_wind() -> dict:
     return {"journees": atom_outils.historique(get_model())}
 
 
+@mcp.tool()
+def simuler_panne(heure: float, stations: list[str]) -> dict:
+    """Scenario de panne (cahier v12, BF88, espace R&D) : recalcule une heure deja mesuree d'aujourd'hui
+    SANS les stations donnees et dit ce que cela change sur le domaine et aux stations.
+
+    Args:
+        heure: heure locale de Tunis (0 a 23), deja passee.
+        stations: stations a retirer (Tunis-Carthage, Zaghouan, Nabeul ou leurs codes DTTA, INM60729, INM60728).
+    """
+    from service import atom_outils
+    return atom_outils.scenario_panne(get_model(), float(heure), list(stations))
+
+
 def main() -> int:
     """Transport stdio, pour un client MCP local."""
     mcp.run()

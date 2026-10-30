@@ -1304,6 +1304,19 @@ def supervision(_: ApiKeyRecord | None = Depends(require_admin)) -> dict:
     return sup.etat(model(), j.path if j is not None else None)
 
 
+@router.get("/atom-wind/scenario", tags=["atom-wind"])
+def atom_scenario(heure: float = Query(..., ge=0, le=23), retirer: str = Query(..., max_length=200,
+                  description="stations retirees, separees par des virgules (Tunis-Carthage, Zaghouan, Nabeul)"),
+                  _: ApiKeyRecord | None = Depends(require_read)) -> dict:
+    """Scenario de panne (cahier v12, BF88) : une heure deja mesuree d'aujourd'hui recalculee sans des
+    stations, et ce que cela change (domaine, stations)."""
+    from service import atom_outils
+    try:
+        return atom_outils.scenario_panne(model(), heure, retirer.split(","))
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
 @router.get("/atom-wind/alertes", tags=["atom-wind"])
 def atom_alertes(_: ApiKeyRecord | None = Depends(require_read)) -> dict:
     """Alertes du service temps reel (cahier v12, BF22, BF27) : station muette, residu de masse, vent fort

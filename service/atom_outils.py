@@ -567,3 +567,12 @@ def alertes_service(wf) -> list[dict]:
                         "cause": f"maximum {x['max']} {x['unite']} vers {x['heure_locale']:.0f} h.",
                         "recommandation": "Eviter les travaux en hauteur et les traitements ; securiser serres et films."})
     return out
+
+
+def scenario_panne(wf, heure: float, stations: list[str]) -> dict:
+    """Scenario de panne d'aujourd'hui (BF88) : codes ou noms de stations a retirer."""
+    from pcfno3d import atom_wind
+    from pcfno3d.stations_reelles import CODES
+    noms = {v.lower(): k for k, v in CODES.items()}
+    codes = [noms.get(x.strip().lower(), x.strip().upper()) for x in stations if x.strip()]
+    return atom_wind.scenario_panne(wf, source(wf), atom_wind.date_locale_aujourdhui(0), float(heure), codes)

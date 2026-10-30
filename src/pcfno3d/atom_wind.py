@@ -350,6 +350,58 @@ def valeur_stations(wf, source, date_locale: str, maintenant: pd.Timestamp | Non
             "modele": wf.checkpoint_path.name}
 
 
+# ---------------------------------------------------------------------- scenario de panne (BF88)
+def scenario_panne(wf, source, date_locale: str, heure_locale: float, retirees: list[str],
+                   maintenant: pd.Timestamp | None = None) -> dict:
+    """Le champ d'une heure deja mesuree recalcule SANS les stations `retirees` (codes DTTA, INM60729,
+    INM60728) : ecart a 10 m et 100 m sur le domaine et a chaque station, contre le champ servi."""
+    from . import temps_reel as tr
+    from .stations_reelles import CODES, H_STATION, cellules_codes
+
+    geom = wf.geom
+    e = source.journee(date_locale)
+    f, c, obs = e["forcage"], e["champs"], e["obs"]
+    maintenant = maintenant if maintenant is not None else pd.Timestamp.now(tz="UTC").tz_localize(None)
+    t = pd.Timestamp(date_locale) + pd.Timedelta(hours=float(heure_locale) - UTC_LOCAL_H)
+    it = {int(x): i for i, x in enumerate(c["temps"])}.get(int(t.value // 10 ** 9))
+    if it is None or t > maintenant:
+        raise ValueError(f"{date_locale} {heure_locale:g} h : heure pas encore mesuree ou sans GFS")
+    cell = cellules_codes(geom)
+    inconnues = [k for k in retirees if k not in CODES]
+    if inconnues:
+        raise ValueError(f"stations inconnues : {inconnues} (codes : {', '.join(CODES)})")
+    mes = {k: v for k, v in tr.mesures_a(obs, t).items() if k in cell}
+    reste = {k: v for k, v in mes.items() if k not in retirees}
+
+    def passe(m):
+        S = tr.entree(geom, c, f, it, m)
+        vol = wf.predict(S, t.hour + t.minute / 60, int(t.dayofyear), timestamp=t.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                         forcage=f.vecteur(t), reliability=False)
+        return {h: champ_agl(vol.u, vol.v, geom, float(h)) for h in (H_STATION, 100.0)}
+
+    a, b = passe(mes), passe(reste)
+    domaine = {}
+    for h in (H_STATION, 100.0):
+        d = np.hypot(a[h][0] - b[h][0], a[h][1] - b[h][1])
+        domaine[f"{h:g}m"] = {"ecart_moyen_m_s": round(float(np.nanmean(d)), 3),
+                             "ecart_max_m_s": round(float(np.nanmax(d)), 3),
+                             "part_au_dessus_0_5_m_s": round(float(np.nanmean(d > 0.5)), 4)}
+    stations = {}
+    for k, (iy, ix) in cell.items():
+        ua, va = a[H_STATION][0][iy, ix], a[H_STATION][1][iy, ix]
+        ub, vb = b[H_STATION][0][iy, ix], b[H_STATION][1][iy, ix]
+        r = {"retiree": k in retirees, "mesuree": k in mes, "ecart_m_s": round(float(math.hypot(ua - ub, va - vb)), 3)}
+        if k in mes:
+            um, vm = mes[k]
+            r["erreur_avec_m_s"] = round(float(math.hypot(ua - um, va - vm)), 2)
+            r["erreur_sans_m_s"] = round(float(math.hypot(ub - um, vb - vm)), 2)
+        stations[CODES.get(k, k)] = r
+    return {"date": date_locale, "heure_locale": float(heure_locale), "retirees": [CODES.get(k, k) for k in retirees],
+            "mesurees": [CODES.get(k, k) for k in mes], "domaine": domaine, "stations": stations,
+            "lecture": "ecart = ce que la panne change dans le champ ; erreur_sans a une station retiree = ce que "
+                       "le reste du reseau et GFS devinent sans elle"}
+
+
 # ---------------------------------------------------------------------- ensemble GEFS (E19)
 HEURES_ENSEMBLE = (6, 9, 12, 15, 18)    # heures locales des decisions agricoles
 HAUTEURS_ENSEMBLE = (10, 100)           # traitement (10 m) ; moyeu eolien (100 m)

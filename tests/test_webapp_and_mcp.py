@@ -266,7 +266,7 @@ def test_mcp_initialise_et_liste_les_outils(client):
                      "export_instant", "alertes_actives", "production_eolienne",
                      "prevision_point", "decision_agricole", "fenetres_maintenance",
                      "variations_production", "valeur_stations", "explication_point",
-                     "dimensionnement_mat", "historique_atom_wind"}
+                     "dimensionnement_mat", "historique_atom_wind", "simuler_panne"}
 
 
 def test_mcp_outils_de_lecture(client):
