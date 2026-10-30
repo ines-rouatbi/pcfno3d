@@ -477,6 +477,60 @@ async function installerSupervision(){
 }
 A.installerSupervision = installerSupervision;
 
+// ------------------------------------------------------------------ série au moyeu (TB4)
+// Vent au moyeu du parc virtuel (E2, 80 m) heure par heure, avec l'intervalle à 80 % : sigma calibré du
+// modèle s'il est servi, sinon quantiles 10-90 % de l'ensemble GEFS à 100 m (aux heures calculées), et
+// les seuils de l'éolienne de référence (démarrage, puissance nominale, arrêt).
+const SEUILS_EOL = [[3, "démarrage 3 m/s"], [12, "nominale 12 m/s"], [25, "arrêt 25 m/s"]];
+function rendreSerieMoyeu(xy){
+  const vue = document.getElementById("v-tableau"); if(!vue || !A.pret()) return;
+  let carte = document.getElementById("aw-moyeu");
+  if(!carte){
+    carte = document.createElement("div"); carte.className = "card"; carte.id = "aw-moyeu";
+    const ref = document.getElementById("tbday"); const apres = ref && ref.closest(".grid2");
+    if(apres) apres.after(carte); else vue.appendChild(carte);
+  }
+  const pos = xy(36.612, 10.33);                                    // E2, au centre du parc virtuel
+  const H = Array.from({ length: 24 }, (_, h) => h);
+  const v = H.map(h => { const [u, w] = A.vent(pos[0], pos[1], 80, h); return Math.hypot(u, w); });
+  let bande = null, source = "";
+  if(A.aSigma && A.aSigma()){
+    bande = H.map(h => { const s = A.sigma(pos[0], pos[1], 80, h); return isFinite(s) ? [Math.max(0, v[h] - 1.28 * s), v[h] + 1.28 * s] : null; });
+    source = "incertitude calibrée du modèle (ensemble par masquage)";
+  } else if(A.jour.temps_reel && A.ensembles && A.ensembles[A.jour.cle === "prev1" ? 1 : A.jour.cle === "prev2" ? 2 : 0]){
+    const e = A.ensembles[A.jour.cle === "prev1" ? 1 : A.jour.cle === "prev2" ? 2 : 0];
+    const g = A.grille, [i, j] = cellule(pos[0], pos[1]), n = g.nx * g.ny, nq = 3;
+    bande = H.map(() => null);
+    e.instants.forEach((it, k) => {
+      const base = ((k * 2 + 1) * nq) * n + j * g.nx + i;            // hauteur 100 m
+      const q10 = e._q[base], q90 = e._q[base + 2 * n];
+      if(isFinite(q10) && isFinite(q90)) bande[Math.round(it.heure_locale)] = [q10, q90];
+    });
+    source = "quantiles 10-90 % de l'ensemble GEFS à 100 m";
+  }
+  const W = 640, Hh = 220, pl = 52, pb = 24, mx = Math.max(27, ...v.map(z => z + 2));
+  const X = h => pl + h * (W - pl - 10) / 23, Y = z => Hh - pb - z / mx * (Hh - pb - 12);
+  const ligne = v.map((z, h) => `${h ? "L" : "M"}${X(h).toFixed(1)},${Y(z).toFixed(1)}`).join("");
+  let poly = "";
+  if(bande){
+    const pts = bande.map((b, h) => b ? [h, b] : null).filter(Boolean);
+    if(pts.length > 1) poly = `<path d="${pts.map(([h, b], k) => `${k ? "L" : "M"}${X(h)},${Y(b[1])}`).join("")}`
+      + `${pts.slice().reverse().map(([h, b]) => `L${X(h)},${Y(b[0])}`).join("")}Z" fill="var(--accent)" opacity=".18"/>`
+      + pts.map(([h, b]) => `<line x1="${X(h)}" x2="${X(h)}" y1="${Y(b[0])}" y2="${Y(b[1])}" stroke="var(--accent)" stroke-opacity=".5"/>`).join("");
+  }
+  carte.hidden = false;
+  carte.innerHTML = `<h3>Vent au moyeu du parc virtuel (80 m), heure par heure</h3>`
+    + `<div class="tblwrap"><svg viewBox="0 0 ${W} ${Hh}" style="width:100%;min-width:320px;height:auto" role="img" aria-label="Vent au moyeu avec intervalle et seuils">`
+    + [0, 10, 20].map(z => `<line x1="${pl}" x2="${W - 10}" y1="${Y(z)}" y2="${Y(z)}" stroke="var(--line)"/><text x="${pl - 6}" y="${Y(z) + 4}" text-anchor="end">${z} m/s</text>`).join("")
+    + [0, 6, 12, 18, 23].map(h => `<text x="${X(h)}" y="${Hh - 6}" text-anchor="middle">${h} h</text>`).join("")
+    + SEUILS_EOL.map(([z, t]) => `<line x1="${pl}" x2="${W - 10}" y1="${Y(z)}" y2="${Y(z)}" stroke="var(--stop)" stroke-dasharray="4 4" stroke-opacity=".7"/>`
+      + `<text x="${W - 12}" y="${Y(z) - 4}" text-anchor="end" font-size="11">${t}</text>`).join("")
+    + poly + `<path d="${ligne}" fill="none" stroke="var(--accent)" stroke-width="2.6"/></svg></div>`
+    + `<p class="muted" style="font-size:13px;margin:6px 0 0">${bande ? `Bande claire : intervalle à 80 % (${source}).` : "Intervalle non disponible : incertitude du modèle non servie et ensemble GEFS pas encore calculé."}`
+    + ` Seuils de l'éolienne de référence (générique 2 MW).</p>`;
+}
+A.rendreSerieMoyeu = rendreSerieMoyeu;
+
 // ------------------------------------------------------------------ alertes du service (BF22, S4)
 // Temps réel seulement : une station sans mesure depuis plusieurs heures (selon sa cadence : METAR
 // horaire, SYNOP toutes les 3 h), et les heures dont le champ conserve mal la masse.

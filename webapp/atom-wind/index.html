@@ -1499,6 +1499,7 @@ function renderTB(){
     <path d="${line(x=>kmh(x.mean))}L${X(23)},${Y(0)}L${X(0)},${Y(0)}Z" fill="var(--accent)" opacity=".16"/><path d="${line(x=>kmh(x.mean))}" fill="none" stroke="var(--accent)" stroke-width="2.6"/>
     <line x1="${X(state.hour)}" x2="${X(state.hour)}" y1="8" y2="${Hd-pb}" stroke="var(--sand)" stroke-width="2"/><circle cx="${X(state.hour)}" cy="${Y(kmh(days[state.hour].mean))}" r="5" fill="var(--sand)"/><line class="hl" y1="8" y2="${Hd-pb}" stroke="var(--ink)" stroke-opacity=".35" visibility="hidden"/></svg></div>
     <div class="legend"><span style="color:var(--accent);font-weight:700">Vent moyen</span><span style="color:var(--stop);font-weight:700">Rafale la plus forte</span><span>Survolez la courbe pour lire les valeurs ; cliquez pour changer d'heure.</span></div>`;
+  if(window.ATOM && ATOM.rendreSerieMoyeu) ATOM.rendreSerieMoyeu(xy);
   hoverChart("tbday", Wd, pl, 10, h=>`<b>${h} h</b><br>Vent moyen : ${fmtSpeed(days[h].mean)}<br>Rafale la plus forte : ${fmtSpeed(days[h].gmax)}`);
   document.getElementById("tbalerts").innerHTML = ALERTS.slice(0,4).map(a=>`<div class="it"><span style="min-width:0"><span class="pill ${PILL[a.cls]}">${LV[a.cls]}</span> <b>${a.t}</b><br><span class="muted" style="font-size:14px">${a.where} · ${a.when}</span></span></div>`).join("") || `<span class="muted">Aucune alerte.</span>`;
   const C=[["Anémomètre de Nabeul",2.42,2.57],["Anémomètre de Tunis-Carthage",2.70,2.81],["Anémomètre de Zaghouan",2.28,2.16],["Ballons-sondes, 0 à 250 m",2.22,2.29]];

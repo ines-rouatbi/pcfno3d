@@ -122,6 +122,9 @@ ACCROCHES = [
     # 18. rafales de GFS en temps reel (BF54, BF80) a la place du facteur heuristique de la page
     ("function gustF(x,y,z){ ",
      "function gustF(x,y,z){ if(window.ATOM && ATOM.facteurRafale){ const f=ATOM.facteurRafale(x,y,z,state.hour); if(f) return f; } "),
+    # 19. tableau de bord (TB4) : vent au moyeu avec intervalle a 80 % et seuils
+    ('  hoverChart("tbday", Wd, pl, 10, h=>',
+     '  if(window.ATOM && ATOM.rendreSerieMoyeu) ATOM.rendreSerieMoyeu(xy);\n  hoverChart("tbday", Wd, pl, 10, h=>'),
 ]
 
 

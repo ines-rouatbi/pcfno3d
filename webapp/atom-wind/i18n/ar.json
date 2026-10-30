@@ -850,5 +850,14 @@
  "colonnes de vent par nœud": "أعمدة الريح عند كل عقدة",
  "Valeur de remplacement à {0} h (station virtuelle) : {1} km/h": "قيمة بديلة عند {0} س (محطة افتراضية): {1} كم/س",
  "(erreur type sans elle : ± {0} km/h).": "(الخطأ النموذجي بدونها: ± {0} كم/س).",
- "Le vent est calculé sans cette station : la fiabilité baisse autour d'elle. Valeur de remplacement à {0} h (station virtuelle) : {1} km/h{2}": "تُحسب الريح بدون هذه المحطة: تنخفض الموثوقية حولها. قيمة بديلة عند {0} س (محطة افتراضية): {1} كم/س{2}"
+ "Le vent est calculé sans cette station : la fiabilité baisse autour d'elle. Valeur de remplacement à {0} h (station virtuelle) : {1} km/h{2}": "تُحسب الريح بدون هذه المحطة: تنخفض الموثوقية حولها. قيمة بديلة عند {0} س (محطة افتراضية): {1} كم/س{2}",
+ "arrêt 25 m/s": "توقف 25 م/ث",
+ "démarrage 3 m/s": "بدء 3 م/ث",
+ "incertitude calibrée du modèle (ensemble par masquage)": "عدم يقين معايَر للنموذج (مجموعة بالحجب)",
+ "Intervalle non disponible : incertitude du modèle non servie et ensemble GEFS pas encore calculé.": "المجال غير متاح: عدم يقين النموذج غير مقدَّم ومجموعة GEFS لم تُحسب بعد.",
+ "nominale 12 m/s": "اسمية 12 م/ث",
+ "quantiles 10-90 % de l'ensemble GEFS à 100 m": "مئينات 10-90 % لمجموعة GEFS على 100 م",
+ "Seuils de l'éolienne de référence (générique 2 MW).": "عتبات التوربينة المرجعية (عامة 2 ميغاواط).",
+ "Vent au moyeu avec intervalle et seuils": "الريح عند محور الدوران مع المجال والعتبات",
+ "Vent au moyeu du parc virtuel (80 m), heure par heure": "الريح عند محور دوران الحقل الافتراضي (80 م)، ساعة بساعة"
 }

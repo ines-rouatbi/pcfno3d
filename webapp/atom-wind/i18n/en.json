@@ -855,5 +855,14 @@
  "colonnes de vent par nœud": "wind columns per node",
  "Valeur de remplacement à {0} h (station virtuelle) : {1} km/h": "Replacement value at {0} h (virtual station): {1} km/h",
  "(erreur type sans elle : ± {0} km/h).": "(typical error without it: ± {0} km/h).",
- "Le vent est calculé sans cette station : la fiabilité baisse autour d'elle. Valeur de remplacement à {0} h (station virtuelle) : {1} km/h{2}": "The wind is computed without this station: reliability drops around it. Replacement value at {0} h (virtual station): {1} km/h{2}"
+ "Le vent est calculé sans cette station : la fiabilité baisse autour d'elle. Valeur de remplacement à {0} h (station virtuelle) : {1} km/h{2}": "The wind is computed without this station: reliability drops around it. Replacement value at {0} h (virtual station): {1} km/h{2}",
+ "arrêt 25 m/s": "cut-out 25 m/s",
+ "démarrage 3 m/s": "cut-in 3 m/s",
+ "incertitude calibrée du modèle (ensemble par masquage)": "calibrated model uncertainty (masking ensemble)",
+ "Intervalle non disponible : incertitude du modèle non servie et ensemble GEFS pas encore calculé.": "Interval not available: model uncertainty not served and GEFS ensemble not computed yet.",
+ "nominale 12 m/s": "rated 12 m/s",
+ "quantiles 10-90 % de l'ensemble GEFS à 100 m": "10-90% quantiles of the GEFS ensemble at 100 m",
+ "Seuils de l'éolienne de référence (générique 2 MW).": "Thresholds of the reference turbine (generic 2 MW).",
+ "Vent au moyeu avec intervalle et seuils": "Hub wind with interval and thresholds",
+ "Vent au moyeu du parc virtuel (80 m), heure par heure": "Hub wind of the virtual wind farm (80 m), hour by hour"
 }
