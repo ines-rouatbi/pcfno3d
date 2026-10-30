@@ -371,10 +371,11 @@ mention « admin ». Grille de 500 m, heures locales de Tunis (UTC+1), vent en i
 | `POST /assistant` | assistant conversationnel (Claude, outils ATOM Wind ; 503 sans `ANTHROPIC_API_KEY`) |
 | `POST /reconstruct/stations`, `/reconstruct/upload` | mesures envoyées : pour le modèle réel, entrée de production (GFS de l'heure + mesures à 10 m dans leur maille) ; 503 si GFS est injoignable |
 | `GET/POST/PATCH/DELETE /keys` (admin) | clés d'API (secret montré une seule fois) |
+| `POST /comptes`, `/comptes/connexion`, `/comptes/deconnexion`, `GET /comptes/moi` ; admin : `GET /comptes`, `POST /comptes/{email}/validation`, `/statut` | comptes et rôles (public, agriculteur, éolien validé, admin) ; la connexion renvoie une clé de session ; l'espace éolien est réservé aux comptes éolien ou admin |
 | `GET /supervision` (admin), `POST /notifications/envoyer` (admin), `/sms/*` (admin) | activité du service, notifications, abonnés SMS |
 
 Le Worker d'atom.zelqane.com garde la dernière réponse réussie de chaque `GET /api/atom-wind/*` et la sert
-avec l'en-tête `x-atom-dernier-etat` quand le service est arrêté.
+avec l'en-tête `x-atom-dernier-etat` quand le service est arrêté. Derrière le Worker, une session de compte voyage dans l'en-tête `X-ATOM-Session` (le Worker la transmet comme clé) ; sans elle, le Worker injecte sa clé de lecture.
 
 ## Conventions à ne pas se tromper
 

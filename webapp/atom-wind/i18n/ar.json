@@ -859,5 +859,7 @@
  "quantiles 10-90 % de l'ensemble GEFS à 100 m": "مئينات 10-90 % لمجموعة GEFS على 100 م",
  "Seuils de l'éolienne de référence (générique 2 MW).": "عتبات التوربينة المرجعية (عامة 2 ميغاواط).",
  "Vent au moyeu avec intervalle et seuils": "الريح عند محور الدوران مع المجال والعتبات",
- "Vent au moyeu du parc virtuel (80 m), heure par heure": "الريح عند محور دوران الحقل الافتراضي (80 م)، ساعة بساعة"
+ "Vent au moyeu du parc virtuel (80 m), heure par heure": "الريح عند محور دوران الحقل الافتراضي (80 م)، ساعة بساعة",
+ "E-mail ou mot de passe incorrect, ou compte désactivé.": "البريد أو كلمة المرور غير صحيحة، أو الحساب معطّل.",
+ "Trop d'essais : réessayez dans 15 minutes.": "محاولات كثيرة: أعد المحاولة بعد 15 دقيقة."
 }

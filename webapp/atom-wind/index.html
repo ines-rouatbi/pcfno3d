@@ -1846,7 +1846,7 @@ function renderUserBox(){ const ub=document.getElementById("userbox");
   document.addEventListener("click",e=>{ if(!e.target.closest("#userbox")) mn.hidden=true; },{once:true});
   document.getElementById("b-out").onclick=logout; }
 function login(u, msg){ me=u; store.set("aw-session",u.id); applyAccess(); closeAuth(); const home=ROLES[u.role].home; show(home); toast(msg||`Bienvenue, ${u.name.split(",")[0]}`); }
-function logout(){ me=null; store.set("aw-session",null); applyAccess(); show("monvent"); toast("Vous êtes déconnecté."); }
+function logout(){ if(window.ATOM && ATOM.deconnexionServeur) ATOM.deconnexionServeur(); me=null; store.set("aw-session",null); applyAccess(); show("monvent"); toast("Vous êtes déconnecté."); }
 const authEl=document.getElementById("authm");
 function closeAuth(){ authEl.hidden=true; }
 function openAuth(mode){
@@ -1882,6 +1882,7 @@ function openAuth(mode){
     document.getElementById("f-login").onsubmit=async e=>{ e.preventDefault(); const mail=document.getElementById("l-mail").value.trim().toLowerCase(), pw=document.getElementById("l-pw").value, err=document.getElementById("l-err");
       const u=USERS.find(x=>x.email===mail);
       if(!mail||!pw){ err.textContent="Saisissez votre e-mail et votre mot de passe."; return; }
+      if(window.ATOM && ATOM.comptesServeur && ATOM.comptesServeur()){ const r=await ATOM.connexionServeur(mail,pw); if(r.erreur){ err.textContent=r.erreur; return; } const su=ATOM.utilisateurLocal(r.compte,USERS); store.set("aw-users",USERS); login(su); return; }
       if(!u || u.demo || !u.salt || await hashPw(u.salt,pw)!==u.hash){ err.textContent="E-mail ou mot de passe incorrect."; return; }
       if(u.status==="désactivé"){ err.textContent="Ce compte est désactivé. Contactez l'équipe ATOM Wind."; return; }
       login(u); };
@@ -1895,6 +1896,7 @@ function openAuth(mode){
       if(pw.length<8 || !/\d/.test(pw)){ err.textContent="Le mot de passe doit faire 8 caractères au moins, dont un chiffre."; return; }
       if(pw!==pw2){ err.textContent="Les deux mots de passe ne sont pas identiques."; return; }
       if(!g("r-ok").checked){ err.textContent="Acceptez les conditions d'utilisation pour continuer."; return; }
+      if(window.ATOM && ATOM.comptesServeur && ATOM.comptesServeur()){ const r=await ATOM.inscriptionServeur(name,mail,pw,role); if(r.erreur){ err.textContent=r.erreur; return; } const c=await ATOM.connexionServeur(mail,pw); if(c.erreur){ err.textContent=c.erreur; return; } const su=ATOM.utilisateurLocal(c.compte,USERS); su.place=+g("r-place").value; store.set("aw-users",USERS); login(su, su.requested ? `Compte créé. Votre accès « ${ROLES[role].n} » sera validé par l'équipe ; en attendant, vous avez l'accès Grand public.` : "Compte créé. Bienvenue sur ATOM Wind !"); return; }
       const salt=[...crypto.getRandomValues(new Uint8Array(12))].map(x=>x.toString(16).padStart(2,"0")).join(""), auto=ROLES[role].auto;
       const u={id:"u"+Date.now(), name, email:mail, role: auto?role:"public", requested: auto?null:role, status: auto?"actif":"en attente", salt, hash:await hashPw(salt,pw), place:+g("r-place").value, created:new Date().toISOString().slice(0,10)};
       USERS.push(u); store.set("aw-users",USERS);

@@ -18,9 +18,18 @@ const NODATA = -32768;
 
 function cle(){ try { return localStorage.getItem(KEY_STORAGE); } catch(e) { return null; } }
 function poserCle(k){ try { if(k) localStorage.setItem(KEY_STORAGE, k); else localStorage.removeItem(KEY_STORAGE); } catch(e) {} }
+// session d'un compte ATOM Wind (BF43) : prime sur la cle d'API ; derriere le Worker d'atom.zelqane.com elle
+// voyage dans X-ATOM-Session (le Worker remplace sinon toute cle par sa cle de lecture)
+const SESSION_STORAGE = "aw-session-cle";
+function session(){ try { return localStorage.getItem(SESSION_STORAGE); } catch(e) { return null; } }
+function poserSession(k){ try { if(k) localStorage.setItem(SESSION_STORAGE, k); else localStorage.removeItem(SESSION_STORAGE); } catch(e) {} }
+function entetes(){
+  const s = session(), k = cle();
+  return s ? { "X-API-Key": s, "X-ATOM-Session": s } : k ? { "X-API-Key": k } : {};
+}
 
 async function get(path, ms = 90000){
-  const h = {}; const k = cle(); if(k) h["X-API-Key"] = k;
+  const h = {}; Object.assign(h, entetes());
   const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), ms);
   try {
     const r = await fetch(`${BASE}/api${path}`, { headers: h, signal: ctl.signal });
@@ -279,7 +288,7 @@ A.chargerEnsembles = chargerEnsembles;
 
 // ------------------------------------------------------------------ atlas éolien (E8, E15)
 async function blob(path){
-  const h = {}; const k = cle(); if(k) h["X-API-Key"] = k;
+  const h = {}; Object.assign(h, entetes());
   const r = await fetch(`${BASE}/api${path}`, { headers: h });
   if(!r.ok) throw new Error(`${path} : ${r.status}`);
   return URL.createObjectURL(await r.blob());
@@ -410,7 +419,7 @@ A.facteurRafale = (x, y, z, h) => {
 // Vue Administration : les vraies clés du service (création, quotas, révocation), seulement si la clé
 // enregistrée dans ce navigateur a la portée admin (sinon la carte n'apparaît pas).
 async function envoyer(methode, chemin, corps){
-  const h = { "Content-Type": "application/json" }; const k = cle(); if(k) h["X-API-Key"] = k;
+  const h = { "Content-Type": "application/json" }; Object.assign(h, entetes());
   const r = await fetch(`${BASE}/api${chemin}`, { method: methode, headers: h, body: corps ? JSON.stringify(corps) : undefined });
   const d = await r.json().catch(() => ({}));
   if(!r.ok) throw new Error(d.detail ? (typeof d.detail === "string" ? d.detail : JSON.stringify(d.detail)) : `erreur ${r.status}`);
@@ -476,6 +485,43 @@ async function installerSupervision(){
   vue.appendChild(carte);
 }
 A.installerSupervision = installerSupervision;
+
+// ------------------------------------------------------------------ comptes du service (BF19, BF43)
+// Quand le service repond, la connexion et l'inscription de la page passent par ses comptes (mot de passe
+// verifie et garde par le serveur, role relu a chaque requete) ; sinon la page garde ses comptes locaux.
+A.comptesServeur = () => A.pret();
+async function postJSON(chemin, corps){
+  const h = { "Content-Type": "application/json", ...entetes() };
+  const r = await fetch(`${BASE}/api${chemin}`, { method: "POST", headers: h, body: JSON.stringify(corps || {}) });
+  const d = await r.json().catch(() => ({}));
+  return r.ok ? d : { erreur: typeof d.detail === "string" ? d.detail : `erreur ${r.status}` };
+}
+const MESSAGES_COMPTE = {
+  "adresse ou mot de passe incorrect, ou compte desactive": "E-mail ou mot de passe incorrect, ou compte désactivé.",
+  "trop d'essais : reessayer dans 15 minutes": "Trop d'essais : réessayez dans 15 minutes.",
+  "un compte existe deja pour cette adresse": "Un compte existe déjà avec cette adresse. Connectez-vous.",
+};
+const message = e => MESSAGES_COMPTE[e] || e;
+A.connexionServeur = async (email, mdp) => {
+  poserSession(null);
+  const d = await postJSON("/comptes/connexion", { email, mot_de_passe: mdp });
+  if(d.erreur) return { erreur: message(d.erreur) };
+  poserSession(d.cle);
+  return d;
+};
+A.inscriptionServeur = async (nom, email, mdp, role) => {
+  const d = await postJSON("/comptes", { email, mot_de_passe: mdp, nom, role: ["public", "agri", "eolien"].includes(role) ? role : "public" });
+  return d.erreur ? { erreur: message(d.erreur) } : d;
+};
+A.deconnexionServeur = () => { if(session()){ postJSON("/comptes/deconnexion").catch(() => {}); poserSession(null); } };
+// le compte du serveur dans la liste locale de la page (sans mot de passe : seul le serveur le connait)
+A.utilisateurLocal = (c, USERS) => {
+  let u = USERS.find(x => x.email === c.email);
+  if(!u){ u = { id: "s" + Date.now(), email: c.email, created: (c.cree_le || "").slice(0, 10) }; USERS.push(u); }
+  Object.assign(u, { name: c.nom || c.email.split("@")[0], role: c.role, requested: c.demande_role || null,
+                     status: c.statut === "desactive" ? "désactivé" : "actif", serveur: true });
+  return u;
+};
 
 // ------------------------------------------------------------------ série au moyeu (TB4)
 // Vent au moyeu du parc virtuel (E2, 80 m) heure par heure, avec l'intervalle à 80 % : sigma calibré du
@@ -646,7 +692,7 @@ function installerAssistant(){
     inp.value = ""; ajouter(echapper(q), "q");
     const att = ajouter("…", "r");
     try {
-      const h = { "Content-Type": "application/json" }; const k = cle(); if(k) h["X-API-Key"] = k;
+      const h = { "Content-Type": "application/json" }; Object.assign(h, entetes());
       const r = await fetch(`${BASE}/api/assistant`, { method: "POST", headers: h, body: JSON.stringify({ question: q, historique: hist.slice(-10) }) });
       const d = await r.json().catch(() => ({}));
       if(!r.ok) throw new Error(d.detail || d.message || `erreur ${r.status}`);

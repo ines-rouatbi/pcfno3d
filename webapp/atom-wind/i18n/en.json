@@ -864,5 +864,7 @@
  "quantiles 10-90 % de l'ensemble GEFS à 100 m": "10-90% quantiles of the GEFS ensemble at 100 m",
  "Seuils de l'éolienne de référence (générique 2 MW).": "Thresholds of the reference turbine (generic 2 MW).",
  "Vent au moyeu avec intervalle et seuils": "Hub wind with interval and thresholds",
- "Vent au moyeu du parc virtuel (80 m), heure par heure": "Hub wind of the virtual wind farm (80 m), hour by hour"
+ "Vent au moyeu du parc virtuel (80 m), heure par heure": "Hub wind of the virtual wind farm (80 m), hour by hour",
+ "E-mail ou mot de passe incorrect, ou compte désactivé.": "Incorrect e-mail or password, or account deactivated.",
+ "Trop d'essais : réessayez dans 15 minutes.": "Too many attempts: try again in 15 minutes."
 }

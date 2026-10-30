@@ -125,6 +125,18 @@ ACCROCHES = [
     # 19. tableau de bord (TB4) : vent au moyeu avec intervalle a 80 % et seuils
     ('  hoverChart("tbday", Wd, pl, 10, h=>',
      '  if(window.ATOM && ATOM.rendreSerieMoyeu) ATOM.rendreSerieMoyeu(xy);\n  hoverChart("tbday", Wd, pl, 10, h=>'),
+    # 20. comptes du service (BF19, BF43) : connexion, inscription et deconnexion par le serveur quand il repond
+    ('      if(!mail||!pw){ err.textContent="Saisissez votre e-mail et votre mot de passe."; return; }\n',
+     '      if(!mail||!pw){ err.textContent="Saisissez votre e-mail et votre mot de passe."; return; }\n'
+     '      if(window.ATOM && ATOM.comptesServeur && ATOM.comptesServeur()){ const r=await ATOM.connexionServeur(mail,pw); '
+     'if(r.erreur){ err.textContent=r.erreur; return; } const su=ATOM.utilisateurLocal(r.compte,USERS); store.set("aw-users",USERS); login(su); return; }\n'),
+    ('      if(!g("r-ok").checked){ err.textContent="Acceptez les conditions d\'utilisation pour continuer."; return; }\n',
+     '      if(!g("r-ok").checked){ err.textContent="Acceptez les conditions d\'utilisation pour continuer."; return; }\n'
+     '      if(window.ATOM && ATOM.comptesServeur && ATOM.comptesServeur()){ const r=await ATOM.inscriptionServeur(name,mail,pw,role); '
+     'if(r.erreur){ err.textContent=r.erreur; return; } const c=await ATOM.connexionServeur(mail,pw); if(c.erreur){ err.textContent=c.erreur; return; } '
+     'const su=ATOM.utilisateurLocal(c.compte,USERS); su.place=+g("r-place").value; store.set("aw-users",USERS); '
+     'login(su, su.requested ? `Compte créé. Votre accès « ${ROLES[role].n} » sera validé par l\'équipe ; en attendant, vous avez l\'accès Grand public.` : "Compte créé. Bienvenue sur ATOM Wind !"); return; }\n'),
+    ('function logout(){ me=null; ', 'function logout(){ if(window.ATOM && ATOM.deconnexionServeur) ATOM.deconnexionServeur(); me=null; '),
 ]
 
 
