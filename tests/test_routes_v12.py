@@ -113,3 +113,17 @@ def test_stations_entree_de_production(client, jeu, monkeypatch):  # noqa: F811
     corps["timestamp_utc"] = "2026-09-01T00:00:00Z"
     r = client.post("/api/reconstruct/stations", json=corps)
     assert r.status_code == 503 and "GFS" in r.json()["detail"]
+
+
+def test_exports_netcdf_csv(client, jeu):  # noqa: F811
+    """BF47 / S6 : un instant du cache s'exporte en NetCDF et en CSV des noeuds, a la demande."""
+    from pcfno3d.cache import load_index
+    stem = str(load_index(jeu)["stem"].iloc[0])
+    c = client.get(f"/api/exports/{stem}.csv")
+    assert c.status_code == 200, c.text
+    assert c.headers["content-type"].startswith("text/csv") and "attachment" in c.headers["content-disposition"]
+    assert len(c.text.splitlines()) > 10
+    n = client.get(f"/api/exports/{stem}.nc")
+    assert n.status_code == 200 and n.content[:3] in (b"CDF", b"\x89HD")       # NetCDF classique ou HDF5
+    assert client.get("/api/exports/inconnu.csv").status_code == 404
+    assert client.get(f"/api/exports/{stem}.xlsx").status_code == 422

@@ -1338,6 +1338,36 @@ def atom_reseau(_: ApiKeyRecord | None = Depends(require_read)):
     return FileResponse(f, media_type="application/geo+json")
 
 
+@router.get("/exports/{stem}.{fmt}", tags=["donnees"])
+def export_instant_fichier(stem: str, fmt: str, _: ApiKeyRecord | None = Depends(require_read)) -> Response:
+    """Export d'un instant du cache (cahier v12, BF47, S6 ; contrat DE3) : NetCDF (.nc, CF) ou CSV des
+    noeuds (.csv), avec la version du modele, les statistiques de normalisation et l'horodatage source.
+    Les memes valeurs que l'instantane publie (pcfno3d.export_noeuds)."""
+    import tempfile
+
+    from pcfno3d.cache import load_index
+    from pcfno3d.export_noeuds import exporter_csv, exporter_netcdf
+    from pcfno3d.publish import instantane_du_cache
+
+    if fmt not in ("nc", "csv"):
+        raise HTTPException(422, "format : nc ou csv")
+    wf = model()
+    if stem not in set(load_index(wf.cfg)["stem"].astype(str)):
+        raise HTTPException(404, f"instant inconnu : {stem}")
+    genre = "reel" if wf.cfg.mask.entree == "era5_stations" else "synthetique"
+    try:
+        inst = instantane_du_cache(wf, stem, data_kind=genre, garder_champs=True)
+    except ValueError as exc:                    # domaine non georeference, contrat
+        raise HTTPException(409, str(exc)) from exc
+    with tempfile.TemporaryDirectory() as d:
+        f = (exporter_netcdf(inst, wf.geom, Path(d) / f"{inst.snapshot_id}.nc") if fmt == "nc"
+             else exporter_csv(inst, wf.geom, Path(d) / f"{inst.snapshot_id}_noeuds.csv"))
+        corps = Path(f).read_bytes()
+        nom = Path(f).name
+    return Response(corps, media_type="application/x-netcdf" if fmt == "nc" else "text/csv",
+                    headers={"Content-Disposition": f'attachment; filename="{nom}"'})
+
+
 @router.get("/export/{stem}/manifest.json", tags=["donnees"])
 def export_manifest(stem: str, _: ApiKeyRecord | None = Depends(require_read)):
     """Manifeste d'un export deja produit (POST /api/reconstruct avec export=true)."""
