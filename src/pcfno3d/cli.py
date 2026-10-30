@@ -806,9 +806,7 @@ def cmd_info(args) -> int:
     if cfg.paths.index_csv.exists():
         from .cache import verifier_manifeste
         ecarts = verifier_manifeste(cfg)
-        print("  manifeste du cache : " + ("conforme" if not ecarts else "ECARTS
-    " + "
-    ".join(ecarts)))
+        print("  manifeste du cache : " + ("conforme" if not ecarts else "ECARTS\n    " + "\n    ".join(ecarts)))
     return 0
 
 
@@ -817,8 +815,7 @@ def cmd_manifeste_cache(args) -> int:
     cfg = _load_cfg(args)
     if args.verifier:
         ecarts = verifier_manifeste(cfg)
-        print("conforme" if not ecarts else "
-".join(ecarts))
+        print("conforme" if not ecarts else "\n".join(ecarts))
         return 0 if not ecarts else 3
     print(ecrire_manifeste(cfg))
     return 0

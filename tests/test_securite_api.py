@@ -522,3 +522,31 @@ def test_meta_porte_le_georeferencement(env):
             real.origin_lat, real.origin_lon, real.rotation_deg, real.origin_assumed = sauve
     assert geo == {"lat0": 36.0, "lon0": 9.7, "rotation_deg": 0.0, "suppose": True,
                    "coin": "sud-ouest"}
+
+
+def test_cles_gerees_par_l_api_admin(env, tmp_path):
+    """BF42 : creation (secret montre une fois), quotas et revocation par l'API, portee admin seulement ;
+    la cle revoquee tombe aussitot ; aucun secret dans le journal d'acces."""
+    from service.app import create_app
+
+    admin, _ = _store(env).create("admin-api", scope="admin")
+    lecture, _ = _store(env).create("lecteur", scope="read")
+    with TestClient(create_app()) as client:
+        h = {"X-API-Key": admin}
+        assert client.post("/api/keys", json={"nom": "x"}, headers={"X-API-Key": lecture}).status_code == 403
+        r = client.post("/api/keys", json={"nom": "appli-agri", "portee": "read", "quota_minute": 30}, headers=h)
+        assert r.status_code == 200
+        nouvelle = r.json()["cle"]
+        assert nouvelle.startswith("pcf_") and r.json()["quota_minute"] == 30
+        assert client.post("/api/keys", json={"nom": "appli-agri"}, headers=h).status_code == 409
+        assert client.post("/api/keys", json={"nom": "mauvais nom!"}, headers=h).status_code == 422
+        assert client.get("/api/meta", headers={"X-API-Key": nouvelle}).status_code == 200
+        q = client.patch("/api/keys/appli-agri", json={"quota_jour": 500}, headers=h)
+        assert q.status_code == 200 and q.json()["quota_jour"] == 500
+        assert client.delete("/api/keys/appli-agri", headers=h).status_code == 200
+        assert client.get("/api/meta", headers={"X-API-Key": nouvelle}).status_code == 401
+        assert client.delete("/api/keys/appli-agri", headers=h).status_code == 404
+        noms = [c["name"] for c in client.get("/api/keys", headers=h).json()["cles"]]
+        assert "appli-agri" in noms
+    journal = (tmp_path / "acces.jsonl").read_text(encoding="utf-8")
+    assert nouvelle not in journal and admin not in journal

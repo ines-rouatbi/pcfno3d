@@ -1394,6 +1394,50 @@ def list_keys(_: ApiKeyRecord | None = Depends(require_admin)) -> dict:
     return {"cles": keys().list_public()}
 
 
+class NouvelleCle(BaseModel):
+    nom: str = Field(..., min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_.-]+$")
+    portee: str = Field("read", pattern="^(read|admin)$")
+    quota_minute: int | None = Field(None, ge=1)
+    quota_jour: int | None = Field(None, ge=1)
+
+
+class QuotasCle(BaseModel):
+    quota_minute: int | None = Field(None, ge=1)
+    quota_jour: int | None = Field(None, ge=1)
+    defaut: bool = Field(False, description="revenir aux quotas par defaut")
+
+
+@router.post("/keys", tags=["service"])
+def create_key(c: NouvelleCle, _: ApiKeyRecord | None = Depends(require_admin)) -> dict:
+    """Cree une cle (cahier v12, BF42) ; le secret n'est renvoye qu'UNE fois, seule son empreinte est
+    gardee. Portee admin seulement."""
+    try:
+        secret, rec = keys().create(c.nom, scope=c.portee, quota_minute=c.quota_minute, quota_jour=c.quota_jour)
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    return {"cle": secret, "avertissement": "secret affiche une seule fois : le noter maintenant", **rec.public()}
+
+
+@router.delete("/keys/{nom}", tags=["service"])
+def revoke_key(nom: str, _: ApiKeyRecord | None = Depends(require_admin)) -> dict:
+    """Revoque une cle : elle cesse de fonctionner a la requete suivante (critere API1)."""
+    if not keys().revoke(nom):
+        raise HTTPException(404, f"aucune cle active nommee {nom}")
+    return {"revoquee": nom}
+
+
+@router.patch("/keys/{nom}", tags=["service"])
+def quota_key(nom: str, q: QuotasCle, _: ApiKeyRecord | None = Depends(require_admin)) -> dict:
+    """Quotas d'une cle active (par minute, par jour) ou retour aux valeurs par defaut."""
+    try:
+        rec = keys().set_quota(nom, q.quota_minute, q.quota_jour, reset=q.defaut)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    if rec is None:
+        raise HTTPException(404, f"aucune cle active nommee {nom}")
+    return rec.public()
+
+
 # ---------------------------------------------------------------------------- fabrique
 def create_app() -> FastAPI:
     """Construit une application complete : API + MCP + interface web.
