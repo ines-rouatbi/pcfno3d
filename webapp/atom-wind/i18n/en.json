@@ -852,5 +852,8 @@
  "{0} {1} km/h": "{0} {1} km/h",
  "à {0} h : {1} ({2})": "at {0} h: {1} ({2})",
  "Écart du modèle aux stations aujourd'hui (contrôle de cohérence) : {0}.": "Model gap to the stations today (consistency check): {0}.",
- "colonnes de vent par nœud": "wind columns per node"
+ "colonnes de vent par nœud": "wind columns per node",
+ "Valeur de remplacement à {0} h (station virtuelle) : {1} km/h": "Replacement value at {0} h (virtual station): {1} km/h",
+ "(erreur type sans elle : ± {0} km/h).": "(typical error without it: ± {0} km/h).",
+ "Le vent est calculé sans cette station : la fiabilité baisse autour d'elle. Valeur de remplacement à {0} h (station virtuelle) : {1} km/h{2}": "The wind is computed without this station: reliability drops around it. Replacement value at {0} h (virtual station): {1} km/h{2}"
 }

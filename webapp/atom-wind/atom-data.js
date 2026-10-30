@@ -490,9 +490,14 @@ A.alertesService = xy => {
     let n = 0; for(let k = I.length - 1; k >= 0 && !I[k].stations.includes(code); k--) n++;
     const c = CADENCE_H[code], nom = NOMS_STATIONS[code];
     if(n < 3 * c) continue;
+    // station virtuelle (BF37) : le vent du modele a sa place, et l'erreur mesuree sans elle (REEL1)
+    const h = heureLocale(), [pu, pv] = A.vent(...xy(la, lo), 10, h);
+    const reel = A.qualite && (A.qualite.stations || []).find(st => st.station === nom);
+    const virt = isFinite(pu) ? ` Valeur de remplacement à ${h} h (station virtuelle) : ${Math.round(Math.hypot(pu, pv) * 3.6)} km/h`
+      + (reel && reel.modele_m_s ? ` (erreur type sans elle : ± ${Math.round(reel.modele_m_s * 3.6)} km/h).` : ".") : "";
     out.push({ cls: n >= 6 * c ? "warn" : "info", p: xy(la, lo), r: 1.5, t: `Station muette : ${nom}`, where: nom,
                when: n === I.length ? "aucune mesure reçue aujourd'hui" : `aucune mesure depuis ${n} h`,
-               what: "Le vent est calculé sans cette station : la fiabilité baisse autour d'elle.",
+               what: "Le vent est calculé sans cette station : la fiabilité baisse autour d'elle." + virt,
                todo: "Vérifier la transmission de la station (METAR ou SYNOP)." });
   }
   const mauvais = A.jour.instants.filter(x => x.residu_masse_ok === false);

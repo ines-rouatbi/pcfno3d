@@ -76,3 +76,7 @@ def test_alertes_service(wf, monkeypatch):  # noqa: F811
     assert all({"id", "kind", "niveau", "titre", "cause", "recommandation"} <= set(x) for x in a)
     assert len({x["id"] for x in a}) == len(a)
     assert ao.alertes_service(wf) == a
+    # station muette : sa valeur virtuelle (BF37) accompagne l'alerte
+    for x in a:
+        if x["kind"] == "station_muette" and x["station_virtuelle"] is not None:
+            assert x["station_virtuelle"]["vitesse_m_s"] >= 0

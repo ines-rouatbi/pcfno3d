@@ -521,6 +521,28 @@ def dimensionnement_mat(wf, lat=None, lon=None, lieu=None, hauteur_m: float = 30
 
 # ---------------------------------------------------------------------- alertes du service (BF27, BF83)
 STATIONS_CADENCE = {"DTTA": ("Tunis-Carthage", 1), "INM60729": ("Zaghouan", 3), "INM60728": ("Nabeul", 3)}
+STATIONS_POSITION = {"DTTA": (36.8504, 10.2156), "INM60729": (36.4333, 10.0833), "INM60728": (36.45, 10.7333)}
+
+
+def station_virtuelle(wf, code: str) -> dict | None:
+    """Vent du modele a la place d'une station (BF37), a 10 m et a l'heure locale courante, avec l'erreur
+    type de la validation croisee (station exclue, REEL1) si le run servi l'a ecrite."""
+    from pcfno3d import atom_wind
+    nom = STATIONS_CADENCE[code][0]
+    la, lo = STATIONS_POSITION[code]
+    h = float((time.gmtime(time.time() + 3600)).tm_hour)
+    try:
+        v = lire_point(wf, 0, 10.0, h, lat=la, lon=lo)
+    except ValueError:
+        return None
+    err = None
+    try:
+        q = atom_wind.qualite(wf.cfg.paths.run_dir, wf.cfg.dso, bool(wf.cfg.inference.w_continuite))
+        err = next((r["modele_m_s"] for r in q["stations"] if r["station"] == nom), None)
+    except Exception:                                              # noqa: BLE001 — pas d'evaluation
+        pass
+    return {"station": nom, "heure_locale": h, "vitesse_m_s": v["vitesse_m_s"],
+            "direction_deg": v["direction_provenance_deg"], "erreur_type_m_s": err}
 
 
 def _id_alerte(*parts) -> str:
@@ -548,7 +570,8 @@ def alertes_service(wf) -> list[dict]:
                         "niveau": "important" if n >= 6 * cad else "information",
                         "titre": f"station {nom} muette", "cible": nom,
                         "cause": f"aucune mesure depuis {n} h ; le vent est calcule sans elle.",
-                        "recommandation": "Verifier la transmission (METAR ou SYNOP)."})
+                        "recommandation": "Verifier la transmission (METAR ou SYNOP).",
+                        "station_virtuelle": station_virtuelle(wf, code)})
     mauvais = [x for x in p["instants"] if x.get("residu_masse_ok") is False]
     if mauvais:
         out.append({"id": _id_alerte("physique", p["date"]), "kind": "physique", "niveau": "important",

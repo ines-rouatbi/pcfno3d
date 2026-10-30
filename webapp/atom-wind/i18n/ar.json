@@ -847,5 +847,8 @@
  "{0} : {1} heures mesurées, stations {2},": "{0}: {1} ساعة مقاسة، المحطات {2}،",
  "{0} clé(s) active(s) ; durée médiane {1} ms.": "{0} مفتاح نشط؛ المدة الوسيطة {1} مللي ثانية.",
  "Écart du modèle aux stations aujourd'hui (contrôle de cohérence) : {0}.": "فرق النموذج عن المحطات اليوم (فحص اتساق): {0}.",
- "colonnes de vent par nœud": "أعمدة الريح عند كل عقدة"
+ "colonnes de vent par nœud": "أعمدة الريح عند كل عقدة",
+ "Valeur de remplacement à {0} h (station virtuelle) : {1} km/h": "قيمة بديلة عند {0} س (محطة افتراضية): {1} كم/س",
+ "(erreur type sans elle : ± {0} km/h).": "(الخطأ النموذجي بدونها: ± {0} كم/س).",
+ "Le vent est calculé sans cette station : la fiabilité baisse autour d'elle. Valeur de remplacement à {0} h (station virtuelle) : {1} km/h{2}": "تُحسب الريح بدون هذه المحطة: تنخفض الموثوقية حولها. قيمة بديلة عند {0} س (محطة افتراضية): {1} كم/س{2}"
 }
