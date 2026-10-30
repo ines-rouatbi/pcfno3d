@@ -68,6 +68,9 @@ ACCROCHES = [
      "const RHair = (h,x,y,d=0) => (window.ATOM && ATOM.aT(d)) ? ATOM.hrJour(d,x,y,h) : "),
     ("Rs=.72*Ra", "Rs=(window.ATOM && ATOM.rsJour(d)!==null) ? ATOM.rsJour(d) : .72*Ra"),
     ("const J=200+d", "const J=(window.ATOM && ATOM.doyJour(d)) || 200+d"),
+    # 11. prevision probabiliste (E19) : probabilite de pouvoir traiter sous le titre de la carte
+    ('<div class="card"><h3>Quand traiter ${jour} ?</h3>',
+     '<div class="card"><h3>Quand traiter ${jour} ?</h3>${window.ATOM && ATOM.htmlProba ? ATOM.htmlProba(d, x, y) : ""}'),
 ]
 
 

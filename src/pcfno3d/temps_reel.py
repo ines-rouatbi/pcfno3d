@@ -319,6 +319,7 @@ class SourceDirect:
             raise ValueError("temps reel : modele sans forcage ERA5 (paths.forcage_era5)")
         self.geom, self.ttl, self.lire = geom, ttl_s, lire
         self._cache: dict = {}
+        self._cache_gefs: dict = {}
 
     def journee(self, jour_utc: str) -> dict:
         """{"forcage": ForcageDirect, "champs": c, "obs": DataFrame, "obtenu": epoch}."""
@@ -349,3 +350,70 @@ class SourceDirect:
         while len(self._cache) > 3:                # aujourd'hui, demain, apres-demain
             self._cache.pop(next(iter(self._cache)))
         return e
+
+    def ensemble(self, jour_utc: str) -> dict:
+        """Les membres GEFS (vent a 10 m) autour de la journee, rafraichis toutes les 6 h."""
+        e = self._cache_gefs.get(jour_utc)
+        if e is not None and time.time() - e["obtenu"] < max(self.ttl, 6 * 3600):
+            return e
+        j = pd.Timestamp(jour_utc)
+        g = self.geom
+        e = telecharger_gefs(g.forcage.lat, g.forcage.lon, (j - pd.Timedelta(days=1)).strftime("%Y-%m-%d"),
+                             (j + pd.Timedelta(days=1)).strftime("%Y-%m-%d"), lire=self.lire)
+        e["obtenu"] = time.time()
+        self._cache_gefs = {jour_utc: e, **{k: v for k, v in self._cache_gefs.items() if k != jour_utc}}
+        while len(self._cache_gefs) > 3:
+            self._cache_gefs.pop(list(self._cache_gefs)[-1])
+        return e
+
+
+# ---------------------------------------------------------------------- ensemble GEFS (E19)
+URL_ENSEMBLE = "https://ensemble-api.open-meteo.com/v1/ensemble"
+MODELE_GEFS = "gfs025"
+N_MEMBRES_GEFS = 31                     # controle + 30 membres perturbes
+
+
+def telecharger_gefs(lat, lon, debut: str, fin: str, lire=None) -> dict:
+    """Vent a 10 m des 31 membres GEFS 0,25 deg (Open-Meteo, seules les variables de surface y sont)
+    aux mailles : {"temps", "u10": (M, T, ny, nx), "v10": (M, T, ny, nx)}."""
+    la, lo = np.meshgrid(lat, lon, indexing="ij")
+    q = {"latitude": ",".join(f"{x:.4f}" for x in la.ravel()),
+         "longitude": ",".join(f"{x:.4f}" for x in lo.ravel()),
+         "hourly": "wind_speed_10m,wind_direction_10m", "models": MODELE_GEFS, "wind_speed_unit": "ms",
+         "timezone": "GMT", "cell_selection": "nearest", "start_date": debut, "end_date": fin}
+    d = json.loads((lire or _get)(f"{URL_ENSEMBLE}?{urllib.parse.urlencode(q)}"))
+    d = d if isinstance(d, list) else [d]
+    if len(d) != la.size:
+        raise ValueError(f"Open-Meteo ensemble : {len(d)} points recus pour {la.size} mailles")
+    temps = pd.to_datetime(d[0]["hourly"]["time"]).values.astype("datetime64[s]").astype(np.int64)
+    suffixes = [""] + [f"_member{m:02d}" for m in range(1, N_MEMBRES_GEFS)]
+    u = np.full((len(suffixes), len(temps)) + la.shape, np.nan)
+    v = np.full_like(u, np.nan)
+    for m, suf in enumerate(suffixes):
+        for k, p in enumerate(d):
+            h = p["hourly"]
+            if f"wind_speed_10m{suf}" not in h:
+                continue
+            s = np.array([np.nan if x is None else x for x in h[f"wind_speed_10m{suf}"]], float)
+            di = np.array([np.nan if x is None else x for x in h[f"wind_direction_10m{suf}"]], float)
+            uu, vv = _uv(s, di)
+            iy, ix = np.unravel_index(k, la.shape)
+            u[m, :, iy, ix], v[m, :, iy, ix] = uu, vv
+    garde = np.isfinite(u).all(axis=(1, 2, 3))
+    if not garde.any():
+        raise ValueError("Open-Meteo ensemble : aucun membre complet")
+    return {"temps": temps, "u10": u[garde], "v10": v[garde]}
+
+
+def forcage_membre(f: ForcageDirect, it: int, du10: np.ndarray, dv10: np.ndarray,
+                   echelle_m: float = 300.0) -> ForcageDirect:
+    """Le forcage deterministe GFS dont le profil par maille, a l'instant it, est decale de l'ecart
+    du membre au vent a 10 m, attenue avec la hauteur (exp(-(h - 10) / echelle)) : ensemble PARTIEL
+    (Open-Meteo ne fournit pas les niveaux de pression des membres GEFS)."""
+    g = ForcageDirect.__new__(ForcageDirect)
+    g.__dict__.update(f.__dict__)
+    poids = np.exp(-np.maximum(np.asarray(f.hauteurs, float) - 10.0, 0.0) / echelle_m)[:, None, None]
+    g.u, g.v = f.u.copy(), f.v.copy()
+    g.u[it] = f.u[it] + poids * du10[None]
+    g.v[it] = f.v[it] + poids * dv10[None]
+    return g

@@ -49,7 +49,7 @@ NIV = {1000: (8.0, 270.0, 110.0), 975: (8.5, 271.0, 330.0), 950: (9.0, 272.0, 56
 def fausse_source(url: str) -> bytes:
     u = urllib.parse.urlparse(url)
     q = dict(urllib.parse.parse_qsl(u.query))
-    if "open-meteo" in u.netloc:
+    if u.netloc == "api.open-meteo.com":
         lats = q["latitude"].split(",")
         temps = pd.date_range(q["start_date"], pd.Timestamp(q["end_date"]) + pd.Timedelta(hours=23), freq="h")
         n = len(temps)
@@ -66,6 +66,19 @@ def fausse_source(url: str) -> bytes:
                 h[f"wind_direction_{p}hPa"] = [d] * n
                 h[f"geopotential_height_{p}hPa"] = [z] * n
             pts.append({"elevation": 0.0 if i % 2 else 50.0, "hourly": h})
+        return json.dumps(pts).encode()
+    if "ensemble-api" in u.netloc:
+        lats = q["latitude"].split(",")
+        temps = pd.date_range(q["start_date"], pd.Timestamp(q["end_date"]) + pd.Timedelta(hours=23), freq="h")
+        n = len(temps)
+        pts = []
+        for i, _ in enumerate(lats):
+            h = {"time": [t.strftime("%Y-%m-%dT%H:%M") for t in temps]}
+            for m in range(31):
+                suf = "" if m == 0 else f"_member{m:02d}"
+                h[f"wind_speed_10m{suf}"] = [1.0 + 0.15 * m] * n      # de 1 a 5,5 m/s selon le membre
+                h[f"wind_direction_10m{suf}"] = [260.0] * n
+            pts.append({"hourly": h})
         return json.dumps(pts).encode()
     if "aviationweather" in u.netloc:
         t0 = pd.Timestamp("2026-10-26T00:00:00Z")
@@ -178,3 +191,32 @@ def test_route_direct(jeu, monkeypatch):
         assert p1["prevision"] is True and p1["date"] == j["direct"]["previsions"][0]
         assert all(i["source"] == "prevision" and i["stations"] == [] for i in p1["instants"])
         assert c.get("/api/atom-wind/direct", params={"j": 5}).status_code == 422
+        # prevision probabiliste (E19) : demain, 31 scenarios GEFS
+        en = c.get("/api/atom-wind/ensemble", params={"j": 1})
+        assert en.status_code == 200, en.text
+        assert en.json()["ensemble"] is True and en.json()["instants"][0]["membres"] == 31
+
+
+def test_ensemble_gefs(jeu):
+    from pcfno3d import atom_wind, temps_reel
+    from pcfno3d.inference import WindFieldModel
+
+    wf = WindFieldModel(jeu, device="cpu", verbose=False)
+    src = temps_reel.SourceDirect(wf.geom, lire=fausse_source)
+    d = atom_wind.jour_ensemble(wf, src, "2026-10-27", maintenant=pd.Timestamp("2026-10-26T12:00"))
+    assert d["ensemble"] is True and [i["heure_locale"] for i in d["instants"]] == list(atom_wind.HEURES_ENSEMBLE)
+    assert all(i["membres"] == 31 and i["source"] == "prevision" for i in d["instants"])
+    P = np.frombuffer(base64.b64decode(d["proba_traitement"]), dtype="<i2").astype(float).reshape(d["forme_proba"])
+    P = np.where(P == -32768, np.nan, P / 100)
+    assert np.nanmin(P) >= 0.0 and np.nanmax(P) <= 1.0 and np.isfinite(P).mean() > 0.5
+    Q = np.frombuffer(base64.b64decode(d["vitesse_quantiles"]), dtype="<i2").astype(float).reshape(d["forme_quantiles"])
+    Q = np.where(Q == -32768, np.nan, Q / 100)
+    assert Q.shape[1:3] == (2, 3)
+    ok = np.isfinite(Q).all(axis=2)
+    assert (np.diff(Q, axis=2)[np.broadcast_to(ok[:, :, None], np.diff(Q, axis=2).shape)] >= -1e-6).all()   # p10 <= p50 <= p90
+
+
+def test_traitement_possible():
+    from pcfno3d.atom_wind import traitement_possible
+    k = np.array([2.9, 3.0, 15.0, 15.1]) / 3.6
+    assert traitement_possible(k).tolist() == [False, True, True, False]

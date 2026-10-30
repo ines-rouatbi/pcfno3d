@@ -244,6 +244,44 @@ async function chargerTrois(){
   } finally { troisEnCours = false; }
 }
 A.chargerTrois = chargerTrois;
+
+// ------------------------------------------------------------------ ensemble GEFS (E19)
+// Probabilité de pouvoir traiter et quantiles du vent, aux heures de traitement, J0 à J+2.
+A.ensembles = {};
+let ensEnCours = false;
+async function chargerEnsembles(){
+  if(ensEnCours || !A.direct) return;
+  ensEnCours = true;
+  try {
+    for(const j of [0, 1, 2]){
+      if(A.ensembles[j]) continue;
+      try {
+        const e = await get(`/atom-wind/ensemble?j=${j}`, 300000);
+        e._p = decoder(e.proba_traitement); e._q = decoder(e.vitesse_quantiles);
+        A.ensembles[j] = e;
+      } catch(err){ console.warn("ATOM Wind : ensemble J+" + j, err); }
+      if(A.rafraichir) A.rafraichir();
+    }
+  } finally { ensEnCours = false; }
+}
+A.chargerEnsembles = chargerEnsembles;
+A.probaTraitement = (d, x, y) => {
+  const e = A.ensembles[d]; if(!e || !A.grille) return null;
+  const g = A.grille, [i, j] = cellule(x, y), n = g.nx * g.ny;
+  return e.instants.map((it, k) => ({ h: it.heure_locale, p: e._p[k*n + j*g.nx + i] }));
+};
+A.htmlProba = (d, x, y) => {
+  if(!(window.ATOM && A.jour && A.jour.temps_reel)) return "";
+  const L = A.probaTraitement(d, x, y);
+  if(!L) return `<p class="muted" style="font-size:13px;margin:4px 0">Probabilité (ensemble GEFS) : calcul en cours…</p>`;
+  const e = A.ensembles[d];
+  const cel = L.filter(r => isFinite(r.p)).map(r => {
+    const pc = Math.round(r.p * 100), cls = pc >= 70 ? "good" : pc >= 40 ? "mid" : "bad";
+    return `<span class="pill ${cls}">${String(r.h).padStart(2, "0")} h : ${pc} %</span>`;
+  }).join(" ");
+  return `<p style="margin:4px 0 8px;font-size:14px">Probabilité de pouvoir traiter (${e.instants[0].membres} scénarios GEFS) : ${cel}</p>`
+    + `<p class="muted" style="font-size:12px;margin:0 0 8px">Ensemble partiel : vent à 10 m de chaque membre GEFS, profil vertical du GFS déterministe.</p>`;
+};
 A.choisirJour = async date => {
   const src = document.getElementById("aw-source");
   if(src) src.innerHTML = date === "direct" ? "Calcul du vent d'aujourd'hui par le modèle…"
@@ -282,12 +320,12 @@ function lancerPage(){
   const sel = document.getElementById("aw-jour");
   if(sel) sel.onchange = () => A.choisirJour(sel.value);
   if(A.pret() && A.jour.temps_reel && !A.jour.prevision && A.setHour) A.setHour(heureLocale());
-  if(A.pret() && A.jour.temps_reel) chargerTrois();
+  if(A.pret() && A.jour.temps_reel) chargerTrois().then(chargerEnsembles);
   // temps réel : nouvelles mesures et nouvelle échéance toutes les 30 min
   setInterval(() => {
     if(!A.jour || !A.jour.temps_reel) return;
-    A.trois = {};
-    A.choisirJour(A.jour.cle || "direct").then(chargerTrois);
+    A.trois = {}; A.ensembles = {};
+    A.choisirJour(A.jour.cle || "direct").then(chargerTrois).then(chargerEnsembles);
   }, 30 * 60 * 1000);
 }
 function heureLocale(){

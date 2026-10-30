@@ -249,3 +249,72 @@ def jour_direct(wf, source, date_locale: str, maintenant: pd.Timestamp | None = 
 def date_locale_aujourdhui(decalage_j: int = 0) -> str:
     return (pd.Timestamp.now(tz="UTC").tz_localize(None) + pd.Timedelta(hours=UTC_LOCAL_H)
             + pd.Timedelta(days=decalage_j)).strftime("%Y-%m-%d")
+
+
+# ---------------------------------------------------------------------- ensemble GEFS (E19)
+HEURES_ENSEMBLE = (6, 9, 12, 15, 18)    # heures locales des decisions agricoles
+HAUTEURS_ENSEMBLE = (10, 100)           # traitement (10 m) ; moyeu eolien (100 m)
+QUANTILES = (0.1, 0.5, 0.9)
+
+
+def traitement_possible(vitesse_m_s: np.ndarray) -> np.ndarray:
+    """« oui » de la regle de traitement de l'application (3 a 15 km/h a 10 m), comme
+    scripts/verifier_decisions.py."""
+    k = np.round(np.asarray(vitesse_m_s, float) * 3.6, 6)
+    return (k >= 3) & (k <= 15)
+
+
+def jour_ensemble(wf, source, date_locale: str, maintenant: pd.Timestamp | None = None) -> dict:
+    """Prevision PROBABILISTE d'une journee (E19) : le modele passe sur les 31 membres GEFS (ensemble
+    partiel : vent a 10 m des membres, profil vertical du GFS deterministe decale de l'ecart a
+    10 m). Produits agreges sur la grille de 500 m aux heures de traitement : probabilite de pouvoir
+    traiter (regle de l'application) et quantiles 10 / 50 / 90 % du vent a 10 m et 100 m."""
+    from . import temps_reel as tr
+
+    geom = wf.geom
+    e = source.journee(date_locale)
+    f, c, obs = e["forcage"], e["champs"], e["obs"]
+    ens = source.ensemble(date_locale)
+    maintenant = maintenant if maintenant is not None else pd.Timestamp.now(tz="UTC").tz_localize(None)
+    it_det = {int(s): i for i, s in enumerate(c["temps"])}
+    it_ens = {int(s): i for i, s in enumerate(ens["temps"])}
+    b = facteur(geom)
+    instants, probas, quant = [], [], []
+    for h in HEURES_ENSEMBLE:
+        t = pd.Timestamp(date_locale) + pd.Timedelta(hours=h - UTC_LOCAL_H)
+        s = int(t.value // 10 ** 9)
+        if s not in it_det or s not in it_ens:
+            continue
+        it, ie = it_det[s], it_ens[s]
+        mesures = tr.mesures_a(obs, t) if t <= maintenant else {}
+        stamp = t.strftime("%Y-%m-%dT%H:%M:%SZ")
+        v10, v100 = [], []
+        for m in range(ens["u10"].shape[0]):
+            du = ens["u10"][m, ie] - f.u[it, 0]
+            dv = ens["v10"][m, ie] - f.v[it, 0]
+            fm = tr.forcage_membre(f, it, du, dv)
+            S = tr.entree(geom, c, fm, it, mesures)
+            vol = wf.predict(S, t.hour + t.minute / 60, int(t.dayofyear), timestamp=stamp,
+                             forcage=fm.vecteur(t), reliability=False)
+            for hh, liste in ((10.0, v10), (100.0, v100)):
+                u, v = champ_agl(vol.u, vol.v, geom, hh)
+                liste.append(blocs(np.hypot(u, v), b))
+        v10, v100 = np.stack(v10), np.stack(v100)                  # (M, ny, nx)
+        with np.errstate(invalid="ignore"):
+            probas.append(np.where(np.isfinite(v10).all(0), traitement_possible(v10).mean(0), np.nan))
+            quant.append(np.stack([np.nanquantile(a, QUANTILES, axis=0) for a in (v10, v100)]))
+        instants.append({"heure_locale": float(h), "timestamp_utc": stamp, "membres": int(v10.shape[0]),
+                         "source": "temps reel" if t <= maintenant else "prevision",
+                         "stations": sorted(mesures)})
+    if not instants:
+        raise ValueError(f"aucune echeance GEFS pour le {date_locale}")
+    P, Q = np.stack(probas), np.stack(quant)                         # (I, ny, nx), (I, 2, 3, ny, nx)
+    return {"format": "atom-wind/1", "date": date_locale, "ensemble": True, "instants": instants,
+            "hauteurs_agl_m": list(HAUTEURS_ENSEMBLE), "quantiles": list(QUANTILES),
+            "proba_traitement": encoder(P), "forme_proba": list(P.shape),
+            "vitesse_quantiles": encoder(Q), "forme_quantiles": list(Q.shape),
+            "unite": "proba : fraction (codee x100) ; vitesses en m/s (codees x100) ; int16, -32768 = sans valeur",
+            "methode": ("ensemble partiel GEFS (31 membres, Open-Meteo) : vent a 10 m de chaque membre, "
+                        "profil vertical du GFS deterministe decale de l'ecart a 10 m (attenue avec la "
+                        "hauteur) ; regle de traitement de l'application (3 a 15 km/h a 10 m)"),
+            "mis_a_jour_utc": maintenant.strftime("%Y-%m-%dT%H:%M:%SZ"), "modele": wf.checkpoint_path.name}

@@ -1637,7 +1637,7 @@ function renderAgri(){
   const asp = ag.eff<.8 && ag.eff>.7;
   const rowsIrr=H.map(r=>({v:r.k*.8+Math.max(0,r.T-22)*2, cls:(asp ? (r.k>25||r.T>32) : r.T>32) ? "stop" : (asp ? (r.k>15||r.T>28) : r.T>29) ? "warn" : "go", t:`${r.k} km/h, ${Math.round(r.T)} °C`}));
   document.getElementById("ag-top").innerHTML = `
-    <div class="card"><h3>Quand traiter ${jour} ?</h3><div id="ag-trbars"></div><p style="margin:8px 0 4px">Créneaux conseillés : ${winTxt(windowsOf(rowsT))}</p>
+    <div class="card"><h3>Quand traiter ${jour} ?</h3>${window.ATOM && ATOM.htmlProba ? ATOM.htmlProba(d, x, y) : ""}<div id="ag-trbars"></div><p style="margin:8px 0 4px">Créneaux conseillés : ${winTxt(windowsOf(rowsT))}</p>
       <p class="muted" style="font-size:14px;margin:0">Non au-dessus de 19 km/h à 10 m ; attention entre 15 et 19 km/h, si les rafales dépassent 30 km/h, ou sous 3 km/h. Vent au niveau de la rampe (2 m) à ${state.hour} h : ${H[state.hour].k2} km/h. Fiabilité ici : <span class="pill ${rc}">${rl}</span></p><div class="srcrow">${SRC_ATOM}</div></div>
     <div class="answer info"><div class="verdict"><div class="badge-big"><svg width="28" height="28" viewBox="0 0 24 24"><path class="drop" d="M12 3c3 4 5 7 5 10a5 5 0 0 1-10 0c0-3 2-6 5-10z" fill="#fff"/></svg></div><div><div class="muted" style="font-size:14px;font-weight:700">${place} · ${c[0]} · ${MILIEUX[ag.milieu].toLowerCase()} · ${jour}</div><div class="big">Apportez ${Math.round(m3ha)} m³ par hectare</div></div></div>
       <p>Soit <b>${Math.round(tot).toLocaleString("fr-FR")} m³</b> pour vos ${fmt1(ag.area)} ha (${fmt1(gross)} mm d'eau). ${ag.milieu==="serre"?"Sous serre, le besoin réel est souvent 20 à 30 % plus faible : ajustez selon l'aération.":""}</p>

@@ -1004,6 +1004,42 @@ def atom_jour(date: str = Query(..., pattern=r"^\d{4}-\d{2}-\d{2}$"),
     return _gzip_json(out)
 
 
+_ATOM_ENSEMBLE_TTL_S = 6 * 3600.0       # GEFS : un nouveau calcul toutes les 6 h
+
+
+@router.get("/atom-wind/ensemble", tags=["atom-wind"])
+def atom_ensemble(j: int = Query(0, ge=0, le=2, description="0 = aujourd'hui, 1 = demain, 2 = apres-demain"),
+                  _: ApiKeyRecord | None = Depends(require_read)) -> Response:
+    """Prevision PROBABILISTE (cahier v12, E19) : le modele sur les 31 membres GEFS (ensemble partiel),
+    probabilite de pouvoir traiter et quantiles 10 / 50 / 90 % du vent a 10 m et 100 m, aux heures de
+    traitement (6, 9, 12, 15, 18 h), grille de 500 m."""
+    from pcfno3d import atom_wind, temps_reel
+    wf = model()
+    if wf.geom.forcage is None:
+        raise HTTPException(409, "ensemble : modele sans forcage (paths.forcage_era5)")
+    date = atom_wind.date_locale_aujourdhui(j)
+    caches = STATE.setdefault("atom_ensemble", {})
+    e = caches.get(date)
+    if e is None or time.time() - e["t"] > _ATOM_ENSEMBLE_TTL_S:
+        with _ATOM_LOCK:
+            e = caches.get(date)
+            if e is None or time.time() - e["t"] > _ATOM_ENSEMBLE_TTL_S:
+                source = STATE.get("atom_source")
+                if source is None:
+                    source = STATE["atom_source"] = temps_reel.SourceDirect(wf.geom, ttl_s=_ATOM_DIRECT_TTL_S)
+                try:
+                    out = atom_wind.jour_ensemble(wf, source, date)
+                except Exception as exc:
+                    if e is not None:
+                        return _gzip_json({**e["out"], "avertissement": f"donnees de "
+                                           f"{e['out']['mis_a_jour_utc']} : {exc}"})
+                    raise HTTPException(503, f"ensemble indisponible : {exc}") from exc
+                for vieux in [d for d in caches if d < atom_wind.date_locale_aujourdhui()]:
+                    caches.pop(vieux)
+                e = caches[date] = {"t": time.time(), "out": out}
+    return _gzip_json(e["out"])
+
+
 @router.get("/atom-wind/reseau-aneo", tags=["atom-wind"])
 def atom_reseau(_: ApiKeyRecord | None = Depends(require_read)):
     """Plan de deploiement ANEO (OS6, scripts/os6_reseau_aneo.py) en GeoJSON, s'il existe."""
