@@ -1113,6 +1113,27 @@ def atom_production(j: int = Query(0, ge=0, le=2, description="0 = aujourd'hui, 
         raise HTTPException(422, str(exc)) from exc
 
 
+@router.get("/atom-wind/historique", tags=["atom-wind"])
+def atom_historique(_: ApiKeyRecord | None = Depends(require_read)) -> dict:
+    """Historique (cahier v12, BF40, HIS1) : journees temps reel et previsions deja calculees, gardees par
+    le service avec leurs indicateurs (une prevision se compare ensuite au temps reel du meme jour)."""
+    from service import atom_outils
+    return {"journees": atom_outils.historique(model())}
+
+
+@router.get("/atom-wind/historique/{nom}", tags=["atom-wind"])
+def atom_historique_jour(nom: str, _: ApiKeyRecord | None = Depends(require_read)) -> Response:
+    """Une journee archivee, au format de /atom-wind/direct (gzip)."""
+    from service import atom_outils
+    try:
+        corps = atom_outils.lire_historique(model(), nom)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(404, f"archive absente : {exc}") from exc
+    return Response(corps, media_type="application/json", headers={"Content-Encoding": "gzip"})
+
+
 class QuestionAssistant(BaseModel):
     question: str = Field(..., min_length=1, max_length=2000)
     historique: list[dict] = Field(default_factory=list, max_length=20,

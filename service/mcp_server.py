@@ -565,6 +565,15 @@ def dimensionnement_mat(lieu: str | None = None, lat: float | None = None, lon: 
     return d
 
 
+@mcp.tool()
+def historique_atom_wind() -> dict:
+    """Historique des journees calculees par ATOM Wind (cahier v12, HIS1) : temps reel et previsions deja
+    servies, avec leur date, leur type, leur date d'emission et leur taille. Le contenu d'une journee se lit
+    par l'API (/api/atom-wind/historique/<nom>)."""
+    from service import atom_outils
+    return {"journees": atom_outils.historique(get_model())}
+
+
 def main() -> int:
     """Transport stdio, pour un client MCP local."""
     mcp.run()

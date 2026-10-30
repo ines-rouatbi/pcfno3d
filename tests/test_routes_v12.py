@@ -66,3 +66,18 @@ def test_sans_cle_refuse(client):
     from fastapi.testclient import TestClient
     nu = TestClient(client.app)
     assert nu.get("/api/atom-wind/agricole").status_code == 401
+
+
+def test_historique(client, jeu, monkeypatch):  # noqa: F811
+    """BF40 / HIS1 : chaque journee calculee est archivee et se relit par l'API, nom verifie."""
+    from pcfno3d import atom_wind
+    monkeypatch.setenv("PCFNO3D_HISTORIQUE", "1")
+    assert client.get("/api/atom-wind/agricole", params={"j": 1, "lat": LAT, "lon": LON}).status_code == 200
+    h = client.get("/api/atom-wind/historique").json()["journees"]
+    j1 = [r for r in h if r["type"] == "prevision" and r["echeance_j"] == 1]       # d'autres tests en ont ecrit
+    assert j1 and j1[0]["emise_le"] == atom_wind.date_locale_aujourdhui(0)
+    assert j1[0]["date"] == atom_wind.date_locale_aujourdhui(1)
+    d = client.get(f"/api/atom-wind/historique/{j1[0]['nom']}")
+    assert d.status_code == 200 and d.json()["archive"] == j1[0]["nom"] and d.json()["date"] == j1[0]["date"]
+    assert client.get("/api/atom-wind/historique/x.json.gz").status_code == 422
+    assert client.get("/api/atom-wind/historique/2000-01-01_temps_reel.json.gz").status_code == 404

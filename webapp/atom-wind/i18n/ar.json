@@ -804,5 +804,14 @@
  "Temps de reconstruction": "زمن إعادة البناء",
  "une carte 3D par le modèle": "خريطة ثلاثية الأبعاد واحدة بالنموذج",
  "cet instant, sous le seuil": "هذه اللحظة، تحت العتبة",
- "cet instant, au-dessus du seuil": "هذه اللحظة، فوق العتبة"
+ "cet instant, au-dessus du seuil": "هذه اللحظة، فوق العتبة",
+ "Historique": "السجل",
+ "Lecture de l'historique…": "قراءة السجل…",
+ "Historique · {0}": "السجل · {0}",
+ ": vent du": ": ريح يوم",
+ "tel que calculé par": "كما حسبه",
+ "en prévision (GFS), dernier calcul le {0}.": "كتوقع (GFS)، آخر حساب في {0}.",
+ "en temps réel (GFS et anémomètres), dernier calcul le {0}.": "في الوقت الحقيقي (GFS ومقاييس الريح)، آخر حساب في {0}.",
+ "{0} (prévision J+{1} émise le {2})": "{0} (توقع J+{1} صادر في {2})",
+ "{0} (temps réel archivé)": "{0} (وقت حقيقي مؤرشف)"
 }

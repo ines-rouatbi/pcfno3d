@@ -9,8 +9,11 @@ logarithmique sous 10 m avec la rugosite de la maille.
 from __future__ import annotations
 
 import base64
+import gzip
+import json
 import math
 import os
+import re
 import threading
 import time
 from pathlib import Path
@@ -79,6 +82,60 @@ def _avec_cache(nom: str, wf, date: str, ttl: float, calcul) -> dict:
     return e["out"]
 
 
+# ---------------------------------------------------------------------- historique (BF40, HIS1)
+# Chaque journee calculee (temps reel, previsions J+1 et J+2 du jour d'emission) est gardee sur le disque
+# du service, run_dir/historique/ : une reconstruction passee se retrouve avec ses indicateurs, et une
+# prevision se compare plus tard au temps reel du meme jour. PCFNO3D_HISTORIQUE=0 : rien n'est ecrit.
+# Environ 8 Mo par journee (gzip) : 3 par jour d'emission.
+NOM_HISTORIQUE = re.compile(r"^(\d{4}-\d{2}-\d{2})_(temps_reel|prevision_J[12]_emise_\d{4}-\d{2}-\d{2})\.json\.gz$")
+
+
+def dossier_historique(wf) -> Path:
+    return Path(wf.cfg.paths.run_dir) / "historique"
+
+
+def archiver(wf, j: int, out: dict) -> dict:
+    """Ecrit la journee dans l'historique (atomique) et la renvoie telle quelle."""
+    if os.environ.get("PCFNO3D_HISTORIQUE", "1") == "0":
+        return out
+    from pcfno3d import atom_wind
+    d = dossier_historique(wf)
+    d.mkdir(parents=True, exist_ok=True)
+    nom = (f"{out['date']}_temps_reel.json.gz" if j == 0 else
+           f"{out['date']}_prevision_J{j}_emise_{atom_wind.date_locale_aujourdhui(0)}.json.gz")
+    tmp = d / (nom + ".tmp")
+    tmp.write_bytes(gzip.compress(json.dumps({**out, "archive": nom}, ensure_ascii=False).encode("utf-8"), 6))
+    tmp.replace(d / nom)
+    return out
+
+
+def historique(wf) -> list[dict]:
+    """Index de l'historique : une ligne par journee archivee, la plus recente d'abord."""
+    d = dossier_historique(wf)
+    lignes = []
+    for f in (d.glob("*.json.gz") if d.exists() else []):
+        m = NOM_HISTORIQUE.match(f.name)
+        if not m:
+            continue
+        genre = m[2]
+        lignes.append({"nom": f.name, "date": m[1], "type": "temps reel" if genre == "temps_reel" else "prevision",
+                       "echeance_j": None if genre == "temps_reel" else int(genre[11]),
+                       "emise_le": None if genre == "temps_reel" else genre[-10:],
+                       "taille_ko": round(f.stat().st_size / 1024),
+                       "ecrit_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(f.stat().st_mtime))})
+    return sorted(lignes, key=lambda r: (r["date"], r["type"] == "temps reel", r["nom"]), reverse=True)
+
+
+def lire_historique(wf, nom: str) -> bytes:
+    """Le fichier gzip d'une journee archivee (nom verifie : aucun chemin arbitraire)."""
+    if not NOM_HISTORIQUE.match(nom):
+        raise ValueError("nom d'archive invalide")
+    f = dossier_historique(wf) / nom
+    if not f.exists():
+        raise FileNotFoundError(nom)
+    return f.read_bytes()
+
+
 def jour(wf, j: int) -> dict:
     """La journee relative j (0 aujourd'hui, 1 demain, 2 apres-demain), cachee 30 min."""
     from pcfno3d import atom_wind
@@ -86,7 +143,7 @@ def jour(wf, j: int) -> dict:
     # incertitude en temps reel (BF8) : PCFNO3D_SIGMA_DIRECT=1 et un modele calibre (inference.reliability)
     fiab = os.environ.get("PCFNO3D_SIGMA_DIRECT", "0") == "1"
     return _avec_cache("direct", wf, date, TTL_DIRECT_S,
-                       lambda: atom_wind.jour_direct(wf, source(wf), date, fiabilite=fiab))
+                       lambda: archiver(wf, j, atom_wind.jour_direct(wf, source(wf), date, fiabilite=fiab)))
 
 
 def ensemble(wf, j: int) -> dict:

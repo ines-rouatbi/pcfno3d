@@ -804,5 +804,14 @@
  "Temps de reconstruction": "Reconstruction time",
  "une carte 3D par le modèle": "one 3D map by the model",
  "cet instant, sous le seuil": "this instant, below the threshold",
- "cet instant, au-dessus du seuil": "this instant, above the threshold"
+ "cet instant, au-dessus du seuil": "this instant, above the threshold",
+ "Historique": "History",
+ "Lecture de l'historique…": "Reading the history…",
+ "Historique · {0}": "History · {0}",
+ ": vent du": ": wind of",
+ "tel que calculé par": "as computed by",
+ "en prévision (GFS), dernier calcul le {0}.": "as a forecast (GFS), last computed on {0}.",
+ "en temps réel (GFS et anémomètres), dernier calcul le {0}.": "in real time (GFS and anemometers), last computed on {0}.",
+ "{0} (prévision J+{1} émise le {2})": "{0} (D+{1} forecast issued on {2})",
+ "{0} (temps réel archivé)": "{0} (archived real time)"
 }
