@@ -374,6 +374,29 @@ def cmd_windrose(args) -> int:
     return 0
 
 
+def cmd_compte_admin(args) -> int:
+    """Cree (ou remet a zero) un compte ADMINISTRATEUR de l'application (BF43). Le mot de passe vient de la
+    variable d'environnement PCFNO3D_MOT_DE_PASSE_ADMIN, jamais de la ligne de commande."""
+    import os as _os
+
+    from service.auth import ApiKeyStore, default_store_path
+    from service.comptes import Comptes
+
+    cfg = _load_cfg(args)
+    mdp = _os.environ.get("PCFNO3D_MOT_DE_PASSE_ADMIN")
+    if not mdp:
+        print("definir PCFNO3D_MOT_DE_PASSE_ADMIN dans l'environnement (jamais sur la ligne de commande)",
+              file=sys.stderr)
+        return 2
+    try:
+        c = Comptes(cfg.paths.run_dir, ApiKeyStore(default_store_path(cfg.paths.run_dir))).creer_admin(args.email, mdp)
+    except ValueError as exc:
+        print(f"ERREUR : {exc}", file=sys.stderr)
+        return 1
+    print(f"compte administrateur pret : {c['email']}")
+    return 0
+
+
 def cmd_surveiller(args) -> int:
     """Chaine sans intervention (cahier v12, BF6, PROD1) : chaque nouveau fichier de mesures ANEO depose
     dans le dossier est valide (contrat M3), reconstruit, publie dans le depot local (contrat ATOM rev. 2)
@@ -1005,6 +1028,11 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--keep", type=float, default=1.0, help="fraction de capteurs utilises")
     s.add_argument("--checkpoint"), s.add_argument("--device")
     s.set_defaults(func=cmd_windrose)
+
+    s = sub.add_parser("compte-admin", help="compte administrateur de l'application (mot de passe : "
+                                            "PCFNO3D_MOT_DE_PASSE_ADMIN)")
+    s.add_argument("email")
+    s.set_defaults(func=cmd_compte_admin)
 
     s = sub.add_parser("surveiller", help="dossier de depot : chaque nouveau CSV ANEO valide, reconstruit, "
                                           "publie et exporte sans intervention (BF6, PROD1)")

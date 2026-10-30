@@ -164,6 +164,28 @@ def require_admin(request: Request, _cle: str | None = Security(CLE_API)) -> Api
     return _check(request, "admin")
 
 
+def comptes():
+    """Comptes et roles (BF19, BF43), sur le meme trousseau que les cles d'API."""
+    from service.comptes import Comptes
+    c = STATE.get("comptes")
+    if c is None:
+        wf_cfg = STATE.get("cfg")
+        dossier = wf_cfg.paths.run_dir if wf_cfg is not None else model().cfg.paths.run_dir
+        c = STATE["comptes"] = Comptes(dossier, keys())
+    return c
+
+
+def require_eolien(request: Request, _cle: str | None = Security(CLE_API)) -> ApiKeyRecord | None:
+    """Espace eolien : une cle de SESSION doit appartenir a un compte eolien ou admin ; une cle de service
+    (Worker, CLI) garde son acces."""
+    from service.comptes import ESPACE_EOLIEN
+    record = _check(request, "read")
+    compte = comptes().compte_de_cle(record.name) if record is not None else None
+    if compte is not None and compte["role"] not in ESPACE_EOLIEN:
+        raise HTTPException(403, "espace eolien reserve aux comptes eolien valides par l'administrateur")
+    return record
+
+
 class MCPPathNormalizer:
     """Fait repondre /mcp directement, sans redirection 307 vers /mcp/.
 
@@ -903,7 +925,7 @@ def alerts(stem: str | None = Query(None, description='instant en cache, ex. "00
 
 @router.get("/wind-farm", tags=["eolien"])
 def wind_farm(stem: str | None = None,
-              _: ApiKeyRecord | None = Depends(require_read)) -> dict:
+              _: ApiKeyRecord | None = Depends(require_eolien)) -> dict:
     """Parc eolien a un instant (lot M5) : vent au moyeu et REWS (p10/p50/p90), cisaillement
     (shear_alpha), veer, densite, puissance et etat par eolienne, production du parc,
     alertes vent_fort_moyeu / cisaillement et KPI hub_wind_* du domaine.
@@ -1050,7 +1072,7 @@ def atom_maintenance(j: int = Query(0, ge=0, le=2, description="0 = aujourd'hui,
                      lieu: str | None = Query(None, max_length=80), lat: float | None = None, lon: float | None = None,
                      hauteur_m: float = Query(80.0, ge=2, le=1000), seuil_m_s: float = Query(12.0, gt=0, le=40),
                      duree_min_h: int = Query(2, ge=1, le=12),
-                     _: ApiKeyRecord | None = Depends(require_read)) -> dict:
+                     _: ApiKeyRecord | None = Depends(require_eolien)) -> dict:
     """Creneaux surs pour le travail en hauteur (cahier v12, E7) : vent moyen a la nacelle ou au mat sous
     le seuil du site, en plages d'au moins `duree_min_h` heures (parc virtuel par defaut)."""
     from service import atom_outils
@@ -1063,7 +1085,7 @@ def atom_maintenance(j: int = Query(0, ge=0, le=2, description="0 = aujourd'hui,
 @router.get("/atom-wind/variations", tags=["atom-wind"])
 def atom_variations(j: int = Query(0, ge=0, le=2, description="0 = aujourd'hui, 1 = demain, 2 = apres-demain"),
                     moyeu_m: float = Query(80.0, ge=30, le=200), seuil_pct: float = Query(20.0, gt=0, le=100),
-                    _: ApiKeyRecord | None = Depends(require_read)) -> dict:
+                    _: ApiKeyRecord | None = Depends(require_eolien)) -> dict:
     """Variations brusques de production du parc virtuel (cahier v12, E13) : puissance heure par heure et
     rampes d'au moins `seuil_pct` % de la puissance installee par heure."""
     from service import atom_outils
@@ -1121,6 +1143,10 @@ def atom_rapport(type: str = Query("parcelle", pattern="^(parcelle|site|parc)$")
     """Rapport PDF automatique (cahier v12, E9) d'une parcelle, d'un site ou du parc virtuel : vent, rose des
     vents, production, alertes, recommandations et fiabilite, d'aujourd'hui a apres-demain."""
     from service import rapport_pdf
+    from service.comptes import ESPACE_EOLIEN
+    compte = comptes().compte_de_cle(_.name) if _ is not None else None
+    if type != "parcelle" and compte is not None and compte["role"] not in ESPACE_EOLIEN:
+        raise HTTPException(403, "rapport du site ou du parc : espace eolien reserve")
     try:
         pdf = rapport_pdf.construire(model(), type, lat=lat, lon=lon, lieu=lieu, moyeu_m=moyeu_m)
     except ValueError as exc:
@@ -1159,7 +1185,7 @@ def atom_agricole(j: int = Query(0, ge=0, le=2, description="0 = aujourd'hui, 1 
 def atom_production(j: int = Query(0, ge=0, le=2, description="0 = aujourd'hui, 1 = demain, 2 = apres-demain"),
                     moyeu_m: float = Query(80.0, ge=30, le=200), lieu: str | None = Query(None, max_length=80),
                     lat: float | None = None, lon: float | None = None,
-                    _: ApiKeyRecord | None = Depends(require_read)) -> dict:
+                    _: ApiKeyRecord | None = Depends(require_eolien)) -> dict:
     """Production prevue d'une eolienne de reference en un point (cahier v12, S16), heure par heure."""
     from service import atom_outils
     if lieu is None and (lat is None or lon is None):
@@ -1342,7 +1368,7 @@ def _atlas_dossier(wf: WindFieldModel) -> Path | None:
 
 
 @router.get("/atom-wind/atlas", tags=["atom-wind"])
-def atom_atlas(_: ApiKeyRecord | None = Depends(require_read)) -> Response:
+def atom_atlas(_: ApiKeyRecord | None = Depends(require_eolien)) -> Response:
     """Atlas eolien (cahier v12, E8 ; scripts/atlas_eolien.py) : resume, trois meilleurs sites, et la
     vitesse moyenne et le facteur de charge au moyeu sur la grille de 500 m du front-end."""
     import json as _json
@@ -1365,7 +1391,7 @@ def atom_atlas(_: ApiKeyRecord | None = Depends(require_read)) -> Response:
 
 
 @router.get("/atom-wind/atlas/{nom}", tags=["atom-wind"])
-def atom_atlas_fichier(nom: str, _: ApiKeyRecord | None = Depends(require_read)):
+def atom_atlas_fichier(nom: str, _: ApiKeyRecord | None = Depends(require_eolien)):
     """atlas.png, ou une couche GeoTIFF (export SIG, E15) : atlas_<couche>.tif."""
     wf = model()
     d = _atlas_dossier(wf)
@@ -1437,6 +1463,79 @@ def export_file(stem: str, name: str, _: ApiKeyRecord | None = Depends(require_r
     if not path.exists():
         raise HTTPException(404, f"{name} absent pour {stem}")
     return FileResponse(path, media_type="application/octet-stream")
+
+
+class Inscription(BaseModel):
+    email: str = Field(..., max_length=254)
+    mot_de_passe: str = Field(..., min_length=8, max_length=256)
+    nom: str = Field("", max_length=120)
+    role: str = Field("public", pattern="^(public|agri|eolien)$")
+
+
+class Connexion(BaseModel):
+    email: str = Field(..., max_length=254)
+    mot_de_passe: str = Field(..., max_length=256)
+
+
+@router.post("/comptes", tags=["comptes"])
+def compte_creer(i: Inscription, _: ApiKeyRecord | None = Depends(require_read)) -> dict:
+    """Inscription (BF43) : grand public et agriculteur actifs tout de suite ; un exploitant eolien est cree
+    en grand public avec sa demande, que l'administrateur valide."""
+    try:
+        return comptes().creer(i.email, i.mot_de_passe, i.nom, i.role)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+@router.post("/comptes/connexion", tags=["comptes"])
+def compte_connexion(c: Connexion, _: ApiKeyRecord | None = Depends(require_read)) -> dict:
+    """Connexion : renvoie une cle de session (une seule par compte) a mettre dans X-API-Key."""
+    try:
+        cle, compte = comptes().connecter(c.email, c.mot_de_passe)
+    except PermissionError as exc:
+        raise HTTPException(429, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(401, str(exc)) from exc
+    return {"cle": cle, "compte": compte}
+
+
+@router.get("/comptes/moi", tags=["comptes"])
+def compte_moi(rec: ApiKeyRecord | None = Depends(require_read)) -> dict:
+    """Le compte de la cle presentee (null pour une cle de service)."""
+    return {"compte": comptes().compte_de_cle(rec.name) if rec is not None else None}
+
+
+@router.post("/comptes/deconnexion", tags=["comptes"])
+def compte_deconnexion(rec: ApiKeyRecord | None = Depends(require_read)) -> dict:
+    compte = comptes().compte_de_cle(rec.name) if rec is not None else None
+    if compte is None:
+        raise HTTPException(400, "cette cle n'est pas une session de compte")
+    comptes().deconnecter(compte["email"])
+    return {"deconnecte": True}
+
+
+@router.get("/comptes", tags=["comptes"])
+def comptes_liste(_: ApiKeyRecord | None = Depends(require_admin)) -> dict:
+    return {"comptes": comptes().lister()}
+
+
+@router.post("/comptes/{email}/validation", tags=["comptes"])
+def compte_validation(email: str, accepter: bool = Query(True),
+                      _: ApiKeyRecord | None = Depends(require_admin)) -> dict:
+    """Valide (ou refuse) la demande de role d'un compte (exploitant eolien)."""
+    try:
+        return comptes().valider(email, accepter)
+    except KeyError as exc:
+        raise HTTPException(404, f"aucun compte {email}") from exc
+
+
+@router.post("/comptes/{email}/statut", tags=["comptes"])
+def compte_statut(email: str, actif: bool = Query(...), _: ApiKeyRecord | None = Depends(require_admin)) -> dict:
+    """Active ou desactive un compte ; desactive, sa session tombe aussitot."""
+    try:
+        return comptes().changer_statut(email, actif)
+    except KeyError as exc:
+        raise HTTPException(404, f"aucun compte {email}") from exc
 
 
 @router.get("/keys", tags=["service"])
