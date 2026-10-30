@@ -822,5 +822,17 @@
  "Vérifier la transmission de la station (METAR ou SYNOP).": "Check the station's transmission (METAR or SYNOP).",
  "aucune mesure depuis {0} h": "no measurement for {0} h",
  "Station muette : {0}": "Silent station: {0}",
- "{0} heure(s), dès {1} h": "{0} hour(s), from {1} h"
+ "{0} heure(s), dès {1} h": "{0} hour(s), from {1} h",
+ "admin": "admin",
+ "Clé créée, à noter maintenant (elle ne sera plus affichée)": "Key created, note it now (it will not be shown again)",
+ "Clés d'API du service": "Service API keys",
+ "Confirmer la révocation": "Confirm revocation",
+ "Dernier usage": "Last used",
+ "défaut": "default",
+ "lecture": "read",
+ "Les vraies clés du service PC-FNO3D (le reste de cette page est une démonstration locale). Seule une empreinte est gardée ; un secret ne s'affiche qu'à la création.": "The real keys of the PC-FNO3D service (the rest of this page is a local demo). Only a fingerprint is kept; a secret is shown only at creation.",
+ "Portée": "Scope",
+ "Quota / jour": "Quota / day",
+ "Quota / min": "Quota / min",
+ "quota / min": "quota / min"
 }

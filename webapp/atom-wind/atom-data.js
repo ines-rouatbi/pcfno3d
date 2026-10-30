@@ -397,6 +397,54 @@ async function chargerQualite(){
 }
 A.chargerQualite = chargerQualite;
 
+// ------------------------------------------------------------------ clés d'API du service (BF42)
+// Vue Administration : les vraies clés du service (création, quotas, révocation), seulement si la clé
+// enregistrée dans ce navigateur a la portée admin (sinon la carte n'apparaît pas).
+async function envoyer(methode, chemin, corps){
+  const h = { "Content-Type": "application/json" }; const k = cle(); if(k) h["X-API-Key"] = k;
+  const r = await fetch(`${BASE}/api${chemin}`, { method: methode, headers: h, body: corps ? JSON.stringify(corps) : undefined });
+  const d = await r.json().catch(() => ({}));
+  if(!r.ok) throw new Error(d.detail ? (typeof d.detail === "string" ? d.detail : JSON.stringify(d.detail)) : `erreur ${r.status}`);
+  return d;
+}
+async function installerClesService(){
+  const vue = document.getElementById("v-admin"); if(!vue || document.getElementById("aw-cles")) return;
+  try { await get("/keys", 15000); } catch(e){ return; }                       // pas admin : rien
+  const carte = document.createElement("div");
+  carte.className = "card"; carte.id = "aw-cles";
+  vue.appendChild(carte);
+  const rendre = async () => {
+    const l = (await get("/keys", 15000)).cles;
+    carte.innerHTML = `<h3>Clés d'API du service</h3>`
+      + `<p class="muted" style="font-size:14px;margin:0 0 8px">Les vraies clés du service PC-FNO3D (le reste de cette page est une démonstration locale). Seule une empreinte est gardée ; un secret ne s'affiche qu'à la création.</p>`
+      + `<div class="tblwrap"><table class="t"><thead><tr><th>Nom</th><th>Portée</th><th>Quota / min</th><th>Quota / jour</th><th>Dernier usage</th><th></th></tr></thead><tbody>`
+      + l.map(c => `<tr><td>${echapper(c.name)}</td><td>${c.scope}</td><td class="n">${c.quota_minute ?? "défaut"}</td><td class="n">${c.quota_jour ?? "défaut"}</td>`
+        + `<td>${c.last_used_at ? fmtInstant(c.last_used_at) : "—"}</td><td>${c.revoked ? `<span class="pill mid">révoquée</span>`
+        : `<button class="btn" data-rev="${echapper(c.name)}" style="padding:2px 10px;font-size:13px">Révoquer</button>`}</td></tr>`).join("")
+      + `</tbody></table></div>`
+      + `<form id="aw-cle-n" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px"><input class="inp" name="nom" placeholder="nom (ex. appli-agri)" required pattern="[A-Za-z0-9_.\\-]+">`
+      + `<select class="inp" name="portee"><option value="read">lecture</option><option value="admin">admin</option></select>`
+      + `<input class="inp" name="qm" type="number" min="1" placeholder="quota / min" style="width:120px">`
+      + `<button class="btn primary">Créer la clé</button></form><div id="aw-cle-res" style="margin-top:6px"></div>`;
+    carte.querySelectorAll("[data-rev]").forEach(b => b.onclick = async () => {
+      if(b.dataset.ok !== "1"){ b.dataset.ok = "1"; b.textContent = "Confirmer la révocation"; return; }
+      try { await envoyer("DELETE", `/keys/${encodeURIComponent(b.dataset.rev)}`); await rendre(); }
+      catch(e){ carte.querySelector("#aw-cle-res").textContent = e.message; }
+    });
+    carte.querySelector("#aw-cle-n").onsubmit = async e => {
+      e.preventDefault(); const f = e.target, res = carte.querySelector("#aw-cle-res");
+      try {
+        const d = await envoyer("POST", "/keys", { nom: f.nom.value.trim(), portee: f.portee.value,
+                                                    quota_minute: f.qm.value ? Number(f.qm.value) : null });
+        await rendre();
+        carte.querySelector("#aw-cle-res").innerHTML = `<b>Clé créée, à noter maintenant (elle ne sera plus affichée)</b> : <code style="user-select:all">${echapper(d.cle)}</code>`;
+      } catch(err){ res.textContent = err.message; }
+    };
+  };
+  try { await rendre(); } catch(e){ carte.remove(); }
+}
+A.installerClesService = installerClesService;
+
 // ------------------------------------------------------------------ alertes du service (BF22, S4)
 // Temps réel seulement : une station sans mesure depuis plusieurs heures (selon sa cadence : METAR
 // horaire, SYNOP toutes les 3 h), et les heures dont le champ conserve mal la masse.
@@ -575,7 +623,7 @@ function lancerPage(){
   if(sel) sel.onchange = () => A.choisirJour(sel.value);
   if(A.pret() && A.jour.temps_reel && !A.jour.prevision && A.setHour) A.setHour(heureLocale());
   if(A.pret() && A.jour.temps_reel) chargerTrois().then(chargerEnsembles);
-  if(A.pret()){ chargerAtlas(); sourceEolien(); installerAssistant(); installerValeurStations(); installerRapports(); chargerQualite(); }
+  if(A.pret()){ chargerAtlas(); sourceEolien(); installerAssistant(); installerValeurStations(); installerRapports(); chargerQualite(); installerClesService(); }
   // temps réel : nouvelles mesures et nouvelle échéance toutes les 30 min
   setInterval(() => {
     if(!A.jour || !A.jour.temps_reel || A.jour.archive) return;

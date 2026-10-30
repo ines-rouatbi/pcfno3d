@@ -822,5 +822,17 @@
  "Vérifier la transmission de la station (METAR ou SYNOP).": "تحقق من إرسال المحطة (METAR أو SYNOP).",
  "aucune mesure depuis {0} h": "لا قياس منذ {0} س",
  "Station muette : {0}": "محطة صامتة: {0}",
- "{0} heure(s), dès {1} h": "{0} ساعة، ابتداءً من {1} س"
+ "{0} heure(s), dès {1} h": "{0} ساعة، ابتداءً من {1} س",
+ "admin": "مسؤول",
+ "Clé créée, à noter maintenant (elle ne sera plus affichée)": "تم إنشاء المفتاح، دوّنه الآن (لن يُعرض مرة أخرى)",
+ "Clés d'API du service": "مفاتيح API للخدمة",
+ "Confirmer la révocation": "تأكيد الإلغاء",
+ "Dernier usage": "آخر استخدام",
+ "défaut": "افتراضي",
+ "lecture": "قراءة",
+ "Les vraies clés du service PC-FNO3D (le reste de cette page est une démonstration locale). Seule une empreinte est gardée ; un secret ne s'affiche qu'à la création.": "المفاتيح الحقيقية لخدمة PC-FNO3D (بقية هذه الصفحة عرض محلي). تُحفظ البصمة فقط؛ لا يُعرض السر إلا عند الإنشاء.",
+ "Portée": "النطاق",
+ "Quota / jour": "الحصة / يوم",
+ "Quota / min": "الحصة / دقيقة",
+ "quota / min": "الحصة / دقيقة"
 }
