@@ -802,5 +802,7 @@
  "sous le seuil (test)": "below the threshold (test)",
  "Stations actives": "Active stations",
  "Temps de reconstruction": "Reconstruction time",
- "une carte 3D par le modèle": "one 3D map by the model"
+ "une carte 3D par le modèle": "one 3D map by the model",
+ "cet instant, sous le seuil": "this instant, below the threshold",
+ "cet instant, au-dessus du seuil": "this instant, above the threshold"
 }

@@ -141,6 +141,10 @@ def test_journee_temps_reel(jeu):
     hr = np.frombuffer(base64.b64decode(d["hr2m"]), dtype="<i2").astype(float) / 100
     assert 10.0 < np.median(t2m) < 25.0 and np.median(hr) == pytest.approx(60.0, abs=0.5)
     assert all(i["rayonnement_w_m2"] == pytest.approx(300.0) for i in d["instants"])
+    # physique de chaque instant (BF11, BF31) : residu de continuite et condition au sol du champ servi
+    assert all(i["residu_masse_rms"] is not None and i["residu_masse_rms"] >= 0 for i in d["instants"])
+    assert all(isinstance(i["residu_masse_ok"], bool) for i in d["instants"])
+    assert "sigma_vitesse" not in d                 # incertitude seulement sur demande (fiabilite=True)
 
 
 def test_valeur_des_stations(jeu):

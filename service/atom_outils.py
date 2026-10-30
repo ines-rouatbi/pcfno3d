@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import base64
 import math
+import os
 import threading
 import time
 from pathlib import Path
@@ -82,8 +83,10 @@ def jour(wf, j: int) -> dict:
     """La journee relative j (0 aujourd'hui, 1 demain, 2 apres-demain), cachee 30 min."""
     from pcfno3d import atom_wind
     date = atom_wind.date_locale_aujourdhui(j)
+    # incertitude en temps reel (BF8) : PCFNO3D_SIGMA_DIRECT=1 et un modele calibre (inference.reliability)
+    fiab = os.environ.get("PCFNO3D_SIGMA_DIRECT", "0") == "1"
     return _avec_cache("direct", wf, date, TTL_DIRECT_S,
-                       lambda: atom_wind.jour_direct(wf, source(wf), date))
+                       lambda: atom_wind.jour_direct(wf, source(wf), date, fiabilite=fiab))
 
 
 def ensemble(wf, j: int) -> dict:

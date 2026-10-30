@@ -139,6 +139,8 @@
 "Ce qui se passe maintenant sur la zone, la qualité du modèle et l'état du réseau de mesure. Les chiffres de qualité du modèle sont des résultats réels ; le vent de la journée est un exemple.",
 "Ces grandeurs ne sont pas calculées par ATOM Wind ; elles viendront de la prévision GFS. Ici, valeurs d'exemple.",
 "Cet emplacement produit presque autant que la crête, la meilleure zone de l'exemple.",
+"cet instant, au-dessus du seuil",
+"cet instant, sous le seuil",
 "Cette adresse e-mail n'est pas valide.",
 "Chaleur du jour",
 "Chaque alerte dit quoi, où, quand et que faire. Les plus urgentes sont en haut.",

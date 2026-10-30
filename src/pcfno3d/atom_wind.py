@@ -193,13 +193,16 @@ def plan_aneo(run_dir: Path) -> Path | None:
 
 
 # ---------------------------------------------------------------------- temps reel
-def jour_direct(wf, source, date_locale: str, maintenant: pd.Timestamp | None = None) -> dict:
+def jour_direct(wf, source, date_locale: str, maintenant: pd.Timestamp | None = None,
+                fiabilite: bool = False) -> dict:
     """Les 24 heures locales d'une journee (pcfno3d.temps_reel) : heures passees = forcage GFS +
     vraies mesures des stations ; heures a venir = prevision GFS, sans station. Avec, pour
     l'espace agriculteur, la temperature et l'humidite a 2 m de GFS (ramenees au relief, grille de
     500 m) et le rayonnement solaire moyen du domaine : grandeurs que le modele ne calcule pas,
-    signalees comme telles."""
+    signalees comme telles. fiabilite=True (modele calibre, `inference.reliability`) : sigma de la vitesse
+    par l'ensemble par masquage (lot M2, BF8), environ 4 s de plus par instant sur GPU."""
     from . import temps_reel as tr
+    from .alerts import physique, rho_instant
 
     geom = wf.geom
     e = source.journee(date_locale)
@@ -207,8 +210,9 @@ def jour_direct(wf, source, date_locale: str, maintenant: pd.Timestamp | None = 
     maintenant = maintenant if maintenant is not None else \
         pd.Timestamp.now(tz="UTC").tz_localize(None)
     index_t = {int(s): i for i, s in enumerate(c["temps"])}
-    instants, blocs_vent, blocs_t, blocs_hr = [], [], [], []
+    instants, blocs_vent, blocs_t, blocs_hr, blocs_sigma = [], [], [], [], []
     b = facteur(geom)
+    fiabilite = bool(fiabilite and wf.cfg.inference.reliability is not None)
     for h in range(24):
         t = pd.Timestamp(date_locale) + pd.Timedelta(hours=h - UTC_LOCAL_H)
         it = index_t.get(int(t.value // 10 ** 9))
@@ -219,8 +223,16 @@ def jour_direct(wf, source, date_locale: str, maintenant: pd.Timestamp | None = 
         S = tr.entree(geom, c, f, it, mesures)
         stamp = t.strftime("%Y-%m-%dT%H:%M:%SZ")
         vol = wf.predict(S, t.hour + t.minute / 60, int(t.dayofyear), timestamp=stamp,
-                         forcage=f.vecteur(t), reliability=False)
+                         forcage=f.vecteur(t), reliability=fiabilite)
         blocs_vent.append(instant(vol, geom))
+        if fiabilite:
+            sg = sigma_agl(vol, geom)
+            if sg is not None:
+                blocs_sigma.append(sg)
+        # physique de l'instant (BF11, BF31) : residu de continuite et condition au sol du champ servi,
+        # densite ISA recalee sur la surface (pas de verite en temps reel)
+        rho, src = rho_instant(geom, "extrapolation_surface", S, S[7] > 0.5)
+        phys = physique(geom, vol.u, vol.v, vol.w, rho, src, wf.cfg.dso.mass_rms)
         blocs_t.append(blocs(S[3], b))           # temperature a 2 m (GFS), deg C
         blocs_hr.append(blocs(S[5], b))          # humidite relative a 2 m (GFS), %
         ray = c.get("shortwave_radiation")
@@ -228,12 +240,18 @@ def jour_direct(wf, source, date_locale: str, maintenant: pd.Timestamp | None = 
                          "rayonnement_w_m2": None if ray is None else round(float(np.nanmean(ray[it])), 1),
                          "heure_locale": float(h), "source": "temps reel" if passe else "prevision",
                          "stations": sorted(mesures), "inference_s": round(float(vol.inference_s), 3),
-                         "capteurs_utilises": int(vol.n_sensors)})
+                         "capteurs_utilises": int(vol.n_sensors),
+                         "residu_masse_rms": phys["mass_residual_rms"], "residu_masse_ok": phys["mass_residual_ok"],
+                         "condition_sol_rms_m_s": phys["ground_condition_rms_ms"]})
     if not instants:
         raise ValueError(f"aucune echeance GFS pour le {date_locale}")
     a = np.stack(blocs_vent)
     prevision = all(i["source"] == "prevision" for i in instants)
-    return {"format": "atom-wind/1", "date": date_locale, "temps_reel": True,
+    extra = {}
+    if blocs_sigma and len(blocs_sigma) == len(instants):
+        sg = np.stack(blocs_sigma)
+        extra = {"sigma_vitesse": encoder(sg), "forme_sigma": list(sg.shape)}
+    return {**extra, "format": "atom-wind/1", "date": date_locale, "temps_reel": True,
             "prevision": prevision,
             "instants": instants, "hauteurs_agl_m": list(HAUTEURS_AGL), "forme": list(a.shape),
             "unite": "cm/s, int16 petit-boutiste, -32768 = sans valeur",

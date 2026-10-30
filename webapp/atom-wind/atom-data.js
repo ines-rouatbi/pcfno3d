@@ -409,8 +409,12 @@ A.kpisReels = h => {
     if(isFinite(u) && isFinite(v)){ s += Math.hypot(u, v); n++; }
   }
   if(n) out.push(["Vent au moyeu (80 m)", `${(s / n).toFixed(1).replace(".", ",")} m/s`, "moyenne de la zone"]);
+  const xi = I.length ? I.reduce((b, y) => Math.abs(y.heure_locale - h) < Math.abs(b.heure_locale - h) ? y : b, I[0]) : null;
   const d2 = A.qualite && A.qualite.dso.find(l => l.code === "DSO2");
-  if(d2 && d2.valeur !== null)
+  if(xi && typeof xi.residu_masse_rms === "number")
+    out.push(["Résidu de masse", xi.residu_masse_rms.toExponential(1).replace(".", ","),
+              xi.residu_masse_ok ? "cet instant, sous le seuil" : "cet instant, au-dessus du seuil"]);
+  else if(d2 && d2.valeur !== null)
     out.push(["Résidu de masse", Number(d2.valeur).toExponential(1).replace(".", ","), d2.conforme ? "sous le seuil (test)" : "au-dessus du seuil (test)"]);
   return out;
 };

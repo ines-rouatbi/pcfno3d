@@ -802,5 +802,7 @@
  "sous le seuil (test)": "تحت العتبة (اختبار)",
  "Stations actives": "المحطات النشطة",
  "Temps de reconstruction": "زمن إعادة البناء",
- "une carte 3D par le modèle": "خريطة ثلاثية الأبعاد واحدة بالنموذج"
+ "une carte 3D par le modèle": "خريطة ثلاثية الأبعاد واحدة بالنموذج",
+ "cet instant, sous le seuil": "هذه اللحظة، تحت العتبة",
+ "cet instant, au-dessus du seuil": "هذه اللحظة، فوق العتبة"
 }
