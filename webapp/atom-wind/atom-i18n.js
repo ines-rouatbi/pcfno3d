@@ -144,6 +144,14 @@ function demarrer(){
   }).observe(document.body, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ATTRS });
 }
 
+// texte dessiné dans les canvas (coupe verticale, cartes, graphiques) : même dictionnaire
+for(const nom of ["fillText", "strokeText"]){
+  const orig = CanvasRenderingContext2D.prototype[nom];
+  CanvasRenderingContext2D.prototype[nom] = function(t, ...reste){
+    return orig.call(this, typeof t === "string" ? (traduire(t) ?? t) : t, ...reste);
+  };
+}
+
 fetch(`i18n/${langue}.json`, { cache: "no-cache" })
   .then(r => r.ok ? r.json() : Promise.reject(new Error(r.status)))
   .then(d => {
