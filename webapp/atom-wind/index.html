@@ -1174,6 +1174,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
       </div>
     </div>
   </div>
+  <div class="card" id="aw-valeur" hidden></div>
 </section>
 </main>
 
@@ -1931,7 +1932,8 @@ addEventListener("hashchange",()=>show(location.hash.slice(1)));
 document.addEventListener("click", e => { const a=e.target.closest('a[href^="#"]'); if(!a) return; const v=a.getAttribute("href").slice(1); if(!document.getElementById("v-"+v)) return; e.preventDefault(); show(v); try{ history.replaceState(null,"","#"+v); }catch(_){} window.scrollTo({top:0, behavior:"smooth"}); });
 
 // ---------------- « Pourquoi ce vent ? » ----------------
-function explainHtml(x,y,z,h){
+function explainHtml(x,y,z,h){ return explainHtml0(x,y,z,h) + (window.ATOM && ATOM.htmlInfluence ? ATOM.htmlInfluence(x,y) : ""); }
+function explainHtml0(x,y,z,h){
   const k=idx(x,y), [bu,bv]=synoptic(h), B=breeze(h), sd=sdist[k], zr=z0[k], zz=Math.max(z,1);
   const low=Math.log(Math.min(zz,150)/zr)/Math.log(10/zr), reach = sd>0 ? Math.exp(-sd/13) : Math.exp(sd/9);
   const relief=Math.max(-.25,Math.min(.45,.0016*(elev[k]-smooth[k])))*Math.exp(-z/400);

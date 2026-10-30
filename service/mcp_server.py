@@ -523,6 +523,29 @@ def variations_production(jour: int, seuil_pct: float = 20.0) -> dict:
     return atom_outils.variations_production(get_model(), int(jour), seuil_pct=float(seuil_pct))
 
 
+@mcp.tool()
+def valeur_stations() -> dict:
+    """Valeur de chaque station de mesure aujourd'hui (cahier v12, E11) et aire de son influence (E10) : le
+    modele est relance sans chaque station ; erreur a son emplacement sans elle (faible = redondante)."""
+    from service import atom_outils
+    d = dict(atom_outils.valeur_stations(get_model()))
+    for k in ("influence", "_influence"):
+        d.pop(k, None)
+    return d
+
+
+@mcp.tool()
+def explication_point(lieu: str | None = None, lat: float | None = None, lon: float | None = None) -> dict:
+    """Pourquoi ce vent ici (cahier v12, E10) : les stations qui ont le plus influence la valeur du point
+    aujourd'hui, a 10 m.
+
+    Args:
+        lieu: lieu de l'application (Mornag, Nabeul, Soliman...), ou lat / lon.
+    """
+    from service import atom_outils
+    return atom_outils.explication_point(get_model(), lat=lat, lon=lon, lieu=lieu)
+
+
 def main() -> int:
     """Transport stdio, pour un client MCP local."""
     mcp.run()

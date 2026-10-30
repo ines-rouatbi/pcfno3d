@@ -19,7 +19,7 @@ import numpy as np
 TTL_DIRECT_S = 1800.0
 TTL_ENSEMBLE_S = 6 * 3600.0
 _VERROU = threading.Lock()
-_CACHES: dict = {"direct": {}, "ensemble": {}, "source": {}, "grille": {}}
+_CACHES: dict = {"direct": {}, "ensemble": {}, "source": {}, "grille": {}, "valeur": {}}
 
 # lieux de l'application (maquette ATOM Wind, PLACES) : le nom suffit a l'assistant
 LIEUX = {
@@ -91,6 +91,14 @@ def ensemble(wf, j: int) -> dict:
     date = atom_wind.date_locale_aujourdhui(j)
     return _avec_cache("ensemble", wf, date, TTL_ENSEMBLE_S,
                        lambda: atom_wind.jour_ensemble(wf, source(wf), date))
+
+
+def valeur_stations(wf) -> dict:
+    """Valeur et influence des stations aujourd'hui (E10, E11), cachees 30 min (4 passes par heure rejouee)."""
+    from pcfno3d import atom_wind
+    date = atom_wind.date_locale_aujourdhui(0)
+    return _avec_cache("valeur", wf, date, TTL_DIRECT_S,
+                       lambda: atom_wind.valeur_stations(wf, source(wf), date))
 
 
 # ---------------------------------------------------------------------- lecture en un point
@@ -353,3 +361,26 @@ def variations_production(wf, j: int, moyeu_m: float = 80.0, seuil_pct: float = 
             "seuil_pct_par_heure": seuil_pct, "puissance_kw": puissance, "rampes": rampes,
             "energie_jour_mwh": round(sum(puissance) / 1000.0, 2),
             "note": "estimation sans mesure de production ; pas horaire (les rampes plus courtes ne sont pas vues)"}
+
+
+def explication_point(wf, lat=None, lon=None, lieu=None) -> dict:
+    """Pourquoi ce vent ici (cahier v12, E10) : les stations qui ont le plus influence la valeur du point
+    aujourd'hui (ecart a 10 m quand chacune est retiree, moyenne sur les heures mesurees), le reste venant
+    de la grande echelle GFS et du relief."""
+    x, y, nom = position(wf, lat, lon, lieu)
+    d = valeur_stations(wf)
+    cartes = _tableau(d, "influence")
+    i, jj, _ = _maille(wf, x, y)
+    infl = [(st, float(cartes[k, jj, i])) for k, st in enumerate(d["codes"])]
+    total = sum(v for _, v in infl if np.isfinite(v))
+    from pcfno3d.stations_reelles import CODES
+    sortie = [{"station": CODES.get(k, k), "code": k, "influence_m_s": round(v, 2),
+               "part_pct": round(100.0 * v / total) if total > 0 else 0} for k, v in infl if np.isfinite(v)]
+    sortie.sort(key=lambda r: -r["influence_m_s"])
+    principale = sortie[0]["station"] if sortie and sortie[0]["influence_m_s"] >= 0.1 else None
+    return {"lieu": nom, "date": d["date"], "hauteur_sol_m": d["hauteur_carte_m"], "heures_locales": d["heures_locales"],
+            "stations": sortie,
+            "texte": (f"Ici, la station qui compte le plus est {principale}." if principale else
+                      "Ici, aucune station ne change la valeur de plus de 0,1 m/s : le vent vient surtout de la grande "
+                      "echelle (GFS) et du relief."),
+            "methode": d["methode"]}

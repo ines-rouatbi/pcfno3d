@@ -1016,6 +1016,31 @@ def atom_variations(j: int = Query(0, ge=0, le=2, description="0 = aujourd'hui, 
         raise HTTPException(422, str(exc)) from exc
 
 
+@router.get("/atom-wind/valeur-stations", tags=["atom-wind"])
+def atom_valeur_stations(_: ApiKeyRecord | None = Depends(require_read)) -> Response:
+    """Valeur de chaque station et son influence (cahier v12, E10 et E11), aujourd'hui : le modele est relance
+    sans chaque station aux heures mesurees (toutes les 3 h). Cache de 30 min."""
+    wf = model()
+    if wf.geom.forcage is None:
+        raise HTTPException(409, "valeur des stations : modele sans forcage (paths.forcage_era5)")
+    from service import atom_outils
+    try:
+        return _gzip_json(atom_outils.valeur_stations(wf))
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+
+
+@router.get("/atom-wind/explication", tags=["atom-wind"])
+def atom_explication(lieu: str | None = Query(None, max_length=80), lat: float | None = None,
+                     lon: float | None = None, _: ApiKeyRecord | None = Depends(require_read)) -> dict:
+    """Pourquoi ce vent ici (cahier v12, E10) : influence de chaque station sur le point aujourd'hui."""
+    from service import atom_outils
+    try:
+        return atom_outils.explication_point(model(), lat=lat, lon=lon, lieu=lieu)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
 class QuestionAssistant(BaseModel):
     question: str = Field(..., min_length=1, max_length=2000)
     historique: list[dict] = Field(default_factory=list, max_length=20,

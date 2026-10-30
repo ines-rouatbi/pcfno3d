@@ -143,6 +143,24 @@ def test_journee_temps_reel(jeu):
     assert all(i["rayonnement_w_m2"] == pytest.approx(300.0) for i in d["instants"])
 
 
+def test_valeur_des_stations(jeu):
+    """E10 / E11 : deni de donnees sur une heure passee ou deux stations mesurent."""
+    from pcfno3d import atom_wind, temps_reel
+    from pcfno3d.inference import WindFieldModel
+
+    wf = WindFieldModel(jeu, device="cpu", verbose=False)
+    src = temps_reel.SourceDirect(wf.geom, lire=fausse_source)
+    d = atom_wind.valeur_stations(wf, src, "2026-10-26", maintenant=pd.Timestamp("2026-10-26T07:20:00"), heures=(7, 12))
+    assert d["heures_locales"] == [7.0]                     # 12 h est dans le futur : pas rejouee
+    assert d["codes"] == ["DTTA", "INM60729"] and d["forme"][0] == 2
+    for st in d["stations"]:
+        assert st["instants"] == 1 and st["erreur_sans_elle_m_s"] >= 0 and st["aire_influence_km2"] >= 0
+    cartes = np.frombuffer(base64.b64decode(d["influence"]), dtype="<i2").reshape(d["forme"])
+    assert (cartes > 0).any()                               # retirer une station change le champ
+    with pytest.raises(ValueError, match="aucune heure mesuree"):
+        atom_wind.valeur_stations(wf, src, "2026-10-26", maintenant=pd.Timestamp("2026-10-26T07:20:00"), heures=(20,))
+
+
 def test_forcage_direct_meme_forme(jeu):
     from pcfno3d import temps_reel
     from pcfno3d.geometry import Geometry

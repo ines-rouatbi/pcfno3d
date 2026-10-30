@@ -102,6 +102,11 @@ ACCROCHES = [
      " wind, sigma, relClass, idx, elev, wat, W, H, STATIONS, TURB, ANEO, state, speedColor, kmh, fmtSpeed, dirName, fromDeg,"
      " nearestName, openSheet, setHour}); }catch(e){ console.error(\"vue 3D complète\", e); AW3=null; }\n"
      "  tick(); update3dColors=()=>{};\n}"),
+    # 14. valeur et influence des stations (cahier v12, E10 et E11) : vue Fiabilite et « Pourquoi ce vent ? »
+    ("  </div>\n</section>\n</main>", "  </div>\n  <div class=\"card\" id=\"aw-valeur\" hidden></div>\n</section>\n</main>"),
+    ("function explainHtml(x,y,z,h){",
+     "function explainHtml(x,y,z,h){ return explainHtml0(x,y,z,h) + (window.ATOM && ATOM.htmlInfluence ? ATOM.htmlInfluence(x,y) : \"\"); }\n"
+     "function explainHtml0(x,y,z,h){"),
 ]
 
 

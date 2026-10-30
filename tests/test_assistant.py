@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 from types import SimpleNamespace as NS
 
+import pandas as pd
 import pytest
 
 from test_temps_reel import _jeu_reel, cfg_era5, fausse_source, forcage, jeu  # noqa: F401
@@ -58,6 +59,17 @@ def test_maintenance_et_variations(wf, monkeypatch):
     for r in v["rampes"]:
         assert r["variation_kw"] == v["puissance_kw"][r["a"]] - v["puissance_kw"][r["de"]]
     assert ao.variations_production(wf, 1, 80.0, seuil_pct=100)["rampes"] == []
+
+
+def test_explication_point(wf, monkeypatch):
+    from pcfno3d import atom_wind
+    from service import atom_outils as ao
+    vrai = atom_wind.valeur_stations
+    monkeypatch.setattr(atom_wind, "valeur_stations", lambda wf_, src, date, **kw: vrai(
+        wf_, src, "2026-10-26", maintenant=pd.Timestamp("2026-10-26T07:20:00"), heures=(7,)))
+    e = ao.explication_point(wf, lat=LAT, lon=LON)
+    assert {s["code"] for s in e["stations"]} == {"DTTA", "INM60729"}
+    assert sum(s["part_pct"] for s in e["stations"]) in (0, 99, 100, 101) and e["texte"]
 
 
 class FauxClaude:

@@ -72,6 +72,8 @@ OUTILS = [
             "seuil_m_s": {"type": "number", "description": "Vent moyen maximal de la procedure du site, 12 m/s si inconnu"}}),
     _outil("variations_production", "Hausses et chutes rapides de production du parc eolien virtuel de Djebel "
            "Ressas, heure par heure, pour le gestionnaire du reseau.", {**_JOUR}),
+    _outil("explication_point", "Pourquoi ce vent ici aujourd'hui : quelles stations de mesure ont le plus "
+           "influence la valeur en un point (le reste vient de GFS et du relief).", {**_LIEU}),
 ]
 OUTILS[-1]["cache_control"] = {"type": "ephemeral"}       # le prefixe outils + systeme est stable
 
@@ -98,6 +100,8 @@ def executer(wf, nom: str, entree: dict) -> dict:
         return d
     if nom == "variations_production":
         return ao.variations_production(wf, j)
+    if nom == "explication_point":
+        return ao.explication_point(wf, **lieu)
     raise ValueError(f"outil inconnu : {nom}")
 
 

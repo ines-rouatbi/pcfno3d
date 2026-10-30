@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import base64
 import json
+import math
 from pathlib import Path
 
 import numpy as np
@@ -249,6 +250,86 @@ def jour_direct(wf, source, date_locale: str, maintenant: pd.Timestamp | None = 
 def date_locale_aujourdhui(decalage_j: int = 0) -> str:
     return (pd.Timestamp.now(tz="UTC").tz_localize(None) + pd.Timedelta(hours=UTC_LOCAL_H)
             + pd.Timedelta(days=decalage_j)).strftime("%Y-%m-%d")
+
+
+# ---------------------------------------------------------------------- valeur des stations (E10, E11)
+HEURES_DENI = tuple(range(0, 24, 3))     # heures locales rejouees sans chaque station
+SEUIL_INFLUENCE_M_S = 0.5
+
+
+def valeur_stations(wf, source, date_locale: str, maintenant: pd.Timestamp | None = None,
+                    heures=HEURES_DENI, h_carte: float = 10.0) -> dict:
+    """Deni de donnees sur les heures PASSEES de la journee (cahier v12, E10 et E11) : le modele est
+    relance sans chaque station. Pour chaque station :
+      - valeur (E11) : erreur vectorielle du modele A SON EMPLACEMENT quand elle est retiree (ce que
+        les autres stations et GFS ne savent pas deviner ; faible = station redondante), et erreur
+        quand elle est presente ;
+      - influence (E10) : ecart |V avec - V sans| a `h_carte` m du sol, moyenne sur les heures, par
+        blocs de 500 m ; aire ou il depasse SEUIL_INFLUENCE_M_S.
+    Un instant sans mesure ne compte pas ; une station sans mesure du jour n'apparait pas."""
+    from . import temps_reel as tr
+    from .stations_reelles import CODES, H_STATION, cellules_codes
+
+    geom = wf.geom
+    e = source.journee(date_locale)
+    f, c, obs = e["forcage"], e["champs"], e["obs"]
+    maintenant = maintenant if maintenant is not None else         pd.Timestamp.now(tz="UTC").tz_localize(None)
+    index_t = {int(s): i for i, s in enumerate(c["temps"])}
+    cell = cellules_codes(geom)
+    b = facteur(geom)
+    infl: dict[str, list] = {}
+    err_avec: dict[str, list] = {}
+    err_sans: dict[str, list] = {}
+    vues = []
+
+    def passe(S, t):
+        vol = wf.predict(S, t.hour + t.minute / 60, int(t.dayofyear), timestamp=t.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                         forcage=f.vecteur(t), reliability=False)
+        carte = champ_agl(vol.u, vol.v, geom, h_carte)
+        sol = carte if h_carte == H_STATION else champ_agl(vol.u, vol.v, geom, H_STATION)
+        return carte, sol
+
+    for h in heures:
+        t = pd.Timestamp(date_locale) + pd.Timedelta(hours=h - UTC_LOCAL_H)
+        it = index_t.get(int(t.value // 10 ** 9))
+        if it is None or t > maintenant:
+            continue
+        mes = {k: v for k, v in tr.mesures_a(obs, t).items() if k in cell}
+        if not mes:
+            continue
+        vues.append(float(h))
+        (ua, va), (u10, v10) = passe(tr.entree(geom, c, f, it, mes), t)
+        for code, (um, vm) in mes.items():
+            (ub, vb), (u10b, v10b) = passe(tr.entree(geom, c, f, it, mes, exclue=code), t)
+            infl.setdefault(code, []).append(blocs(np.hypot(ua - ub, va - vb), b))
+            iy, ix = cell[code]
+            err_avec.setdefault(code, []).append(math.hypot(u10[iy, ix] - um, v10[iy, ix] - vm))
+            err_sans.setdefault(code, []).append(math.hypot(u10b[iy, ix] - um, v10b[iy, ix] - vm))
+    if not vues:
+        raise ValueError(f"aucune heure mesuree le {date_locale} (heures passees : {list(heures)})")
+    codes = sorted(infl)
+    cartes = np.stack([np.nanmean(np.stack(infl[k]), axis=0) for k in codes])
+    aire_bloc = (b * geom.dx / 1000.0) ** 2
+    stations = []
+    for k, carte in zip(codes, cartes):
+        sans = float(np.sqrt(np.mean(np.square(err_sans[k]))))
+        avec = float(np.sqrt(np.mean(np.square(err_avec[k]))))
+        stations.append({"code": k, "nom": CODES.get(k, k), "instants": len(err_sans[k]),
+                         "erreur_sans_elle_m_s": round(sans, 2), "erreur_avec_elle_m_s": round(avec, 2),
+                         "apport_m_s": round(sans - avec, 2),
+                         "influence_moyenne_m_s": round(float(np.nanmean(carte)), 3),
+                         "influence_max_m_s": round(float(np.nanmax(carte)), 2),
+                         "aire_influence_km2": round(float(np.sum(carte > SEUIL_INFLUENCE_M_S)) * aire_bloc, 1)})
+    stations.sort(key=lambda r: -r["erreur_sans_elle_m_s"])
+    return {"format": "atom-wind/valeur-stations/1", "date": date_locale, "heures_locales": vues,
+            "hauteur_carte_m": h_carte, "seuil_influence_m_s": SEUIL_INFLUENCE_M_S, "stations": stations,
+            "codes": codes, "forme": list(cartes.shape), "influence": encoder(cartes),
+            "unite": "influence en cm/s, int16 petit-boutiste, ordre station, y, x (blocs de 500 m)",
+            "methode": "deni de donnees : le modele relance sans chaque station aux heures mesurees",
+            "mis_a_jour_utc": maintenant.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "lecture": "erreur_sans_elle faible = station que GFS et les autres stations devinent deja "
+                       "(redondante) ; forte = station precieuse, a entretenir en priorite",
+            "modele": wf.checkpoint_path.name}
 
 
 # ---------------------------------------------------------------------- ensemble GEFS (E19)

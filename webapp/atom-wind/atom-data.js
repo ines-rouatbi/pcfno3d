@@ -296,6 +296,50 @@ async function chargerAtlas(){
   el.hidden = false;
 }
 A.chargerAtlas = chargerAtlas;
+
+// ------------------------------------------------------------------ valeur des stations (E10, E11)
+// Le modèle est relancé sans chaque station aux heures mesurées du jour : calcul lourd, à la demande.
+function lectureStation(st){
+  return st.erreur_sans_elle_m_s >= 2 ? ["bad", "précieuse"] : st.erreur_sans_elle_m_s < 1 ? ["good", "redondante"] : ["mid", "utile"];
+}
+function installerValeurStations(){
+  const el = document.getElementById("aw-valeur"); if(!el || !A.pret() || !A.jour.temps_reel) return;
+  el.innerHTML = `<h3>Valeur de chaque station aujourd'hui</h3>`
+    + `<p class="muted" style="font-size:14px;margin:0 0 8px">Le modèle est relancé sans chaque station, aux heures déjà mesurées : `
+    + `on voit ce que les autres stations et GFS savent deviner sans elle, et jusqu'où elle change le vent.</p>`
+    + `<button class="btn primary" id="aw-valeur-bt">Calculer (environ une minute)</button><div id="aw-valeur-res"></div>`;
+  el.hidden = false;
+  el.querySelector("#aw-valeur-bt").onclick = async ev => {
+    const bt = ev.currentTarget, res = el.querySelector("#aw-valeur-res");
+    bt.disabled = true; bt.textContent = "Calcul en cours…";
+    try {
+      const d = await get("/atom-wind/valeur-stations", 240000);
+      d._influence = decoder(d.influence); A.valeurStations = d;
+      const kmh = v => `${Math.round(v * 3.6)} km/h`;
+      res.innerHTML = `<div class="tblwrap"><table class="t"><thead><tr><th>Station</th><th style="text-align:right">Erreur sans elle</th>`
+        + `<th style="text-align:right">Avec elle</th><th style="text-align:right">Zone d'influence</th><th>Lecture</th></tr></thead><tbody>`
+        + d.stations.map(st => { const [c, t] = lectureStation(st);
+            return `<tr><td>${st.nom}</td><td class="n">${kmh(st.erreur_sans_elle_m_s)}</td><td class="n">${kmh(st.erreur_avec_elle_m_s)}</td>`
+              + `<td class="n">${Math.round(st.aire_influence_km2).toLocaleString("fr-FR")} km²</td><td><span class="pill ${c}">${t}</span></td></tr>`; }).join("")
+        + `</tbody></table></div><p class="muted" style="font-size:13px;margin:6px 0 0">Heures rejouées : ${d.heures_locales.map(h => `${h} h`).join(", ")}. `
+        + `Zone d'influence : là où retirer la station change le vent à ${d.hauteur_carte_m} m de plus de ${kmh(d.seuil_influence_m_s)}. `
+        + `Une station « précieuse » mesure ce que rien d'autre ne devine : à entretenir en priorité.</p>`;
+      bt.textContent = "Recalculer";
+    } catch(e){ res.innerHTML = `<p class="muted">Calcul impossible : ${e.message}</p>`; bt.textContent = "Réessayer"; }
+    bt.disabled = false;
+  };
+}
+A.installerValeurStations = installerValeurStations;
+A.htmlInfluence = (x, y) => {
+  const d = A.valeurStations; if(!d || !A.grille) return "";
+  const [i, j] = cellule(x, y), n = A.grille.nx * A.grille.ny;
+  const L = d.codes.map((c, k) => [d.stations.find(s => s.code === c), d._influence[k*n + j*A.grille.nx + i]])
+    .filter(q => q[0] && isFinite(q[1])).sort((a, b) => b[1] - a[1]);
+  if(!L.length) return "";
+  const t = L[0][1] >= .1 ? `La station qui compte le plus ici est <b>${L[0][0].nom}</b>.` : "Ici, aucune station ne change le vent de façon sensible : il vient surtout de GFS et du relief.";
+  return `<p style="font-size:14px;margin:6px 0 0">${t} Sans chaque station, le vent à ${d.hauteur_carte_m} m changerait de : `
+    + L.map(([s, v]) => `${s.nom} ${Math.round(v * 3.6)} km/h`).join(", ") + ".</p>";
+};
 function sourceEolien(){
   const el = document.getElementById("aw-eol-src"); if(!el || !A.pret()) return;
   el.textContent = A.jour.temps_reel
@@ -406,7 +450,7 @@ function lancerPage(){
   if(sel) sel.onchange = () => A.choisirJour(sel.value);
   if(A.pret() && A.jour.temps_reel && !A.jour.prevision && A.setHour) A.setHour(heureLocale());
   if(A.pret() && A.jour.temps_reel) chargerTrois().then(chargerEnsembles);
-  if(A.pret()){ chargerAtlas(); sourceEolien(); installerAssistant(); }
+  if(A.pret()){ chargerAtlas(); sourceEolien(); installerAssistant(); installerValeurStations(); }
   // temps réel : nouvelles mesures et nouvelle échéance toutes les 30 min
   setInterval(() => {
     if(!A.jour || !A.jour.temps_reel) return;
