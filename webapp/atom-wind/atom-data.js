@@ -367,6 +367,25 @@ function installerRapports(){
   }
 }
 A.installerRapports = installerRapports;
+
+// ------------------------------------------------------------------ qualité du modèle servi (TB5)
+// Le tableau DSO du tableau de bord suit le modèle réellement servi (mis à jour à chaque version).
+async function chargerQualite(){
+  const bloc = document.querySelector("#v-tableau .dsos"); if(!bloc) return;
+  let q; try { q = await get("/atom-wind/qualite", 20000); } catch(e){ return; }     // page : valeurs de la maquette
+  const nb = (v, n = 2) => v === null || v === undefined ? "—" : Number(v).toLocaleString("fr-FR", { maximumSignificantDigits: n });
+  const pill = c => c === null ? `<span class="pill m">à mesurer</span>` : `<span class="pill ${c ? "good" : "mid"}">${c ? "atteint" : "non atteint"}</span>`;
+  const titre = bloc.closest(".card") && bloc.closest(".card").querySelector("h3");
+  if(titre) titre.innerHTML = `Qualité du modèle servi <span class="pill m">résultats réels</span>`;
+  bloc.innerHTML = `<div><span>Écart moyen sur le champ 3D (u / v)</span><b>${nb(q.rmse_global_u_m_s)} / ${nb(q.rmse_global_v_m_s)} m/s</b></div>`
+    + (q.r2_min_uv !== null ? `<div><span>Part du vent expliquée (R²)</span><b>≥ ${nb(q.r2_min_uv, 3)}</b></div>` : "")
+    + (q.mae_direction_deg ? `<div><span>Erreur sur la direction</span><b>${nb(q.mae_direction_deg)}°</b></div>` : "")
+    + q.dso.map(l => `<div><span>${l.code} ${l.libelle}${l.note ? ` <span class="muted" style="font-size:12px">(${l.note})</span>` : ""}</span>`
+      + `<span>${l.valeur !== null ? `<b style="margin-right:6px">${nb(l.valeur, 3)}${l.unite ? " " + l.unite : ""}</b>` : ""}${pill(l.conforme)}</span></div>`).join("")
+    + `<div class="muted" style="font-size:12px">Modèle ${q.run} (${q.modele}), ${q.instants_synoptiques} instants du test, évaluation ${q.evaluation}`
+    + `${q.decision ? ` · ${q.decision.texte}` : ""}.</div>`;
+}
+A.chargerQualite = chargerQualite;
 A.htmlInfluence = (x, y) => {
   const d = A.valeurStations; if(!d || !A.grille) return "";
   const [i, j] = cellule(x, y), n = A.grille.nx * A.grille.ny;
@@ -487,7 +506,7 @@ function lancerPage(){
   if(sel) sel.onchange = () => A.choisirJour(sel.value);
   if(A.pret() && A.jour.temps_reel && !A.jour.prevision && A.setHour) A.setHour(heureLocale());
   if(A.pret() && A.jour.temps_reel) chargerTrois().then(chargerEnsembles);
-  if(A.pret()){ chargerAtlas(); sourceEolien(); installerAssistant(); installerValeurStations(); installerRapports(); }
+  if(A.pret()){ chargerAtlas(); sourceEolien(); installerAssistant(); installerValeurStations(); installerRapports(); chargerQualite(); }
   // temps réel : nouvelles mesures et nouvelle échéance toutes les 30 min
   setInterval(() => {
     if(!A.jour || !A.jour.temps_reel) return;

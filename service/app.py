@@ -1073,6 +1073,18 @@ def atom_rapport(type: str = Query("parcelle", pattern="^(parcelle|site|parc)$")
                     headers={"Content-Disposition": f'attachment; filename="{nom}"'})
 
 
+@router.get("/atom-wind/qualite", tags=["atom-wind"])
+def atom_qualite(_: ApiKeyRecord | None = Depends(require_read)) -> dict:
+    """Qualite du modele servi (cahier v12, TB5) : verdicts DSO1 a DSO6 sur le test, ecart aux vraies
+    stations et decision de livraison, lus dans son run_dir (rien n'est recalcule)."""
+    wf = model()
+    from pcfno3d import atom_wind
+    try:
+        return atom_wind.qualite(wf.cfg.paths.run_dir, wf.cfg.dso, bool(wf.cfg.inference.w_continuite))
+    except FileNotFoundError as exc:
+        raise HTTPException(404, str(exc)) from exc
+
+
 class QuestionAssistant(BaseModel):
     question: str = Field(..., min_length=1, max_length=2000)
     historique: list[dict] = Field(default_factory=list, max_length=20,

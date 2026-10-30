@@ -640,8 +640,16 @@ DECISION = RUNS / "decision_v4.json"
 livre = json.loads(DECISION.read_text())["modele_livre"] if DECISION.exists() else "grand_tunis_v2_long"
 SRC, PROD = RUNS / livre, RUNS / "grand_tunis_v9_production"
 print("modele livre :", livre, "(decision_v4.json)" if DECISION.exists() else "(pas de decision v4 : v2)")
-if (PROD / "PROVENANCE.txt").exists() and livre not in (PROD / "PROVENANCE.txt").read_text():
-    raise RuntimeError(f"{PROD} contient un autre modele que {livre} : verifie avant de le remplacer")
+if (PROD / "PROVENANCE.txt").exists() and f"runs/{livre} " not in (PROD / "PROVENANCE.txt").read_text():
+    # la decision a change de modele (v2 servie le 24/10, v4 retenue ensuite) : l'ancienne copie est
+    # mise de cote sous un autre nom (rien n'est supprime), puis le modele livre est copie
+    import re
+    ancien = re.search(r"Copie de runs/(\S+)", (PROD / "PROVENANCE.txt").read_text())
+    cote = RUNS / f"grand_tunis_v9_production_avant_{livre}_{ancien[1] if ancien else 'inconnu'}"
+    if cote.exists():
+        raise RuntimeError(f"{cote} existe deja : verifie avant de remplacer {PROD}")
+    PROD.rename(cote)
+    print("ancienne copie de production mise de cote :", cote.name)
 if not (PROD / "best.pt").exists():
     PROD.mkdir(parents=True, exist_ok=True)
     for nom in ("norm_stats.json", "history.json", "best.pt"):
@@ -649,6 +657,9 @@ if not (PROD / "best.pt").exists():
     for d in ("eval_pcfno3d", "validation_reelle", "fiabilite_pcfno3d", "figures"):
         if (SRC / d).exists():
             shutil.copytree(SRC / d, PROD / d, dirs_exist_ok=True)
+    for nom in ("decision_v4.json", "rapport_v4.md"):          # lus par /api/atom-wind/qualite (TB5)
+        if (RUNS / nom).exists():
+            shutil.copy2(RUNS / nom, PROD / nom)
     (PROD / "PROVENANCE.txt").write_text(
         f"Copie de runs/{livre} : le modele livre PC-FNO3D Grand Tunis, servi avec w recalcule par "
         "continuite (decision d'Ines, 2026-10-24 ; runs/decision_v4.json et rapport_v4.md). Les "

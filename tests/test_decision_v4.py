@@ -151,3 +151,27 @@ def test_champion_challenger(tmp_path, challenger, stations, attendu):
     assert r["modele_en_service"] == ("nouveau" if attendu == 0 else "champion")
     assert "| DSO1 |" in (tmp_path / "champion_challenger_nouveau.md").read_text(encoding="utf-8")
     assert cc.main(["--runs", str(tmp_path), "--champion", "champion", "--challenger", "absent"]) == 2
+
+
+def test_qualite_du_modele_servi(tmp_path):
+    """TB5 : le tableau de qualite lit l'evaluation (forme servie), DSO6, les stations et la decision."""
+    from pcfno3d import atom_wind
+    from pcfno3d.config import DSOCfg
+    s, lv = _jeu(rmse=0.45)
+    s["par_niveau_synoptique"] = lv.to_dict(orient="records")
+    s["dso2_rms_moyen"], s["dso2_conforme"], s["dso3_conforme"] = 1.05e-5, True, False
+    _ecrire(tmp_path, "v4", s, lv, {"Nabeul": 2.42, "Zaghouan": 2.29})
+    run = tmp_path / "v4"
+    (run / "eval_pcfno3d" / "best_wcont" / "dso6_modele_livre.json").write_text(json.dumps(
+        {"dso6_conforme": True, "global": {"couverture80_u": 0.878, "couverture80_v": 0.883}, "instants_synoptiques": 180}),
+        encoding="utf-8")
+    (tmp_path / "decision_v4.json").write_text(json.dumps({"modele_livre": "v4", "texte": "v4 livree"}), encoding="utf-8")
+    q = atom_wind.qualite(run, DSOCfg(), w_continuite=True)
+    d = {l["code"]: l for l in q["dso"]}
+    assert q["evaluation"] == "best_wcont" and q["decision"]["modele_livre"] == "v4"
+    assert d["DSO1"]["valeur"] == 0.55 and d["DSO1"]["conforme"] is False and "25" in d["DSO1"]["note"]
+    assert d["DSO2"]["conforme"] and "construction" in d["DSO2"]["note"]
+    assert d["DSO6"]["conforme"] and d["DSO6"]["valeur"] == 0.878
+    assert {r["station"]: r["modele_m_s"] for r in q["stations"]} == {"Nabeul": 2.42, "Zaghouan": 2.29}
+    with pytest.raises(FileNotFoundError):
+        atom_wind.qualite(tmp_path / "absent", DSOCfg())

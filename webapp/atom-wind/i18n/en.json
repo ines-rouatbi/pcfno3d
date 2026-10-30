@@ -778,5 +778,20 @@
  "{0} · {1}": "{0} · {1}",
  "{0} · {1} · {2}": "{0} · {1} · {2}",
  "{0} · {1} · {2} · {3}": "{0} · {1} · {2} · {3}",
- "{0} – {1}": "{0} – {1}"
+ "{0} – {1}": "{0} – {1}",
+ "{0} précision : RMSE u, v ≤ {1} m/s à chaque niveau": "{0} accuracy: RMSE of u, v ≤ {1} m/s at every level",
+ "{0} conservation de la masse ≤ {1}": "{0} mass conservation ≤ {1}",
+ "{0} finesse des détails (rugosité dans [{1} ; {2}])": "{0} detail sharpness (roughness within [{1} ; {2}])",
+ "{0} rapidité ≤ {1} s par carte 3D": "{0} speed ≤ {1} s per 3D map",
+ "{0} robustesse : RMSE ≤ {1} m/s avec 25 % des capteurs": "{0} robustness: RMSE ≤ {1} m/s with 25% of sensors",
+ "{0} fiabilité : couverture de l'intervalle à 80 %": "{0} reliability: coverage of the 80% interval",
+ "(au-dessus du seuil à {0} m)": "(above the threshold at {0} m)",
+ "(tous les niveaux)": "(all levels)",
+ "(w recalculé par continuité : garanti par construction)": "(w recomputed by continuity: guaranteed by construction)",
+ "({0} instants du test)": "({0} test instants)",
+ "(pas encore mesuré)": "(not measured yet)",
+ "non atteint": "not met",
+ "à mesurer": "to be measured",
+ "Qualité du modèle servi": "Quality of the served model",
+ "Modèle {0} ({1}), {2} instants du test, évaluation {3}": "Model {0} ({1}), {2} test instants, evaluation {3}"
 }

@@ -399,3 +399,75 @@ def jour_ensemble(wf, source, date_locale: str, maintenant: pd.Timestamp | None 
                         "profil vertical du GFS deterministe decale de l'ecart a 10 m (attenue avec la "
                         "hauteur) ; regle de traitement de l'application (3 a 15 km/h a 10 m)"),
             "mis_a_jour_utc": maintenant.strftime("%Y-%m-%dT%H:%M:%SZ"), "modele": wf.checkpoint_path.name}
+
+
+# ---------------------------------------------------------------------- qualite du modele servi (TB5)
+def qualite(run_dir: Path, dso, w_continuite: bool = False) -> dict:
+    """Tableau de qualite du modele SERVI (cahier v12, TB5 : « mis a jour a chaque version »), lu dans son
+    run_dir : evaluation sur le test (eval_pcfno3d/best_wcont si w est servi par continuite, sinon best),
+    verdict DSO6, validation sur les vraies stations, decision de livraison. Rien n'est recalcule : un
+    resultat absent est signale absent."""
+    run_dir = Path(run_dir)
+    ev_dir = run_dir / "eval_pcfno3d" / ("best_wcont" if w_continuite else "best")
+    if not (ev_dir / "test_summary.json").exists():
+        ev_dir = run_dir / "eval_pcfno3d" / "best"
+    f = ev_dir / "test_summary.json"
+    if not f.exists():
+        raise FileNotFoundError(f"evaluation absente : {f}")
+    s = json.loads(f.read_text(encoding="utf-8"))
+    niv = [r for r in s.get("par_niveau_synoptique", []) if r.get("couverture", 1.0) >= dso.min_level_cover]
+    pire = max((max(r["rmse_u"], r["rmse_v"]), r["z_m"]) for r in niv) if niv else (float("nan"), None)
+    hors = [int(r["z_m"]) for r in niv if max(r["rmse_u"], r["rmse_v"]) > dso.rmse]
+    lo, hi = dso.roughness_range
+    lignes = [
+        {"code": "DSO1", "libelle": f"précision : RMSE u, v ≤ {dso.rmse:g} m/s à chaque niveau",
+         "valeur": round(pire[0], 3), "unite": "m/s", "conforme": bool(s.get("dso1_rmse")),
+         "note": (f"au-dessus du seuil à {', '.join(map(str, hors))} m" if hors else "tous les niveaux")},
+        {"code": "DSO2", "libelle": f"conservation de la masse ≤ {dso.mass_rms:g}",
+         "valeur": s.get("dso2_rms_moyen"), "unite": "kg/m³/s", "conforme": bool(s.get("dso2_conforme")),
+         "note": "w recalculé par continuité : garanti par construction" if w_continuite else ""},
+        {"code": "DSO3", "libelle": f"finesse des détails (rugosité dans [{lo:g} ; {hi:g}])",
+         "valeur": s.get("dso3_rugosite"), "unite": "", "conforme": bool(s.get("dso3_conforme")), "note": ""},
+        {"code": "DSO4", "libelle": f"rapidité ≤ {dso.time_s:g} s par carte 3D",
+         "valeur": s.get("dso4_inference_s"), "unite": "s", "conforme": bool(s.get("dso4_conforme")), "note": ""},
+        {"code": "DSO5", "libelle": f"robustesse : RMSE ≤ {dso.rmse_25pct:g} m/s avec 25 % des capteurs",
+         "valeur": s.get("dso5_rmse_25pct"), "unite": "m/s", "conforme": bool(s.get("dso5_conforme")), "note": ""},
+    ]
+    d6 = sorted(ev_dir.glob("dso6*.json"))
+    if d6:
+        v = json.loads(d6[0].read_text(encoding="utf-8"))
+        g = v.get("global", {})
+        cov = [g[k] for k in ("couverture80_u", "couverture80_v") if k in g]
+        lignes.append({"code": "DSO6", "libelle": "fiabilité : couverture de l'intervalle à 80 %",
+                       "valeur": round(min(cov), 3) if cov else None, "unite": "",
+                       "conforme": bool(v.get("dso6_conforme")),
+                       "note": f"{v.get('instants_synoptiques', '?')} instants du test"})
+    else:
+        lignes.append({"code": "DSO6", "libelle": "fiabilité : couverture de l'intervalle à 80 %",
+                       "valeur": None, "unite": "", "conforme": None, "note": "pas encore mesuré"})
+    for l in lignes:
+        if isinstance(l["valeur"], float):
+            l["valeur"] = float(f"{l['valeur']:.4g}")
+    stations = []
+    st = run_dir / "validation_reelle" / "test" / "stations_bilan.csv"
+    if st.exists():
+        t = pd.read_csv(st)
+        for nom, g in t.groupby("station"):
+            par = dict(zip(g["source"], g["rmse_vect"]))
+            stations.append({"station": nom, "modele_m_s": round(float(par["modele"]), 2) if "modele" in par else None,
+                             "era5_m_s": round(float(par["era5"]), 2) if "era5" in par else None})
+    decision = None
+    for dd in (run_dir / "decision_v4.json", run_dir.parent / "decision_v4.json"):
+        if dd.exists():
+            d = json.loads(dd.read_text(encoding="utf-8"))
+            decision = {"modele_livre": d.get("modele_livre"), "texte": d.get("texte")}
+            break
+    prov = run_dir / "PROVENANCE.txt"
+    return {"format": "atom-wind/qualite/1", "modele": s.get("modele"), "run": run_dir.name,
+            "provenance": prov.read_text(encoding="utf-8").split(".")[0] if prov.exists() else None,
+            "evaluation": ev_dir.name, "instants_synoptiques": s.get("instants_synoptiques"),
+            "rmse_global_u_m_s": s.get("dso1_rmse_global_u"), "rmse_global_v_m_s": s.get("dso1_rmse_global_v"),
+            "r2_min_uv": min((min(r["r2_u"], r["r2_v"]) for r in niv), default=None),
+            "mae_direction_deg": s.get("mae_direction_deg"), "w_continuite": w_continuite,
+            "dso": lignes, "stations": stations, "decision": decision,
+            "jeu": "test (jours jamais vus a l'entrainement)"}

@@ -778,5 +778,20 @@
  "{0} · {1}": "{0} · {1}",
  "{0} · {1} · {2}": "{0} · {1} · {2}",
  "{0} · {1} · {2} · {3}": "{0} · {1} · {2} · {3}",
- "{0} – {1}": "{0} – {1}"
+ "{0} – {1}": "{0} – {1}",
+ "{0} précision : RMSE u, v ≤ {1} m/s à chaque niveau": "{0} الدقة: RMSE لـ u وv ≤ {1} م/ث في كل مستوى",
+ "{0} conservation de la masse ≤ {1}": "{0} حفظ الكتلة ≤ {1}",
+ "{0} finesse des détails (rugosité dans [{1} ; {2}])": "{0} دقة التفاصيل (الخشونة ضمن [{1} ؛ {2}])",
+ "{0} rapidité ≤ {1} s par carte 3D": "{0} السرعة ≤ {1} ث لكل خريطة ثلاثية الأبعاد",
+ "{0} robustesse : RMSE ≤ {1} m/s avec 25 % des capteurs": "{0} المتانة: RMSE ≤ {1} م/ث مع 25 % من المستشعرات",
+ "{0} fiabilité : couverture de l'intervalle à 80 %": "{0} الموثوقية: تغطية مجال الثقة 80 %",
+ "(au-dessus du seuil à {0} m)": "(فوق العتبة عند {0} م)",
+ "(tous les niveaux)": "(كل المستويات)",
+ "(w recalculé par continuité : garanti par construction)": "(w محسوب بالاستمرارية: مضمون بالبناء)",
+ "({0} instants du test)": "({0} لحظة من الاختبار)",
+ "(pas encore mesuré)": "(لم يُقَس بعد)",
+ "non atteint": "غير محقق",
+ "à mesurer": "للقياس",
+ "Qualité du modèle servi": "جودة النموذج المُشغَّل",
+ "Modèle {0} ({1}), {2} instants du test, évaluation {3}": "النموذج {0} ({1})، {2} لحظة من الاختبار، تقييم {3}"
 }
