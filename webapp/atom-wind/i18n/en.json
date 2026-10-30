@@ -813,5 +813,14 @@
  "en prévision (GFS), dernier calcul le {0}.": "as a forecast (GFS), last computed on {0}.",
  "en temps réel (GFS et anémomètres), dernier calcul le {0}.": "in real time (GFS and anemometers), last computed on {0}.",
  "{0} (prévision J+{1} émise le {2})": "{0} (D+{1} forecast issued on {2})",
- "{0} (temps réel archivé)": "{0} (archived real time)"
+ "{0} (temps réel archivé)": "{0} (archived real time)",
+ "aucune mesure reçue aujourd'hui": "no measurement received today",
+ "Grand Tunis": "Greater Tunis",
+ "Le champ calculé conserve mal la masse à ces heures : valeurs moins sûres.": "The computed field conserves mass poorly at these hours: values are less reliable.",
+ "Le vent est calculé sans cette station : la fiabilité baisse autour d'elle.": "The wind is computed without this station: reliability drops around it.",
+ "Physique : résidu de masse au-dessus du seuil": "Physics: mass residual above the threshold",
+ "Vérifier la transmission de la station (METAR ou SYNOP).": "Check the station's transmission (METAR or SYNOP).",
+ "aucune mesure depuis {0} h": "no measurement for {0} h",
+ "Station muette : {0}": "Silent station: {0}",
+ "{0} heure(s), dès {1} h": "{0} hour(s), from {1} h"
 }

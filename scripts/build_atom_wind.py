@@ -115,6 +115,10 @@ ACCROCHES = [
     #     moyeu et residu de masse du modele servi, quand l'API repond
     ("% avec le réseau ANEO prévu`]\n  ].map(",
      "% avec le réseau ANEO prévu`],\n    ...((window.ATOM && ATOM.kpisReels) ? ATOM.kpisReels(state.hour) : [])\n  ].map("),
+    # 17. alertes du service temps reel (BF22, S4) : stations muettes, physique de l'instant
+    ("  const ord={stop:0,warn:1,info:2,go:3}; L.sort((a,b)=>ord[a.cls]-ord[b.cls]);",
+     "  if(window.ATOM && ATOM.alertesService) L.push(...ATOM.alertesService(xy));\n"
+     "  const ord={stop:0,warn:1,info:2,go:3}; L.sort((a,b)=>ord[a.cls]-ord[b.cls]);"),
 ]
 
 

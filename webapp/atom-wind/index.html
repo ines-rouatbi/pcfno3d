@@ -1424,6 +1424,7 @@ function buildAlerts(){
     for(let k=0;k<24;k++){ const h=(state.hour+k)%24, r=evalAt(m.act,...p,h); if(r.cls==="stop"||r.cls==="warn"){ hit={h,r}; break; } }
     m.res = hit ? `se déclenche à ${hit.h} h (${LV[hit.r.cls].toLowerCase()})` : "rien à signaler dans les 24 h";
     if(hit) L.push({cls:hit.r.cls, p, at:hit.h, mine:true, t:`Votre alerte : ${a.n.toLowerCase()}`, where:pl[0], when:`à ${hit.h} h : ${hit.r.title.toLowerCase()} (${fmtSpeed(a.kind==="gust"?hit.r.g:hit.r.sp)})`, what:`Alerte créée par vous, envoi par ${m.chan}.`, todo:a.todo[hit.r.cls]||a.todo.go}); }
+  if(window.ATOM && ATOM.alertesService) L.push(...ATOM.alertesService(xy));
   const ord={stop:0,warn:1,info:2,go:3}; L.sort((a,b)=>ord[a.cls]-ord[b.cls]);
   return L;
 }

@@ -813,5 +813,14 @@
  "en prévision (GFS), dernier calcul le {0}.": "كتوقع (GFS)، آخر حساب في {0}.",
  "en temps réel (GFS et anémomètres), dernier calcul le {0}.": "في الوقت الحقيقي (GFS ومقاييس الريح)، آخر حساب في {0}.",
  "{0} (prévision J+{1} émise le {2})": "{0} (توقع J+{1} صادر في {2})",
- "{0} (temps réel archivé)": "{0} (وقت حقيقي مؤرشف)"
+ "{0} (temps réel archivé)": "{0} (وقت حقيقي مؤرشف)",
+ "aucune mesure reçue aujourd'hui": "لم يصل أي قياس اليوم",
+ "Grand Tunis": "تونس الكبرى",
+ "Le champ calculé conserve mal la masse à ces heures : valeurs moins sûres.": "الحقل المحسوب لا يحفظ الكتلة جيدًا في هذه الساعات: القيم أقل موثوقية.",
+ "Le vent est calculé sans cette station : la fiabilité baisse autour d'elle.": "تُحسب الريح بدون هذه المحطة: تنخفض الموثوقية حولها.",
+ "Physique : résidu de masse au-dessus du seuil": "فيزياء: بقايا الكتلة فوق العتبة",
+ "Vérifier la transmission de la station (METAR ou SYNOP).": "تحقق من إرسال المحطة (METAR أو SYNOP).",
+ "aucune mesure depuis {0} h": "لا قياس منذ {0} س",
+ "Station muette : {0}": "محطة صامتة: {0}",
+ "{0} heure(s), dès {1} h": "{0} ساعة، ابتداءً من {1} س"
 }

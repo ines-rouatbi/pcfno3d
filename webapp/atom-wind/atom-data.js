@@ -397,6 +397,33 @@ async function chargerQualite(){
 }
 A.chargerQualite = chargerQualite;
 
+// ------------------------------------------------------------------ alertes du service (BF22, S4)
+// Temps réel seulement : une station sans mesure depuis plusieurs heures (selon sa cadence : METAR
+// horaire, SYNOP toutes les 3 h), et les heures dont le champ conserve mal la masse.
+const POS_STATIONS = { DTTA: [36.8504, 10.2156], INM60729: [36.4333, 10.0833], INM60728: [36.45, 10.7333] };
+const CADENCE_H = { DTTA: 1, INM60729: 3, INM60728: 3 };
+A.alertesService = xy => {
+  if(!A.pret() || !A.jour.temps_reel || A.jour.archive) return [];
+  const out = [], I = A.jour.instants.filter(x => x.source === "temps reel" && Array.isArray(x.stations));
+  for(const [code, [la, lo]] of Object.entries(POS_STATIONS)){
+    if(!I.length) break;
+    let n = 0; for(let k = I.length - 1; k >= 0 && !I[k].stations.includes(code); k--) n++;
+    const c = CADENCE_H[code], nom = NOMS_STATIONS[code];
+    if(n < 3 * c) continue;
+    out.push({ cls: n >= 6 * c ? "warn" : "info", p: xy(la, lo), r: 1.5, t: `Station muette : ${nom}`, where: nom,
+               when: n === I.length ? "aucune mesure reçue aujourd'hui" : `aucune mesure depuis ${n} h`,
+               what: "Le vent est calculé sans cette station : la fiabilité baisse autour d'elle.",
+               todo: "Vérifier la transmission de la station (METAR ou SYNOP)." });
+  }
+  const mauvais = A.jour.instants.filter(x => x.residu_masse_ok === false);
+  if(mauvais.length)
+    out.push({ cls: "warn", p: xy(36.65, 10.42), r: 6, at: mauvais[0].heure_locale, t: "Physique : résidu de masse au-dessus du seuil",
+               where: "Grand Tunis", when: `${mauvais.length} heure(s), dès ${mauvais[0].heure_locale} h`,
+               what: "Le champ calculé conserve mal la masse à ces heures : valeurs moins sûres.",
+               todo: "Consulter la vue Fiabilité ; signaler à l'équipe si cela se répète." });
+  return out;
+};
+
 // bandeau du tableau de bord (TB1) : ce que le modèle servi a réellement fait à l'heure affichée
 const NOMS_STATIONS = { DTTA: "Tunis-Carthage", INM60729: "Zaghouan", INM60728: "Nabeul" };
 A.kpisReels = h => {
