@@ -170,6 +170,13 @@ calibration on validation, 80 % coverage + Spearman on test) then runs on the re
 retraining. After that, no more training. The serving notebook copies the model named by
 `decision_v4.json` (default v2_long) to v9_production, serves with `w_continuite: true`, and asks for
 an L4 GPU (A100 if unavailable or out of memory).
+**v4 result (read on the Drive 2026-10-30, `runs/decision_v4.json` of 24/10): v4 DELIVERED**
+(`modele_livre: grand_tunis_v4_dso`, w by continuity) — no worse than v2 within tolerance: global RMSE
+u 0.377 → 0.380, v 0.371 → 0.373 m/s, worst level 0.530 → 0.528, DSO4 0.302 s both, DSO5 (25 %)
+0.537 → 0.535, real stations mean 2.467 → 2.469 m/s (Nabeul 2.42, Tunis-Carthage 2.70, Zaghouan
+2.28 / 2.29). DSO2 with w by continuity 1.05e-5 (without: v2 1.31e-4, v4 1.25e-4). DSO6 on v4
+CONFORMING: 80 % coverage u 0.878, v 0.883, w 0.841, speed 0.879; Spearman u 0.16, v 0.17, w 0.50,
+speed 0.19 (180 synoptic instants). The serving notebook therefore serves v4.
 Proposed DSO variants (Ines, 2026-10-24; reported, NOT used for the decision until the
 supervisor validates them): DSO3 against the predictable part of the truth
 (`scripts/dso_variantes_grand_tunis.py`: test instants regenerated with the generator's A_ROT/A_DIV
