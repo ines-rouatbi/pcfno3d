@@ -133,3 +133,19 @@ def test_alertes_et_notifications(client):
     a = client.get("/api/atom-wind/alertes")
     assert a.status_code == 200 and isinstance(a.json()["alertes"], list)
     assert client.post("/api/notifications/envoyer").status_code == 403      # portee admin seulement
+
+
+def test_supervision(client, jeu, monkeypatch):  # noqa: F811
+    """BF41 : l'etat du service en un document, portee admin ; aucune cle ni adresse dans les comptes."""
+    from fastapi.testclient import TestClient
+
+    from service.auth import ApiKeyStore, default_store_path
+    admin, _ = ApiKeyStore(default_store_path(jeu.paths.run_dir)).create("sup-admin", scope="admin")
+    assert client.get("/api/supervision").status_code == 403                   # cle de lecture
+    client.get("/api/atom-wind/agricole", params={"j": 0, "lat": LAT, "lon": LON})
+    r = TestClient(client.app).get("/api/supervision", headers={"X-API-Key": admin})
+    assert r.status_code == 200, r.text
+    d = r.json()
+    assert d["temps_reel"] and d["historique"]["journees"] >= 1
+    assert "requetes" in d["acces_24h"] and admin not in r.text
+    assert "stations" in d["ecart_modele_stations"] or "erreur" in d["ecart_modele_stations"]

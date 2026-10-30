@@ -834,5 +834,22 @@
  "Portée": "Scope",
  "Quota / jour": "Quota / day",
  "Quota / min": "Quota / min",
- "quota / min": "quota / min"
+ "quota / min": "quota / min",
+ "aucune journée calculée depuis le démarrage": "no day computed since start-up",
+ "Consulter la vue Fiabilité ; signaler à l'équipe si cela se répète.": "Check the Reliability view; tell the team if it happens again.",
+ "nom (ex. appli-agri)": "name (e.g. appli-agri)",
+ "Supervision du service": "Service monitoring",
+ "Accès sur 24 h : {0} requêtes, {1} refus, {2} erreurs serveur,": "Access over 24 h: {0} requests, {1} refusals, {2} server errors,",
+ "ajoute environ {0} : l'après-midi, la terre chauffe plus vite que la mer et l'air frais de la mer entre dans les terres. Ici, elle vient {1} ; {2}.": "adds about {0}: in the afternoon the land warms faster than the sea and cool sea air moves inland. Here it comes {1}; {2}.",
+ "calculé il y a {0} min ; {1} heure(s) au résidu de masse hors seuil": "computed {0} min ago; {1} hour(s) with the mass residual off the threshold",
+ "Historique : {0} journée(s), {1} Mo.": "History: {0} day(s), {1} MB.",
+ "Modèle {0} · état du {1}": "Model {0} · status at {1}",
+ "Notifications déjà envoyées : {0}.": "Notifications already sent: {0}.",
+ "{0} : {1} heures mesurées, stations {2},": "{0}: {1} measured hours, stations {2},",
+ "{0} clé(s) active(s) ; durée médiane {1} ms.": "{0} active key(s); median duration {1} ms.",
+ "{0} km, {1} km": "{0} km, {1} km",
+ "{0} km²": "{0} km²",
+ "{0} {1} km/h": "{0} {1} km/h",
+ "à {0} h : {1} ({2})": "at {0} h: {1} ({2})",
+ "Écart du modèle aux stations aujourd'hui (contrôle de cohérence) : {0}.": "Model gap to the stations today (consistency check): {0}."
 }

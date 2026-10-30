@@ -445,6 +445,29 @@ async function installerClesService(){
 }
 A.installerClesService = installerClesService;
 
+// ------------------------------------------------------------------ supervision (BF41), admin seulement
+async function installerSupervision(){
+  const vue = document.getElementById("v-admin"); if(!vue || document.getElementById("aw-sup")) return;
+  let d; try { d = await get("/supervision", 60000); } catch(e){ return; }
+  const carte = document.createElement("div"); carte.className = "card"; carte.id = "aw-sup";
+  const tr = Object.entries(d.temps_reel).filter(([, v]) => typeof v === "object")
+    .map(([date, v]) => `<li>${fmtDate(date)} : ${v.heures_mesurees} heures mesurées, stations ${v.stations_du_jour.join(", ") || "aucune"}, `
+      + `calculé il y a ${v.calcule_il_y_a_min} min ; ${v.heures_masse_hors_seuil} heure(s) au résidu de masse hors seuil</li>`).join("");
+  const ec = d.ecart_modele_stations.stations ? Object.entries(d.ecart_modele_stations.stations)
+    .map(([n, v]) => `${n} ${v.rmse_vect_m_s === null ? "—" : `${String(v.rmse_vect_m_s).replace(".", ",")} m/s`}`).join(", ") : "indisponible";
+  const a = d.acces_24h;
+  carte.innerHTML = `<h3>Supervision du service</h3>`
+    + `<p class="muted" style="font-size:13px;margin:0 0 6px">Modèle ${echapper(d.modele)} · état du ${fmtInstant(d.genere_utc)}</p>`
+    + `<ul style="margin:4px 0">${tr || "<li>aucune journée calculée depuis le démarrage</li>"}</ul>`
+    + `<p style="margin:4px 0">Accès sur 24 h : ${a.requetes ?? 0} requêtes, ${a.refus ?? 0} refus, ${a.erreurs_serveur ?? 0} erreurs serveur, `
+    + `${a.cles_actives ?? 0} clé(s) active(s) ; durée médiane ${a.duree_mediane_ms ?? "—"} ms.</p>`
+    + `<p style="margin:4px 0">Historique : ${d.historique.journees} journée(s), ${String(d.historique.taille_mo).replace(".", ",")} Mo. `
+    + `Notifications déjà envoyées : ${d.notifications.alertes_deja_envoyees}.</p>`
+    + `<p style="margin:4px 0">Écart du modèle aux stations aujourd'hui (contrôle de cohérence) : ${ec}.</p>`;
+  vue.appendChild(carte);
+}
+A.installerSupervision = installerSupervision;
+
 // ------------------------------------------------------------------ alertes du service (BF22, S4)
 // Temps réel seulement : une station sans mesure depuis plusieurs heures (selon sa cadence : METAR
 // horaire, SYNOP toutes les 3 h), et les heures dont le champ conserve mal la masse.
@@ -623,7 +646,7 @@ function lancerPage(){
   if(sel) sel.onchange = () => A.choisirJour(sel.value);
   if(A.pret() && A.jour.temps_reel && !A.jour.prevision && A.setHour) A.setHour(heureLocale());
   if(A.pret() && A.jour.temps_reel) chargerTrois().then(chargerEnsembles);
-  if(A.pret()){ chargerAtlas(); sourceEolien(); installerAssistant(); installerValeurStations(); installerRapports(); chargerQualite(); installerClesService(); }
+  if(A.pret()){ chargerAtlas(); sourceEolien(); installerAssistant(); installerValeurStations(); installerRapports(); chargerQualite(); installerClesService(); installerSupervision(); }
   // temps réel : nouvelles mesures et nouvelle échéance toutes les 30 min
   setInterval(() => {
     if(!A.jour || !A.jour.temps_reel || A.jour.archive) return;

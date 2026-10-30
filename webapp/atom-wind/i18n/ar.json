@@ -834,5 +834,17 @@
  "Portée": "النطاق",
  "Quota / jour": "الحصة / يوم",
  "Quota / min": "الحصة / دقيقة",
- "quota / min": "الحصة / دقيقة"
+ "quota / min": "الحصة / دقيقة",
+ "aucune journée calculée depuis le démarrage": "لم تُحسب أي يوم منذ التشغيل",
+ "Consulter la vue Fiabilité ; signaler à l'équipe si cela se répète.": "راجع عرض الموثوقية؛ أبلغ الفريق إذا تكرر ذلك.",
+ "nom (ex. appli-agri)": "الاسم (مثلًا appli-agri)",
+ "Supervision du service": "مراقبة الخدمة",
+ "Accès sur 24 h : {0} requêtes, {1} refus, {2} erreurs serveur,": "الوصول خلال 24 س: {0} طلب، {1} رفض، {2} خطأ خادم،",
+ "calculé il y a {0} min ; {1} heure(s) au résidu de masse hors seuil": "حُسب منذ {0} د؛ {1} ساعة ببقايا كتلة خارج العتبة",
+ "Historique : {0} journée(s), {1} Mo.": "السجل: {0} يوم، {1} ميغابايت.",
+ "Modèle {0} · état du {1}": "النموذج {0} · الحالة في {1}",
+ "Notifications déjà envoyées : {0}.": "الإشعارات المرسلة: {0}.",
+ "{0} : {1} heures mesurées, stations {2},": "{0}: {1} ساعة مقاسة، المحطات {2}،",
+ "{0} clé(s) active(s) ; durée médiane {1} ms.": "{0} مفتاح نشط؛ المدة الوسيطة {1} مللي ثانية.",
+ "Écart du modèle aux stations aujourd'hui (contrôle de cohérence) : {0}.": "فرق النموذج عن المحطات اليوم (فحص اتساق): {0}."
 }

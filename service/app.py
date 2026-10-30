@@ -1295,6 +1295,15 @@ def _notifications(stop: threading.Event) -> None:
             LOG.warning("notifications : %s", exc)
 
 
+@router.get("/supervision", tags=["service"])
+def supervision(_: ApiKeyRecord | None = Depends(require_admin)) -> dict:
+    """Supervision de l'activite (cahier v12, BF41) : temps reel en cache, historique, acces sur 24 h
+    (comptes, sans adresse ni cle), notifications, ecart du modele aux stations du jour. Portee admin."""
+    from service import supervision as sup
+    j = STATE.get("journal")
+    return sup.etat(model(), j.path if j is not None else None)
+
+
 @router.get("/atom-wind/alertes", tags=["atom-wind"])
 def atom_alertes(_: ApiKeyRecord | None = Depends(require_read)) -> dict:
     """Alertes du service temps reel (cahier v12, BF22, BF27) : station muette, residu de masse, vent fort
