@@ -462,6 +462,37 @@ def export_instant(stem: str | None = None, stride: int = 2) -> dict:
 ADMIN_TOOLS = {"export_instant"}
 
 
+@mcp.tool()
+def prevision_point(jour: int, heure: float, hauteur_m: float, lieu: str | None = None,
+                    lat: float | None = None, lon: float | None = None) -> dict:
+    """Vent prevu (cahier v12) en un point : aujourd'hui en temps reel (jour 0), demain (1) ou apres-demain (2),
+    a une heure locale de Tunis et une hauteur au-dessus du sol ; avec la temperature et l'humidite a 2 m de GFS.
+
+    Args:
+        jour: 0 aujourd'hui, 1 demain, 2 apres-demain.
+        heure: heure locale de Tunis (0 a 23).
+        hauteur_m: hauteur au-dessus du sol en metres.
+        lieu: lieu de l'application (Mornag, Nabeul, Soliman...), ou lat / lon.
+    """
+    from service import atom_outils
+    return atom_outils.lire_point(get_model(), int(jour), float(hauteur_m), float(heure), lat=lat, lon=lon, lieu=lieu)
+
+
+@mcp.tool()
+def decision_agricole(jour: int, lieu: str | None = None, lat: float | None = None,
+                      lon: float | None = None) -> dict:
+    """Creneaux de traitement et d'aspersion d'une parcelle pour un jour (cahier v12) : regle de l'application
+    (traitement oui de 3 a 15 km/h a 10 m), heure par heure, et probabilite GEFS de pouvoir traiter si elle
+    est calculee.
+
+    Args:
+        jour: 0 aujourd'hui, 1 demain, 2 apres-demain.
+        lieu: lieu de l'application, ou lat / lon.
+    """
+    from service import atom_outils
+    return atom_outils.decision_agricole(get_model(), int(jour), lat=lat, lon=lon, lieu=lieu)
+
+
 def main() -> int:
     """Transport stdio, pour un client MCP local."""
     mcp.run()

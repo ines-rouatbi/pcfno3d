@@ -683,6 +683,15 @@ except Exception as exc:                     # secret absent, ou acces non accor
         "secret Colab TUNNEL_CRED_CONTENTS introuvable ou non autorise : panneau de gauche, "
         "icone cle, ajoute-le (contenu remis par Rayen) et active « Acces au notebook ».") from None
 
+# assistant integre (E6) : cle de l'API Claude dans le secret Colab ANTHROPIC_API_KEY (facultatif,
+# jamais affichee) ; sans elle, le service tourne et l'assistant repond « non configure »
+try:
+    os.environ["ANTHROPIC_API_KEY"] = userdata.get("ANTHROPIC_API_KEY")
+    print("assistant : cle presente")
+except Exception:
+    print("assistant : pas de secret ANTHROPIC_API_KEY (assistant desactive)")
+!pip install -q anthropic 2>&1 | tail -1
+
 info = serve_public(config="{conf}", key_name=CLE_NOM, scope="read", key_hash=CLE_EMPREINTE,
                     quota_minute=1200,
                     named_tunnel={{"id": TUNNEL_ID, "hostname": HOTE, "credentials": identifiants}})

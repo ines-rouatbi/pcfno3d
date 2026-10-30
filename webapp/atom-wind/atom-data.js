@@ -303,6 +303,53 @@ function sourceEolien(){
     : `Journée du ${fmtDate(A.jour.date)} (jeu de test) ; demain et après-demain restent des variantes d'exemple hors temps réel.`;
 }
 A.sourceEolien = sourceEolien;
+
+// ------------------------------------------------------------------ assistant intégré (E6)
+// Une question en langage naturel ; le service répond avec Claude et les outils d'ATOM Wind.
+const NOMS_OUTILS = { vent_au_point: "vent en un point", profil_vertical: "profil vertical",
+  decision_agricole: "décision agricole", production_eolienne: "production éolienne", alertes_vent: "alertes de vent" };
+function echapper(t){ return String(t).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+function installerAssistant(){
+  if(document.getElementById("aw-asst-btn")) return;
+  const bt = document.createElement("button");
+  bt.id = "aw-asst-btn"; bt.className = "btn primary"; bt.textContent = "Poser une question";
+  bt.style.cssText = "position:fixed;right:16px;bottom:16px;z-index:60;border-radius:999px;padding:10px 16px;box-shadow:0 4px 16px rgba(0,0,0,.2)";
+  const pan = document.createElement("aside");
+  pan.id = "aw-asst"; pan.className = "card"; pan.hidden = true;
+  pan.setAttribute("aria-label", "Assistant ATOM Wind");
+  pan.style.cssText = "position:fixed;right:16px;bottom:72px;z-index:61;width:min(420px,calc(100vw - 32px));max-height:min(70vh,560px);display:flex;flex-direction:column;gap:8px";
+  pan.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center"><b>Assistant ATOM Wind</b>`
+    + `<button class="x" aria-label="Fermer" id="aw-asst-x" style="font-size:20px;background:none;border:0;cursor:pointer">×</button></div>`
+    + `<div id="aw-asst-fil" aria-live="polite" style="overflow:auto;flex:1;display:flex;flex-direction:column;gap:8px;font-size:14px">`
+    + `<p class="muted" style="margin:0">Exemples : « Peut-on traiter les vignes de Mornag demain matin ? », « Quelle production pour une éolienne à Soliman demain ? »</p></div>`
+    + `<form id="aw-asst-f" style="display:flex;gap:6px"><input id="aw-asst-q" class="inp" style="flex:1" maxlength="2000" placeholder="Votre question sur le vent" autocomplete="off">`
+    + `<button class="btn primary" type="submit">Envoyer</button></form>`
+    + `<p class="muted" style="font-size:11px;margin:0">Réponses générées par Claude à partir des données d'ATOM Wind ; vérifiez avant une décision importante.</p>`;
+  document.body.append(bt, pan);
+  const fil = pan.querySelector("#aw-asst-fil"), hist = [];
+  const ajouter = (html, cls) => { const d = document.createElement("div"); d.className = cls;
+    d.style.cssText = cls === "q" ? "align-self:flex-end;background:var(--accent,#1E6FB8);color:#fff;padding:6px 10px;border-radius:10px;max-width:85%"
+      : "align-self:flex-start;background:var(--panel2,#f1f4f6);padding:6px 10px;border-radius:10px;max-width:92%;white-space:pre-wrap";
+    d.innerHTML = html; fil.appendChild(d); fil.scrollTop = fil.scrollHeight; return d; };
+  bt.onclick = () => { pan.hidden = !pan.hidden; if(!pan.hidden) pan.querySelector("#aw-asst-q").focus(); };
+  pan.querySelector("#aw-asst-x").onclick = () => { pan.hidden = true; };
+  pan.querySelector("#aw-asst-f").onsubmit = async e => {
+    e.preventDefault();
+    const inp = pan.querySelector("#aw-asst-q"), q = inp.value.trim(); if(!q) return;
+    inp.value = ""; ajouter(echapper(q), "q");
+    const att = ajouter("…", "r");
+    try {
+      const h = { "Content-Type": "application/json" }; const k = cle(); if(k) h["X-API-Key"] = k;
+      const r = await fetch(`${BASE}/api/assistant`, { method: "POST", headers: h, body: JSON.stringify({ question: q, historique: hist.slice(-10) }) });
+      const d = await r.json().catch(() => ({}));
+      if(!r.ok) throw new Error(d.detail || d.message || `erreur ${r.status}`);
+      const outils = [...new Set((d.outils || []).map(o => NOMS_OUTILS[o.nom] || o.nom))];
+      att.innerHTML = echapper(d.reponse) + (outils.length ? `<div class="muted" style="font-size:11px;margin-top:4px">Sources : ${outils.join(", ")} (ATOM Wind)</div>` : "");
+      hist.push({ role: "user", contenu: q }, { role: "assistant", contenu: d.reponse });
+    } catch(err){ att.innerHTML = `<span class="muted">Assistant indisponible : ${echapper(err.message)}</span>`; }
+  };
+}
+A.installerAssistant = installerAssistant;
 A.probaTraitement = (d, x, y) => {
   const e = A.ensembles[d]; if(!e || !A.grille) return null;
   const g = A.grille, [i, j] = cellule(x, y), n = g.nx * g.ny;
@@ -359,7 +406,7 @@ function lancerPage(){
   if(sel) sel.onchange = () => A.choisirJour(sel.value);
   if(A.pret() && A.jour.temps_reel && !A.jour.prevision && A.setHour) A.setHour(heureLocale());
   if(A.pret() && A.jour.temps_reel) chargerTrois().then(chargerEnsembles);
-  if(A.pret()){ chargerAtlas(); sourceEolien(); }
+  if(A.pret()){ chargerAtlas(); sourceEolien(); installerAssistant(); }
   // temps réel : nouvelles mesures et nouvelle échéance toutes les 30 min
   setInterval(() => {
     if(!A.jour || !A.jour.temps_reel) return;
