@@ -71,6 +71,13 @@ ACCROCHES = [
     # 11. prevision probabiliste (E19) : probabilite de pouvoir traiter sous le titre de la carte
     ('<div class="card"><h3>Quand traiter ${jour} ?</h3>',
      '<div class="card"><h3>Quand traiter ${jour} ?</h3>${window.ATOM && ATOM.htmlProba ? ATOM.htmlProba(d, x, y) : ""}'),
+    # 12. espace eolien : source des jours (temps reel / prevision) et atlas annuel (E8, E15)
+    ("<p class=\"src\" style=\"margin:8px 0 0\">Prototype : aujourd'hui est une journée d'exemple, demain et "
+     "après-demain en sont des variantes simulées. En service : prévision GFS affinée par ATOM Wind, à 24 et 48 h.</p>",
+     "<p class=\"src\" style=\"margin:8px 0 0\" id=\"aw-eol-src\">Prototype : aujourd'hui est une journée d'exemple, "
+     "demain et après-demain en sont des variantes simulées. En service : prévision GFS affinée par ATOM Wind, à 24 et 48 h.</p>"),
+    ("</section>\n\n<!-- ADMINISTRATION -->",
+     "  <div class=\"card\" id=\"aw-atlas\" hidden></div>\n</section>\n\n<!-- ADMINISTRATION -->"),
 ]
 
 

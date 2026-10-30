@@ -1106,7 +1106,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
 <section class="view" id="v-eolien">
   <div class="card"><h2>Espace éolien</h2><p class="muted" style="margin:0 0 10px">C'est ici que la 3D sert : le vent entre 30 et 150 m, sur toute la hauteur du rotor. Exemple : parc virtuel de trois éoliennes de 2 MW sur la crête du djebel Ressas, moyeu à 80 m.</p>
     <div><b style="font-size:14px">Jour</b><div class="chips" id="eo-day" style="margin-top:4px"></div></div>
-    <p class="src" style="margin:8px 0 0">Prototype : aujourd'hui est une journée d'exemple, demain et après-demain en sont des variantes simulées. En service : prévision GFS affinée par ATOM Wind, à 24 et 48 h.</p></div>
+    <p class="src" style="margin:8px 0 0" id="aw-eol-src">Prototype : aujourd'hui est une journée d'exemple, demain et après-demain en sont des variantes simulées. En service : prévision GFS affinée par ATOM Wind, à 24 et 48 h.</p></div>
   <div class="kpis" id="kpis"></div>
   <div class="card"><h3>Production du parc sur la journée</h3><div id="prodchart"></div></div>
   <div class="turb" id="turbs"></div>
@@ -1132,6 +1132,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
       <div class="dsos"><div><span>Erreur moyenne de 0 à 250 m, ATOM Wind</span><b>2,22 m/s</b></div><div><span>Même mesure, ERA5</span><b>2,29 m/s</b></div></div>
       <p class="muted" style="font-size:14px;margin:8px 0 0">Le gain sur ERA5 est réel mais faible, et les mesures sont rares : la validation en altitude est la limite principale de l'espace éolien. Les mâts ANEO de 30 m et un mât de mesure sur site la renforceront.</p></div>
   </div>
+  <div class="card" id="aw-atlas" hidden></div>
 </section>
 
 <!-- ADMINISTRATION -->

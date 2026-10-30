@@ -1040,6 +1040,51 @@ def atom_ensemble(j: int = Query(0, ge=0, le=2, description="0 = aujourd'hui, 1 
     return _gzip_json(e["out"])
 
 
+def _atlas_dossier(wf: WindFieldModel) -> Path | None:
+    for d in (wf.cfg.paths.run_dir / "atlas_eolien", wf.cfg.paths.run_dir.parent / "atlas_eolien"):
+        if (d / "atlas.json").exists() and (d / "atlas.npz").exists():
+            return d
+    return None
+
+
+@router.get("/atom-wind/atlas", tags=["atom-wind"])
+def atom_atlas(_: ApiKeyRecord | None = Depends(require_read)) -> Response:
+    """Atlas eolien (cahier v12, E8 ; scripts/atlas_eolien.py) : resume, trois meilleurs sites, et la
+    vitesse moyenne et le facteur de charge au moyeu sur la grille de 500 m du front-end."""
+    import json as _json
+
+    from pcfno3d import atom_wind
+    wf = model()
+    d = _atlas_dossier(wf)
+    if d is None:
+        raise HTTPException(404, "atlas eolien non calcule (scripts/atlas_eolien.py)")
+    out = _json.loads((d / "atlas.json").read_text(encoding="utf-8"))
+    b = atom_wind.facteur(wf.geom)
+    with np.load(d / "atlas.npz") as z:
+        for cle in ("moyenne", "facteur_charge"):
+            bloc = atom_wind.blocs(z[cle].astype(float), b)
+            out[cle] = atom_wind.encoder(bloc)
+            out["forme"] = list(bloc.shape)
+    out["unite"] = "moyenne en m/s, facteur_charge en fraction ; int16 x100, -32768 = sans valeur"
+    out["couches_geotiff"] = sorted(p.stem.removeprefix("atlas_") for p in d.glob("atlas_*.tif"))
+    return _gzip_json(out)
+
+
+@router.get("/atom-wind/atlas/{nom}", tags=["atom-wind"])
+def atom_atlas_fichier(nom: str, _: ApiKeyRecord | None = Depends(require_read)):
+    """atlas.png, ou une couche GeoTIFF (export SIG, E15) : atlas_<couche>.tif."""
+    wf = model()
+    d = _atlas_dossier(wf)
+    if d is None:
+        raise HTTPException(404, "atlas eolien non calcule")
+    if nom == "atlas.png":
+        return FileResponse(d / "atlas.png", media_type="image/png")
+    f = d / nom
+    if not (nom.startswith("atlas_") and nom.endswith(".tif") and f.exists() and f.parent == d):
+        raise HTTPException(404, "fichier inconnu")
+    return FileResponse(f, media_type="image/tiff", filename=nom)
+
+
 @router.get("/atom-wind/reseau-aneo", tags=["atom-wind"])
 def atom_reseau(_: ApiKeyRecord | None = Depends(require_read)):
     """Plan de deploiement ANEO (OS6, scripts/os6_reseau_aneo.py) en GeoJSON, s'il existe."""

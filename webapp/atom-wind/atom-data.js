@@ -214,7 +214,7 @@ function banniere(){
     }
   }
 }
-A.banniere = banniere;
+A.banniere = () => { banniere(); if(A.sourceEolien) A.sourceEolien(); };
 
 // ------------------------------------------------------------------ chargement
 const RELATIF = { direct: 0, prev1: 1, prev2: 2 };
@@ -265,6 +265,44 @@ async function chargerEnsembles(){
   } finally { ensEnCours = false; }
 }
 A.chargerEnsembles = chargerEnsembles;
+
+// ------------------------------------------------------------------ atlas éolien (E8, E15)
+async function blob(path){
+  const h = {}; const k = cle(); if(k) h["X-API-Key"] = k;
+  const r = await fetch(`${BASE}/api${path}`, { headers: h });
+  if(!r.ok) throw new Error(`${path} : ${r.status}`);
+  return URL.createObjectURL(await r.blob());
+}
+async function chargerAtlas(){
+  const el = document.getElementById("aw-atlas"); if(!el) return;
+  let a;
+  try { a = await get("/atom-wind/atlas", 30000); } catch(e){ return; }      // pas encore calculé
+  A.atlas = a;
+  const img = await blob("/atom-wind/atlas/atlas.png").catch(() => null);
+  const sites = (a.sites || []).map(s => `<li><b>Site ${s.rang}</b> : ${s.lat !== undefined ? `${s.lat.toFixed(3)} N, ${s.lon.toFixed(3)} E` : `${(s.x_m/1000).toFixed(1)} km, ${(s.y_m/1000).toFixed(1)} km`}`
+    + ` — vent moyen ${String(s.vitesse_moyenne_m_s).replace(".", ",")} m/s, facteur de charge ${Math.round(s.facteur_charge * 100)} %, ${Math.round(s.aep_mwh).toLocaleString("fr-FR")} MWh/an</li>`).join("");
+  const tifs = (a.couches_geotiff || []).map(c => `<button class="btn" data-tif="${c}" style="padding:2px 10px;font-size:13px">${c}.tif</button>`).join(" ");
+  el.innerHTML = `<h3>Atlas éolien annuel à ${a.hub_agl_m} m (historique des reconstructions)</h3>`
+    + `<p class="muted" style="font-size:14px;margin:0 0 8px">${a.instants} reconstructions, courbe ${a.courbe} (${a.rated_kw / 1000} MW). `
+    + `Vent moyen du domaine ${String(a.vitesse_moyenne_domaine_m_s).replace(".", ",")} m/s, facteur de charge moyen ${Math.round(a.facteur_charge_domaine * 100)} %.</p>`
+    + (img ? `<img src="${img}" alt="Atlas éolien : vitesse moyenne et facteur de charge" style="width:100%;border-radius:8px">` : "")
+    + `<ol style="margin:8px 0">${sites}</ol>`
+    + (tifs ? `<p style="font-size:13px;margin:4px 0">Export SIG (GeoTIFF, WGS 84) : ${tifs}</p>` : "")
+    + `<p class="muted" style="font-size:12px;margin:0">${a.limites}</p>`;
+  el.querySelectorAll("button[data-tif]").forEach(bt => bt.onclick = async () => {
+    const u = await blob(`/atom-wind/atlas/atlas_${bt.dataset.tif}.tif`);
+    const lien = document.createElement("a"); lien.href = u; lien.download = `atlas_${bt.dataset.tif}.tif`; lien.click();
+  });
+  el.hidden = false;
+}
+A.chargerAtlas = chargerAtlas;
+function sourceEolien(){
+  const el = document.getElementById("aw-eol-src"); if(!el || !A.pret()) return;
+  el.textContent = A.jour.temps_reel
+    ? "Aujourd'hui : vent en temps réel (GFS et anémomètres) ; demain et après-demain : prévision GFS affinée par ATOM Wind."
+    : `Journée du ${fmtDate(A.jour.date)} (jeu de test) ; demain et après-demain restent des variantes d'exemple hors temps réel.`;
+}
+A.sourceEolien = sourceEolien;
 A.probaTraitement = (d, x, y) => {
   const e = A.ensembles[d]; if(!e || !A.grille) return null;
   const g = A.grille, [i, j] = cellule(x, y), n = g.nx * g.ny;
@@ -289,7 +327,7 @@ A.choisirJour = async date => {
     : `Calcul du vent du ${fmtDate(date)} par le modèle…`;
   try { await chargerJour(date); A.erreur = null; }
   catch(e){ A.erreur = e; }
-  banniere();
+  A.banniere();
   if(A.rafraichir) A.rafraichir();
 };
 function journeeParDefaut(){
@@ -321,6 +359,7 @@ function lancerPage(){
   if(sel) sel.onchange = () => A.choisirJour(sel.value);
   if(A.pret() && A.jour.temps_reel && !A.jour.prevision && A.setHour) A.setHour(heureLocale());
   if(A.pret() && A.jour.temps_reel) chargerTrois().then(chargerEnsembles);
+  if(A.pret()){ chargerAtlas(); sourceEolien(); }
   // temps réel : nouvelles mesures et nouvelle échéance toutes les 30 min
   setInterval(() => {
     if(!A.jour || !A.jour.temps_reel) return;

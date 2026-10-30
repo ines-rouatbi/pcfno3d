@@ -900,6 +900,10 @@ try:
            f"python -u scripts/os6_reseau_aneo.py -c {CONF} --set inference.w_continuite=true "
            f"--sortie {SORTIE} --n-val 24 --lot 4"
            + (f" --contraintes {CONTRAINTES}" if CONTRAINTES.exists() else ""))
+    # atlas eolien annuel (E8) et couches GeoTIFF (E15), a partir des reconstructions du cache
+    if not (RUNS / "atlas_eolien" / "atlas.json").exists():
+        lancer("atlas_eolien", f"python -u scripts/atlas_eolien.py -c {CONF} --set inference.w_continuite=true "
+                               f"--sortie {RUNS / 'atlas_eolien'}")
     print(json.dumps({k: v for k, v in json.loads((SORTIE / "os6.json").read_text()).items()
                       if k in ("nombre_recommande", "candidats", "capteurs_places", "reseau_actuel",
                                "comparaison_net1")}, indent=1, ensure_ascii=False))
@@ -923,6 +927,7 @@ est une maille où le modèle voit la vérité de surface du cache, comme une st
 3. courbe de dimensionnement sur le **test** (une fois) : optimisé, grille régulière, hasard, à nombre
    égal ; nombre minimal pour un pire RMSE de niveau ≤ 0,5 m/s ;
 4. plan S18 : `runs/os6_reseau_aneo/plan_aneo.csv`, `.geojson`, `carte.png`, `courbe.png`, `os6.json`.
+5. atlas éolien annuel à 100 m (E8) et export SIG GeoTIFF (E15) : `runs/atlas_eolien/`.
 
 Le front-end ATOM Wind lit le plan (`/api/atom-wind/reseau-aneo`) au prochain démarrage du service.
 Reprise : une étape déjà écrite (placement, courbe) est relue. La session s'arrête à la fin.
