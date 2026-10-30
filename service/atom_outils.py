@@ -517,3 +517,53 @@ def dimensionnement_mat(wf, lat=None, lon=None, lieu=None, hauteur_m: float = 30
             "production_w": [round(w) for w in prod],
             "limite": (f"{len(prod) // 24} jour(s) de vent ATOM Wind seulement : un dimensionnement definitif se fait "
                        "sur l'atlas annuel et la courbe du fabricant ; la micro-eolienne est un exemple generique")}
+
+
+# ---------------------------------------------------------------------- alertes du service (BF27, BF83)
+STATIONS_CADENCE = {"DTTA": ("Tunis-Carthage", 1), "INM60729": ("Zaghouan", 3), "INM60728": ("Nabeul", 3)}
+
+
+def _id_alerte(*parts) -> str:
+    import hashlib
+    return hashlib.sha256("|".join(map(str, parts)).encode("utf-8")).hexdigest()[:8]
+
+
+def alertes_service(wf) -> list[dict]:
+    """Alertes du service temps reel (meme regle que la page) : station muette selon sa cadence, heures au
+    residu de masse au-dessus du seuil, vent fort aujourd'hui et demain. Une alerte a un identifiant stable
+    par jour (kind | cible | date) : elle n'est notifiee qu'une fois."""
+    out = []
+    p = jour(wf, 0)
+    I = [x for x in p["instants"] if x.get("source") == "temps reel" and isinstance(x.get("stations"), list)]
+    for code, (nom, cad) in STATIONS_CADENCE.items():
+        if not I:
+            break
+        n = 0
+        for x in reversed(I):
+            if code in x["stations"]:
+                break
+            n += 1
+        if n >= 3 * cad:
+            out.append({"id": _id_alerte("station_muette", code, p["date"]), "kind": "station_muette",
+                        "niveau": "important" if n >= 6 * cad else "information",
+                        "titre": f"station {nom} muette", "cible": nom,
+                        "cause": f"aucune mesure depuis {n} h ; le vent est calcule sans elle.",
+                        "recommandation": "Verifier la transmission (METAR ou SYNOP)."})
+    mauvais = [x for x in p["instants"] if x.get("residu_masse_ok") is False]
+    if mauvais:
+        out.append({"id": _id_alerte("physique", p["date"]), "kind": "physique", "niveau": "important",
+                    "titre": "residu de masse au-dessus du seuil", "cible": "domaine",
+                    "cause": f"{len(mauvais)} heure(s) ce jour, des {mauvais[0]['heure_locale']:.0f} h.",
+                    "recommandation": "Consulter la vue Fiabilite ; signaler a l'equipe si cela se repete."})
+    for j in (0, 1):
+        try:
+            a = alertes_vent(wf, j)
+        except Exception:                                          # noqa: BLE001 — jour absent
+            continue
+        for x in a["alertes"]:
+            out.append({"id": _id_alerte("vent_fort", x["hauteur_sol_m"], a["date"]), "kind": "vent_fort",
+                        "niveau": "important", "titre": f"vent fort a {x['hauteur_sol_m']} m le {a['date']}",
+                        "cible": "domaine",
+                        "cause": f"maximum {x['max']} {x['unite']} vers {x['heure_locale']:.0f} h.",
+                        "recommandation": "Eviter les travaux en hauteur et les traitements ; securiser serres et films."})
+    return out

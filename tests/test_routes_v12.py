@@ -127,3 +127,9 @@ def test_exports_netcdf_csv(client, jeu):  # noqa: F811
     assert n.status_code == 200 and n.content[:3] in (b"CDF", b"\x89HD")       # NetCDF classique ou HDF5
     assert client.get("/api/exports/inconnu.csv").status_code == 404
     assert client.get(f"/api/exports/{stem}.xlsx").status_code == 422
+
+
+def test_alertes_et_notifications(client):
+    a = client.get("/api/atom-wind/alertes")
+    assert a.status_code == 200 and isinstance(a.json()["alertes"], list)
+    assert client.post("/api/notifications/envoyer").status_code == 403      # portee admin seulement

@@ -127,10 +127,10 @@ class FournisseurJournal:
 class FournisseurTwilio:
     nom = "twilio"
 
-    def __init__(self, ouvrir=None) -> None:
+    def __init__(self, ouvrir=None, expediteur: str | None = None) -> None:
         self.sid = os.environ["TWILIO_ACCOUNT_SID"]
         self.jeton = os.environ["TWILIO_AUTH_TOKEN"]
-        self.expediteur = os.environ["TWILIO_FROM"]
+        self.expediteur = expediteur or os.environ["TWILIO_FROM"]
         self.ouvrir = ouvrir or urllib.request.urlopen
 
     def envoyer(self, numero: str, texte: str) -> dict:

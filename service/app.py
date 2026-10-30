@@ -1283,6 +1283,38 @@ def _sms_quotidien(stop: threading.Event) -> None:
                 LOG.warning("SMS quotidiens : %s", exc)
 
 
+def _notifications(stop: threading.Event) -> None:
+    """Toutes les 30 min : alertes du service, notifiees une seule fois chacune."""
+    from service import atom_outils, notifications
+    while not stop.wait(1800):
+        wf = STATE.get("model")
+        if wf is None:
+            continue
+        try:
+            r = notifications.notifier(atom_outils.alertes_service(wf), wf.cfg.paths.run_dir / "notifications")
+            if r["envoyees"] or r["erreurs"]:
+                LOG.info("notifications : %d envoyees, %d erreurs", len(r["envoyees"]), len(r["erreurs"]))
+        except Exception as exc:                                    # noqa: BLE001
+            LOG.warning("notifications : %s", exc)
+
+
+@router.get("/atom-wind/alertes", tags=["atom-wind"])
+def atom_alertes(_: ApiKeyRecord | None = Depends(require_read)) -> dict:
+    """Alertes du service temps reel (cahier v12, BF22, BF27) : station muette, residu de masse, vent fort
+    aujourd'hui et demain ; identifiant stable par jour."""
+    from service import atom_outils
+    return {"alertes": atom_outils.alertes_service(model())}
+
+
+@router.post("/notifications/envoyer", tags=["atom-wind"])
+def notifications_envoyer(_: ApiKeyRecord | None = Depends(require_admin)) -> dict:
+    """Notifie maintenant les alertes importantes pas encore envoyees (journal, e-mail, WhatsApp selon la
+    configuration du service ; portee admin)."""
+    from service import atom_outils, notifications
+    wf = model()
+    return notifications.notifier(atom_outils.alertes_service(wf), wf.cfg.paths.run_dir / "notifications")
+
+
 def _atlas_dossier(wf: WindFieldModel) -> Path | None:
     for d in (wf.cfg.paths.run_dir / "atlas_eolien", wf.cfg.paths.run_dir.parent / "atlas_eolien"):
         if (d / "atlas.json").exists() and (d / "atlas.npz").exists():
@@ -1480,6 +1512,9 @@ def create_app() -> FastAPI:
         arret_sms = threading.Event()
         if os.environ.get("PCFNO3D_SMS_HEURE"):
             threading.Thread(target=_sms_quotidien, args=(arret_sms,), daemon=True, name="sms").start()
+        # notifications des alertes importantes (BF27, BF83) : toutes les 30 min si PCFNO3D_NOTIFICATIONS=1
+        if os.environ.get("PCFNO3D_NOTIFICATIONS") == "1":
+            threading.Thread(target=_notifications, args=(arret_sms,), daemon=True, name="notifications").start()
         async with mcp_app.router.lifespan_context(mcp_app):
             yield
         arret_sms.set()
