@@ -72,6 +72,12 @@ OUTILS = [
             "seuil_m_s": {"type": "number", "description": "Vent moyen maximal de la procedure du site, 12 m/s si inconnu"}}),
     _outil("variations_production", "Hausses et chutes rapides de production du parc eolien virtuel de Djebel "
            "Ressas, heure par heure, pour le gestionnaire du reseau.", {**_JOUR}),
+    _outil("vent_grue", "Vent et rafale a la hauteur de la fleche d'une grue de chantier, heure par heure, et "
+           "creneaux de levage sous la limite de la grue (20 m/s en rafale si inconnue).",
+           {**_LIEU, **_JOUR, "hauteur_m": {"type": "number", "description": "Hauteur de la fleche (m)"}}),
+    _outil("plan_haies", "Orientation conseillee des haies brise-vent en un point et zone protegee, d'apres les "
+           "vents forts des journees disponibles.",
+           {**_LIEU, "hauteur_haie_m": {"type": "number", "description": "Hauteur adulte de la haie (m), 3 si inconnue"}}),
     _outil("explication_point", "Pourquoi ce vent ici aujourd'hui : quelles stations de mesure ont le plus "
            "influence la valeur en un point (le reste vient de GFS et du relief).", {**_LIEU}),
 ]
@@ -102,6 +108,14 @@ def executer(wf, nom: str, entree: dict) -> dict:
         return ao.variations_production(wf, j)
     if nom == "explication_point":
         return ao.explication_point(wf, **lieu)
+    if nom == "vent_grue":
+        d = ao.vent_grue(wf, j, float(entree["hauteur_m"]), **lieu)
+        d["heures"] = [h for h in d["heures"] if 5 <= h["heure"] <= 20]
+        return d
+    if nom == "plan_haies":
+        d = ao.plan_haies(wf, float(entree["hauteur_haie_m"]), **lieu)
+        d.pop("geojson", None)
+        return d
     raise ValueError(f"outil inconnu : {nom}")
 
 

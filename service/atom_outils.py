@@ -599,3 +599,282 @@ def scenario_panne(wf, heure: float, stations: list[str]) -> dict:
     noms = {v.lower(): k for k, v in CODES.items()}
     codes = [noms.get(x.strip().lower(), x.strip().upper()) for x in stations if x.strip()]
     return atom_wind.scenario_panne(wf, source(wf), atom_wind.date_locale_aujourdhui(0), float(heure), codes)
+
+
+# ---------------------------------------------------------------------- espaces en perspective (cahier v12, 6.11)
+# Holding (BF85), chantier (BF86), environnement (BF87) : memes journees de vent que le reste de l'application,
+# sans nouveau calcul du modele. Statistiques sur les journees disponibles seulement (aujourd'hui a
+# apres-demain et l'historique temps reel du service) : une decision d'implantation se prend sur une annee.
+HAUTEURS_PORTEUR = (15, 20, 25, 30)          # mats Porteur (cahier v12, 1.1 : 15, 20, 25 et 30 m)
+RHO_SEC = 287.05                             # J/(kg K)
+
+
+def _jours_disponibles(wf, historique_max: int = 60) -> list[dict]:
+    """Aujourd'hui a apres-demain, puis les journees temps reel archivees (les plus recentes, au plus
+    `historique_max`), une seule par date et de la meme grille que le modele servi."""
+    g = grille(wf)
+    out, vues = [], set()
+    for j in (0, 1, 2):
+        try:
+            p = jour(wf, j)
+        except Exception:                                       # noqa: BLE001 — jour absent
+            continue
+        out.append(p)
+        vues.add(p["date"])
+    for r in [r for r in historique(wf) if r["type"] == "temps reel"][:historique_max]:
+        if r["date"] in vues:
+            continue
+        try:
+            p = json.loads(gzip.decompress(lire_historique(wf, r["nom"])))
+        except Exception:                                       # noqa: BLE001 — archive illisible : ignoree
+            continue
+        if list(p.get("forme", []))[-2:] == [g["ny"], g["nx"]]:
+            out.append(p)
+            vues.add(p["date"])
+    if not out:
+        raise ValueError("aucune journee de vent disponible")
+    return out
+
+
+def _vitesse_hauteur(wf, payload: dict, z: float) -> np.ndarray:
+    """Vitesse (instants, ny, nx) a z m au-dessus du sol sur toute la grille, comme _au_niveau : lineaire
+    entre niveaux, profil logarithmique sous le premier avec la rugosite de la maille."""
+    arr = _tableau(payload, "vent")                              # (instants, hauteurs, 2, ny, nx)
+    H = list(payload["hauteurs_agl_m"])
+    if z <= H[0]:
+        z0 = np.asarray(grille(wf)["z0_m"], float)
+        f = np.maximum(0.0, np.log(np.maximum(z, 1.5 * z0) / z0) / np.log(H[0] / z0))
+        uv = arr[:, 0] * f
+    else:
+        k = max(kk for kk in range(len(H) - 1) if H[kk] < z) if z < H[-1] else len(H) - 2
+        a = min(1.0, (z - H[k]) / (H[k + 1] - H[k]))
+        uv = np.where(np.isfinite(arr[:, k]) & np.isfinite(arr[:, k + 1]),
+                      (1 - a) * arr[:, k] + a * arr[:, k + 1], arr[:, k + 1])
+    return np.hypot(uv[:, 0], uv[:, 1])
+
+
+def _latlon(wf, x_km, y_km):
+    from pcfno3d.realdata import GeoRef
+    la, lo = GeoRef.from_cfg(wf.cfg).to_latlon(np.asarray(x_km) * 1000.0, np.asarray(y_km) * 1000.0)
+    return np.round(la, 5), np.round(lo, 5)
+
+
+def _plan_aneo_km(wf) -> list[dict]:
+    """Capteurs du plan OS6 (s'il est calcule), en km dans la grille."""
+    from pcfno3d import atom_wind
+    from pcfno3d.realdata import GeoRef
+    f = atom_wind.plan_aneo(Path(wf.cfg.paths.run_dir))
+    if f is None:
+        return []
+    geo = GeoRef.from_cfg(wf.cfg)
+    out = []
+    for ft in json.loads(f.read_text(encoding="utf-8")).get("features", []):
+        if (ft.get("geometry") or {}).get("type") != "Point":
+            continue
+        lo, la = ft["geometry"]["coordinates"][:2]
+        x, y = geo.to_xy(la, lo)
+        out.append({"ordre": (ft.get("properties") or {}).get("ordre"), "lat": la, "lon": lo,
+                    "x_km": float(x) / 1000.0, "y_km": float(y) / 1000.0})
+    return out
+
+
+def sites_porteurs(wf, hauteur_m: int = 20, n: int = 10, eolienne_w: float = 400.0, conso_w: float = 5.0,
+                   ecart_km: float = 2.0, altitude_max_m: float = 650.0, marge_km: float = 1.0) -> dict:
+    """Espace holding (cahier v12, BF85, /v1/holding/porteur-sites) : emplacements recommandes pour les mats
+    Porteur, classes par la production de leur petite eolienne a la hauteur du mat. Terre ferme, altitude
+    au plus `altitude_max_m` (regle d'OS6), `marge_km` du bord, sites espaces d'au moins `ecart_km`. Un Porteur
+    porte aussi des capteurs ANEO : les capteurs du plan OS6 (s'il est calcule) sont classes de la meme facon,
+    et chaque site dit a quelle distance est le capteur prevu le plus proche. Courbe de l'eolienne : la
+    micro-eolienne generique d'E18 mise a l'echelle de `eolienne_w` (exemple, a remplacer par la fiche du
+    fabricant ; la part solaire du Porteur n'est pas comptee)."""
+    if int(hauteur_m) not in HAUTEURS_PORTEUR:
+        raise ValueError(f"hauteur de mat Porteur : {', '.join(map(str, HAUTEURS_PORTEUR))} m")
+    g = grille(wf)
+    jours = _jours_disponibles(wf)
+    V, P = MICRO_EOLIENNE["vitesse_m_s"], MICRO_EOLIENNE["puissance"]
+    echelle = eolienne_w / MICRO_EOLIENNE["puissance_w"]
+    vit, pw = [], []
+    for p in jours:
+        s = _vitesse_hauteur(wf, p, float(hauteur_m))
+        vit.append(s)
+        pw.append(np.where(np.isfinite(s), np.interp(np.nan_to_num(s), V, P) * echelle, np.nan))
+    vit, pw = np.concatenate(vit), np.concatenate(pw)
+    with np.errstate(invalid="ignore"):
+        moy_w, moy_v = np.nanmean(pw, axis=0), np.nanmean(vit, axis=0)
+    terrain = np.asarray(g["terrain_m"], float)
+    ok = (np.asarray(g["eau"]) == 0) & (terrain <= altitude_max_m) & np.isfinite(moy_w)
+    m = int(math.ceil(marge_km / g["pas_km"]))
+    if m > 0:
+        ok[:m, :] = ok[-m:, :] = ok[:, :m] = ok[:, -m:] = False
+    jj, ii = np.nonzero(ok)
+    ordre = np.argsort(-moy_w[jj, ii], kind="stable")
+    plan = _plan_aneo_km(wf)
+    pas = g["pas_km"]
+    choisis = []
+    for k in ordre:
+        x, y = (ii[k] + 0.5) * pas, (jj[k] + 0.5) * pas
+        if all(math.hypot(x - c[0], y - c[1]) >= ecart_km for c in choisis):
+            choisis.append((x, y, int(jj[k]), int(ii[k])))
+            if len(choisis) >= n:
+                break
+
+    def ligne(x, y, j, i):
+        w = float(moy_w[j, i])
+        la, lo = _latlon(wf, x, y)
+        d = {"lat": float(la), "lon": float(lo), "x_km": round(x, 2), "y_km": round(y, 2),
+             "altitude_m": round(float(terrain[j, i])), "vent_moyen_m_s": round(float(moy_v[j, i]), 2),
+             "production_wh_par_jour": round(w * 24), "couverture_conso_pct": round(100.0 * w / conso_w) if conso_w > 0 else None}
+        if plan:
+            d["capteur_aneo_prevu_km"] = round(min(math.hypot(x - q["x_km"], y - q["y_km"]) for q in plan), 2)
+        return d
+
+    sites = [{"rang": r + 1, **ligne(*c)} for r, c in enumerate(choisis)]
+    sur_plan = []
+    for q in plan:
+        i = min(g["nx"] - 1, max(0, int(q["x_km"] // pas)))
+        j = min(g["ny"] - 1, max(0, int(q["y_km"] // pas)))
+        if np.isfinite(moy_w[j, i]):
+            sur_plan.append({"ordre_os6": q["ordre"], **ligne(q["x_km"], q["y_km"], j, i)})
+    sur_plan.sort(key=lambda r: -r["production_wh_par_jour"])
+    return {"hauteur_mat_m": int(hauteur_m), "eolienne": f"{MICRO_EOLIENNE['nom']}, mise a l'echelle de {eolienne_w:g} W",
+            "dates": sorted(p["date"] for p in jours), "heures": int(vit.shape[0]),
+            "regles": {"terre_ferme": True, "altitude_max_m": altitude_max_m, "marge_bord_km": marge_km,
+                       "ecart_min_km": ecart_km, "conso_w": conso_w},
+            "sites": sites, "plan_aneo": sur_plan or None,
+            "limite": (f"{len(jours)} journee(s) de vent seulement (aujourd'hui a apres-demain et l'historique du "
+                       "service) : le classement definitif se fait sur l'atlas annuel ; pente, acces, reseau et "
+                       "foncier ne sont pas pris en compte (zones exclues : os6_contraintes.json)")}
+
+
+def _rho(wf, payload, x_km, y_km, h, z_agl) -> float:
+    """Densite de l'air a z_agl au-dessus de la maille : temperature GFS a 2 m, pression standard a l'altitude."""
+    t = _surface(wf, payload, "t2m", x_km, y_km, h)
+    i, j, _ = _maille(wf, x_km, y_km)
+    alt = float(grille(wf)["terrain_m"][j][i]) + z_agl
+    tk = (15.0 if t is None else t) + 273.15 - 0.0065 * z_agl
+    return 101325.0 * math.exp(-alt / 8434.0) / (RHO_SEC * tk)
+
+
+def facteur_rafale_hauteur(fr10: float | None, z0: float, z: float) -> float:
+    """Facteur de rafale a z m : celui de GFS a 10 m (sinon la regle de la page selon la rugosite),
+    decroissant avec la hauteur comme gustF de la page (1 + (g0 - 1) exp(-z / 300))."""
+    g0 = fr10 if fr10 is not None and np.isfinite(fr10) else (1.65 if z0 > 0.5 else 1.45 if z0 > 0.05 else 1.22)
+    return 1.0 + (g0 - 1.0) * math.exp(-max(z - 10.0, 0.0) / 300.0)
+
+
+def vent_grue(wf, j: int, hauteur_m: float = 40.0, limite_rafale_m_s: float = 20.0, surface_charge_m2: float = 0.0,
+              cf: float = 1.2, lat=None, lon=None, lieu=None) -> dict:
+    """Espace chantier (cahier v12, BF86) : vent moyen et rafale a la hauteur de la fleche, heure par heure,
+    verdict contre la limite de service de la grue (20 m/s en rafale par defaut, soit 72 km/h : la valeur
+    usuelle des grues a tour ; celle du constructeur prime) et effort du vent sur la charge suspendue
+    (0,5 rho Cf A v^2, avec la rafale). Le contrepoids et le lest se reglent avec les abaques du
+    constructeur : ATOM Wind donne le vent qui y entre, pas le reglage."""
+    x, y, nom = position(wf, lat, lon, lieu)
+    p = jour(wf, j)
+    _, _, z0 = _maille(wf, x, y)
+    heures = []
+    for h in range(24):
+        u, v = vent(wf, p, x, y, hauteur_m, float(h))
+        s = math.hypot(u, v)
+        fr = facteur_rafale_hauteur(_surface(wf, p, "facteur_rafale", x, y, float(h)), z0, hauteur_m)
+        raf = s * fr
+        rho = _rho(wf, p, x, y, float(h), hauteur_m)
+        force = 0.5 * rho * cf * surface_charge_m2 * raf ** 2
+        statut = "arret" if raf >= limite_rafale_m_s else "attention" if raf >= 0.8 * limite_rafale_m_s else "ok"
+        heures.append({"heure": h, "vent_m_s": round(s, 1), "rafale_m_s": round(raf, 1),
+                       "rafale_km_h": round(raf * 3.6), "direction_deg": _direction(u, v), "statut": statut,
+                       "ok": statut == "ok", "effort_charge_n": round(force), "effort_charge_kgf": round(force / 9.81)})
+    return {"lieu": nom, "date": p["date"], "source": "prevision" if p.get("prevision") else "temps reel",
+            "hauteur_fleche_m": hauteur_m, "limite_rafale_m_s": limite_rafale_m_s,
+            "limite_rafale_km_h": round(limite_rafale_m_s * 3.6), "surface_charge_m2": surface_charge_m2, "cf": cf,
+            "rafale_source": "GFS (facteur de rafale a 10 m)" if "facteur_rafale" in p else "regle de rugosite de la page",
+            "creneaux_levage": _plages(heures, "ok", 1),
+            "rafale_max_m_s": max(r["rafale_m_s"] for r in heures), "heures": heures,
+            "note": ("vent moyen ATOM Wind, rafale = facteur GFS a 10 m reduit avec la hauteur ; limite et contrepoids : "
+                     "notice du constructeur et procedure du chantier")}
+
+
+_SECTEURS = ("N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSO", "SO", "OSO", "O", "ONO", "NO", "NNO")
+# zone abritee derriere une haie de porosite moyenne (40-50 %) : ordres de grandeur de la litterature
+# agroforestiere (reduction du vent d'environ 50 % jusqu'a 5-8 H, 20 % vers 15 H, effet sensible jusqu'a
+# 20-25 H sous le vent, 2-5 H au vent)
+ABRI = {"forte_h": 8.0, "abri_h": 15.0, "au_vent_h": 3.0}
+
+
+def _secteur(d: float) -> str:
+    return _SECTEURS[int(((d % 360.0) + 11.25) // 22.5) % 16]
+
+
+def plan_haies(wf, hauteur_haie_m: float = 3.0, longueur_m: float = 200.0, seuil_m_s: float = 5.0,
+               hauteur_vent_m: float = 10.0, lat=None, lon=None, lieu=None) -> dict:
+    """Espace environnement (cahier v12, BF87, /v1/windbreak/plan) : vent dominant au point, orientation
+    des haies brise-vent et zone protegee. Les vents qui comptent sont ceux au-dessus de `seuil_m_s` a
+    `hauteur_vent_m` (dessechement, verse, erosion), ponderes par v^2 (v - seuil) ; la haie se plante
+    perpendiculaire a leur direction resultante. La zone protegee est un rectangle de la longueur de la haie,
+    `ABRI` hauteurs de haie sous le vent (abri fort, abri) et au vent ; GeoJSON en lat/lon."""
+    x, y, nom = position(wf, lat, lon, lieu)
+    if lat is None or lon is None:
+        la, lo = _latlon(wf, x, y)
+        lat, lon = float(la), float(lo)
+    jours = _jours_disponibles(wf)
+    S, D = [], []
+    for p in jours:
+        for inst in p["instants"]:
+            u, v = vent(wf, p, x, y, hauteur_vent_m, float(inst["heure_locale"]))
+            S.append(math.hypot(u, v))
+            D.append(_direction(u, v))
+    S, D = np.asarray(S), np.asarray(D)
+    poids = np.where(S >= seuil_m_s, S ** 2 * (S - seuil_m_s), 0.0)
+    critere = f"vents de plus de {seuil_m_s:g} m/s a {hauteur_vent_m:g} m, ponderes par v^2 (v - seuil)"
+    if poids.sum() <= 0:
+        poids, critere = S ** 3, f"aucun vent au-dessus de {seuil_m_s:g} m/s : direction du vent dominant en energie (v^3)"
+    r = np.radians(D)
+    cx, cy = float((poids * np.sin(r)).sum()), float((poids * np.cos(r)).sum())
+    dom = float(np.degrees(np.arctan2(cx, cy)) % 360.0)
+    constance = math.hypot(cx, cy) / max(float(poids.sum()), 1e-9)          # 1 : une seule direction
+    k = ((D % 360.0 + 11.25) // 22.5).astype(int) % 16
+    rose = [{"secteur": _SECTEURS[s], "frequence_pct": round(100.0 * float((k == s).mean()), 1),
+             "part_vents_forts_pct": round(100.0 * float(poids[k == s].sum() / poids.sum()), 1)} for s in range(16)]
+    axe = (dom + 90.0) % 180.0                                   # azimut de la ligne de haie
+    # geometrie locale en metres (est, nord) autour du point, puis lat/lon
+    t = np.radians(axe)
+    ax = np.array([math.sin(t), math.cos(t)])                    # le long de la haie
+    sous = np.radians((dom + 180.0) % 360.0)
+    dv = np.array([math.sin(sous), math.cos(sous)])              # vers ou va le vent : sous le vent
+    R = 6371000.0
+
+    def ll(pt):
+        return [round(lon + math.degrees(pt[0] / (R * math.cos(math.radians(lat)))), 6),
+                round(lat + math.degrees(pt[1] / R), 6)]
+
+    def rect(de_h, a_h):
+        a, b = de_h * hauteur_haie_m, a_h * hauteur_haie_m
+        c = [-ax * longueur_m / 2 + dv * a, ax * longueur_m / 2 + dv * a, ax * longueur_m / 2 + dv * b,
+             -ax * longueur_m / 2 + dv * b]
+        return [[ll(q) for q in c + [c[0]]]]
+
+    zones = [("abri_fort", 0.0, ABRI["forte_h"], "reduction du vent d'environ 50 %"),
+             ("abri", ABRI["forte_h"], ABRI["abri_h"], "reduction du vent d'environ 20 a 50 %"),
+             ("au_vent", -ABRI["au_vent_h"], 0.0, "faible reduction devant la haie")]
+    geojson = {"type": "FeatureCollection", "features": [
+        {"type": "Feature", "properties": {"type": "haie", "hauteur_m": hauteur_haie_m, "longueur_m": longueur_m,
+                                           "azimut_deg": round(axe)},
+         "geometry": {"type": "LineString", "coordinates": [ll(-ax * longueur_m / 2), ll(ax * longueur_m / 2)]}}]
+        + [{"type": "Feature", "properties": {"type": z, "de_h": a, "a_h": b, "effet": e},
+            "geometry": {"type": "Polygon", "coordinates": rect(a, b)}} for z, a, b, e in zones]}
+    oppose = (axe + 180.0) % 360.0
+    texte = (f"Vents a craindre surtout du {_secteur(dom)} ({dom:.0f} deg). Haie orientee {_secteur(axe)}-{_secteur(oppose)} "
+             f"(azimut {axe:.0f} deg) ; une haie de {hauteur_haie_m:g} m abrite fortement environ "
+             f"{ABRI['forte_h'] * hauteur_haie_m:.0f} m et sensiblement {ABRI['abri_h'] * hauteur_haie_m:.0f} m sous le vent, "
+             f"cote {_secteur((dom + 180.0) % 360.0)}.")
+    if constance < 0.4:
+        texte += " Les vents forts viennent de directions variees : un maillage de haies (en L ou en carre) protege mieux."
+    return {"lieu": nom, "lat": lat, "lon": lon, "dates": sorted(p["date"] for p in jours), "heures": int(S.size),
+            "critere": critere, "direction_dominante_deg": round(dom), "secteur_dominant": _secteur(dom),
+            "constance": round(constance, 2), "azimut_haie_deg": round(axe),
+            "zone_protegee_m": {"abri_fort": ABRI["forte_h"] * hauteur_haie_m, "abri": ABRI["abri_h"] * hauteur_haie_m,
+                                "au_vent": ABRI["au_vent_h"] * hauteur_haie_m},
+            "rose": rose, "geojson": geojson, "texte": texte,
+            "limite": (f"{len(jours)} journee(s) de vent seulement : le choix d'une plantation se fait sur au moins une "
+                       "saison (historique du service ou atlas) ; distances d'abri = ordres de grandeur pour une haie de "
+                       "porosite moyenne (40-50 %)")}

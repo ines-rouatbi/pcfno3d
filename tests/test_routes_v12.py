@@ -49,6 +49,12 @@ def test_routes_metier(client):
     assert d.status_code == 200 and d.json()["batterie_wh"] > 0
     r = client.get("/api/atom-wind/rapport.pdf", params={"type": "parcelle", **pt})
     assert r.status_code == 200 and r.content.startswith(b"%PDF") and "attachment" in r.headers["content-disposition"]
+    assert client.get("/api/atom-wind/porteurs", params={"hauteur_m": 20, "n": 3, "ecart_km": 0.5}).status_code == 200
+    assert client.get("/api/atom-wind/porteurs", params={"hauteur_m": 18}).status_code == 422
+    g = client.get("/api/atom-wind/grue", params={"j": 1, "hauteur_m": 40, **pt})
+    assert g.status_code == 200 and len(g.json()["heures"]) == 24
+    hz = client.get("/api/atom-wind/haies", params=pt)
+    assert hz.status_code == 200 and hz.json()["geojson"]["type"] == "FeatureCollection"
     assert client.get("/api/atom-wind/agricole", params={"lieu": "Paris"}).status_code == 422
     assert client.get("/api/atom-wind/rapport.pdf", params={"type": "autre"}).status_code == 422
 

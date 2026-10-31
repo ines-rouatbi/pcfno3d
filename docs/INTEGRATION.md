@@ -361,6 +361,7 @@ mention « admin ». Grille de 500 m, heures locales de Tunis (UTC+1), vent en i
 | `GET /atom-wind/direct?j=0\|1\|2` | aujourd'hui en temps réel (GFS + anémomètres), demain et après-demain en prévision ; t2m, hr2m (GFS), physique de chaque instant (`residu_masse_rms`) ; sigma si `PCFNO3D_SIGMA_DIRECT=1` |
 | `GET /atom-wind/ensemble?j=` | prévision probabiliste GEFS (probabilité de pouvoir traiter, quantiles) |
 | `GET /atom-wind/agricole`, `/production`, `/maintenance`, `/variations`, `/dimensionnement` | décision agricole, production d'une éolienne de référence, créneaux de maintenance, rampes du parc virtuel, mât de mesure (lieu ou lat / lon) |
+| `GET /atom-wind/porteurs`, `/grue`, `/haies` | espaces en perspective (cahier v12, 6.11) : emplacements des mâts Porteur classés par la production de leur éolienne (et capteurs du plan OS6), vent et rafale à hauteur de flèche avec créneaux de levage, orientation des haies brise-vent et zone protégée (GeoJSON) ; statistiques sur les journées disponibles |
 | `GET /atom-wind/valeur-stations`, `/explication` | valeur et influence de chaque station (déni de données), pourquoi ce vent en un point |
 | `GET /atom-wind/alertes` | alertes du service (station muette, résidu de masse, vent fort) |
 | `GET /atom-wind/historique`, `/historique/{nom}` | journées déjà calculées (temps réel et prévisions avec leur date d'émission) |

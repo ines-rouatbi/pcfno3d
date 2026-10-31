@@ -1135,6 +1135,51 @@ def atom_dimensionnement(lieu: str | None = Query(None, max_length=80), lat: flo
         raise HTTPException(422, str(exc)) from exc
 
 
+@router.get("/atom-wind/porteurs", tags=["atom-wind"])
+def atom_porteurs(hauteur_m: int = Query(20, description="hauteur du mat Porteur : 15, 20, 25 ou 30 m"),
+                  n: int = Query(10, ge=1, le=50), eolienne_w: float = Query(400.0, gt=0, le=5000),
+                  conso_w: float = Query(5.0, gt=0, le=2000), ecart_km: float = Query(2.0, ge=0, le=20),
+                  _: ApiKeyRecord | None = Depends(require_read)) -> dict:
+    """Espace holding (cahier v12, BF85) : emplacements recommandes pour les mats Porteur, classes par la
+    production de leur eolienne a la hauteur du mat, et capteurs du plan OS6 classes de la meme facon."""
+    from service import atom_outils
+    try:
+        return atom_outils.sites_porteurs(model(), hauteur_m=hauteur_m, n=n, eolienne_w=eolienne_w, conso_w=conso_w,
+                                          ecart_km=ecart_km)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+@router.get("/atom-wind/grue", tags=["atom-wind"])
+def atom_grue(j: int = Query(0, ge=0, le=2, description="0 = aujourd'hui, 1 = demain, 2 = apres-demain"),
+              lieu: str | None = Query(None, max_length=80), lat: float | None = None, lon: float | None = None,
+              hauteur_m: float = Query(40.0, ge=5, le=300), limite_rafale_m_s: float = Query(20.0, gt=0, le=60),
+              surface_charge_m2: float = Query(0.0, ge=0, le=500),
+              _: ApiKeyRecord | None = Depends(require_read)) -> dict:
+    """Espace chantier (cahier v12, BF86) : vent et rafale a la hauteur de la fleche heure par heure, creneaux
+    de levage sous la limite de la grue, effort du vent sur la charge."""
+    from service import atom_outils
+    try:
+        return atom_outils.vent_grue(model(), j, hauteur_m, limite_rafale_m_s, surface_charge_m2,
+                                     lat=lat, lon=lon, lieu=lieu)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+@router.get("/atom-wind/haies", tags=["atom-wind"])
+def atom_haies(lieu: str | None = Query(None, max_length=80), lat: float | None = None, lon: float | None = None,
+               hauteur_haie_m: float = Query(3.0, gt=0, le=30), longueur_m: float = Query(200.0, gt=0, le=5000),
+               seuil_m_s: float = Query(5.0, ge=0, le=30),
+               _: ApiKeyRecord | None = Depends(require_read)) -> dict:
+    """Espace environnement (cahier v12, BF87) : vent dominant, orientation des haies brise-vent et zone
+    protegee (GeoJSON)."""
+    from service import atom_outils
+    try:
+        return atom_outils.plan_haies(model(), hauteur_haie_m, longueur_m, seuil_m_s, lat=lat, lon=lon, lieu=lieu)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
 @router.get("/atom-wind/rapport.pdf", tags=["atom-wind"])
 def atom_rapport(type: str = Query("parcelle", pattern="^(parcelle|site|parc)$"),
                  lieu: str | None = Query(None, max_length=80), lat: float | None = None, lon: float | None = None,

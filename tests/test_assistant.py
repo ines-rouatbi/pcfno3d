@@ -165,3 +165,54 @@ def test_route_assistant_sans_cle(jeu, monkeypatch):  # noqa: F811
         r = c.post("/api/assistant", json={"question": "Quel vent demain ?"})
         assert r.status_code == 503 and "ANTHROPIC_API_KEY" in r.json()["detail"]
         assert c.post("/api/assistant", json={"question": ""}).status_code == 422
+
+
+def test_espaces_perspective(wf):
+    """Holding (BF85), chantier (BF86), environnement (BF87) sur les journees disponibles."""
+    import json as js
+    import math
+    from service import atom_outils as ao
+    with pytest.raises(ValueError, match="Porteur"):
+        ao.sites_porteurs(wf, hauteur_m=18)
+    s = ao.sites_porteurs(wf, hauteur_m=20, n=4, ecart_km=0.5, marge_km=0.0)
+    prod = [x["production_wh_par_jour"] for x in s["sites"]]
+    assert 1 <= len(prod) <= 4 and prod == sorted(prod, reverse=True) and s["plan_aneo"] is None
+    for a in s["sites"]:
+        for b in s["sites"]:
+            if a is not b:
+                assert math.hypot(a["x_km"] - b["x_km"], a["y_km"] - b["y_km"]) >= 0.5
+    # un plan OS6 present : ses capteurs sont classes et chaque site dit sa distance au plus proche
+    d = wf.cfg.paths.run_dir / "os6_reseau_aneo"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "plan_aneo.geojson").write_text(js.dumps({"type": "FeatureCollection", "features": [
+        {"type": "Feature", "properties": {"ordre": 1}, "geometry": {"type": "Point", "coordinates": [LON, LAT]}}]}))
+    try:
+        s = ao.sites_porteurs(wf, hauteur_m=20, n=2, ecart_km=0.5, marge_km=0.0)
+        assert s["plan_aneo"][0]["ordre_os6"] == 1 and "capteur_aneo_prevu_km" in s["sites"][0]
+    finally:
+        (d / "plan_aneo.geojson").unlink()
+
+    g = ao.vent_grue(wf, 1, 40.0, 20.0, 10.0, lat=LAT, lon=LON)
+    assert len(g["heures"]) == 24
+    for h in g["heures"]:
+        assert h["rafale_m_s"] >= h["vent_m_s"] - 0.05
+        assert (h["statut"] == "arret") == (h["rafale_m_s"] >= 20.0 - 0.05) or abs(h["rafale_m_s"] - 20.0) < 0.1
+        assert h["effort_charge_n"] >= 0
+    assert ao.vent_grue(wf, 1, 40.0, 0.01, lat=LAT, lon=LON)["creneaux_levage"] == []
+    assert all(h["effort_charge_n"] == 0 for h in ao.vent_grue(wf, 1, 40.0, lat=LAT, lon=LON)["heures"])
+    assert ao.facteur_rafale_hauteur(1.5, 0.1, 10.0) == pytest.approx(1.5)
+    assert 1.0 < ao.facteur_rafale_hauteur(1.5, 0.1, 200.0) < 1.5
+    assert ao.facteur_rafale_hauteur(None, 0.01, 10.0) == pytest.approx(1.22)
+
+    hz = ao.plan_haies(wf, 3.0, 200.0, 0.0, lat=LAT, lon=LON)
+    assert hz["azimut_haie_deg"] == round((hz["direction_dominante_deg"] + 90) % 180) % 180 or \
+        abs(hz["azimut_haie_deg"] - (hz["direction_dominante_deg"] + 90) % 180) <= 1
+    assert sum(r["frequence_pct"] for r in hz["rose"]) == pytest.approx(100, abs=1)
+    assert sum(r["part_vents_forts_pct"] for r in hz["rose"]) == pytest.approx(100, abs=1)
+    feats = hz["geojson"]["features"]
+    assert [f["properties"]["type"] for f in feats] == ["haie", "abri_fort", "abri", "au_vent"]
+    for f in feats[1:]:
+        anneau = f["geometry"]["coordinates"][0]
+        assert anneau[0] == anneau[-1] and len(anneau) == 5
+    assert hz["zone_protegee_m"] == {"abri_fort": 24.0, "abri": 45.0, "au_vent": 9.0}
+    assert "energie" in ao.plan_haies(wf, 3.0, 200.0, 1000.0, lat=LAT, lon=LON)["critere"]

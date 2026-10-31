@@ -587,6 +587,57 @@ def simuler_panne(heure: float, stations: list[str]) -> dict:
     return atom_outils.scenario_panne(get_model(), float(heure), list(stations))
 
 
+@mcp.tool()
+def sites_porteurs(hauteur_m: int = 20, n: int = 10, eolienne_w: float = 400.0) -> dict:
+    """Espace holding (cahier v12, BF85) : emplacements recommandes pour les mats Porteur (15, 20, 25 ou 30 m),
+    classes par la production de leur eolienne a la hauteur du mat ; capteurs du plan ANEO classes de meme.
+
+    Args:
+        hauteur_m: hauteur du mat Porteur (15, 20, 25 ou 30).
+        n: nombre de sites.
+        eolienne_w: puissance nominale de l'eolienne du mat (W).
+    """
+    from service import atom_outils
+    return atom_outils.sites_porteurs(get_model(), hauteur_m=int(hauteur_m), n=int(n), eolienne_w=float(eolienne_w))
+
+
+@mcp.tool()
+def vent_grue(jour: int, hauteur_m: float = 40.0, limite_rafale_m_s: float = 20.0, surface_charge_m2: float = 0.0,
+              lieu: str | None = None, lat: float | None = None, lon: float | None = None) -> dict:
+    """Espace chantier (cahier v12, BF86) : vent et rafale a la hauteur de la fleche d'une grue, heure par heure,
+    creneaux de levage sous la limite et effort du vent sur la charge.
+
+    Args:
+        jour: 0 aujourd'hui, 1 demain, 2 apres-demain.
+        hauteur_m: hauteur de la fleche au-dessus du sol.
+        limite_rafale_m_s: limite de service de la grue (rafale), 20 m/s si inconnue.
+        surface_charge_m2: surface au vent de la charge (0 si aucune).
+        lieu: lieu de l'application, ou lat / lon.
+    """
+    from service import atom_outils
+    d = atom_outils.vent_grue(get_model(), int(jour), float(hauteur_m), float(limite_rafale_m_s),
+                              float(surface_charge_m2), lat=lat, lon=lon, lieu=lieu)
+    d["heures"] = [h for h in d["heures"] if 5 <= h["heure"] <= 20]
+    return d
+
+
+@mcp.tool()
+def plan_haies(lieu: str | None = None, lat: float | None = None, lon: float | None = None,
+               hauteur_haie_m: float = 3.0, longueur_m: float = 200.0) -> dict:
+    """Espace environnement (cahier v12, BF87) : vent dominant au point, orientation des haies brise-vent et
+    zone protegee.
+
+    Args:
+        lieu: lieu de l'application, ou lat / lon.
+        hauteur_haie_m: hauteur adulte de la haie (m).
+        longueur_m: longueur de la haie (m).
+    """
+    from service import atom_outils
+    d = atom_outils.plan_haies(get_model(), float(hauteur_haie_m), float(longueur_m), lat=lat, lon=lon, lieu=lieu)
+    d.pop("geojson", None)
+    return d
+
+
 def main() -> int:
     """Transport stdio, pour un client MCP local."""
     mcp.run()

@@ -258,7 +258,7 @@ def jour_direct(wf, source, date_locale: str, maintenant: pd.Timestamp | None = 
         extra["source_rafale"] = "GFS wind_gusts_10m / wind_speed_10m (0,25 deg), meme codage int16 x100"
     if blocs_sigma and len(blocs_sigma) == len(instants):
         sg = np.stack(blocs_sigma)
-        extra = {"sigma_vitesse": encoder(sg), "forme_sigma": list(sg.shape)}
+        extra.update({"sigma_vitesse": encoder(sg), "forme_sigma": list(sg.shape)})
     return {**extra, "format": "atom-wind/1", "date": date_locale, "temps_reel": True,
             "prevision": prevision,
             "instants": instants, "hauteurs_agl_m": list(HAUTEURS_AGL), "forme": list(a.shape),
