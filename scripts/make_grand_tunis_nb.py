@@ -622,6 +622,33 @@ va sur le Drive. La session s'arrête à la fin.
     ], gpu=True)
 
 
+# commun aux carnets qui lisent le modele livre (service, OS6, OS7)
+CHOIX_POIDS = r'''
+import shlex
+def choisir_poids(src):
+    """Le Drive garde parfois deux fichiers du meme nom (grand_tunis_v4_dso : deux best.pt de 1,69 Go,
+    vus le 31/10) ; Colab peut n'en montrer qu'un, au hasard. On retient celui dont l'epoque est celle
+    du test evalue (eval_pcfno3d/best_wcont, sinon best), meme s'il n'y en a qu'un : jamais un poids
+    pris au hasard."""
+    cands = sorted(src.glob("best*.pt"))
+    if not cands:
+        return src / "best.pt"
+    attendu = next((json.loads(f.read_text()).get("epoque") for d in ("best_wcont", "best")
+                    if (f := src / "eval_pcfno3d" / d / "test_summary.json").exists()), None)
+    import torch
+    epoques = {}
+    for c in cands:
+        ck = torch.load(str(c), map_location="cpu", mmap=True, weights_only=False)
+        epoques[c] = ck.get("epoch", -2) + 1
+        del ck
+    print("poids candidats :", {c.name: e for c, e in epoques.items()}, "| epoque evaluee :", attendu)
+    ok = [c for c in cands if epoques[c] == attendu] if attendu is not None else cands
+    if not ok:
+        raise RuntimeError(f"aucun poids de {src} n'a l'epoque evaluee ({attendu}) : verifie sur le Drive")
+    return max(ok, key=lambda c: c.stat().st_mtime)          # a epoque egale : le plus recent
+'''
+
+
 def service_v2() -> dict:
     """Le modele LIVRE (v2 prolongee) servi a l'application, a l'adresse fixe atom.zelqane.com
     (tunnel nomme `atom`, Worker de Rayen) — meme schema que pcfno3d_atom_colab.ipynb (v7)."""
@@ -630,7 +657,7 @@ def service_v2() -> dict:
 # le service web : aucune de ces bibliotheques ne touche a numpy
 !pip install -q fastapi uvicorn python-multipart httpx mcp==2.3.0 2>&1 | tail -2
 '''
-    production = r'''
+    production = CHOIX_POIDS + r'''
 # modele livre (decision d'Ines, 2026-10-24) copie dans runs/grand_tunis_v9_production (poids,
 # statistiques, historique, evaluations, validation reelle, fiabilite, figures) ; une seule fois.
 # La v4 (affinage DSO) remplace la v2 prolongee SEULEMENT si runs/decision_v4.json le dit (regle :
@@ -652,7 +679,8 @@ if (PROD / "PROVENANCE.txt").exists() and f"runs/{livre} " not in (PROD / "PROVE
     print("ancienne copie de production mise de cote :", cote.name)
 if not (PROD / "best.pt").exists():
     PROD.mkdir(parents=True, exist_ok=True)
-    for nom in ("norm_stats.json", "history.json", "best.pt"):
+    shutil.copy2(choisir_poids(SRC), PROD / "best.pt")
+    for nom in ("norm_stats.json", "history.json"):
         shutil.copy2(SRC / nom, PROD / nom)
     for d in ("eval_pcfno3d", "validation_reelle", "fiabilite_pcfno3d", "figures"):
         if (SRC / d).exists():
@@ -904,7 +932,7 @@ u et v seulement, w rapporté à part. Aucun bruit n'est ajouté aux prédiction
 def os6_reseau() -> dict:
     """OS6 : plan de deploiement du reseau ANEO (OSSE) sur le modele LIVRE (decision_v4.json),
     sans entrainement. Placement glouton sur la validation, courbe sur le test, plan S18."""
-    chaine = r'''
+    chaine = CHOIX_POIDS + r'''
 from google.colab import runtime
 import traceback
 RUNS = GT / "runs"
@@ -916,15 +944,17 @@ SORTIE = RUNS / "os6_reseau_aneo"
 CONTRAINTES = GT / "os6_contraintes.json"      # zones exclues, budget... (facultatif, depose sur le Drive)
 print("modele livre :", livre, "| contraintes :", CONTRAINTES if CONTRAINTES.exists() else "par defaut")
 try:
+    CKPT = shlex.quote(str(choisir_poids(RUNS / livre)))
     lancer("os6_reseau_aneo",
-           f"python -u scripts/os6_reseau_aneo.py -c {CONF} --set inference.w_continuite=true "
+           f"python -u scripts/os6_reseau_aneo.py -c {CONF} --checkpoint {CKPT} --set inference.w_continuite=true "
            f"--sortie {SORTIE} --n-val 24 --lot 4"
            + (f" --contraintes {CONTRAINTES}" if CONTRAINTES.exists() else "")
            # capteurs ANEO deja poses (lat, lon) : le plan repart d'eux (BF78)
            + (f" --installes {GT / 'os6_installes.csv'}" if (GT / "os6_installes.csv").exists() else ""))
     # atlas eolien annuel (E8) et couches GeoTIFF (E15), a partir des reconstructions du cache
     if not (RUNS / "atlas_eolien" / "atlas.json").exists():
-        lancer("atlas_eolien", f"python -u scripts/atlas_eolien.py -c {CONF} --set inference.w_continuite=true "
+        lancer("atlas_eolien", f"python -u scripts/atlas_eolien.py -c {CONF} --checkpoint {CKPT} "
+                               "--set inference.w_continuite=true "
                                f"--sortie {RUNS / 'atlas_eolien'}")
     print(json.dumps({k: v for k, v in json.loads((SORTIE / "os6.json").read_text()).items()
                       if k in ("nombre_recommande", "candidats", "capteurs_places", "reseau_actuel",
@@ -973,7 +1003,7 @@ def os7_prevision() -> dict:
 # Herbie : telechargement partiel des fichiers GFS (index .idx) ; cfgrib / eccodes : lecture GRIB2
 !pip install -q herbie-data cfgrib eccodes 2>&1 | tail -1
 """
-    chaine = r"""
+    chaine = CHOIX_POIDS + r"""
 from google.colab import runtime
 import traceback
 RUNS = GT / "runs"
@@ -1008,7 +1038,7 @@ try:
     copier_forcages()
 
     # 2. reference : le modele LIVRE nourri par GFS, sans affinage (meme entree que la v5)
-    INIT = RUNS / livre / "best.pt"
+    INIT = shlex.quote(str(choisir_poids(RUNS / livre)))
     for e in (24, 48):
         d = OS7 / f"sans_affinage_f{e}"
         if not (d / "prevision_bilan.json").exists():
