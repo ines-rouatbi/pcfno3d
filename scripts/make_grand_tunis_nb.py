@@ -1085,7 +1085,9 @@ except Exception:
 finally:
     runtime.unassign()
 """
-    mem = MEM.replace("configs/grand_tunis_colab.yaml", "configs/grand_tunis_v5_gfs_colab.yaml")
+    # memoire du GPU avec la configuration du modele LIVRE (meme architecture et memes 34 canaux que la v5) :
+    # celle de la v5 lit forcage_gfs_f24.csv, qui n'existe qu'apres le telechargement GFS de l'etape 4
+    mem = MEM.replace("configs/grand_tunis_colab.yaml", "configs/grand_tunis_v4_dso_colab.yaml")
     return carnet([
         md("""
 # PC-FNO3D réel (Grand Tunis) — OS7 : prévision du vent 3D à +24 et +48 h (Colab, A100)
