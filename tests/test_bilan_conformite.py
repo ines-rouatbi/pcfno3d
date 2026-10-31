@@ -62,11 +62,17 @@ def test_bilan(tmp_path):
     assert c["EOL2"]["statut"] == "conforme"            # 0-250 m : ERA5 a 2 m/s, modele a 0,5
     assert c["REEL2"]["statut"] == "conforme"           # 25-1 000 m : 0,5 contre ~1,6
     assert c["NET1"]["statut"] == "conforme" and c["NET1"]["valeur"] == 0.2 and c["NET2"]["valeur"] == 40
+    assert c["NET2"]["statut"] == "conforme"
     assert c["PREV1"]["statut"] == "à mesurer" and c["AGRI2"]["statut"] == "à mesurer"
     assert c["DSO7"]["statut"] == "proposé" and c["UX1"]["statut"] == "à mesurer"
     texte = m.rapport(b)
     assert "| REEL1 |" in texte and "Bilan de conformité" in texte
     assert m.main(["--runs", str(tmp_path)]) == 0 and (tmp_path / "bilan_conformite.md").exists()
+    # aucun nombre de capteurs n'atteint le seuil : la courbe seule ne rend pas NET2 conforme
+    o = json.loads((tmp_path / "os6" / "os6.json").read_text(encoding="utf-8"))
+    (tmp_path / "os6" / "os6.json").write_text(json.dumps({**o, "nombre_recommande": None}), encoding="utf-8")
+    c = {l["code"]: l for l in m.bilan(tmp_path)["criteres"]}
+    assert c["NET2"]["statut"].startswith("non conforme")
 
 
 def test_references_de_tests_existent():

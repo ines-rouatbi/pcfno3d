@@ -54,7 +54,7 @@ DOCUMENTES = [
     ("VIS1", "Tableau de bord : reconstruction et indicateurs affichés en moins de 3 s", "à mesurer",
      "docs/PROTOCOLE_UX1_VIS1.md : panneau ?test_ux=1 sur atom.zelqane.com, 90e centile par vue"),
     ("MCP1", "Serveur MCP : simulation lancée et résultat récupéré sans intervention", "conforme",
-     "tests/test_webapp_and_mcp.py, tests/test_colab_serving.py (17 outils)"),
+     "tests/test_webapp_and_mcp.py, tests/test_colab_serving.py (22 outils)"),
     ("API1", "Clé d'API : requête sans clé refusée, clé révoquée inactive aussitôt", "conforme",
      "lot M7, tests/test_securite_api.py"),
     ("HIS1", "Historique : toute reconstruction passée retrouvée avec ses indicateurs", "conforme",
@@ -213,7 +213,10 @@ def reseau(runs: Path) -> list[dict]:
                valeur=None if g_min is None else round(g_min, 3), seuil=f"gain ≥ {SEUIL_NET1} (seuil à valider)",
                source=str(f.relative_to(runs)), detail={str(k): round(v, 3) for k, v in gains.items()}),
         _ligne("NET2", "Courbe erreur / nombre de capteurs (10 à 200) et plus petit nombre suffisant",
-               "conforme" if r.get("courbe") else "à mesurer", valeur=r.get("nombre_recommande"),
+               # la courbe seule ne suffit pas : il faut aussi un nombre de capteurs qui atteigne le seuil
+               "à mesurer" if not r.get("courbe") else
+               "conforme" if r.get("nombre_recommande") is not None else "non conforme (aucun nombre ≤ 200 suffisant)",
+               valeur=r.get("nombre_recommande"),
                seuil=f"pire RMSE de niveau ≤ {r.get('seuil_rmse_m_s')} m/s", source=str(f.relative_to(runs))),
     ]
 

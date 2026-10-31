@@ -89,6 +89,28 @@ a terrain correction.
 
 ## 5. Current state (snapshot as of 2026-10-16; model results as of 2026-10-13)
 
+### Update 2026-10-31 — OS6 run (Colab L4, delivered v4, 2 h 48 GPU)
+
+- **Result: the delivered model ignores added ANEO sensors.** Greedy placement on validation (24
+  instants): vector RMSE 0.696 -> 0.695 m/s from 0 to 200 sensors. Sizing curve on test (180 synoptic
+  instants, `runs/os6_reseau_aneo/os6.json`): current network 0.5326 m/s vector RMSE, worst level
+  0.5278; grid, random AND optimised networks of 10 to 200 sensors all stay within ±0.0003 m/s
+  (optimised is even 0.0002–0.001 worse at the worst level). `nombre_recommande: null` — no count
+  reaches 0.5 m/s at every level. NET1 non-conforming (no gain over the grid), NET2 non-conforming
+  (curve delivered, no sufficient number).
+- **Not a bug:** outside the 2.5 km ERA5 lattice the input keeps the cache surface truth, so a simulated
+  sensor does bring the true 10 m wind (`dataset.entree_era5_stations`, `os6.Banc.passe`). The v4 net
+  (ERA5 residual, trained with ERA5 lattice + 3 stations) leans on the ERA5 lattice and treats a point
+  measurement as a local site correction (the v3 maps already showed ~1 km spots).
+- **Consequence for the report:** sizing the ANEO network needs a model trained to USE dense sensors
+  (e.g. `v2_aneo`, trained from v7 with the dense synthetic network, or a v4 fine-tune with random extra
+  sensors from the cache truth). That is a retraining decision (Ines's call); the current plan files are
+  written but carry no gain.
+- Conformity report after OS6 (`runs/bilan_conformite.md`): 18 conforming, 4 non-conforming (DSO1 0.528,
+  DSO3 0.805, REEL1, NET1), 1 proposed (DSO7), 7 to measure (OS7 criteria, UX1, VIS1). The duplicate
+  `best.pt` in `runs/grand_tunis_v4_dso` was resolved by epoch: `best.pt` = epoch 11 (evaluated),
+  `best (1).pt` = epoch 10.
+
 ### Update 2026-10-30 — cahier des charges v12
 
 - **Delivered model: Grand Tunis v4** (`decision_v4.json`, 24/10, read on the Drive 30/10): no worse
