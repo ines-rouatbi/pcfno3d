@@ -1,0 +1,50 @@
+\chapter*{Introduction générale}
+\addcontentsline{toc}{chapter}{Introduction générale}
+\markboth{Introduction générale}{}
+
+Le vent conditionne une grande partie des activités humaines exposées au climat : la réussite d'un
+traitement phytosanitaire, la quantité d'eau perdue par une parcelle irriguée, la production d'une
+éolienne, la sécurité d'un levage sur un chantier. Ces décisions se prennent à des hauteurs très
+différentes --- 2 à 10\,m pour l'agriculture, 50 à 150\,m pour l'éolien --- et en des lieux où, le
+plus souvent, aucun instrument ne mesure le vent. Les stations météorologiques sont rares, placées
+près du sol, et les modèles numériques de prévision décrivent l'atmosphère sur des mailles de
+plusieurs kilomètres qui lissent l'effet du relief et du littoral.
+
+Tukhnanutha, holding technologique tunisienne, développe l'écosystème ANEO : un réseau de capteurs
+environnementaux portés par des mâts multiservices, et des services numériques construits sur leurs
+données. Ce projet de fin d'études répond à une question centrale de cet écosystème :
+\emph{comment connaître le vent partout, à toutes les hauteurs utiles, à partir de mesures prises
+en quelques points près du sol ?}
+
+Nous y répondons par un modèle d'apprentissage profond contraint par la physique,
+\textbf{PC-FNO3D}, un opérateur neuronal de Fourier tridimensionnel qui reconstruit en moins d'une
+seconde les trois composantes du vent sur douze niveaux, de 25 à 1\,000\,m d'altitude. Le modèle
+apprend sur des données dont il respecte la physique : la conservation de la masse et la condition
+au sol font partie de sa fonction de perte. Il est ensuite transposé à un domaine réel, le Grand
+Tunis, confronté aux mesures réelles des anémomètres et des radiosondages, et mis en service dans
+une application web, \textbf{ATOM Wind}, destinée aux agriculteurs et aux exploitants éoliens.
+
+Le travail s'est déroulé en plusieurs étapes qui structurent ce rapport :
+\begin{itemize}
+  \item le \textbf{chapitre~\ref{chap:contexte}} présente l'organisme d'accueil, le problème, les
+        objectifs mesurables (DSO) fixés par le cahier des charges et la conduite du projet ;
+  \item le \textbf{chapitre~\ref{chap:etat}} situe le travail par rapport aux méthodes classiques
+        d'interpolation, aux modèles numériques de l'atmosphère et aux architectures d'apprentissage
+        profond, dont celles que nous avons essayées puis abandonnées ;
+  \item le \textbf{chapitre~\ref{chap:donnees}} décrit les données : le jeu synthétique ANEO, puis
+        le domaine réel du Grand Tunis (relief, occupation du sol, ERA5, stations, radiosondages,
+        prévisions GFS) ;
+  \item le \textbf{chapitre~\ref{chap:modele}} détaille l'architecture PC-FNO3D, la perte physique,
+        l'entraînement et la quantification de l'incertitude ;
+  \item le \textbf{chapitre~\ref{chap:resultats}} rapporte les résultats, critère par critère, y
+        compris les résultats négatifs et les décisions qui en ont découlé ;
+  \item le \textbf{chapitre~\ref{chap:realisation}} présente la réalisation logicielle : paquet
+        Python, API, serveur MCP, mise en service et application ATOM Wind ;
+  \item la conclusion dresse le bilan et les perspectives.
+\end{itemize}
+
+Un principe a guidé tout le projet, celui de la preuve de concept de Nuthora Edu : \emph{un
+résultat n'est retenu que s'il est mesuré face à des critères fixés à l'avance}. Cette exigence est
+l'un des apports du travail : elle a permis d'écarter des pistes séduisantes mais fragiles
+--- correction post-modèle, affinage sur les stations --- et de fonder chaque décision, y compris
+les résultats négatifs, qui orientent directement la suite du projet.

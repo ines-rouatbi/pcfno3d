@@ -1,0 +1,169 @@
+\chapter{Le modèle PC-FNO3D}
+\label{chap:modele}
+
+\section{Formulation}
+Pour un instant $t$, le modèle reçoit un tenseur d'entrée $X_t \in \mathbb{R}^{C\times n_z\times
+n_y\times n_x}$ qui porte les mesures de surface recopiées sur la colonne, le relief, la géométrie
+des niveaux et des caractéristiques temporelles et physiques, et produit
+$\hat Y_t \in \mathbb{R}^{3\times n_z\times n_y\times n_x}$, les composantes $(u, v, w)$ en chaque
+nœud. Les nœuds sous le relief sont exclus de toutes les pertes et de toutes les métriques par un
+masque de validité. Le modèle est un \emph{opérateur} : il apprend l'application qui associe un
+état de surface à un champ 3D, et non une interpolation point par point.
+
+\section{Architecture}
+L'architecture (figure~\ref{fig:archi}) suit le schéma du FNO \citep{li2021fno} étendu à trois
+dimensions :
+\begin{enumerate}
+  \item une couche de \textbf{relèvement} $P$ (convolution $1\times1\times1$) porte les $C$ canaux
+        d'entrée à une largeur de 48 ;
+  \item quatre \textbf{couches de Fourier} : chacune applique une convolution spectrale sur les
+        modes de plus basse fréquence ($6\times32\times32$ selon $z$, $y$, $x$), ajoute une branche
+        convolutive locale, puis une activation GELU ; un rembourrage $(4, 8, 8)$ évite les effets
+        de périodicité de la FFT ;
+  \item une \textbf{tête de projection} $Q$ (couche cachée de 128) produit $u$, $v$ et $w$.
+\end{enumerate}
+Le modèle compte 453 millions de paramètres, dont l'essentiel dans les poids spectraux complexes.
+Le calcul se fait en bfloat16 sur GPU, sauf deux îlots en float32 volontaires --- la FFT et la tête
+de projection --- : sans eux, le bruit d'arrondi passe dans les différences centrées du résidu de
+masse et l'empêche de descendre sous le seuil du DSO2.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  bloc/.style={draw, rounded corners=3pt, minimum height=1.0cm, minimum width=1.6cm,
+               align=center, font=\small, fill=bleuespirt!10},
+  four/.style={bloc, fill=orange!15, minimum width=1.9cm},
+  fl/.style={-{Stealth[length=2.5mm]}, thick}]
+  \node[bloc, fill=gray!10] (x) {Entrée $X_t$\\ \footnotesize $C\times12\times n_y\times n_x$};
+  \node[bloc, right=0.55cm of x] (p) {Relèvement\\$P$};
+  \node[four, right=0.55cm of p] (f1) {Couche\\de Fourier};
+  \node[font=\large, right=0.25cm of f1] (dots) {$\cdots$};
+  \node[four, right=0.25cm of dots] (f4) {Couche\\de Fourier};
+  \node[bloc, right=0.55cm of f4] (q) {Projection\\$Q$};
+  \node[bloc, fill=gray!10, right=0.55cm of q] (y) {$u, v, w$};
+  \draw[fl] (x) -- (p); \draw[fl] (p) -- (f1); \draw[fl] (f1) -- (dots);
+  \draw[fl] (dots) -- (f4); \draw[fl] (f4) -- (q); \draw[fl] (q) -- (y);
+  \node[below=1.2cm of f1, draw, dashed, rounded corners, align=center, font=\footnotesize,
+        text width=8.6cm] (det)
+    {$v_{\ell+1} = \sigma\!\left(\mathcal{F}^{-1}\big(R_\ell\cdot\mathcal{F}(v_\ell)\big)
+      + W_\ell\, v_\ell\right)$\\[2pt] FFT 3D (float32), $R_\ell$ sur $6\times32\times32$ modes,
+      $W_\ell$ branche locale, $\sigma$ = GELU};
+  \draw[dashed, gray] (f1.south) -- (det.north);
+  \node[below=0.35cm of y, font=\footnotesize, align=center, text=grisdoux]
+    {réel : $u, v$ = ERA5\\+ correction ;\\$w$ par continuité};
+\end{tikzpicture}
+\caption{Architecture de PC-FNO3D.}
+\label{fig:archi}
+\end{figure}
+
+\section{Canaux d'entrée}
+Le modèle de référence synthétique (v7) reçoit 25 canaux :
+\begin{itemize}
+  \item les 7 mesures de surface normalisées ($u$, $v$, $w$, température, densité, humidité,
+        pression) et une carte de disponibilité, qui vaut 1 là où un capteur est visible ;
+  \item 6 canaux de relief : altitude du terrain, logarithme de la rugosité, pente, sinus et
+        cosinus de l'orientation, hauteur du capteur ;
+  \item 3 canaux de géométrie par niveau (altitude du niveau, hauteur au-dessus du sol, validité) ;
+  \item 8 canaux temporels et physiques : heure et jour de l'année, et un vent géostrophique et un
+        vent thermique ajustés par moindres carrés sur les capteurs visibles de l'instant.
+\end{itemize}
+Le modèle réel en ajoute 9, placés en dernier : les 7 scalaires de forçage ERA5 (vent géostrophique
+$u_g$, $v_g$, cisaillement, rotation, stabilité, contraste terre--mer) et le vent ERA5 $u$, $v$
+interpolé à chaque nœud, soit 34 canaux.
+
+\section{Sortie résiduelle sur ERA5}
+Le premier modèle réel (v1), entraîné à prédire le champ entier, plafonnait à $R^2 = 0{,}78$ pour
+$u$ en validation, alors que le profil ERA5 interpolé aux nœuds, seul, atteint 0,95 : il manquait à
+l'entrée l'information de grande échelle. Le modèle v2 apprend donc une \textbf{correction} :
+\begin{equation}
+  \hat u = u_{\mathrm{ERA5}} + \Delta u_\theta(X), \qquad
+  \hat v = v_{\mathrm{ERA5}} + \Delta v_\theta(X).
+\end{equation}
+Lors de l'initialisation depuis un modèle à 25 canaux, les colonnes de la couche de relèvement
+correspondant aux nouveaux canaux et les lignes $u$, $v$ de la dernière projection sont mises à
+zéro : l'entraînement part exactement d'ERA5 et n'apprend que l'écart.
+
+\section{Fonction de perte}
+La perte combine un terme de données et des termes physiques :
+\begin{equation}
+  \mathcal{L} = \mathcal{L}_{\mathrm{data}} + \lambda_{\mathrm{grad}}\,\mathcal{L}_{\mathrm{grad}}
+  + \varphi(t)\left[\lambda_{\mathrm{masse}}\,\frac{\mathcal{L}_{\mathrm{masse}}}{m_{\mathrm{ref}}}
+  + \lambda_{\mathrm{sol}}\,\mathcal{L}_{\mathrm{sol}}\right]
+\end{equation}
+\begin{itemize}
+  \item $\mathcal{L}_{\mathrm{data}}$ : erreur quadratique sur les nœuds valides et connus (une
+        cible non observée vaut \code{NaN} et n'est pas comptée), avec un poids par niveau pour $w$,
+        dont l'ordre de grandeur est très inférieur à celui de $u$ et $v$ ;
+  \item $\mathcal{L}_{\mathrm{grad}}$ : écart des gradients spatiaux, qui préserve les structures
+        fines (DSO3) ;
+  \item $\mathcal{L}_{\mathrm{masse}}$ : carré du résidu discret de l'équation~\eqref{eq:anelastique},
+        calculé avec le même schéma de différences que le générateur, terrain compris ;
+  \item $\mathcal{L}_{\mathrm{sol}}$ : condition au sol (vent nul à la surface, $w$ nul au premier
+        nœud valide) ;
+  \item $\varphi(t)$ : montée progressive des termes physiques sur les premières époques, pour
+        laisser le modèle apprendre d'abord la forme du champ.
+\end{itemize}
+Pour la v7 : $\lambda_{\mathrm{grad}} = 0{,}15$, $\lambda_{\mathrm{masse}} = 1$,
+$m_{\mathrm{ref}} = 5\cdot10^{-7}$, $\lambda_{\mathrm{sol}} = 0{,}1$, montée sur 10 époques.
+
+\section{Entraînement}
+\begin{table}[H]
+\centering
+\caption{Paramètres d'entraînement.}
+\label{tab:entrainement}
+\begin{tabularx}{\linewidth}{@{}lX@{}}
+\toprule
+Élément & Valeur\\
+\midrule
+Optimiseur & AdamW \citep{loshchilov2019}, décroissance des poids $10^{-4}$, écrêtage du gradient à 1\\
+Pas d'apprentissage & politique OneCycle \citep{smith2019}, maximum $10^{-3}$ (v7)\\
+Poids évalués & moyenne exponentielle (EMA, 0,999) : ce sont eux qui sont évalués et servis\\
+Lot & 1 instant, accumulation de gradient sur 2\\
+Masquage & fraction de capteurs visibles tirée dans $[0{,}2 ; 1]$ à chaque exemple (v7)\\
+Normalisation & statistiques des seuls jours d'entraînement (fichier livré avec les poids)\\
+v7 & 140 époques de 400 pas, A100, environ 120\,s par époque\\
+Grand Tunis v2 & 20 époques depuis v1 ; v2 prolongée : 40 époques à $10^{-4}$\\
+Grand Tunis v4 & 15 époques depuis v2 prolongée, pas $5\cdot10^{-5}$, $\lambda_{\mathrm{masse}} = 5$, $\lambda_{\mathrm{grad}} = 0{,}5$, poids $u$, $v$ par niveau mesurés sur la validation\\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Le meilleur modèle est choisi sur un score de validation : le rapport \emph{mesure / seuil} le plus
+défavorable parmi les DSO, ce qui sélectionne le modèle le plus proche de satisfaire tous les
+critères à la fois. Les points de contrôle sont écrits de façon atomique sur le disque local
+rapide à chaque époque et recopiés sur Google Drive à intervalles réguliers, ce qui permet de
+reprendre un entraînement interrompu dans une nouvelle session Colab.
+
+\section{Composante verticale par continuité}
+\label{sec:wcont}
+Dans le modèle réel, la sortie $w$ du réseau est remplacée par la composante obtenue en intégrant
+l'équation de continuité~\eqref{eq:anelastique} depuis le sol :
+\begin{equation}
+  w(z) = -\frac{1}{\rho_0(z)}\int_{z_s}^{z}
+  \left(\frac{\partial(\rho_0 u)}{\partial x} + \frac{\partial(\rho_0 v)}{\partial y}\right)\mathrm{d}z',
+  \qquad w(z_s) = 0,
+\end{equation}
+avec le même opérateur discret que celui qui mesure le DSO2. La conservation de la masse est alors
+garantie par construction : le résidu mesuré passe de $1{,}25\cdot10^{-4}$ à $1{,}05\cdot10^{-5}$
+pour la v4. Le même calcul s'applique à toutes les passes de l'ensemble d'incertitude, si bien que
+la fiabilité est jugée sur la valeur réellement servie.
+
+\section{Quantification de l'incertitude}
+L'incertitude de chaque nœud est estimée par un ensemble de 8 passes du modèle, chacune avec un
+masque différent des capteurs visibles. L'écart-type $\sigma$ des passes est multiplié par un
+facteur de calibration choisi sur la validation, et l'intervalle à 80\,\% est
+$[\,\hat s - 1{,}2816\,\sigma ;\ \hat s + 1{,}2816\,\sigma\,]$ autour de la valeur servie
+$\hat s$. Le DSO6 vérifie que cet intervalle contient bien environ 80\,\% des valeurs vraies et
+que l'incertitude est corrélée à l'erreur (corrélation de Spearman positive).
+
+Le calcul de l'ensemble prend plusieurs secondes : il est \textbf{différé}. La valeur est servie
+immédiatement (DSO4), et l'incertitude arrive quelques secondes plus tard, l'API indiquant son état
+(\enquote{en cours} puis \enquote{prête}).
+
+\section{Métriques}
+Les erreurs par niveau sont \textbf{cumulées sur les instants} (sommes des carrés), et non moyennées
+instant par instant : c'est la définition qu'exige un $R^2$ global. Les métriques sont calculées
+sur les instants synoptiques ; les épisodes rapides forment un test de stress rapporté à part.
+Les niveaux couvrant moins de 5\,\% du domaine sont exclus des verdicts par niveau. Le DSO3 compare
+la rugosité spatiale (énergie des petites échelles) de la prédiction à celle de la vérité : un
+rapport inférieur à 1 signale un champ trop lisse.

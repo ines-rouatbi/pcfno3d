@@ -1,0 +1,109 @@
+% =====================================================================================
+% Rapport de projet de fin d'études — PC-FNO3D / ATOM Wind
+% Ines Rouatbi — ESPRIT — Tukhnanutha (2026)
+% Compilation : pdfLaTeX + BibTeX (compilateur par défaut d'Overleaf).
+% Les éléments à compléter par l'autrice sont marqués \acompleter{...} (en rouge).
+% =====================================================================================
+\documentclass[12pt,a4paper,oneside]{report}
+
+% ---------------------------------------------------------------- langue et polices
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[french]{babel}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{csquotes}
+
+% ---------------------------------------------------------------- mise en page
+\usepackage[a4paper,top=2.5cm,bottom=2.5cm,left=2.8cm,right=2.3cm,headheight=15pt]{geometry}
+\usepackage{setspace}
+\onehalfspacing
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{xcolor}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{longtable}
+\usepackage{multirow}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{amsmath,amssymb}
+\usepackage{listings}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,shapes.geometric,fit,backgrounds,calc}
+\usepackage[numbers,sort&compress]{natbib}
+\usepackage[hidelinks]{hyperref}
+\usepackage{bookmark}
+
+% ---------------------------------------------------------------- couleurs et styles
+\definecolor{bleuespirt}{HTML}{2B6CB0}
+\definecolor{grisdoux}{HTML}{4A5568}
+\definecolor{fondcode}{HTML}{F7FAFC}
+\newcommand{\acompleter}[1]{\textcolor{red}{[#1]}}
+\newcommand{\code}[1]{\texttt{\small #1}}
+\newcommand{\ms}{\,m/s}
+
+\titleformat{\chapter}[display]
+  {\normalfont\huge\bfseries\color{bleuespirt}}{\chaptertitlename\ \thechapter}{16pt}{\Huge}
+\titlespacing*{\chapter}{0pt}{-20pt}{30pt}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\color{grisdoux}\leftmark}
+\fancyhead[R]{\small\color{grisdoux}PC-FNO3D / ATOM Wind}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\fancypagestyle{plain}{\fancyhf{}\fancyfoot[C]{\thepage}\renewcommand{\headrulewidth}{0pt}}
+
+\lstset{basicstyle=\ttfamily\footnotesize, backgroundcolor=\color{fondcode}, frame=single,
+        rulecolor=\color{grisdoux!40}, breaklines=true, columns=fullflexible,
+        literate={é}{{\'e}}1 {è}{{\`e}}1 {à}{{\`a}}1 {ç}{{\c c}}1 {ê}{{\^e}}1 {ô}{{\^o}}1}
+
+\captionsetup{font=small,labelfont=bf}
+\setlist{itemsep=2pt,topsep=4pt}
+\renewcommand{\arraystretch}{1.15}
+
+% ---------------------------------------------------------------- informations
+\newcommand{\titrerapport}{Reconstruction et prévision du champ de vent 3D\\[4pt]
+  par un opérateur neuronal de Fourier contraint par la physique\\[4pt]
+  \large(PC-FNO3D) et application web ATOM Wind}
+\newcommand{\autrice}{Ines \textsc{Rouatbi}}
+
+\begin{document}
+
+% ---------------------------------------------------------------- pages liminaires
+\pagenumbering{roman}
+\input{chapitres/00_pages_liminaires}
+
+\tableofcontents
+\listoffigures
+\listoftables
+\input{chapitres/00b_abreviations}
+
+% ---------------------------------------------------------------- corps
+\cleardoublepage
+\pagenumbering{arabic}
+\input{chapitres/01_introduction}
+\input{chapitres/02_contexte}
+\input{chapitres/03_etat_art}
+\input{chapitres/04_donnees}
+\input{chapitres/05_modele}
+\input{chapitres/06_resultats}
+\input{chapitres/07_realisation}
+\input{chapitres/08_conclusion}
+
+% ---------------------------------------------------------------- références et annexes
+\cleardoublepage
+\phantomsection
+\addcontentsline{toc}{chapter}{Bibliographie}
+\bibliographystyle{plainnat}
+\bibliography{references}
+
+\appendix
+\input{annexes/annexe_a}
+
+\end{document}

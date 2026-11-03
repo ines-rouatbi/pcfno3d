@@ -1,0 +1,120 @@
+\chapter{Données}
+\label{chap:donnees}
+
+Le projet a utilisé deux familles de données : un jeu \textbf{synthétique} produit par un
+générateur physique, qui a servi à mettre au point la méthode, puis le domaine \textbf{réel} du
+Grand Tunis, construit à partir de données ouvertes. Dans les deux cas, la vérité en altitude est
+\emph{générée} : aucune mesure ne couvre le volume 3D. Nous parlons donc de \enquote{vérité
+d'apprentissage} et réservons le mot \enquote{mesure} aux observations réelles.
+
+\section{Le jeu synthétique ANEO}
+
+\subsection{Génération}
+Le générateur de l'écosystème ANEO produit, pour chaque instant, l'état de surface sur une grille
+fine et le champ 3D correspondant, de façon cohérente avec la dynamique de la couche limite (vent
+géostrophique, cisaillement, brise, relief). Le jeu \code{aneo\_dataset\_3d\_v2}, généré le
+28 septembre 2026, est décrit au tableau~\ref{tab:synth}.
+
+\begin{table}[H]
+\centering
+\caption{Caractéristiques du jeu synthétique \code{aneo\_dataset\_3d\_v2}.}
+\label{tab:synth}
+\begin{tabularx}{\linewidth}{@{}lX@{}}
+\toprule
+Élément & Valeur\\
+\midrule
+Durée & 100 jours, 1\,000 instants (environ 35\,Go)\\
+Domaine & 50\,$\times$\,25\,km, relief jusqu'à 677\,m\\
+Grille de surface & 1\,000\,$\times$\,500 points au pas de 50\,m\\
+Nœuds 3D (cible) & 500\,$\times$\,250 au pas de 100\,m, 12 niveaux au-dessus du niveau de la mer : 25, 50, 75, 100, 150, 200, 300, 400, 500, 650, 800 et 1\,000\,m\\
+Nœuds valides & 849\,184 au-dessus du relief (environ 1,5 million de nœuds de grille par instant)\\
+Entrées de surface & vent $u$, $v$, $w$, température, densité, humidité relative, pression, et indicateur de mesure \code{mask\_i\_obs}\\
+Cibles & $u$, $v$, $w$ et $\rho$ aux nœuds 3D\\
+Découpage & par jour entier, 70 / 15 / 15\,\% (entraînement / validation / test)\\
+Test & 166 instants : 120 synoptiques (heure pleine, multiple de 3\,h) et 46 d'épisodes rapides (rafales, front, brise), rapportés à part\\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Le contrôle qualité du générateur passe toutes ses vérifications (résidu de masse maximal
+$6{,}4\cdot10^{-12}$, corrélations spatiales et temporelles, équilibre hydrostatique) sauf
+l'équilibre des secteurs de direction (0,095 pour un seuil de 0,10), un défaut mineur non bloquant.
+
+\subsection{Limites du jeu synthétique}
+La couche de surface du générateur est quasi continue : environ 62\,000 points de mesure visibles
+à 50\,\%, alors qu'un réseau ANEO réel compte un capteur tous les 500\,m à 1\,km. Le modèle entraîné
+sur ce jeu voit donc beaucoup plus d'information qu'il n'en aura en production. Par ailleurs, la
+position géographique du domaine synthétique est supposée : aucune mesure réelle ne peut y être
+placée. Ces deux limites ont motivé le passage au domaine réel.
+
+\subsection{Contrat de données}
+Les fichiers de mesures ANEO suivent un contrat de données (critère DE1) : colonnes et types
+attendus, plages physiques, règles de cohérence et indicateurs de qualité (valeurs hors plage,
+figées, absentes, interpolées). Chaque fichier reçoit un verdict \enquote{conforme},
+\enquote{quarantaine} ou \enquote{rejet} accompagné d'un rapport ; un fichier en quarantaine est
+tout de même reconstruit, les stations signalées étant masquées.
+
+\section{Le domaine réel du Grand Tunis}
+
+\subsection{Grille et surface}
+Le domaine réel couvre 68\,$\times$\,56\,km, de 36,395 à 36,900°\,N et de 10,04 à 10,80°\,E. Le
+relief provient du modèle numérique de terrain Copernicus, et la rugosité $z_0$ de l'occupation du
+sol ESA WorldCover \citep{zanaga2021}, sur une grille de surface au pas de 50\,m. Les nœuds 3D sont
+au pas de 100\,m sur les douze niveaux du jeu synthétique : une grille de
+12\,$\times$\,560\,$\times$\,680, dont 3\,469\,007 nœuds valides sur 4\,569\,600. La part du domaine
+au-dessus du relief va de 26\,\% à 25\,m à 100\,\% à partir de 650\,m.
+
+\subsection{Forçage ERA5 et vérité générée}
+La vérité d'apprentissage est produite par le générateur \emph{forcé par ERA5} : pour chaque
+instant, la grande échelle (vent géostrophique, cisaillement et rotation avec l'altitude, stabilité,
+contraste de température terre--mer) est calculée à partir d'ERA5 sur les mailles qui couvrent le
+domaine, puis le générateur y ajoute la brise de mer et l'effet du relief. La grande échelle est
+recalée sur ERA5 maille par maille à la même hauteur au-dessus du sol, et $w$ est obtenu par
+continuité. Deux portes de contrôle ont précédé la génération complète :
+\begin{itemize}
+  \item un jour d'hiver test : conservation de la masse exacte, moyenne du domaine égale à ERA5 à
+        chaque niveau, erreur aux trois stations au plus égale à celle d'ERA5 ;
+  \item le cycle diurne de la direction en été à Tunis-Carthage et Nabeul (brise de mer), validé
+        visuellement avant la génération.
+\end{itemize}
+
+\textbf{Règle d'usage des stations} : les mesures des stations n'entrent jamais dans la vérité
+d'apprentissage. Elles servent d'entrée au modèle et de référence de validation, ce qui garde la
+validation sur le réel indépendante.
+
+\subsection{Mesures réelles}
+\begin{table}[H]
+\centering
+\caption{Sources de données réelles.}
+\label{tab:sources}
+\begin{tabularx}{\linewidth}{@{}lXl@{}}
+\toprule
+Source & Contenu & Usage\\
+\midrule
+METAR DTTA & Tunis-Carthage, vent à 10\,m, horaire & entrée, validation\\
+SYNOP 60729, 60728 & Zaghouan et Nabeul (INM, via NOAA ISD), vent à 10\,m, triho\-raire & entrée, validation\\
+IGRA TSM00060715 & Radiosondages de Tunis-Carthage & validation en altitude\\
+ERA5, ERA5-Land & Réanalyse horaire, 0,25° et 0,1° & forçage, entrée du modèle\\
+GFS & Prévision NOAA 0,25° (temps réel et archive AWS) & temps réel, OS7\\
+GEFS & Ensemble de 31 membres & prévision probabiliste\\
+Copernicus DEM, WorldCover & Relief et occupation du sol & grille, rugosité\\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Les séries ont été nettoyées : à Nabeul, l'anémomètre est resté à zéro en juin, juillet et
+septembre 2021 (mois masqués), et les années 2023--2024, où la station est abritée, sont exclues.
+
+\subsection{Découpage temporel}
+Le découpage est temporel et fixé une fois pour toutes : le \textbf{test} couvre janvier--mars et
+juillet--août 2022 (hiver et été), la \textbf{validation} janvier--février et juillet 2021, et
+l'\textbf{entraînement} le reste de 2021 à 2025, avec une marge de sept jours autour des blocs de
+validation et de test. Le cache du modèle compte 700 instants d'entraînement, 120 de validation et
+180 de test (environ 49\,Mo par instant).
+
+\subsection{Entrée de production}
+Avec trois stations seulement dans le domaine, la couche de surface dense du jeu synthétique n'a
+pas d'équivalent réel. L'entrée de production est donc formée de \textbf{pseudo-capteurs ERA5} à
+10\,m tous les 2,5\,km, des \textbf{cellules des stations} réelles, des \textbf{sept scalaires de
+forçage} de l'instant et du \textbf{profil ERA5} interpolé à chaque nœud. En temps réel et en
+prévision, la prévision GFS remplace ERA5, avec les mêmes formules et les mêmes mailles.

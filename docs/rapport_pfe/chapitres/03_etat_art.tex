@@ -1,0 +1,121 @@
+\chapter{État de l'art}
+\label{chap:etat}
+
+\section{Le vent dans la couche limite atmosphérique}
+
+\subsection{Profil vertical}
+Près du sol, le vent est freiné par la rugosité de la surface. Dans la couche de surface et en
+atmosphère neutre, la vitesse croît avec la hauteur selon le profil logarithmique
+\begin{equation}
+  U(z) = \frac{u_*}{\kappa}\,\ln\!\left(\frac{z}{z_0}\right),
+\end{equation}
+où $u_*$ est la vitesse de frottement, $\kappa \approx 0{,}4$ la constante de von Kármán et $z_0$
+la longueur de rugosité \citep{stull1988}. En pratique on utilise aussi la loi de puissance
+$U(z) = U(z_r)\,(z/z_r)^{\alpha}$, dont l'exposant $\alpha$ dépend de la stabilité et du terrain.
+Ces lois décrivent mal les situations stables, le relief et les transitions entre la couche limite
+et l'atmosphère libre, où le vent tend vers le vent géostrophique imposé par le gradient de
+pression à grande échelle.
+
+\subsection{Phénomènes locaux}
+Sur le littoral tunisien, la \textbf{brise de mer} --- un vent de mer vers terre dans la journée,
+dû au contraste de température terre--mer --- impose un cycle diurne marqué de la direction du vent.
+Le relief canalise et accélère l'écoulement, crée des zones abritées et des ascendances. Ces
+phénomènes ont des échelles de quelques kilomètres, plus fines que les mailles des modèles globaux.
+
+\subsection{Conservation de la masse}
+Pour les mouvements de la couche limite, l'approximation anélastique \citep{ogura1962} remplace
+l'équation de continuité complète par
+\begin{equation}
+  \nabla\cdot(\rho_0\,\vec v) = \frac{\partial(\rho_0 u)}{\partial x}
+  + \frac{\partial(\rho_0 v)}{\partial y} + \frac{\partial(\rho_0 w)}{\partial z} = 0,
+  \label{eq:anelastique}
+\end{equation}
+où $\rho_0(z)$ est la densité de référence. Cette relation lie la composante verticale $w$ à la
+divergence horizontale, et sert à la fois de contrainte d'apprentissage et de critère (DSO2).
+
+\section{Méthodes classiques de reconstruction}
+
+\subsection{Interpolation spatiale}
+La pondération inverse à la distance (IDW) \citep{shepard1968} estime la valeur en un point par
+une moyenne des mesures pondérée par l'inverse d'une puissance de la distance. Le krigeage
+\citep{cressie1993} choisit les poids qui minimisent la variance d'erreur sous un modèle de
+covariance (variogramme) ajusté aux données. Combinées à une loi verticale (profil logarithmique
+ou loi de puissance), ces méthodes forment les références auxquelles le modèle est comparé
+(chapitre~\ref{chap:resultats}). Elles ignorent la physique de l'écoulement et le relief entre les
+points de mesure.
+
+\subsection{Modèles numériques et réanalyses}
+Les modèles de méso-échelle comme WRF \citep{skamarock2019} résolvent les équations primitives sur
+une grille fine et décrivent correctement brise et relief, mais une simulation coûte des heures de
+calcul. Les \textbf{réanalyses} combinent un modèle et toutes les observations disponibles :
+ERA5 \citep{hersbach2020} fournit l'état de l'atmosphère heure par heure depuis 1940 sur une
+grille de 0,25° (environ 25\,km), et ERA5-Land \citep{munozsabater2021} la surface à 0,1°. ERA5
+n'est disponible qu'avec environ cinq jours de retard. En temps réel et en prévision, on dispose
+des modèles opérationnels, comme le GFS de la NOAA (0,25°, échéances horaires puis triho\-raires) et
+son ensemble GEFS.
+
+\section{Apprentissage profond pour les champs physiques}
+
+\subsection{Réseaux convolutifs et graphes}
+Les réseaux convolutifs, en particulier l'U-Net \citep{ronneberger2015}, sont devenus la référence
+pour les problèmes de type image-à-image, dont la descente d'échelle des champs météorologiques.
+Les réseaux de neurones sur graphes traitent naturellement des capteurs irrégulièrement répartis ;
+GraphCast \citep{lam2023} les a portés à la prévision météorologique globale.
+
+\subsection{Opérateurs neuronaux}
+Un opérateur neuronal apprend une application entre espaces de fonctions plutôt qu'entre vecteurs
+de taille fixe. DeepONet \citep{lu2021} sépare une branche qui encode la fonction d'entrée et un
+tronc qui encode la position de sortie. L'\textbf{opérateur neuronal de Fourier} (FNO)
+\citep{li2021fno} paramètre le noyau d'intégration directement dans l'espace de Fourier :
+\begin{equation}
+  (\mathcal{K}v)(x) = \mathcal{F}^{-1}\!\big(R_\phi \cdot \mathcal{F}(v)\big)(x),
+\end{equation}
+où $R_\phi$ est une matrice de poids complexes appliquée aux $k_{\max}$ premiers modes. Chaque
+couche voit tout le domaine (champ récepteur global), le coût est celui d'une FFT, et le modèle
+apprend des solutions d'équations aux dérivées partielles avec une précision qui a ouvert la voie à
+FourCastNet \citep{pathak2022} en prévision globale.
+
+\subsection{Apprentissage contraint par la physique}
+Les réseaux informés par la physique (PINN) \citep{raissi2019} ajoutent à la perte le résidu des
+équations du problème. Le PINO \citep{li2024pino} combine opérateur neuronal et perte physique.
+Dans notre cas, la physique entre de deux façons : par la perte (résidu de masse discret,
+condition au sol) et par la construction (composante $w$ recalculée par continuité dans le modèle
+livré, section~\ref{sec:wcont}).
+
+\section{Architectures explorées dans le projet}
+La première moitié du projet a exploré six familles d'architectures 2D, chacune reconstruisant le
+champ horizontal à hauteur de capteur, l'extrapolation verticale étant faite séparément par des
+lois de profil (tableau~\ref{tab:archi}).
+
+\begin{table}[H]
+\centering
+\caption{Architectures explorées puis abandonnées.}
+\label{tab:archi}
+\begin{tabularx}{\linewidth}{@{}lX@{}}
+\toprule
+Architecture & Raison de l'abandon\\
+\midrule
+FNO 2D (trois variantes) & Champ horizontal seulement ; perte de masse 2D sans le terme $\partial(\rho w)/\partial z$ ni correction du relief\\
+U-Net / FNO & Même limite 2D ; pas de gain mesuré sur le FNO 2D\\
+GNN & Entraînement non abouti (aucun point de contrôle exploitable)\\
+DeepONet & Entraîné, mais sortie 2D et coût d'évaluation point par point\\
+ResNet, ViT & Références sans structure physique ; ViT non abouti\\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Deux constats ont décidé du changement de direction. D'une part, la contrainte de masse calculée
+en 2D omettait le terme vertical de l'équation~\eqref{eq:anelastique} et traitait un pas
+horizontal sur un terrain en pente comme un pas à altitude constante : le critère DSO2 n'était pas
+mesuré sur la bonne équation. D'autre part, le générateur de données a été étendu pour produire des
+cibles 3D sur douze niveaux : un opérateur supervisé directement en 3D devenait possible. Nous
+avons donc convergé sur une seule architecture, le FNO 3D contraint par la physique, décrit au
+chapitre~\ref{chap:modele}.
+
+\section{Positionnement}
+PC-FNO3D se situe entre les méthodes d'interpolation, rapides mais aveugles à la physique, et les
+modèles numériques, physiques mais coûteux. Il reprend l'efficacité du FNO (une passe en moins
+d'une seconde sur GPU), y ajoute la physique de la couche limite par la perte et par la
+construction de $w$, et, dans sa version réelle, apprend une \emph{correction} du profil ERA5 plutôt
+que le champ entier : la grande échelle vient de la réanalyse (ou de la prévision GFS), le réseau
+apporte le relief, le littoral et les mesures locales.

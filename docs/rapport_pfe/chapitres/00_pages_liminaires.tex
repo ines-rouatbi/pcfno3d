@@ -1,0 +1,95 @@
+% ---------------------------------------------------------------- page de garde
+\begin{titlepage}
+\begin{center}
+  {\large \textsc{République Tunisienne}}\\[2pt]
+  {\small Ministère de l'Enseignement Supérieur et de la Recherche Scientifique}\\[14pt]
+  % Logos : déposer les fichiers dans figures/ puis décommenter
+  % \includegraphics[height=2cm]{figures/logo_esprit.png}\hfill
+  % \includegraphics[height=2cm]{figures/logo_tukhnanutha.png}\\[10pt]
+  {\Large \textbf{ESPRIT} --- École Supérieure Privée d'Ingénierie et de Technologies}\\[30pt]
+
+  {\LARGE \textsc{Rapport de projet de fin d'études}}\\[8pt]
+  {\large Présenté en vue de l'obtention du\\
+  \textbf{Diplôme National d'Ingénieur} \acompleter{spécialité / option}}\\[26pt]
+
+  \rule{\linewidth}{0.6pt}\\[10pt]
+  {\Large \bfseries \color{bleuespirt} \titrerapport}\\[8pt]
+  \rule{\linewidth}{0.6pt}\\[28pt]
+
+  {\large Réalisé par : \textbf{\autrice}}\\[24pt]
+
+  \begin{tabular}{ll}
+    Encadrant académique : & \acompleter{Nom et prénom}\\[4pt]
+    Encadrant professionnel : & \acompleter{Nom et prénom (Tukhnanutha)}\\
+  \end{tabular}\\[30pt]
+
+  {\large Organisme d'accueil : \textbf{Tukhnanutha}, Bizerte}\\[4pt]
+  {Projet ANEO --- application ATOM Wind}\\[40pt]
+
+  \vfill
+  {\large Année universitaire 2025--2026}
+\end{center}
+\end{titlepage}
+
+% ---------------------------------------------------------------- dédicace
+\chapter*{Dédicace}
+\addcontentsline{toc}{chapter}{Dédicace}
+\begin{flushright}
+\itshape
+\acompleter{Texte de la dédicace, rédigé par l'autrice.}
+\end{flushright}
+
+% ---------------------------------------------------------------- remerciements
+\chapter*{Remerciements}
+\addcontentsline{toc}{chapter}{Remerciements}
+\acompleter{Remerciements personnels : encadrant académique, encadrant professionnel et équipe de
+Tukhnanutha, membres du jury, famille.}
+
+% ---------------------------------------------------------------- résumé
+\chapter*{Résumé}
+\addcontentsline{toc}{chapter}{Résumé}
+Ce projet de fin d'études, réalisé chez Tukhnanutha dans le cadre de l'écosystème ANEO, porte sur
+la reconstruction du champ de vent tridimensionnel (composantes $u$, $v$, $w$) entre 25 et 1\,000\,m
+d'altitude à partir de mesures de surface éparses. Nous avons conçu \emph{PC-FNO3D}, un opérateur
+neuronal de Fourier 3D contraint par la physique : la perte combine l'erreur sur les données, la
+régularité des gradients, la conservation anélastique de la masse $\nabla\cdot(\rho\vec{v})=0$ et
+la condition au sol. Sur un jeu synthétique de 100 jours, le modèle de référence (v7) atteint
+cinq des six objectifs mesurés (résidu de masse $2{,}6\cdot10^{-5}$, inférence en 91\,ms sur GPU,
+robustesse à 25\,\% des capteurs) et divise par 7,5 à 9,8 l'erreur maximale des méthodes de
+référence (profil logarithmique ou loi de puissance avec interpolation IDW ou krigeage). Le modèle a
+ensuite été transposé au domaine réel du Grand Tunis (68\,$\times$\,56\,km) en apprenant une
+correction du profil ERA5, avec une vérité générée forcée par ERA5 et une validation sur les
+anémomètres réels et les radiosondages. Le modèle livré (v4) obtient une erreur globale de
+0,38\,m/s, un résidu de masse de $1{,}05\cdot10^{-5}$ et une couverture calibrée de 88\,\% pour
+l'intervalle à 80\,\%. Le tout est servi par une API sécurisée, un serveur MCP et l'application
+web trilingue ATOM Wind (vue 3D, conseils agricoles de J0 à J+2, démonstration éolienne). Les
+limites sont rapportées sans les masquer : le niveau le plus bas reste à 0,53\,m/s, et l'étude de
+dimensionnement du réseau (OS6) montre que le modèle actuel ne tire aucun gain de capteurs ajoutés.
+
+\noindent\textbf{Mots-clés :} champ de vent 3D, opérateur neuronal de Fourier, apprentissage
+contraint par la physique, ERA5, GFS, quantification de l'incertitude, application web.
+
+% ---------------------------------------------------------------- abstract
+\chapter*{Abstract}
+\addcontentsline{toc}{chapter}{Abstract}
+\begin{otherlanguage}{english}
+This final-year project, carried out at Tukhnanutha within the ANEO ecosystem, addresses the
+reconstruction of the three-dimensional wind field ($u$, $v$, $w$) between 25 and 1,000\,m above
+sea level from sparse surface measurements. We designed \emph{PC-FNO3D}, a physics-constrained 3D
+Fourier neural operator whose loss combines the data error, a gradient term, anelastic mass
+conservation $\nabla\cdot(\rho\vec{v})=0$ and the ground boundary condition. On a 100-day synthetic
+dataset the reference model (v7) meets five of the six measured objectives (mass residual
+$2.6\cdot10^{-5}$, 91\,ms GPU inference, robustness with 25\,\% of the sensors) and reduces the
+worst-level error of the reference methods (log or power-law profile with IDW or kriging) by a
+factor of 7.5 to 9.8. The model was then transferred to the real Greater Tunis domain
+(68\,$\times$\,56\,km) by learning a correction of the ERA5 profile, with an ERA5-forced generated
+truth and validation against real anemometers and radiosondes. The delivered model (v4) reaches a
+global error of 0.38\,m/s, a mass residual of $1.05\cdot10^{-5}$ and a calibrated 88\,\% coverage
+of the 80\,\% interval. It is served through a secured API, an MCP server and the trilingual ATOM
+Wind web application (3D view, farming advice from day 0 to day 2, wind-energy demonstration).
+Limits are reported as measured: the lowest level remains at 0.53\,m/s, and the network-sizing
+study (OS6) shows that the current model gains nothing from additional sensors.
+
+\noindent\textbf{Keywords:} 3D wind field, Fourier neural operator, physics-constrained learning,
+ERA5, GFS, uncertainty quantification, web application.
+\end{otherlanguage}

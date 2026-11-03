@@ -1,0 +1,43 @@
+\chapter*{Conclusion générale et perspectives}
+\addcontentsline{toc}{chapter}{Conclusion générale et perspectives}
+\markboth{Conclusion générale et perspectives}{}
+
+Ce projet avait pour but de connaître le vent partout et à toutes les hauteurs utiles à partir de
+mesures de surface éparses. Nous avons conçu, entraîné, évalué et mis en service PC-FNO3D, un
+opérateur neuronal de Fourier tridimensionnel contraint par la physique.
+
+\paragraph{Bilan.}
+Sur le jeu synthétique, le modèle de référence reconstruit en 91\,ms un champ de 1,5 million de
+nœuds, respecte la conservation de la masse ($2{,}6\cdot10^{-5}$), reste robuste avec un quart
+des capteurs et divise par 7,5 à 9,8 l'erreur maximale des méthodes d'interpolation classiques.
+Transposé au Grand Tunis, il apprend une correction du profil ERA5 : le modèle livré atteint une
+erreur globale de 0,38\ms, garantit la conservation de la masse par construction, fournit une
+incertitude calibrée (88\,\% de couverture pour l'intervalle à 80\,\%), fait mieux qu'ERA5 sur les
+radiosondages et le vaut aux stations au sol. Il est servi par une API sécurisée, un serveur MCP
+et l'application trilingue ATOM Wind, avec le temps réel et la prévision à trois jours.
+
+\paragraph{Limites.}
+Le niveau le plus bas (25\,m) reste à 0,53\ms, au-dessus du seuil ; le champ réel est un peu trop
+lisse (rugosité 0,805) ; aux stations, la qualité est bornée par la vérité générée. L'étude OS6 a
+montré que le modèle livré ne tire aucun gain de capteurs ajoutés, ce qui empêche de dimensionner
+le réseau avec lui. Ces limites sont mesurées et documentées.
+
+\paragraph{Apports personnels.}
+\acompleter{Compétences acquises : apprentissage profond scientifique, physique de l'atmosphère,
+ingénierie des données météorologiques, MLOps sur GPU distant, développement web et API, conduite
+d'expériences avec règles de décision pré-enregistrées.}
+
+\paragraph{Perspectives.}
+\begin{itemize}
+  \item \textbf{un modèle sensible aux capteurs} : réentraîner avec des capteurs simulés denses et
+        tirés au hasard à partir de la vérité de surface, pour que le modèle exploite les mesures
+        ANEO, puis refaire l'étude OS6 ;
+  \item \textbf{la prévision OS7} : terminer l'affinage sur GFS et le juger contre GFS brut et la
+        persistance ;
+  \item \textbf{les données ANEO réelles} : brancher les premiers mâts Porteur et recaler le plan
+        du réseau sur leurs mesures ;
+  \item \textbf{l'état atmosphérique complet} : reconstruire aussi la température, l'humidité et la
+        pression, déjà présentes en entrée ;
+  \item \textbf{l'hébergement} : un service permanent au lieu d'une session GPU à la demande, et le
+        test utilisateur prévu (UX1, VIS1) avec cinq personnes non spécialistes.
+\end{itemize}

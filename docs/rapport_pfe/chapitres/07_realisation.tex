@@ -1,0 +1,151 @@
+\chapter{Réalisation logicielle}
+\label{chap:realisation}
+
+\section{Architecture d'ensemble}
+La figure~\ref{fig:systeme} présente la chaîne complète, des sources de données au navigateur de
+l'utilisateur. Le calcul se fait là où sont le GPU et les poids (Google Colab), tandis que
+l'adresse publique reste fixe grâce à un Worker Cloudflare et à un tunnel nommé.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  b/.style={draw, rounded corners=3pt, align=center, font=\footnotesize, minimum height=1.1cm,
+            text width=3.3cm, fill=bleuespirt!8},
+  s/.style={b, fill=gray!10},
+  g/.style={b, fill=orange!12},
+  fl/.style={-{Stealth[length=2mm]}, thick}]
+  \node[b] (nav) at (0, 0) {Navigateur\\application ATOM Wind};
+  \node[b] (worker) at (4.4, 0) {Worker Cloudflare\\atom.zelqane.com\\(clé injectée, cache)};
+  \node[b] (tunnel) at (8.8, 0) {Tunnel Cloudflare\\nommé atom-origin};
+  \node[s] (drive) at (0, -2.3) {Google Drive\\poids, cache, historique};
+  \node[g] (modele) at (4.4, -2.3) {Modèle PC-FNO3D\\(GPU)};
+  \node[g] (service) at (8.8, -2.3) {Service FastAPI\\et serveur MCP\\(Google Colab)};
+  \node[s] (client) at (4.4, -4.6) {Clients de l'API\\et agents MCP};
+  \node[s] (src) at (8.8, -4.6) {GFS (Open-Meteo),\\METAR, SYNOP};
+  \draw[fl] (nav) -- (worker);
+  \draw[fl] (worker) -- (tunnel);
+  \draw[fl] (tunnel) -- (service);
+  \draw[fl] (service) -- (modele);
+  \draw[fl] (drive) -- (modele);
+  \draw[fl] (src) -- (service);
+  \draw[fl] (client) -- (service);
+\end{tikzpicture}
+\caption{Architecture de déploiement.}
+\label{fig:systeme}
+\end{figure}
+
+\section{Le paquet \texttt{pcfno3d}}
+Le notebook de recherche a été porté bloc par bloc en un paquet Python installable (41 modules,
+environ 16\,800 lignes), qui est le seul chemin de code utilisé en production. Chaque bloc du
+notebook devient un module ; la configuration et la géométrie sont passées explicitement au lieu
+de variables globales (tableau~\ref{tab:modules}). Le portage a été validé en retrouvant
+exactement la table de résultats du notebook.
+
+\begin{table}[H]
+\centering
+\caption{Principaux modules du paquet.}
+\label{tab:modules}
+\begin{tabularx}{\linewidth}{@{}lX@{}}
+\toprule
+Module & Rôle\\
+\midrule
+\code{config}, \code{geometry} & Configuration typée ; grille, relief, masques, opérateurs discrets (gradient, résidu de masse)\\
+\code{contract}, \code{cache} & Contrat de données ANEO ; tenseurs par instant et index\\
+\code{dataset}, \code{features} & Entrée du modèle : canaux, vent géostrophique ajusté, entrée de production\\
+\code{model}, \code{losses}, \code{train} & PC-FNO3D, perte physique, entraînement (EMA, OneCycle, reprise)\\
+\code{evaluate}, \code{dso} & Métriques cumulées, verdicts DSO1 à DSO6\\
+\code{inference}, \code{reliability} & Modèle de production, ensemble d'incertitude différé\\
+\code{forcage}, \code{temps\_reel}, \code{gfs} & Forçage ERA5, temps réel GFS, archive GFS (OS7)\\
+\code{alerts}, \code{windfarm}, \code{publish} & Alertes, post-traitement éolien, publication et exports NetCDF/CSV\\
+\code{os6}, \code{atlas}, \code{baselines} & Plan du réseau, atlas éolien, méthodes de référence\\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Une interface en ligne de commande (\code{python -m pcfno3d <commande>}) expose toutes les étapes :
+construction du cache, contrôle, entraînement, évaluation, reconstruction, alertes, publication,
+service. Chaque commande accepte une configuration et des surcharges \code{--set section.clé=valeur}.
+
+\section{Service web et sécurité}
+
+\subsection{API REST}
+Le service est une application FastAPI. Ses routes donnent la grille, les journées calculées, le
+vent en un point et un profil vertical, la reconstruction à partir de mesures envoyées (fichier CSV
+validé par le contrat), les exports NetCDF et CSV, la qualité du modèle servi, les alertes,
+l'historique et les espaces métier (agriculture, production éolienne, maintenance, dimensionnement
+de mât, espaces holding, chantier et environnement).
+
+\subsection{Sécurité}
+\begin{itemize}
+  \item \textbf{fermé par défaut} : sans clé, toutes les routes répondent 401, sauf l'état de santé ;
+  \item \textbf{clés d'API} de la forme \code{pcf\_<32 caractères>}, stockées uniquement par leur
+        empreinte SHA-256, avec deux portées (lecture, administration), un quota par clé (réponse
+        429) et un journal d'accès qui ne contient jamais de secret ; une révocation prend effet à la
+        requête suivante ;
+  \item \textbf{comptes utilisateurs} : mots de passe salés et dérivés par scrypt, blocage après
+        cinq échecs, trois rôles (agriculteur, exploitant éolien validé par l'administrateur,
+        administrateur) vérifiés côté serveur à chaque requête ;
+  \item \textbf{secrets} : la clé du Worker n'est connue du service que par son empreinte, et les
+        identifiants du tunnel ne transitent que par une variable d'environnement, jamais par le
+        dépôt.
+\end{itemize}
+
+\subsection{Serveur MCP et assistant}
+Le même modèle est exposé par un serveur MCP (\emph{Model Context Protocol}) de 22 outils :
+consultation du vent et des profils, prévision en un point, décision agricole, fenêtres de
+maintenance, valeur et influence des stations, simulation de panne, historique\dots{} Un agent
+conversationnel peut ainsi lancer une simulation et en lire le résultat sans intervention (critère
+MCP1). L'application intègre aussi un assistant fondé sur Claude, qui répond aux questions des
+utilisateurs en appelant ces mêmes outils.
+
+\section{Temps réel et prévision}
+La réanalyse ERA5 arrive avec cinq jours de retard ; le temps réel utilise donc la prévision GFS
+(via l'API Open-Meteo), calculée sur les mêmes mailles et avec les mêmes formules que le forçage
+d'entraînement, et les mesures du jour : METAR de Tunis-Carthage et SYNOP de Zaghouan et Nabeul.
+Le service calcule la journée en cours (heures passées avec les stations, heures futures en
+prévision), le lendemain et le surlendemain, les garde en cache trente minutes et les archive sur
+disque, ce qui permet de comparer plus tard une prévision au temps réel du même jour. Un ensemble
+GEFS de 31 membres donne la probabilité de pouvoir traiter.
+
+\section{L'application ATOM Wind}
+L'application, construite à partir de la maquette fonctionnelle conçue pendant le projet, est une
+page web sans étape de compilation, branchée sur l'API.
+
+\begin{itemize}
+  \item \textbf{Mon vent} : vent à 10\,m et à 2\,m, rafales, direction, pour un lieu choisi sur la
+        carte, heure par heure ;
+  \item \textbf{espace agriculteur} (application principale) : fenêtres de traitement et
+        d'aspersion de J0 à J+2 avec la règle appliquée affichée, besoin en eau par la méthode
+        FAO-56 \citep{allen1998} avec la température, l'humidité et le rayonnement de GFS ;
+  \item \textbf{démonstration éolienne} : vent au moyeu et sur le rotor, production d'éoliennes de
+        référence avec effets de sillage \citep{jensen1983}, rose des vents, carte du gisement et
+        atlas annuel ;
+  \item \textbf{vue 3D} : relief exagéré, lignes de courant, coupe horizontale, couleur selon la
+        vitesse ou l'incertitude, colonnes de vent par nœud, relecture de la journée, fiche d'un
+        point avec son profil et son intervalle à 80\,\% ;
+  \item \textbf{tableau de bord} : indicateurs du service (stations actives, temps de
+        reconstruction, résidu de masse de l'instant) et qualité du modèle servi ;
+  \item \textbf{alertes} : station muette, résidu de masse hors seuil, vent fort, avec
+        notifications par courriel, SMS ou WhatsApp ;
+  \item \textbf{interface trilingue} français, arabe (de droite à gauche) et anglais ;
+  \item \textbf{continuité de service} : quand le service est arrêté, le Worker sert le dernier
+        état réel connu, signalé comme tel.
+\end{itemize}
+
+\acompleter{Insérer ici 3 à 5 captures d'écran de l'application (Mon vent, espace agriculteur,
+vue 3D, tableau de bord) : déposer les images dans figures/ et utiliser \textbackslash includegraphics.}
+
+\section{Qualité logicielle}
+\begin{itemize}
+  \item \textbf{tests} : 435 fonctions de test dans 42 fichiers, exécutées sur CPU en quelques
+        minutes sur un mini-jeu de données synthétisé au format exact du générateur ; elles
+        couvrent la physique (résidu de masse, continuité), l'API (sécurité, quotas), le contrat de
+        données, la publication (atomicité face à un serveur simulé avec coupures), l'interface
+        (dictionnaires de traduction) et le service Colab ;
+  \item \textbf{reproductibilité} : même entrée et même version donnent la même sortie au bit près
+        sur CPU ; sur GPU, l'écart reste de quelques $10^{-3}$\ms (calcul en bfloat16) ;
+  \item \textbf{traçabilité} : chaque export porte l'empreinte des poids, des statistiques de
+        normalisation et l'horodatage ; le cache porte un manifeste vérifiable ;
+  \item \textbf{documentation} : fiches du modèle et des données, document d'intégration pour les
+        équipes qui consomment la sortie, diagrammes UML.
+\end{itemize}

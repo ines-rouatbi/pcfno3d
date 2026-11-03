@@ -1,0 +1,68 @@
+\chapter{Configuration et commandes}
+\label{ann:config}
+
+\section{Configuration du modèle livré (v4)}
+Extrait du fichier \code{configs/grand\_tunis\_v4\_dso\_colab.yaml} (chemins omis).
+
+\begin{lstlisting}
+name: grand_tunis_v4_dso
+model:                      # architecture v7 : les poids v7 servent de depart
+  width: 48
+  modes: [6, 32, 32]
+  n_layers: 4
+  pad: [4, 8, 8]
+  proj_hidden: 128
+  local_conv: true
+  residuel_era5: true       # u, v = ERA5 au noeud + correction apprise
+train:
+  epochs: 15
+  steps_per_epoch: 200
+  batch_size: 1
+  accum_steps: 2
+  lr: 5.0e-5                # affinage depuis la v2 prolongee
+  weight_decay: 1.0e-4
+  ema_decay: 0.999
+  grad_clip: 1.0
+  select_by: dso            # pire rapport mesure / seuil des DSO (validation)
+loss:
+  lambda_mass: 5.0
+  mass_ref: 5.0e-7
+  lambda_bc: 0.1
+  lambda_grad: 0.5
+  w_weight: 2.0
+mask:
+  entree: era5_stations     # ERA5 10 m tous les 2,5 km + anemometres reels
+  pas_era5_m: 2500.0
+  p_station: 0.8
+dso:
+  rmse: 0.5
+  r2: 0.95
+  mass_rms: 1.0e-4
+  roughness_range: [0.9, 1.1]
+  time_s: 1.0
+  rmse_25pct: 0.7
+  min_level_cover: 0.05
+\end{lstlisting}
+
+\section{Principales commandes}
+\begin{lstlisting}
+python -m pcfno3d info                 # configuration effective et artefacts presents
+python -m pcfno3d build-cache          # CSV journaliers -> tenseurs par instant
+python -m pcfno3d check                # geometrie et verite
+python -m pcfno3d validate f.csv       # contrat de donnees ANEO
+python -m pcfno3d train                # reprend automatiquement
+python -m pcfno3d evaluate             # metriques de test et verdicts DSO
+python -m pcfno3d reconstruct --stem 004_120000 --altitude 120
+pcfno3d apikey create app-web --scope read
+pcfno3d serve --port 8000              # application, API (/api/docs), MCP (/mcp)
+\end{lstlisting}
+
+\section{Conventions}
+\begin{itemize}
+  \item $u$ positif vers l'est, $v$ vers le nord, $w$ vers le haut, en m/s ;
+  \item direction météorologique (d'où vient le vent) : $(270^\circ - \operatorname{atan2}(v, u))
+        \bmod 360^\circ$ ;
+  \item altitudes des niveaux au-dessus du niveau de la mer ; hauteur au-dessus du sol fournie à
+        part ;
+  \item valeur absente : \code{NaN} dans les volumes reconstruits, $-9999$ dans les exports web.
+\end{itemize}
