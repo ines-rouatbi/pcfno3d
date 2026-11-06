@@ -215,6 +215,23 @@ show the site correction as **spots around the stations**: mean vector differenc
 import for every non-calm report (`metar.py`), IGRA launch time of 00 UTC balloons dated the
 previous day (`igra_radiosondages.py`; matching was already on `temps`).
 
+**National model (started 2026-11-06, Ines's request; not trained yet).** The Grand Tunis v4 method over
+all of Tunisia: `configs/national_1km_colab.yaml`, domain 30.15–37.615 N × 7.45–11.644 E (828 × 388 km),
+surface 500 m (1656 × 776), nodes 1 km, 16 ASL levels 25…2500 m (`generate_aneo_3d.py --dx 500 --niveaux …`,
+`forcage_era5.py --niveaux …`; defaults unchanged for Grand Tunis), inputs = ERA5 10 m every 2 km + the
+12 METAR airports (`configs/national/stations_metar.csv`, `grille_reelle.py --stations-csv`; stations carry
+their `code` into `stations.json`). Grid from 46 Copernicus/WorldCover tiles (`grille_reelle.py` now reads
+a WorldCover mosaic tile-by-tile; the Grand Tunis grid rebuilt with it is byte-identical). Forcing from
+`AppData/Local/pcfno3d/era5/tunisie` (the COMPLETE ERA5: `tunisie_donnees.zip` lacks 2021-07 and
+2022-07/08, i.e. validation/test months). Documented approximations: constant-step local plane (E–W scale
+1.041 south / 0.954 north), constant Coriolis 8.13e-5 (7.3–8.9e-5), country-mean forcing scalars (cell-by-cell
+ERA5 recalibration carries the north–south differences). Notebooks `scripts/make_national_nb.py`
+(generation CPU 3 parts ≈ 50 GB on the Drive under `pcfno3d_national/`, then training A100 from the
+delivered Grand Tunis weights); data `scripts/package_national_colab.py` → `national_donnees.zip`.
+Still to write: national real validation (`stations_reelles` / `valider_grand_tunis_reel.py` are Grand
+Tunis-specific). The OS7 GFS download (`pcfno3d.gfs`) also keeps the national box (`*_tn.npz`,
+`gfs_tunisie_f<L>.npz`) for a later national forecast.
+
 `notebooks/archive/` holds the architectures explored and then dropped (FNO2D variants, U-Net/FNO,
 GNN, DeepONet, ResNet, ViT). They are history, not alternatives to maintain — do not "fix" them.
 
