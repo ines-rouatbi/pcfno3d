@@ -1,0 +1,38 @@
+
+<header class="export-header">
+  <h1>Reconstruction du vent 3D — réseau ANEO</h1>
+  <div class="meta" id="status">Chargement…</div>
+</header>
+
+<main>
+  <div>
+    <div class="card">
+      <canvas id="map" width="500" height="250"></canvas>
+      <div class="legend"><span id="vmin">0</span><div class="ramp"></div><span id="vmax">—</span>
+        <span>m/s</span></div>
+    </div>
+    <div class="card" style="margin-top:16px">
+      <canvas id="section" width="500" height="160"></canvas>
+      <div class="meta" id="sectionLabel">Coupe verticale</div>
+    </div>
+  </div>
+
+  <aside class="card controls">
+    <label for="src">Export (dossier)</label>
+    <input type="text" id="src" value="">
+    <label for="alt">Altitude ASL — <span class="val" id="altVal">—</span> m</label>
+    <input type="range" id="alt" min="0" max="11" step="1" value="0">
+    <label for="variable">Variable</label>
+    <select id="variable">
+      <option value="speed">Vitesse horizontale</option>
+      <option value="u">u (vers l'est)</option>
+      <option value="v">v (vers le nord)</option>
+      <option value="w">w (vertical)</option>
+    </select>
+    <label for="row">Ligne de la coupe — <span class="val" id="rowVal">—</span></label>
+    <input type="range" id="row" min="0" max="1" step="1" value="0">
+    <label>Instant</label>
+    <dl id="info"></dl>
+  </aside>
+</main>
+

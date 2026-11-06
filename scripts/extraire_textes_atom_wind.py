@@ -23,7 +23,7 @@ from html.parser import HTMLParser
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
-DOSSIER = REPO / "webapp" / "atom-wind" / "i18n"
+DOSSIER = REPO / "frontend" / "public" / "atom-wind" / "i18n"
 MOT = re.compile(r"[A-Za-zÀ-ÿ]{2,}")
 BALISE = re.compile(r"<[^>]*>")
 GUILLEMETS = "\"'"
@@ -197,6 +197,18 @@ def _affichable(t: str, classes: set[str]) -> bool:
 MODULES = ("atom-data.js", "atom-3d.js")       # couche de donnees et vue 3D : textes affiches eux aussi
 
 
+def textes_frontend() -> list[str]:
+    """Extract source JSX and controller strings; never inspect minified build output."""
+    src = REPO / "frontend" / "src"
+    markup = (REPO / "frontend/i18n-source.html").read_text(encoding="utf-8")
+    modules = tuple((src / "engine" / name).read_text(encoding="utf-8")
+                    for name in (*MODULES, "atom-runtime.js"))
+    # The existing lexer also extracts page headings and navigation names from TSX.
+    modules += tuple((src / name).read_text(encoding="utf-8")
+                     for name in ("components.tsx", "main.tsx", "territory-map.ts", "terrain/terrain-viewer.ts"))
+    return avec_supplements(extraire(markup, modules))
+
+
 def extraire(html: str, modules: tuple[str, ...] = ()) -> list[str]:
     p = _Html()
     p.feed(html)
@@ -256,10 +268,7 @@ def main() -> int:
     a = ap.parse_args()
     if a.normaliser:
         print(f"{a.normaliser} : {normaliser(a.normaliser)} cles renumerotees")
-    web = REPO / "webapp" / "atom-wind"
-    html = (web / "index.html").read_text(encoding="utf-8")
-    textes = extraire(html, tuple((web / m).read_text(encoding="utf-8") for m in MODULES))
-    textes = avec_supplements(textes)
+    textes = textes_frontend()
     DOSSIER.mkdir(exist_ok=True)
     sortie = DOSSIER / "textes_fr.json"
     sortie.write_text(json.dumps(textes, ensure_ascii=False, indent=0), encoding="utf-8")

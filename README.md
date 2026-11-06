@@ -106,6 +106,29 @@ celles de la v7.
 
 ## Application web, API et serveur MCP
 
+L'interface est désormais construite avec React, TypeScript, Vite et Tailwind CSS.
+Après installation du dépôt, exécuter `npm ci` puis `npm run build` avant de lancer
+le service ou de produire une archive Colab. Les sources sont dans `frontend/` ;
+les fichiers servis sont générés dans `webapp/`. Le Dockerfile construit le frontend
+automatiquement. Voir [`docs/FRONTEND_REDESIGN.md`](docs/FRONTEND_REDESIGN.md) pour
+la direction éditoriale, l'architecture, les commandes et les limites de validation.
+
+Le terrain 3D de Tunisie fourni par Tukai est intégré à l'espace « Atmosphère 3D ».
+Ses données volumineuses sont importées séparément avant la construction ; voir
+[`docs/TERRAIN_INTEGRATION.md`](docs/TERRAIN_INTEGRATION.md) pour la commande d'import,
+les coordonnées, le chargement progressif et les sources. La vue « Vent sur le terrain » ouvre
+les prévisions nationales NOAA GFS via Open-Meteo ; les outils PC-FNO3D restent limités
+au Grand Tunis et portent la mention démonstration si le service de production est absent.
+Pour actualiser l'instantané national avant une construction :
+
+```bash
+python scripts/fetch_national_wind.py
+npm run build
+```
+
+L'interface indique la date prévue et la date de récupération. Elle tente aussi le fournisseur
+si l'instantané est trop ancien ; une panne n'est pas remplacée par un vent synthétique.
+
 Un seul processus sert l'interface, l'API JSON et le serveur MCP :
 
 ```bash

@@ -14,6 +14,18 @@
 # Le volume artifacts doit contenir runs/v7/{best_dso_v7.pt,norm_stats.json} et le cache
 # des instants. PCFNO3D_ALLOWED_HOSTS est obligatoire derriere un proxy : le transport
 # MCP refuse un en-tete Host non declare.
+FROM node:24-slim AS frontend-build
+WORKDIR /ui
+COPY package.json package-lock.json vite.config.ts tsconfig.json ./
+COPY frontend ./frontend
+# Portable archives retain the imported terrain in their runtime copy.
+COPY webapp ./webapp
+COPY scripts/extract_frontend_markup.mjs ./scripts/extract_frontend_markup.mjs
+COPY scripts/finalize_frontend.mjs ./scripts/finalize_frontend.mjs
+COPY scripts/copy_frontend_vendor.mjs ./scripts/copy_frontend_vendor.mjs
+RUN mkdir -p web
+RUN npm ci && npm run build
+
 FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -33,7 +45,7 @@ COPY pyproject.toml README.md ./
 COPY src ./src
 COPY service ./service
 COPY configs ./configs
-COPY webapp ./webapp
+COPY --from=frontend-build /ui/webapp ./webapp
 RUN pip install --no-cache-dir --no-deps -e .
 
 # utilisateur non privilegie
