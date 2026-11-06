@@ -1203,5 +1203,8 @@
   "Grand Tunis · PC-FNO3D": "Greater Tunis · PC-FNO3D",
   "Grand Tunis · démonstration": "Greater Tunis · demo",
   "Tunisie · Prévisions GFS · Outils locaux dans le Grand Tunis": "Tunisia · GFS forecasts · Local tools in Greater Tunis",
-  "Les rues OpenStreetMap sont indisponibles. Le vent reste visible ; vous pouvez choisir le fond Relief.": "OpenStreetMap streets are unavailable. Wind remains visible; you can switch to the Terrain basemap."
+  "Les rues OpenStreetMap sont indisponibles. Le vent reste visible ; vous pouvez choisir le fond Relief.": "OpenStreetMap streets are unavailable. Wind remains visible; you can switch to the Terrain basemap.",
+  "Les flèches montrent le vent à chaque hauteur du rotor : plus elles sont longues, plus il est fort. Le pointillé marque le vent au moyeu.": "The arrows show the wind at each height of the rotor: the longer they are, the stronger it is. The dotted line marks the wind at the hub.",
+  "Vue 3D du rotor indisponible, schéma 2D conservé.": "3D rotor view unavailable, 2D diagram kept.",
+  "Éolienne en 3D face au vent du moyeu, avec une flèche de vent par hauteur du rotor. Glissez pour tourner la vue.": "3D wind turbine facing the hub wind, with one wind arrow per rotor height. Drag to rotate the view."
 }

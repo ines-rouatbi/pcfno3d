@@ -83,7 +83,7 @@ Aucun média externe de ces références n'est utilisé dans l'application.
 | Styles de la scène confiée à Pro Tuk-ai | `frontend/src/styles/scene-ui.css` |
 | Terrain Tukai fourni, streaming et intégration géographique | `frontend/src/terrain/`, `docs/TERRAIN_INTEGRATION.md` |
 | Contrôleurs, données, calculs de présentation conservés | `frontend/src/engine/` |
-| Laboratoire et visualiseur d'export | `science.tsx`, `export.tsx`, `styles/science.css` |
+| Laboratoire (outil interne) et visualiseur d'export | `science.tsx`, `export.tsx`, `styles/science.css` |
 | Traductions | `frontend/public/atom-wind/i18n/` |
 | Tests de navigateur | `frontend/tests/workspace.spec.ts`, `frontend/tests/dashboard-flow.spec.ts` |
 
@@ -92,6 +92,15 @@ Les contrôleurs scientifiques existants possèdent leurs canvas, SVG, tableaux 
 Le shell lit des notifications `atom:state` ; il ne recalcule pas le vent ou les permissions.
 Ce choix conserve les contrats existants et évite une réécriture des calculs pendant la migration.
 Une migration ultérieure des contrôleurs impératifs vers des composants plus fins reste possible.
+
+## Laboratoire : outil interne
+
+Le laboratoire (`/app/`) est l'ancienne interface de développement du package : coupe brute à une
+altitude ASL, profil en coordonnées locales, verdict DSO archivé, exemples d'intégration MCP/API.
+ATOM Wind couvre tout cela pour un client (carte et vue 3D, fiche point, qualité via
+`/api/atom-wind/qualite`). Il ne fait donc plus partie du parcours SaaS : aucun lien depuis
+ATOM Wind, et la racine `/` redirige vers `/app/atom-wind/`. Il reste servi pour l'équipe
+(diagnostic d'un modèle chargé) et le visualiseur d'export y renvoie.
 
 ## Construire et lancer
 
@@ -103,7 +112,7 @@ python -m pcfno3d serve --port 8000
 ```
 
 - Application : `http://127.0.0.1:8000/app/atom-wind/`
-- Laboratoire : `http://127.0.0.1:8000/app/`
+- Laboratoire (outil interne, aucun lien depuis ATOM Wind) : `http://127.0.0.1:8000/app/`
 - Export : `http://127.0.0.1:8000/app/export/?src=/api/export/STEM`
 - Développement : `npm run dev`, puis `http://127.0.0.1:5173/app/atom-wind/`.
   Vite relaie `/api` et `/mcp` au service local sur le port 8000.

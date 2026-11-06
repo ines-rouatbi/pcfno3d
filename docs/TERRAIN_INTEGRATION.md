@@ -16,7 +16,24 @@ L'import copie 5 272 fichiers, environ 458,3 MiB, vers `frontend/public/terrain/
 Vite les sert en développement et les copie vers `webapp/terrain/tunisia` pour le service Python.
 Ces dossiers générés sont ignorés par Git : une nouvelle installation doit exécuter l'import.
 Les sources géographiques brutes et les intermédiaires ne sont pas recopiés. L'archive Colab
-transporte le terrain dans `webapp` une seule fois ; Docker conserve cette copie à la reconstruction.
+transporte le terrain dans `webapp` une seule fois.
+
+## Servi par le service, pas par le build
+
+Le relief est une **donnée du service**, comme les poids du modèle : il n'est ni dans git ni
+dans l'image Docker (`.dockerignore`). Le service le monte sous `/app/terrain/` depuis, dans
+l'ordre :
+
+1. `PCFNO3D_TERRAIN_DIR` (dossier qui contient `tunisia/`) — le cas de production : un volume
+   (`docker run -v /chemin/vers/terrain:/terrain:ro`, l'image définit déjà
+   `PCFNO3D_TERRAIN_DIR=/terrain`) ;
+2. `webapp/terrain` (la copie faite par `npm run build`) ;
+3. `frontend/public/terrain` (la sortie de l'import).
+
+Les fichiers partent avec `Cache-Control: public, max-age=86400`. Sans relief, `/app/terrain/…`
+répond 404 avec la commande d'installation, `/api/health` indique `"terrain_3d": false`, et la
+Carte 3D affiche « Relief 3D non installé sur ce serveur » ; les autres vues fonctionnent.
+Le dossier source `ATOM_Wind_Tunisia_Terrain` n'est publié nulle part : il se transmet à part.
 
 Application : `http://127.0.0.1:5173/app/atom-wind/#carte3d` en développement,
 ou `http://127.0.0.1:8000/app/atom-wind/#carte3d` avec le service Python.

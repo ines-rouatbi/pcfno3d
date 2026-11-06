@@ -241,7 +241,7 @@ def serve_public(config: str = "colab", port: int = 8000, key_name: str = "colab
         "api_key": api_key,
         "key_name": key_name if not renamed else f"{key_name} (renommee, nom deja pris)",
         "mcp_url": f"{base_url}/mcp",
-        "web_app": f"{base_url}/app/",
+        "web_app": f"{base_url}/app/atom-wind/",
         "api_docs": f"{base_url}/api/docs",
         "checkpoint": checkpoint.name,
         "health": health,

@@ -40,7 +40,7 @@ export default memo(function ViewTableau() {
         <div><span>DSO3 · finesse des détails</span><span className="pill mid">0,82 pour 0,9</span></div>
         <div><span>DSO4 · rapidité</span><span className="pill good">atteint</span></div>
         <div><span>DSO5 · robustesse</span><span className="pill good">atteint</span></div>
-      </div><a className="text-link" href="/app/">Ouvrir les résultats DSO au laboratoire<ArrowUpRight size={15}/></a></section>
+      </div></section>
     </div>
     </details>
   </section>;

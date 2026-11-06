@@ -15,7 +15,7 @@ export default memo(function ViewEolien(){ return (
 <div id="myt" style={{"marginTop": "10px"} as CSSProperties}></div>
 </div>
 <div className="steps">
-<div className="card"><h3>{"Le vent sur toute la hauteur du rotor"}</h3><div id="rotor"></div></div>
+<div className="card"><h3>{"Le vent sur toute la hauteur du rotor"}</h3><div id="rotor"><div className="rotor-layout"><div className="rotor-fig" id="rotor-fig"></div><div className="rotor-txt" id="rotor-txt"></div></div></div></div>
 <div className="card"><h3 id="rose-t">{"D'où vient le vent au moyeu ?"}</h3><div id="rose"></div></div>
 </div>
 </div>

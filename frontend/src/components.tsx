@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ArrowDownToLine, ArrowUpRight, AudioLines, BookOpen, Box, ChevronDown, ChevronRight, Compass, Gauge, Layers3, Leaf, LifeBuoy, MapPin, Menu, Search, Settings2, ShieldCheck, Sparkles, Wind, X, Bell, Users, Activity, Command } from 'lucide-react';
+import { ArrowDownToLine, ArrowUpRight, AudioLines, Box, ChevronDown, ChevronRight, Compass, Gauge, Leaf, LifeBuoy, MapPin, Menu, Search, Settings2, ShieldCheck, Sparkles, Wind, X, Bell, Users, Activity, Command } from 'lucide-react';
 import type { WorkspaceState } from './workspace';
 
 export function Mark({ small = false }: { small?: boolean }) {
@@ -35,8 +35,7 @@ export function Navigation({ open, close, national = false }: { open: boolean; c
       <nav className="tabs workspace-navigation" aria-label="Espaces">
         {navigation.map(group => <div className="nav-group" key={group.label}><span className="nav-label">{group.label}</span>{group.items.map(item => <a href={`#${item.id}`} data-v={item.id} key={item.id} onClick={close}><item.icon size={18} strokeWidth={1.7}/><span>{item.name}</span>{item.id === 'alertes' && <span className="count" id="alertcount">0</span>}</a>)}</div>)}
       </nav>
-      <div className="rail-bottom"><a className="lab-link" href="/app/"><Layers3 size={18}/><div><b>Espace scientifique</b><small>PC-FNO3D</small></div><ArrowUpRight size={16}/></a>
-        <button className="rail-help" id="retour"><LifeBuoy size={17}/>Prendre ses repères<ChevronRight size={14}/></button>
+      <div className="rail-bottom"><button className="rail-help" id="retour"><LifeBuoy size={17}/>Prendre ses repères<ChevronRight size={14}/></button>
         
       </div>
     </aside>
@@ -96,5 +95,5 @@ export function Assistant() {
     const button = document.getElementById('aw-asst-btn');
     if (button) button.click(); else setOpen(!open);
   };
-  return <><button className="assistant-entry" onClick={toggle}><Sparkles size={17}/><span>Assistant</span><span className="assistant-shortcut">Poser une question</span><ChevronRight size={15}/></button>{open && <aside className="assistant-unavailable card"><div className="row"><Sparkles size={18}/><b>Assistant ATOM Wind</b><button className="icon-button" onClick={() => setOpen(false)} aria-label="Fermer l’assistant"><X size={18}/></button></div><p>L’assistant nécessite une connexion au service PC-FNO3D. Les valeurs de cette journée sont des exemples.</p><a href="/app/" className="btn"><BookOpen size={15}/>Ouvrir le laboratoire</a></aside>}</>;
+  return <><button className="assistant-entry" onClick={toggle}><Sparkles size={17}/><span>Assistant</span><span className="assistant-shortcut">Poser une question</span><ChevronRight size={15}/></button>{open && <aside className="assistant-unavailable card"><div className="row"><Sparkles size={18}/><b>Assistant ATOM Wind</b><button className="icon-button" onClick={() => setOpen(false)} aria-label="Fermer l’assistant"><X size={18}/></button></div><p>L’assistant nécessite une connexion au service PC-FNO3D. Les valeurs de cette journée sont des exemples.</p></aside>}</>;
 }
