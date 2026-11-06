@@ -110,6 +110,43 @@ def lire_fenetre(chemin: Path, lat_s: float, lat_n: float, lon_o: float, lon_e: 
     return out, lat0 - r0 * pas, lon0 + c0 * pas, pas
 
 
+def echantillonner_cog(fichiers: list[Path], lat: np.ndarray, lon: np.ndarray, defaut: int = 0) -> np.ndarray:
+    """Plus proche pixel d'une MOSAIQUE de GeoTIFF tuiles (COG), sans jamais charger une image
+    entiere : les points sont groupes par tuile interne et chaque tuile interne utile est decodee
+    une fois (le domaine national a 10 m ferait ~3,6 G pixels). Meme convention de centre de
+    pixel que `echantillonner(..., ordre=0)`. Hors de toute image : `defaut`."""
+    import tifffile
+
+    lat, lon = np.asarray(lat, float), np.asarray(lon, float)
+    out = np.full(lat.shape, defaut, dtype=np.int32)
+    la, lo = lat.ravel(), lon.ravel()
+    plat = out.reshape(-1)
+    for chemin in fichiers:
+        with tifffile.TiffFile(chemin) as t:
+            p = t.pages[0]
+            lon0, lat0 = p.tags["ModelTiepointTag"].value[3:5]
+            pas = p.tags["ModelPixelScaleTag"].value[0]
+            r = np.rint((lat0 - la) / pas - 0.5).astype(np.int64)
+            c = np.rint((lo - lon0) / pas - 0.5).astype(np.int64)
+            dedans = np.flatnonzero((r >= 0) & (r < p.shape[0]) & (c >= 0) & (c < p.shape[1]))
+            if not dedans.size:
+                continue
+            th, tw = p.tilelength, p.tilewidth
+            ntx = math.ceil(p.shape[1] / tw)
+            k = (r[dedans] // th) * ntx + c[dedans] // tw
+            ordre = np.argsort(k, kind="stable")
+            dedans, k = dedans[ordre], k[ordre]
+            coupures = np.flatnonzero(np.diff(k)) + 1
+            fh = t.filehandle
+            for groupe in np.split(np.arange(len(k)), coupures):
+                kk = int(k[groupe[0]])
+                fh.seek(p.dataoffsets[kk])
+                seg = _tuile(fh.read(p.databytecounts[kk]), p, th, tw)
+                idx = dedans[groupe]
+                plat[idx] = seg[r[idx] - (kk // ntx) * th, c[idx] - (kk % ntx) * tw]
+    return out
+
+
 def echantillonner(tab, lat_n, lon_o, pas, lat, lon, ordre=1):
     """Valeurs aux points (lat, lon) : bilineaire (ordre 1) ou plus proche voisin (0)."""
     fy = (lat_n - lat) / pas - 0.5           # centres de pixels
@@ -139,7 +176,11 @@ def agreger_z0(z0: np.ndarray, bloc: int) -> np.ndarray:
 
 
 def construire(dem_dir: Path, lat_sud: float, lon_ouest: float, nx: int, ny: int, dx: float,
-               graine: int = 2026, hauteur_capteur: float | None = None) -> tuple[pd.DataFrame, dict]:
+               graine: int = 2026, hauteur_capteur: float | None = None,
+               mer_si_tuile_absente: bool = False) -> tuple[pd.DataFrame, dict]:
+    """`mer_si_tuile_absente` (domaine national) : Copernicus ne publie pas de tuile de pleine
+    mer ; une tuile absente y vaut 0 m, et la liste des tuiles absentes est ecrite dans la
+    sortie. On verifie ensuite que WorldCover y voit bien de l'eau (sinon : erreur)."""
     from scipy.ndimage import gaussian_filter
 
     lat_c = lat_sud + ny * dx / 2 / metres_par_degre(lat_sud)[1]
@@ -152,13 +193,19 @@ def construire(dem_dir: Path, lat_sud: float, lon_ouest: float, nx: int, ny: int
 
     # relief : tuile(s) Copernicus 1 deg x 1 deg ; lissage d'environ un demi-pas de grille
     zt = np.full((ny, nx), np.nan)
+    absentes, sans_relief = [], np.zeros((ny, nx), bool)
     for la in range(int(math.floor(lat_sud)), int(math.floor(lat_n)) + 1):
         for lo in range(int(math.floor(lon_ouest)), int(math.floor(lon_e)) + 1):
             f = dem_dir / f"Copernicus_DSM_COG_10_N{la:02d}_00_E{lo:03d}_00_DEM.tif"
-            if not f.exists():
-                raise FileNotFoundError(f"tuile de relief absente : {f.name}")
             dans = (lat >= la) & (lat < la + 1) & (lon >= lo) & (lon < lo + 1)
             if not dans.any():
+                continue
+            if not f.exists():
+                if not mer_si_tuile_absente:
+                    raise FileNotFoundError(f"tuile de relief absente : {f.name}")
+                absentes.append(f.name)
+                zt[dans] = 0.0
+                sans_relief |= dans
                 continue
             tab, n_, o_, pas = lire_fenetre(f, max(lat_sud - marge, la), min(lat_n + marge, la + 1),
                                            max(lon_ouest - marge, lo), min(lon_e + marge, lo + 1))
@@ -167,17 +214,28 @@ def construire(dem_dir: Path, lat_sud: float, lon_ouest: float, nx: int, ny: int
     if np.isnan(zt).any():
         raise ValueError("relief incomplet sur la grille")
 
-    # occupation du sol : 5 x 5 sous-points par maille, z0 en moyenne logarithmique
-    f = next(dem_dir.glob("ESA_WorldCover_10m_2021_v200_*_Map.tif"))
-    tab, n_, o_, pas = lire_fenetre(f, lat_sud - marge, lat_n + marge, lon_ouest - marge, lon_e + marge)
+    # occupation du sol : 5 x 5 sous-points par maille, z0 en moyenne logarithmique ; mosaique
+    # des tuiles WorldCover (3 x 3 deg) ; hors de toute tuile publiee (pleine mer) : classe 80, eau
+    fichiers = sorted(dem_dir.glob("ESA_WorldCover_10m_2021_v200_*_Map.tif"))
+    if not fichiers:
+        raise FileNotFoundError("aucune tuile ESA WorldCover dans " + str(dem_dir))
     sous = (np.arange(5) + 0.5) / 5 - 0.5
-    classes = np.stack([echantillonner(tab, n_, o_, pas, lat + sy * dx / m_lat, lon + sx * dx / m_lon, 0)
+    classes = np.stack([echantillonner_cog(fichiers, lat + sy * dx / m_lat, lon + sx * dx / m_lon, defaut=80)
                         for sy in sous for sx in sous])                  # (25, ny, nx)
-    z0_tab = np.vectorize(lambda c: WORLDCOVER.get(int(c), (2, 0.03))[1])(classes)
-    code_tab = np.vectorize(lambda c: WORLDCOVER.get(int(c), (2, 0.03))[0])(classes)
-    z0 = np.exp(np.log(z0_tab).mean(axis=0))
-    z0 = agreger_z0(z0, max(int(round(BLOC_Z0_M / dx)), 1))         # 10 m -> blocs de 100 m
-    occ = np.apply_along_axis(lambda v: np.bincount(v, minlength=6).argmax(), 0, code_tab)
+    lut_z0, lut_code = np.full(256, 0.03), np.full(256, 2, dtype=np.int64)
+    for c, (code, z) in WORLDCOVER.items():
+        lut_z0[c], lut_code[c] = z, code
+    classes = np.clip(classes, 0, 255)
+    z0 = np.exp(np.log(lut_z0[classes]).mean(axis=0))
+    del_blocs = max(int(round(BLOC_Z0_M / dx)), 1)
+    if del_blocs > 1:
+        z0 = agreger_z0(z0, del_blocs)                                  # 10 m -> blocs de 100 m
+    code_tab = lut_code[classes]
+    # classe majoritaire des 25 sous-points (egalite : le plus petit code, comme bincount.argmax)
+    occ = np.stack([(code_tab == k).sum(axis=0) for k in range(6)]).argmax(axis=0)
+    del classes, code_tab
+    if sans_relief.any() and not (occ[sans_relief] == 1).mean() > 0.99:
+        raise ValueError("tuile de relief absente sur de la terre (WorldCover) : la telecharger")
     zt = np.where((occ == 1) & (zt < 1.0) & (zt > -1.0), 0.0, zt)       # mer et lagunes a 0 m
 
     gy, gx = np.gradient(zt, dx, dx)
@@ -210,6 +268,13 @@ def construire(dem_dir: Path, lat_sud: float, lon_ouest: float, nx: int, ny: int
                        "lat_centrale": round(lat_c, 6), "m_par_deg_lon": m_lon, "m_par_deg_lat": m_lat,
                        "lat": "lat_sud + y_m / m_par_deg_lat", "lon": "lon_ouest + x_m / m_par_deg_lon"},
         "f_coriolis": 2 * 7.2921e-5 * math.sin(math.radians(lat_c)),
+        # plan local a pas constant : distance vraie entre colonnes / dx aux bords sud et nord
+        # (1 sur le Grand Tunis ; +-4 % sur la Tunisie entiere, approximation documentee)
+        "facteur_echelle_est_ouest": [round(metres_par_degre(lat_sud)[0] / m_lon, 4),
+                                      round(metres_par_degre(lat_n)[0] / m_lon, 4)],
+        "f_coriolis_min_max": [2 * 7.2921e-5 * math.sin(math.radians(lat_sud)),
+                               2 * 7.2921e-5 * math.sin(math.radians(lat_n))],
+        "tuiles_relief_absentes_mer": absentes,
         "relief_m": {"min": float(zt.min()), "max": float(zt.max()), "moyenne": float(zt.mean())},
         "part_eau": float((occ == 1).mean()),
         "occupation": {NOMS[k]: float((occ == k).mean()) for k in NOMS},
@@ -253,9 +318,12 @@ def main() -> int:
     ap.add_argument("--dx", type=float, default=50.0)
     ap.add_argument("--hauteur-capteur", type=float, default=None,
                     help="hauteur des capteurs (m) ; anemometres reels : 10")
+    ap.add_argument("--mer-si-tuile-absente", action="store_true",
+                    help="domaine national : tuile Copernicus absente = pleine mer (0 m), verifie par WorldCover")
     args = ap.parse_args()
     df, info = construire(Path(args.dem), args.lat_sud, args.lon_ouest, args.nx, args.ny, args.dx,
-                          hauteur_capteur=args.hauteur_capteur)
+                          hauteur_capteur=args.hauteur_capteur,
+                          mer_si_tuile_absente=args.mer_si_tuile_absente)
     out = Path(args.sortie)
     out.mkdir(parents=True, exist_ok=True)
     df.to_csv(out / "aneo_grid_points_surface.csv", index=False, lineterminator="\n")

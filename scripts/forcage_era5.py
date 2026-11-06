@@ -65,7 +65,13 @@ def _boite(ds, info, marge):
     return ds.sel(sel)
 
 
-def forcage(era5: Path, info: dict, marge: float = 0.15, slx: bool = True) -> pd.DataFrame:
+def forcage(era5: Path, info: dict, marge: float = 0.15, slx: bool = True,
+            niveaux=NIVEAUX, hauteurs_sol=None) -> pd.DataFrame:
+
+    if hauteurs_sol is None:
+        # national : niveaux au-dessus de 1000 m -> champs par maille jusqu'a ce niveau
+        hauteurs_sol = HAUTEURS_SOL + tuple(h for h in (1500., 2000., 2500., 3000.)
+                                            if h - 500. < max(niveaux) and h > HAUTEURS_SOL[-1])
     d = Path(era5)
     pl = _ouvrir(sorted(d.glob("era5_plx_*.nc")), ["u", "v", "z"])
     sl = _ouvrir(sorted(d.glob("era5_sl_*.nc")), ["u10", "v10", "u100", "v100", "t2m", "sp", "msl", "z"])
@@ -135,17 +141,17 @@ def forcage(era5: Path, info: dict, marge: float = 0.15, slx: bool = True) -> pd
     for c, c10, c100 in (("u", "u10", "u100"), ("v", "v10", "v100")):
         val = np.concatenate([sl[c10].values[None], sl[c100].values[None],
                               np.moveaxis(pl[c].values, 1, 0)])
-        prof = interpoler_hauteurs(h, val, list(NIVEAUX))            # (nz, t, y, x), NaN sous le sol
-        for k, zk in enumerate(NIVEAUX):
+        prof = interpoler_hauteurs(h, val, list(niveaux))            # (nz, t, y, x), NaN sous le sol
+        for k, zk in enumerate(niveaux):
             df[f"{c}_era5_{int(zk)}"] = np.nanmean(prof[k], axis=(1, 2))
         # champ par maille pour le recalage spatial, en HAUTEUR AU-DESSUS DU SOL ERA5 : le
         # generateur le relit a la meme hauteur au-dessus de SON relief (suivi du terrain)
-        champs[c] = interpoler_hauteurs(h, val, [oro + hh for hh in HAUTEURS_SOL])
+        champs[c] = interpoler_hauteurs(h, val, [oro + hh for hh in hauteurs_sol])
     lat = pl["latitude"].values
     o = np.argsort(lat)
     df.attrs["champs"] = {"temps": pd.to_datetime(communs).values.astype("datetime64[s]").astype(np.int64),
                           "lat": lat[o], "lon": pl["longitude"].values,
-                          "hauteurs_sol": np.array(HAUTEURS_SOL),
+                          "hauteurs_sol": np.array(hauteurs_sol),
                           "u": champs["u"][:, :, o, :].transpose(1, 0, 2, 3).astype(np.float32),
                           "v": champs["v"][:, :, o, :].transpose(1, 0, 2, 3).astype(np.float32)}
     return df
@@ -156,11 +162,14 @@ def main() -> int:
     ap.add_argument("--era5", required=True)
     ap.add_argument("--grille", required=True, help="grille_reelle.json (scripts/grille_reelle.py)")
     ap.add_argument("--sortie", required=True)
+    ap.add_argument("--niveaux", default=None,
+                    help="niveaux du modele (m au-dessus de la mer), comme generate_aneo_3d.py --niveaux")
     ap.add_argument("--sans-slx", action="store_true",
                     help="ignore SST / temperature de peau / couche limite (meme regle partout)")
     args = ap.parse_args()
     info = json.loads(Path(args.grille).read_text(encoding="utf-8"))
-    df = forcage(Path(args.era5), info, slx=not args.sans_slx)
+    niv = tuple(sorted(float(z) for z in args.niveaux.split(","))) if args.niveaux else NIVEAUX
+    df = forcage(Path(args.era5), info, slx=not args.sans_slx, niveaux=niv)
     df.to_csv(args.sortie, index=False, float_format="%.5g")
     np.savez_compressed(Path(args.sortie).with_suffix(".npz"), **df.attrs["champs"])
     t = pd.to_datetime(df["timestamp_utc"])

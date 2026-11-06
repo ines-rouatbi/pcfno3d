@@ -68,12 +68,18 @@ except ImportError:
 # passe par --nx/--ny, qui fixent aussi ces variables d'environnement pour les processus de calcul
 NX_S = int(os.environ.get("ANEO_GEN_NX", 1000))
 NY_S = int(os.environ.get("ANEO_GEN_NY", 500))
-DX_S = 50.0                     # pas de surface (m)
+# pas de surface (m) : 50 m (v7, Grand Tunis) ; --dx pour une autre grille (national : 500 m),
+# qui fixe aussi ANEO_GEN_DX pour les processus de calcul
+DX_S = float(os.environ.get("ANEO_GEN_DX", 50.0))
 STRIDE = 2                      # noeuds 3D : une colonne sur deux
 NX_V, NY_V = NX_S // STRIDE, NY_S // STRIDE
 DX_V = DX_S * STRIDE            # pas des noeuds 3D (m)
 
-Z_LEVELS = np.array([25., 50., 75., 100., 150., 200., 300., 400., 500., 650., 800., 1000.])
+# niveaux des noeuds (m au-dessus de la mer) : ceux de la v7 par defaut ; --niveaux (ANEO_GEN_NIVEAUX)
+# pour un relief plus haut (national : jusqu'a 2500 m) ; 100 et 200 m doivent y etre (controles)
+Z_LEVELS_V7 = (25., 50., 75., 100., 150., 200., 300., 400., 500., 650., 800., 1000.)
+Z_LEVELS = np.array([float(z) for z in os.environ.get("ANEO_GEN_NIVEAUX", "").split(",") if z.strip()]
+                    or Z_LEVELS_V7)
 NZ = len(Z_LEVELS)
 MIN_ZREL_NODE = 5.0             # pas de noeud a moins de 5 m au-dessus du terrain
 TERRAIN_DECAY_M = 300.0         # decroissance verticale de l'influence du relief sur le vent
@@ -307,6 +313,10 @@ def build_static(df_surface: pd.DataFrame):
     y = g("y_m")
     dx_s = float(x[0, 1] - x[0, 0]) if abs(x[0, 1] - x[0, 0]) > 0 else DX_S
     dy_s = float(y[1, 0] - y[0, 0]) if abs(y[1, 0] - y[0, 0]) > 0 else DX_S
+    # les lissages en m (relief vu par l'ecoulement, brise) passent par DX_S : une grille d'un
+    # autre pas sans --dx les rendrait faux sans erreur visible
+    if abs(dx_s - DX_S) > 1e-6 * DX_S:
+        raise ValueError(f"grille au pas {dx_s:g} m, generateur configure a {DX_S:g} m : passer --dx {dx_s:g}")
     point_id = df_surface["point_id"].values.reshape(NY_S, NX_S).astype(np.int64)
 
     zt_v = zt[::STRIDE, ::STRIDE]
@@ -1504,7 +1514,18 @@ def qc_summary(out_dir: Path, split: dict):
 def _configurer(args) -> None:
     """Taille de grille, Coriolis et perturbations : variables globales du processus principal
     ET variables d'environnement, lues a l'import par les processus de calcul."""
-    global NX_S, NY_S, NX_V, NY_V, F_CORIOLIS, A_ROT, A_DIV, PERTURB
+    global NX_S, NY_S, NX_V, NY_V, F_CORIOLIS, A_ROT, A_DIV, PERTURB, DX_S, DX_V, Z_LEVELS, NZ
+    if args.dx:
+        os.environ["ANEO_GEN_DX"] = str(float(args.dx))
+        DX_S = float(args.dx)
+        DX_V = DX_S * STRIDE
+    if args.niveaux:
+        niv = sorted(float(z) for z in args.niveaux.split(","))
+        if 100.0 not in niv or 200.0 not in niv:
+            raise SystemExit("--niveaux doit contenir 100 et 200 m (controles de qualite)")
+        os.environ["ANEO_GEN_NIVEAUX"] = ",".join(f"{z:g}" for z in niv)
+        Z_LEVELS = np.array(niv)
+        NZ = len(Z_LEVELS)
     if args.nx and args.ny:
         os.environ["ANEO_GEN_NX"], os.environ["ANEO_GEN_NY"] = str(args.nx), str(args.ny)
         NX_S, NY_S = args.nx, args.ny
@@ -1609,6 +1630,10 @@ def main():
     ap.add_argument("--perturbations", type=float, default=None,
                     help="facteur des perturbations aleatoires de petite echelle (forcage : 0,4)")
     ap.add_argument("--f-coriolis", type=float, default=None)
+    ap.add_argument("--dx", type=float, default=None,
+                    help="pas de la grille de surface reelle (m) ; defaut 50 ; national : 500")
+    ap.add_argument("--niveaux", default=None,
+                    help="niveaux des noeuds (m au-dessus de la mer), ex. 25,50,...,2500 ; defaut v7")
     ap.add_argument("--cache-dir", type=Path, default=None,
                     help="ecrit directement le cache du modele (_S.npy / _Y.npy + index.csv) au "
                          "lieu des CSV journaliers ; la grille, meta.json et split_days.json "
