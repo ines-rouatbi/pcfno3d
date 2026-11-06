@@ -82,7 +82,12 @@ function beaufort(k){ const T=[[2,"Calme : la fumée monte tout droit."],[6,"Tr�
 const COL = [[0,[191,227,242]],[8,[89,195,160]],[16,[182,216,74]],[24,[244,196,48]],[34,[240,138,44]],[46,[224,65,75]],[62,[167,58,158]]];
 function speedColor(k){ for(let i=1;i<COL.length;i++) if(k<=COL[i][0]){ const [a,ca]=COL[i-1],[b,cb]=COL[i], t=(k-a)/(b-a); return ca.map((c,j)=>Math.round(c+(cb[j]-c)*t)); } return COL[COL.length-1][1]; }
 const arrowSvg = (deg,size=26,color="currentColor") => `<svg class="windarrow" width="${size}" height="${size}" viewBox="0 0 24 24" style="transform:rotate(${deg}deg)" aria-hidden="true"><path d="M12 3l6 9h-4v9h-4v-9H6z" fill="${color}"/></svg>`;
-const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+// valeurs des variables CSS mises en cache : les cartes animées les lisent à chaque image.
+// Vidé au changement de thème ; une valeur vide (styles pas encore chargés) n'est pas retenue.
+const CSS_CACHE = new Map();
+const css = v => { let r=CSS_CACHE.get(v); if(r===undefined){ r=getComputedStyle(document.documentElement).getPropertyValue(v).trim(); if(r) CSS_CACHE.set(v,r); } return r; };
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change",()=>CSS_CACHE.clear());
+new MutationObserver(()=>CSS_CACHE.clear()).observe(document.documentElement,{attributes:true,attributeFilter:["data-theme","class","style"]});
 
 // ---------------- activités : l'entrée de l'utilisateur ----------------
 const ICONS = {
@@ -114,8 +119,10 @@ const MAPS=[];
 function makeMap(canvasId, boxId, opts){
   const cv = document.getElementById(canvasId), box = document.getElementById(boxId), ctx = cv.getContext("2d");
   const base = document.createElement("canvas"), trail = document.createElement("canvas");
+  // le fond (relief, mer) est un calque fixe sous la carte animée : il n'est plus recopié à chaque image
+  base.setAttribute("aria-hidden","true"); base.style.cssText="position:absolute;left:0;top:0;width:100%;pointer-events:none"; cv.style.position="relative"; cv.before(base);
   let w=0, h=0, dpr=1, parts=[], hover=null; const ripples=[];
-  function size(){ dpr = Math.min(2, window.devicePixelRatio||1); w = box.clientWidth; h = Math.round(w*H/W); if(!w) return; cv.width=base.width=trail.width=w*dpr; cv.height=base.height=trail.height=h*dpr; cv.style.height=h+"px"; drawBase(); parts = Array.from({length: Math.round(1300*w/700)}, () => newPart()); }
+  function size(){ dpr = Math.min(2, window.devicePixelRatio||1); w = box.clientWidth; h = Math.round(w*H/W); if(!w) return; cv.width=base.width=trail.width=w*dpr; cv.height=base.height=trail.height=h*dpr; cv.style.height=base.style.height=h+"px"; drawBase(); parts = Array.from({length: Math.round(1300*w/700)}, () => newPart()); }
   const toPx = (x,y) => [x/W*w*dpr, (1-y/H)*h*dpr];
   function newPart(){ return {x:Math.random()*W, y:Math.random()*H, age:Math.random()*60|0}; }
   function drawBase(){
@@ -145,11 +152,14 @@ function makeMap(canvasId, boxId, opts){
     ctx.restore();
   }
   const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
-  let frameId=0,lastFrame=performance.now();
-  function schedule(){if(!frameId&&!document.hidden&&box.offsetParent)frameId=requestAnimationFrame(frame);}
+  // la boucle ne tourne que si la carte est à l'écran (les événements atom:state la relançaient
+  // même hors champ) et à 30 images/s : le pas des particules suit le temps écoulé, l'aspect ne change pas
+  let frameId=0,lastFrame=performance.now(),inView=false;
+  function schedule(){if(!frameId&&inView&&!document.hidden&&box.offsetParent)frameId=requestAnimationFrame(frame);}
   function frame(now=performance.now()){
     frameId=0;
-    if(!w||!box.offsetParent||document.hidden)return;
+    if(!w||!inView||!box.offsetParent||document.hidden)return;
+    if(!reduce&&now-lastFrame<1000/31){schedule();return;}
     const elapsed=Math.min(2,(now-lastFrame)/(1000/60));lastFrame=now;
     const tc = trail.getContext("2d"), z = opts.z();
     tc.globalCompositeOperation="destination-out"; tc.fillStyle="rgba(0,0,0,.07)"; tc.fillRect(0,0,trail.width,trail.height); tc.globalCompositeOperation="source-over"; tc.lineWidth=2.2*dpr; tc.lineCap="round";
@@ -157,7 +167,7 @@ function makeMap(canvasId, boxId, opts){
       const nx=p.x+u*dt, ny=p.y+v*dt, [x1,y1]=toPx(p.x,p.y), [x2,y2]=toPx(nx,ny), c=speedColor(k); tc.strokeStyle=`rgb(${c[0]},${c[1]},${c[2]})`; tc.beginPath(); tc.moveTo(x1,y1); tc.lineTo(x2,y2); tc.stroke();
       p.x=nx; p.y=ny; if(++p.age>80 || p.x<0||p.x>W||p.y<0||p.y>H) Object.assign(p,newPart(),{age:0}); }
     else { tc.clearRect(0,0,trail.width,trail.height); for(let y=2;y<H;y+=4) for(let x=2;x<W;x+=4){ const [u,v]=wind(x,y,z,state.hour), c=speedColor(kmh(Math.hypot(u,v))), [x1,y1]=toPx(x,y), [x2,y2]=toPx(x+u*.5,y+v*.5); tc.strokeStyle=`rgb(${c})`; tc.lineWidth=2*dpr; tc.beginPath(); tc.moveTo(x1,y1); tc.lineTo(x2,y2); tc.stroke(); } }
-    ctx.clearRect(0,0,cv.width,cv.height); ctx.drawImage(base,0,0); ctx.drawImage(trail,0,0); overlay();
+    ctx.clearRect(0,0,cv.width,cv.height); ctx.drawImage(trail,0,0); overlay();
     if(!reduce)schedule();
   }
   box.addEventListener("click", e => { const r=cv.getBoundingClientRect(), x=(e.clientX-r.left)/r.width*W, y=(1-(e.clientY-r.top)/r.height)*H; ripples.push({p:[x,y], t:performance.now()}); opts.onClick && opts.onClick(x,y); });
@@ -166,7 +176,7 @@ function makeMap(canvasId, boxId, opts){
     showTip(`<div style="display:flex;gap:8px;align-items:center"><b>${fmtSpeed(sp)}</b>${arrowSvg(deg,18,"currentColor")}</div>Vent ${dirName(u,v)}, à ${z} m du sol<br><span class="sub">${wat[k]===1?"En mer":wat[k]===2?"Lac ou sebkha":`Sol à ${Math.round(elev[k])} m`} · fiabilité ${rl} · près de ${nearestName([x,y])}</span>`, e.clientX, e.clientY, "map"); });
   box.addEventListener("mouseleave", () => { hover=null; hideTip("map"); });
   const observer=new ResizeObserver(()=>{size();schedule();});observer.observe(box);
-  const visibility=new IntersectionObserver(entries=>{if(entries[0].isIntersecting){lastFrame=performance.now();schedule();}else{cancelAnimationFrame(frameId);frameId=0;}});visibility.observe(box);
+  const visibility=new IntersectionObserver(entries=>{inView=entries[0].isIntersecting;if(inView){lastFrame=performance.now();schedule();}else{cancelAnimationFrame(frameId);frameId=0;}});visibility.observe(box);
   box.addEventListener("mousemove",schedule);box.addEventListener("click",schedule);box.addEventListener("mouseleave",schedule);
   addEventListener("visibilitychange",schedule);addEventListener("atom:state",schedule);
   matchMedia("(prefers-color-scheme: dark)").addEventListener("change",()=>{drawBase();schedule();});
@@ -270,6 +280,14 @@ function renderAlerts(){
 const TURB = [["E1",36.618,10.315],["E2",36.612,10.33],["E3",36.605,10.345]].map(([n,a,b])=>({n,p:xy(a,b)}));
 const eo={day:0}; const EODAYS=["aujourd'hui","demain","après-demain"];
 const windE=(x,y,z,h)=>windD(x,y,z,h,eo.day);
+// éolienne vue de face : pales effilées qui tournent autour du moyeu (centre explicite, pas de pivot CSS)
+const REDUCE_MOTION = matchMedia("(prefers-reduced-motion: reduce)");
+function turbineIcon(dur, w=70, h=90){
+  const cx=35, cy=30, blade=`M${cx} ${cy-3}C${cx+3.6} ${cy-8} ${cx+3} ${cy-18} ${cx+.9} ${cy-26.5}Q${cx} ${cy-27.6} ${cx-.7} ${cy-26.4}C${cx-1.4} ${cy-18} ${cx-2.2} ${cy-8} ${cx} ${cy-3}Z`;
+  const spin = dur>0 && !REDUCE_MOTION.matches ? `<animateTransform attributeName="transform" type="rotate" from="0 ${cx} ${cy}" to="360 ${cx} ${cy}" dur="${dur.toFixed(2)}s" repeatCount="indefinite"/>` : "";
+  return `<svg width="${w}" height="${h}" viewBox="0 0 70 90" aria-hidden="true"><path d="M${cx-1.6} ${cy+3}h3.2l2 57h-7.2z" fill="var(--muted)"/><path d="M${cx-5} 89h10" stroke="var(--line)" stroke-width="2" stroke-linecap="round"/>
+    <g>${[0,120,240].map(a=>`<path d="${blade}" transform="rotate(${a} ${cx} ${cy})" fill="var(--ink)" opacity=".86"/>`).join("")}${spin}</g><circle cx="${cx}" cy="${cy}" r="3.6" fill="var(--accent)" stroke="var(--surface)" stroke-width="1.2"/></svg>`;
+}
 function renderEol(){
   const now = TURB.map(t=>{ const [u,v]=windE(...t.p,80,state.hour), sp=Math.hypot(u,v); return {...t,u,v,sp,P:power(sp)}; });
   const tot = now.reduce((s,t)=>s+t.P,0), day=Array.from({length:24},(_,h)=>TURB.reduce((s,t)=>s+power(Math.hypot(...windE(...t.p,80,h))),0)), energy=day.reduce((a,b)=>a+b,0);
@@ -288,7 +306,7 @@ function renderEol(){
     <line x1="${X(state.hour)}" x2="${X(state.hour)}" y1="10" y2="${Hd-pb}" stroke="var(--sand)" stroke-width="2" stroke-dasharray="4 3"/><circle cx="${X(state.hour)}" cy="${Y(day[state.hour])}" r="5" fill="var(--sand)"/><line class="hl" y1="10" y2="${Hd-pb}" stroke="var(--ink)" stroke-opacity=".35" visibility="hidden"/></svg></div>`;
   hoverChart("prodchart", Wd, pl, 8, h=>`<b>${h} h</b><br>Production du parc : ${day[h].toFixed(1).replace(".",",")} MW<br><span class="sub">Cliquez pour aller à cette heure</span>`);
   document.getElementById("turbs").innerHTML = now.map(t=>{ const dur = t.P>0 ? Math.max(.6, 4.5-t.sp/4) : 0; return `<div class="card" style="display:grid;grid-template-columns:auto minmax(0,1fr);gap:12px;align-items:center">
-    <svg width="70" height="90" viewBox="0 0 70 90" aria-hidden="true"><path d="M33 34h4l2 54h-8z" fill="var(--muted)"/><g class="rotor" style="animation-duration:${dur||0}s;${dur?"":"animation:none"}"><path d="M35 32L35 4M35 32L59 46M35 32L11 46" stroke="var(--ink)" stroke-width="4" stroke-linecap="round"/><circle cx="35" cy="32" r="4" fill="var(--accent)"/></g></svg>
+    ${turbineIcon(dur)}
     <div><h3>Éolienne ${t.n}</h3><div><b>${(t.P*1000).toFixed(0)} kW</b> <span class="muted">sur 2 000</span></div><div class="muted" style="font-size:14px">Vent au moyeu ${fmtSpeed(t.sp)}, ${dirName(t.u,t.v)}</div><span class="pill ${t.P>0?"good":"mid"}">${t.P>0?"En production":"À l'arrêt, vent trop faible"}</span></div></div>`; }).join("");
 }
 
@@ -379,6 +397,34 @@ const TMOD={s:{n:"petite éolienne",z:30,pr:.1,d:20},m:{n:"éolienne moyenne",z:
 const myT={p:xy(36.69,10.40), m:"l"};
 const powerM=(ms,pr)=> ms<3||ms>=25 ? 0 : ms>=12 ? pr : pr*(ms**3-27)/(1728-27);
 const dayEnergy=(p,m)=>{ let e=0; for(let h=0;h<24;h++) e+=powerM(Math.hypot(...windE(...p,TMOD[m].z,h)),TMOD[m].pr); return e; };
+// schéma du rotor : vue 3D (three.js, chargée à la première apparition), SVG à l'échelle sinon
+let rotor3d=null, rotor3dState="idle", rotorData=null;
+function rotorSvg(d){
+  const W=270, Hh=300, g=Hh-14, k=Math.min((g-16)/(d.hubZ+d.R),72/d.R), rp=d.R*k, cx=rp+14, cy=g-d.hubZ*k, hs=d.profile, n=hs.length-1;
+  const mx=Math.max(...hs.map(p=>p.sp),.1), x0=cx+rp+14, L=W-x0-10, hub=Math.hypot(d.u,d.v);
+  const bands=hs.slice(0,n).map((p,i)=>{ const y1=g-hs[i+1].z*k, y0=g-p.z*k, c=speedColor(kmh((p.sp+hs[i+1].sp)/2)); return `<rect x="${(cx-rp).toFixed(1)}" y="${y1.toFixed(1)}" width="${(2*rp).toFixed(1)}" height="${(y0-y1+.5).toFixed(1)}" fill="rgb(${c})" opacity=".45"/>`; }).join("");
+  const arrows=hs.map(p=>{ const y=g-p.z*k, l=Math.max(4,L*p.sp/mx); return `<path d="M${x0} ${y.toFixed(1)}h${(l-5).toFixed(1)}" stroke="rgb(${p.rgb})" stroke-width="3" stroke-linecap="round"/><path d="M${(x0+l).toFixed(1)} ${y.toFixed(1)}l-6 -4v8z" fill="rgb(${p.rgb})"/>`; }).join("");
+  const blade=`M${cx} ${cy-.05*rp}C${cx+.13*rp} ${cy-.3*rp} ${cx+.1*rp} ${cy-.65*rp} ${cx+.025*rp} ${cy-rp}L${cx-.02*rp} ${cy-rp}C${cx-.05*rp} ${cy-.6*rp} ${cx-.08*rp} ${cy-.3*rp} ${cx} ${cy-.05*rp}Z`;
+  const dur=hub<3||hub>=25||REDUCE_MOTION.matches?0:Math.max(.8,5-hub/3);
+  const spin=dur?`<animateTransform attributeName="transform" type="rotate" from="0 ${cx} ${cy}" to="360 ${cx} ${cy}" dur="${dur.toFixed(2)}s" repeatCount="indefinite"/>`:"";
+  const xr=(x0+L*hub/mx).toFixed(1);
+  return `<svg viewBox="0 0 ${W} ${Hh}" width="${W}" height="${Hh}" aria-hidden="true"><path d="M8 ${g}H${W-8}" stroke="var(--line)" stroke-width="2"/><path d="M${cx-.035*rp-2} ${g}L${cx-.02*rp-1} ${cy}h${.04*rp+2}L${cx+.035*rp+2} ${g}z" fill="var(--muted)"/>
+    <clipPath id="rotor-disk"><circle cx="${cx}" cy="${cy}" r="${rp}"/></clipPath><g clip-path="url(#rotor-disk)">${bands}</g><circle cx="${cx}" cy="${cy}" r="${rp}" fill="none" stroke="var(--line)" stroke-width="1.5" stroke-dasharray="3 3"/>
+    <g>${[0,120,240].map(a=>`<path d="${blade}" transform="rotate(${a} ${cx} ${cy})" fill="var(--ink)" opacity=".85"/>`).join("")}${spin}</g><circle cx="${cx}" cy="${cy}" r="${Math.max(3,.07*rp)}" fill="var(--accent)" stroke="var(--surface)" stroke-width="1.5"/>
+    ${arrows}<path d="M${xr} ${(g-hs[n].z*k-4).toFixed(1)}V${(g-hs[0].z*k+4).toFixed(1)}" stroke="var(--ink)" stroke-opacity=".55" stroke-dasharray="3 3"/></svg>`;
+}
+function pushRotor(d){
+  rotorData=d;
+  if(rotor3d){ rotor3d.update(d); return; }
+  const fig=document.getElementById("rotor-fig"); fig.innerHTML=rotorSvg(d);
+  if(rotor3dState!=="idle" || !window.ATOM?.loadTurbine) return;
+  rotor3dState="wait";
+  const io=new IntersectionObserver(es=>{ if(!es.some(e=>e.isIntersecting)) return; io.disconnect(); rotor3dState="loading";
+    ATOM.loadTurbine(fig,{label:"Éolienne en 3D face au vent du moyeu, avec une flèche de vent par hauteur du rotor. Glissez pour tourner la vue."})
+      .then(v=>{ rotor3d=v; rotor3dState="ready"; rotor3d.update(rotorData); })
+      .catch(e=>{ rotor3dState="failed"; console.warn("Vue 3D du rotor indisponible, schéma 2D conservé.", e); fig.classList.remove("is-3d"); fig.innerHTML=rotorSvg(rotorData); }); });
+  io.observe(fig);
+}
 function renderMyT(){
   const t=TMOD[myT.m], e=dayEnergy(myT.p,myT.m), ref=dayEnergy(TURB[1].p,myT.m), cf=e/(t.pr*24), ratio=ref>0?e/ref:0, k=idx(...myT.p);
   const verdict = wat[k]===1 ? ["info","En mer : ce prototype estime surtout les éoliennes à terre."] : cf>.3 ? ["go","Très bon emplacement"] : cf>.18 ? ["warn","Emplacement moyen"] : ["stop","Emplacement peu venté"];
@@ -387,11 +433,12 @@ function renderMyT(){
     <p class="muted" style="font-size:14px">${ratio<.7?"Le vent est plus faible ici que sur la crête : une tour plus haute ou un site plus exposé produirait davantage.":"Cet emplacement produit presque autant que la crête, la meilleure zone de l'exemple."} Estimation pour ${EODAYS[eo.day]}.</p></div>`;
   // rotor
   const z0h=t.z, R=t.d/2, hs=[]; for(let i=0;i<=8;i++){ const z=Math.max(5,z0h-R+i*(2*R/8)); hs.push([z,Math.hypot(...windE(...myT.p,z,state.hour))]); }
-  const top=hs[8][1], bot=hs[0][1], hub=Math.hypot(...windE(...myT.p,z0h,state.hour)), cx=110, cy=110, rp=82;
-  const bands=hs.slice(0,8).map(([z,sp],i)=>{ const y=cy+rp-(i+1)*(2*rp/8), c=speedColor(kmh((sp+hs[i+1][1])/2)); return `<rect x="${cx-rp}" y="${y.toFixed(1)}" width="${2*rp}" height="${(2*rp/8+.5).toFixed(1)}" fill="rgb(${c})"/>`; }).join("");
-  document.getElementById("rotor").innerHTML = `<div style="display:grid;grid-template-columns:auto minmax(0,1fr);gap:14px;align-items:center"><svg width="220" height="260" viewBox="0 0 220 260" aria-hidden="true"><defs><clipPath id="disk"><circle cx="${cx}" cy="${cy}" r="${rp}"/></clipPath></defs><path d="M106 ${cy}h8l5 148h-18z" fill="var(--muted)"/><g clip-path="url(#disk)">${bands}</g><circle cx="${cx}" cy="${cy}" r="${rp}" fill="none" stroke="var(--ink)" stroke-width="2"/><g class="rotor" style="animation-duration:${hub>3?Math.max(.8,5-hub/3):0}s"><path d="M${cx} ${cy}V${cy-rp+4}M${cx} ${cy}L${cx+71} ${cy+41}M${cx} ${cy}L${cx-71} ${cy+41}" stroke="var(--ink)" stroke-width="5" stroke-linecap="round" opacity=".75"/></g><circle cx="${cx}" cy="${cy}" r="6" fill="var(--accent)"/></svg>
-    <div style="display:grid;gap:8px"><div><span class="muted">En haut des pales (${Math.round(z0h+R)} m)</span><br><b style="font-size:20px">${fmtSpeed(top)}</b></div><div><span class="muted">Au moyeu (${z0h} m)</span><br><b style="font-size:20px">${fmtSpeed(hub)}</b></div><div><span class="muted">En bas des pales (${Math.round(Math.max(5,z0h-R))} m)</span><br><b style="font-size:20px">${fmtSpeed(bot)}</b></div>
-    <p style="margin:0">En haut des pales, le vent est <b>${Math.round((top/bot-1)*100)} %</b> plus fort qu'en bas. Cet écart fatigue les pales : seule une carte du vent en 3D permet de le connaître.</p></div></div>`;
+  const top=hs[8][1], bot=hs[0][1], [hu,hv]=windE(...myT.p,z0h,state.hour), hub=Math.hypot(hu,hv);
+  const rd={hubZ:z0h, R, u:hu, v:hv, profile:hs.map(([z,sp])=>({z, sp, rgb:speedColor(kmh(sp))}))};
+  pushRotor(rd);
+  document.getElementById("rotor-txt").innerHTML = `<div><span class="muted">En haut des pales (${Math.round(z0h+R)} m)</span><br><b style="font-size:20px">${fmtSpeed(top)}</b></div><div><span class="muted">Au moyeu (${z0h} m)</span><br><b style="font-size:20px">${fmtSpeed(hub)}</b></div><div><span class="muted">En bas des pales (${Math.round(Math.max(5,z0h-R))} m)</span><br><b style="font-size:20px">${fmtSpeed(bot)}</b></div>
+    <p style="margin:0">En haut des pales, le vent est <b>${Math.round((top/bot-1)*100)} %</b> plus fort qu'en bas. Cet écart fatigue les pales : seule une carte du vent en 3D permet de le connaître.</p>
+    <p class="muted rotor-note">Les flèches montrent le vent à chaque hauteur du rotor : plus elles sont longues, plus il est fort. Le pointillé marque le vent au moyeu.</p>`;
   // rose
   const sec=Array.from({length:8},()=>({n:0,s:0})); for(let h=0;h<24;h++){ const [u,v]=windE(...myT.p,z0h,h), i=Math.round(fromDeg(u,v)/45)%8; sec[i].n++; sec[i].s+=Math.hypot(u,v); }
   const mxn=Math.max(...sec.map(x=>x.n)), c0=120, rr=95, NAMES=["N","NE","E","SE","S","SO","O","NO"];
@@ -580,7 +627,7 @@ function setSceneMode(mode){
   document.getElementById("terrain-mode-analysis").setAttribute("aria-pressed",mode==="analysis");
   if(window.ATOM?.workspace)publishWorkspace();
   if(mode==="analysis"&&!threeReady){threeReady=true;ATOM.loadThree().then(init3d).catch(e=>{threeReady=false;toast("La scène 3D n’a pas pu se charger. Réessayez.");console.error(e);});}
-  if(mode==="terrain"&&!terrainStarting){terrainStarting=ATOM.loadTerrain().catch(error=>{terrainStarting=null;document.getElementById("terrain-status").textContent="Le terrain n’a pas pu se charger. Vérifiez les fichiers importés, puis réessayez.";document.getElementById("terrain-retry").hidden=false;console.error(error);});}
+  if(mode==="terrain"&&!terrainStarting){terrainStarting=ATOM.loadTerrain().catch(error=>{terrainStarting=null;document.getElementById("terrain-status").textContent=String(error).includes("HTTP 404")?"Relief 3D non installé sur ce serveur. Les autres vues restent disponibles.":"Le terrain n’a pas pu se charger. Réessayez plus tard.";document.getElementById("terrain-retry").hidden=false;console.error(error);});}
 }
 document.getElementById("terrain-mode-map").onclick=()=>setSceneMode("terrain");
 document.getElementById("terrain-mode-analysis").onclick=()=>setSceneMode("analysis");
@@ -906,7 +953,7 @@ function animateKpis(id){ const box=document.getElementById(id); if(!box || matc
     const t0=performance.now(), suf=m[2]; const step=t=>{ const a=Math.min(1,(t-t0)/550), e=1-(1-a)**3, v=from+(to-from)*e; el.textContent=(dec?v.toFixed(dec).replace(".",","):Math.round(v).toLocaleString("fr-FR"))+suf; if(a<1) requestAnimationFrame(step); }; requestAnimationFrame(step); }); }
 
 // ---------------- thème ----------------
-function setTheme(t){ if(t==="auto") delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme=t; ["auto","light","dark"].forEach(k=>document.getElementById("th-"+k).setAttribute("aria-pressed",k===t)); store.set("aw-theme",t); MAPS.forEach(m=>m.redraw()); renderAnswer(); renderTB(); renderEol(); }
+function setTheme(t){ CSS_CACHE.clear(); if(t==="auto") delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme=t; ["auto","light","dark"].forEach(k=>document.getElementById("th-"+k).setAttribute("aria-pressed",k===t)); store.set("aw-theme",t); MAPS.forEach(m=>m.redraw()); renderAnswer(); renderTB(); renderEol(); renderMyT(); }
 ["auto","light","dark"].forEach(k=>document.getElementById("th-"+k).onclick=()=>setTheme(k));
 
 // ---------------- recherche rapide (Ctrl K) ----------------

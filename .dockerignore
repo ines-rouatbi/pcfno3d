@@ -1,0 +1,18 @@
+# Contexte de build de service/Dockerfile. Les donnees n'entrent pas dans l'image :
+# elles sont montees en volume (poids, cache, relief 3D).
+.git
+.venv
+node_modules
+artifacts
+tmp
+output
+test-results
+aneo_dataset_3d_v2
+aneo_physical_db_multitime_v3_progress
+data_full
+data_claude*
+*.rar
+*.pt
+# relief 3D (~470 Mo) : volume + PCFNO3D_TERRAIN_DIR
+frontend/public/terrain
+webapp/terrain

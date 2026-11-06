@@ -1326,5 +1326,8 @@
   "{0} · ordre {1} · phase {2} · {3}": "{0} · الترتيب {1} · المرحلة {2} · {3}",
   "{0} · {1} capteurs · {2}": "{0} · {1} مستشعر · {2}",
   "{0} à {1}": "{0} إلى {1}",
-  "{0}, ordre {1}, phase {2}": "{0}، الترتيب {1}، المرحلة {2}"
+  "{0}, ordre {1}, phase {2}": "{0}، الترتيب {1}، المرحلة {2}",
+  "Les flèches montrent le vent à chaque hauteur du rotor : plus elles sont longues, plus il est fort. Le pointillé marque le vent au moyeu.": "تُظهر الأسهم الرياح عند كل ارتفاع من الدوّار: كلما كانت أطول كانت الرياح أقوى. يحدّد الخط المنقّط الرياح عند المحور.",
+  "Vue 3D du rotor indisponible, schéma 2D conservé.": "العرض ثلاثي الأبعاد للدوّار غير متاح، تم الإبقاء على المخطط ثنائي الأبعاد.",
+  "Éolienne en 3D face au vent du moyeu, avec une flèche de vent par hauteur du rotor. Glissez pour tourner la vue.": "توربين رياح ثلاثي الأبعاد مواجه لرياح المحور، مع سهم رياح لكل ارتفاع من الدوّار. اسحب لتدوير العرض."
 }

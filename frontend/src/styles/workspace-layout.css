@@ -21,7 +21,7 @@ nav.workspace-navigation a:hover{background:var(--surface-2);color:var(--ink)}
 nav.workspace-navigation a[aria-current="page"]{background:var(--surface-2);color:var(--accent);font-weight:750;border:0;box-shadow:inset 3px 0 var(--accent)}
 nav.workspace-navigation .count{margin-inline-start:auto;font:9px var(--f-data);background:var(--warn-soft);color:var(--warn);padding:1px 5px;border-radius:3px;min-width:17px;text-align:center}
 .rail-bottom{display:grid;gap:15px;margin:30px 0 0;padding:20px 10px 0;border-top:1px solid var(--line)}
-.lab-link,.rail-help{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--muted);justify-content:flex-start}.rail-help{border:0;background:none;padding:7px 0}.lab-link>svg:first-child{display:block;width:16px;height:16px}.lab-link b{font-weight:550}.lab-link>svg:last-child{width:13px;height:13px;margin-inline-start:auto}.rail-help>svg{width:16px;height:16px}
+.rail-help{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--muted);justify-content:flex-start}.rail-help{border:0;background:none;padding:7px 0}.rail-help>svg{width:16px;height:16px}
 .workspace-content{max-width:1500px;margin:0 auto;padding:30px 32px 24px}
 .page-heading{display:flex;justify-content:space-between;align-items:center;gap:25px;margin-bottom:23px}.page-heading h1{font:400 36px/1.2 var(--f-editorial);letter-spacing:-.045em;margin-bottom:9px}.page-heading p{font-size:12px;line-height:1.7;color:var(--muted);margin:0;max-width:690px}
 .workspace-main[data-view="tableau"] .page-heading .eyebrow{display:block;font:10px/1.4 var(--f-data);color:var(--muted);margin-bottom:9px;text-transform:uppercase;letter-spacing:.08em}.eyebrow>span{display:none}
