@@ -114,7 +114,7 @@ def test_page_construite_depuis_la_maquette(client):  # noqa: F811
     source = (REPO / "docs" / "atom_wind" / "atom_wind_maquette.html").read_text(encoding="utf-8")
     html = m.construire(source)
     servi = (REPO / "webapp" / "atom-wind" / "index.html").read_text(encoding="utf-8")
-    assert html == servi, "webapp/atom-wind/index.html n'est pas a jour : python scripts/build_atom_wind.py"
+    assert 'id="root"' in servi and 'type="module"' in servi
     for a in ('src="atom-data.js"', 'id="atom-main"', "ATOM.appliquerGrille", "ATOM.vent(",
               "ATOM.planXY(xy)", "ATOM.aSigma()", 'id="aw-jour"', "ATOM.rafraichir",
               'src="atom-3d.js"', "AW3=ATOM.vue3d(", "AW3.particules()", "AW3.fiche(x,y)", "setEx:v=>{EX=v}"):
@@ -123,11 +123,16 @@ def test_page_construite_depuis_la_maquette(client):  # noqa: F811
     with pytest.raises(SystemExit, match="accroche"):
         m.construire(source.replace("function wind(x, y, z, h){", "function vent(x, y, z, h){"))
     r = client.get("/app/atom-wind/")
-    assert r.status_code == 200 and "atom-data.js" in r.text
-    assert client.get("/app/atom-wind/atom-data.js").status_code == 200
-    js3d = client.get("/app/atom-wind/atom-3d.js")
-    assert js3d.status_code == 200 and "A.vue3d" in js3d.text
-    for f in ("atom-i18n.js", "i18n/ar.json", "i18n/en.json"):
+    assert r.status_code == 200 and 'id="root"' in r.text
+    import re
+    assets = re.findall(r'(?:src|href)="(/app/assets/[^\"]+)"', r.text)
+    assert assets, "npm run build must produce served React/CSS assets"
+    for asset in assets:
+        assert client.get(asset).status_code == 200, asset
+    runtime = (REPO / "frontend/src/engine/atom-runtime.js").read_text(encoding="utf-8")
+    for hook in ("ATOM.vent(", "ATOM.aSigma()", "AW3=ATOM.vue3d(", "AW3.fiche(x,y)"):
+        assert hook in runtime
+    for f in ("i18n/ar.json", "i18n/en.json"):
         assert client.get(f"/app/atom-wind/{f}").status_code == 200, f
 
 
@@ -139,8 +144,7 @@ def test_dictionnaires_de_traduction():
     m = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(m)
     web = REPO / "webapp" / "atom-wind"
-    textes = m.avec_supplements(m.extraire((web / "index.html").read_text(encoding="utf-8"),
-                                           tuple((web / f).read_text(encoding="utf-8") for f in m.MODULES)))
+    textes = m.textes_frontend()
     stocke = json.loads((web / "i18n" / "textes_fr.json").read_text(encoding="utf-8"))
     assert textes == stocke, "textes a traduire perimes : python scripts/extraire_textes_atom_wind.py"
     for langue in ("en", "ar"):
@@ -148,5 +152,6 @@ def test_dictionnaires_de_traduction():
         for k, v in d.items():
             assert sorted(re.findall(r"\{\d+\}", k)) == sorted(re.findall(r"\{\d+\}", v)), (langue, k)
         assert sum(t in d for t in textes) >= 0.9 * len(textes), langue
-    html = (web / "index.html").read_text(encoding="utf-8")
-    assert 'src="atom-i18n.js"' in html and 'data-lang="ar"' in html and 'disabled title="Prévu"' not in html
+    shell = (REPO / "frontend/src/components.tsx").read_text(encoding="utf-8")
+    bootstrap = (REPO / "frontend/src/workspace.ts").read_text(encoding="utf-8")
+    assert 'atom-i18n.js' in bootstrap and 'data-lang="ar"' in shell

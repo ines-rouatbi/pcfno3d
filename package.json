@@ -1,0 +1,35 @@
+{
+  "name": "atom-wind-workspace",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "predev": "node scripts/copy_frontend_vendor.mjs",
+    "dev": "vite --host 127.0.0.1",
+    "prebuild": "node scripts/copy_frontend_vendor.mjs",
+    "build": "tsc --noEmit && node scripts/extract_frontend_markup.mjs && vite build && node scripts/finalize_frontend.mjs",
+    "preview": "vite preview --host 127.0.0.1",
+    "test:browser": "playwright test"
+  },
+  "dependencies": {
+    "@fontsource-variable/manrope": "^5.2.8",
+    "@fontsource/ibm-plex-mono": "^5.2.7",
+    "@fontsource/ibm-plex-serif": "^5.3.0",
+    "leaflet": "^1.9.4",
+    "lucide-react": "^0.577.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "three": "^0.187.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.58.2",
+    "@tailwindcss/vite": "^4.3.4",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@types/three": "^0.183.1",
+    "@vitejs/plugin-react": "^6.0.1",
+    "tailwindcss": "^4.3.4",
+    "typescript": "^5.9.3",
+    "vite": "^8.3.5"
+  }
+}

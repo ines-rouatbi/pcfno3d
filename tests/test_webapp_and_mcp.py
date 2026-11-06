@@ -245,9 +245,12 @@ def test_carte_et_point(client):
 def test_application_web_servie(client):
     page = client.get("/app/")
     assert page.status_code == 200
-    assert "PC-FNO3D" in page.text
-    assert client.get("/app/app.js").status_code == 200
-    assert client.get("/app/style.css").status_code == 200
+    assert 'data-product="science"' in page.text and 'id="root"' in page.text
+    import re
+    assets = re.findall(r'(?:src|href)="(/app/assets/[^\"]+)"', page.text)
+    assert assets
+    for asset in assets:
+        assert client.get(asset).status_code == 200, asset
     assert client.get("/", follow_redirects=False).status_code in (307, 302)
 
 

@@ -156,14 +156,27 @@ def construire(source: str) -> str:
 
 
 def main() -> int:
+    # The historical constructor above remains useful for comparing the original
+    # prototype. Production UI sources now live in frontend/ (React + Tailwind).
+    import shutil
+    import subprocess
+
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--source", default=str(REPO / "docs" / "atom_wind" / "atom_wind_maquette.html"))
-    ap.add_argument("--sortie", default=str(REPO / "webapp" / "atom-wind" / "index.html"))
+    ap.add_argument("--source", help="legacy prototype input; requires --sortie")
+    ap.add_argument("--sortie", help="explicit destination for the historical prototype")
     args = ap.parse_args()
-    html = construire(Path(args.source).read_text(encoding="utf-8"))
-    Path(args.sortie).write_bytes(html.encode("utf-8"))
-    print(f"{args.sortie} ({len(html) // 1024} Ko)")
-    return 0
+    if args.source or args.sortie:
+        if not (args.source and args.sortie):
+            ap.error("--source and --sortie must be supplied together for legacy export")
+        if Path(args.sortie).resolve() == (REPO / "webapp/atom-wind/index.html").resolve():
+            ap.error("the React entry point cannot be overwritten by the legacy prototype")
+        html = construire(Path(args.source).read_text(encoding="utf-8"))
+        Path(args.sortie).write_text(html, encoding="utf-8")
+        return 0
+    npm = shutil.which("npm")
+    if npm is None:
+        raise SystemExit("Node.js and npm are required: run npm ci, then npm run build")
+    return subprocess.run([npm, "run", "build"], cwd=REPO, check=False).returncode
 
 
 if __name__ == "__main__":

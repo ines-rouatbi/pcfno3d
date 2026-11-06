@@ -1,0 +1,51 @@
+/* Wind and terrain share one viewport. Data controls stay with the scene. */
+.scene-modebar{display:flex;gap:23px;align-items:center;flex-wrap:wrap;margin:0 0 14px;border:0;background:none;padding:0}
+.scene-modebar button{font-size:12px;min-height:35px;border:0;border-bottom:2px solid transparent;border-radius:0;background:none;padding:7px 0;color:var(--muted)}
+.scene-modebar button[aria-pressed="true"]{border-color:var(--accent);color:var(--accent);font-weight:700}
+#v-carte3d[data-scene-mode="terrain"].on{display:block}
+.workspace-main[data-view="carte3d"]:has(#v-carte3d[data-scene-mode="terrain"]) .data-context,.workspace-main[data-view="carte3d"]:has(#v-carte3d[data-scene-mode="terrain"]) .wind-readout{display:none}
+.workspace-main[data-view="carte3d"]:has(#v-carte3d[data-scene-mode="terrain"]) .page-heading{margin-bottom:13px}
+.workspace-main[data-view="carte3d"]:has(#v-carte3d[data-scene-mode="terrain"]) .page-heading p{display:none}
+.terrain-pane{min-width:0}
+.terrain-host{position:relative;height:calc(100dvh - 225px);min-height:520px;max-height:950px;width:100%;background:#102b36;border:1px solid #355460;border-radius:9px;isolation:isolate;overflow:hidden;color:#e9f1f0}
+.terrain-host>canvas{display:block;width:100%;height:100%;touch-action:none}
+.terrain-host:focus-visible{outline-color:#a9d9e1}
+.terrain-host:fullscreen{height:100dvh;min-height:100dvh;max-height:none;border:0;border-radius:0}
+.terrain-toolbar{position:absolute;top:16px;left:16px;right:16px;z-index:4;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:8px;background:#102b36d9;border:1px solid #8baeb23d;border-radius:7px;backdrop-filter:blur(10px)}
+.terrain-view-buttons,.terrain-field-tools{display:flex;align-items:center;gap:5px;flex-wrap:wrap}
+.terrain-toolbar .btn{font-size:11px;min-height:34px;border:1px solid transparent;border-radius:4px;background:none;padding:7px 11px;color:#d9e8eb}
+.terrain-toolbar .btn:hover{background:#315864}
+.terrain-toolbar .btn[aria-pressed="true"]{background:#e4efea;color:#153b46;border-color:#e4efea}
+.terrain-toolbar label{display:flex;align-items:center;gap:7px;font-size:10px;color:#bed3d9}
+.terrain-toolbar select{font-size:11px;min-height:34px;padding:6px 8px;border:1px solid #6a929d7d;border-radius:4px;background:#234752;color:#eef6f7}
+.terrain-toolbar .btn:disabled,.terrain-toolbar select:disabled{opacity:.45}
+.terrain-options{position:relative}.terrain-options summary{list-style:none;min-width:33px;font-size:17px!important;padding:1px 8px!important}.terrain-options summary::-webkit-details-marker{display:none}
+.terrain-options:not([open])>div{display:none}.terrain-options>div{position:absolute;right:0;top:45px;display:grid;gap:14px;width:190px;background:#173b48;padding:17px;border:1px solid #5e838e;border-radius:6px;box-shadow:0 10px 30px #071b2880}
+.terrain-options>div label{display:grid;gap:7px}.terrain-options>div .btn{background:#294e5a;text-align:start;justify-content:flex-start}
+#terrain-fullscreen{font-size:19px;line-height:1;min-width:34px;padding-inline:8px}
+.terrain-caption{position:absolute;top:91px;left:25px;pointer-events:none;display:grid;gap:7px;z-index:1;text-shadow:0 1px 8px #102b36}
+.terrain-caption b{font:400 29px var(--f-editorial);letter-spacing:-.035em;color:#eff7f5}.terrain-caption span{font-size:11px;color:#d1e1e5}
+#terrain-forecast-retry{pointer-events:auto;justify-self:start;border:1px solid #a7c9cf80;border-radius:4px;background:#244854;color:#f1f7f8;padding:7px 11px;font-size:11px}
+#terrain-source{max-width:165px}#terrain-day{background:#234752;color:#e9f4f6;border:1px solid #7299a166;border-radius:4px;padding:7px;font-size:11px;max-width:91px}
+#terrain-point-source{order:3;font-size:9px!important;color:#aad0d9!important}
+.terrain-forecast-provenance{display:flex;gap:15px;justify-content:space-between;flex-wrap:wrap;font-size:10px;color:var(--muted);line-height:1.9;margin-top:7px}.terrain-forecast-provenance a{color:var(--accent)}
+@media(max-width:1100px){.terrain-caption{top:121px}.terrain-domain-notice{top:183px}}
+@media(max-width:700px){#terrain-source{max-width:150px}.terrain-host .terrain-caption{top:151px}.terrain-host .terrain-domain-notice{top:221px}#terrain-day{max-width:76px;font-size:10px;padding:6px}.terrain-host #terrain-replay{display:none}.terrain-forecast-provenance{font-size:9px;gap:4px}}
+#terrain-live-meta{display:flex;align-items:center;gap:7px}#terrain-live-meta:before{content:'';width:5px;height:5px;background:#e7ca85;border-radius:50%}
+#terrain-flow-state{font-size:10px;color:#f0d79e}#terrain-flow-state:empty{display:none}
+.terrain-loading{position:absolute;inset:0;display:grid;place-content:center;justify-items:center;gap:16px;font-size:13px;background:#102b36e6;z-index:5}
+.terrain-domain-notice{position:absolute;top:155px;left:25px;max-width:250px;background:#102b36e0;border:1px solid #789fa555;border-radius:5px;color:#cbdde0;padding:14px 17px;font-size:11px;line-height:1.8;text-align:start;z-index:2}
+.terrain-domain-notice>span{display:block;color:#f0d79e;margin-top:6px;font-weight:600}
+.terrain-selection{position:absolute;bottom:143px;right:22px;max-width:285px;width:calc(100% - 44px);display:flex;flex-direction:column;gap:7px;background:#102b36ed;border:1px solid #6c929b70;border-radius:6px;padding:17px 19px;z-index:2;backdrop-filter:blur(9px)}
+.terrain-selection-label{order:0;font:8px var(--f-data);letter-spacing:.07em;color:#abc3c9}.terrain-selection>b{order:2;font-size:11px;font-weight:500;color:#c4d8de}.terrain-selection>span:not(.terrain-selection-label){font-size:10px;line-height:1.7;color:#c8dde2}#terrain-elevation{order:3}#terrain-wind-reading{order:1;font-size:17px!important;line-height:1.6!important;color:#f0f8fa!important;font-weight:600}
+.terrain-selection>button{order:4;font-size:11px;align-self:flex-start;padding:7px 0 0;border:0;background:none;color:#f1d394;text-align:start}
+#terrain-close-point{position:absolute;right:7px;top:7px;order:0;display:grid;place-items:center;min-width:23px;height:23px;padding:0;background:none;color:#b9d3da;font-size:17px;line-height:1}
+.terrain-wind-legend{position:absolute;bottom:92px;left:24px;z-index:2;padding:11px 13px;background:#102b36d6;border:1px solid #789fa52e;border-radius:5px;backdrop-filter:blur(6px);font-size:9px;color:#d5e6e9}
+.terrain-wind-legend>span{display:block;font-size:10px;font-weight:550;margin-bottom:7px}.terrain-wind-legend>div{display:flex;align-items:center;gap:8px}.terrain-wind-legend i{display:block;width:110px;height:4px;border-radius:2px;background:linear-gradient(90deg,#bfe3f2,#59c3a0,#b6d84a,#f4c430,#f08a2c,#e0414b,#a73a9e)}.terrain-wind-legend small{display:block;font-size:8px;color:#b5cfd5;margin-top:8px}
+.terrain-playback{position:absolute;bottom:18px;left:22px;right:22px;z-index:3;display:flex;align-items:center;gap:13px;padding:9px 12px;background:#102b36e8;border:1px solid #819fa766;border-radius:7px;backdrop-filter:blur(10px);box-shadow:0 5px 25px #071b2840}
+.terrain-playback button{display:grid;place-items:center;flex-shrink:0;min-width:35px;height:35px;border:0;border-radius:4px;background:#315964;color:#f3f8f9;font-size:13px}.terrain-playback button:hover{background:#437581}
+#terrain-motion{font:20px/1 var(--f-body);min-width:38px}.terrain-playback label{font-size:10px;color:#bdd4dc}.terrain-playback input{flex:1;min-width:45px;min-height:28px;width:100%;margin:0;accent-color:#b1dbe0}.terrain-playback output{font:12px var(--f-data);min-width:38px;white-space:nowrap;color:#e9f4f6}#terrain-replay{font-size:11px;padding-inline:9px;background:transparent;border:1px solid #7299a166}#terrain-replay[aria-pressed="true"]{background:#365c66}
+.terrain-statusbar,.terrain-wind-context{display:flex;justify-content:space-between;align-items:start;gap:15px;font-size:10px;line-height:1.8;padding-top:10px;color:var(--muted)}.terrain-statusbar>span:first-child{color:var(--accent)}.terrain-statusbar>span:last-child,.terrain-wind-context>span:last-child{text-align:end}.terrain-wind-context{font-size:9px;padding-top:3px}
+.terrain-sources{margin-top:16px;border-top:1px solid var(--line);padding-top:12px;font-size:11px;color:var(--muted)}.terrain-sources summary{font-size:11px;color:var(--ink);width:fit-content}.terrain-sources p{max-width:900px;line-height:1.9}.terrain-sources a{color:var(--accent);text-decoration:underline;text-underline-offset:3px}
+.analysis-terrain-note{font-size:11px;line-height:1.9;color:var(--muted);margin:0 0 16px;max-width:850px}#v-carte3d[data-scene-mode="terrain"] #cutcard{display:none}
+@media(max-width:700px){.scene-modebar{gap:19px;margin-bottom:12px}.scene-modebar button{font-size:10px;min-height:31px;padding-block:6px}.terrain-host{min-height:530px;height:calc(100dvh - 210px);border-radius:6px}.terrain-toolbar{top:10px;left:10px;right:10px;padding:6px;gap:5px}.terrain-toolbar .btn{font-size:10px;min-height:32px;padding:6px 9px}.terrain-view-buttons,.terrain-field-tools{gap:3px}.terrain-field-tools{margin-left:auto}.terrain-toolbar label{font-size:9px;gap:5px}.terrain-toolbar select{font-size:10px;min-height:32px;padding-inline:6px}.terrain-caption{top:111px;left:19px}.terrain-caption b{font-size:26px}.terrain-caption span{font-size:10px}.terrain-domain-notice{top:179px;left:19px;max-width:230px;font-size:10px}.terrain-selection{right:14px;bottom:163px;padding:13px 16px;max-width:245px;width:calc(100% - 28px)}#terrain-wind-reading{font-size:16px!important}.terrain-wind-legend{left:14px;bottom:91px;padding:9px 11px;font-size:8px}.terrain-wind-legend>span{font-size:9px}.terrain-wind-legend i{width:80px}.terrain-wind-legend small{font-size:8px;margin-top:6px}.terrain-playback{bottom:13px;left:13px;right:13px;padding:8px;gap:8px}.terrain-playback label{display:none}.terrain-playback output{font-size:11px;min-width:33px}#terrain-motion{font-size:18px;min-width:33px}.terrain-playback button{min-width:30px;height:33px}#terrain-replay{font-size:10px;padding-inline:6px}.terrain-statusbar,.terrain-wind-context{flex-direction:column;gap:3px;font-size:10px}.terrain-statusbar>span:last-child,.terrain-wind-context>span:last-child{text-align:start}.terrain-wind-context{font-size:9px;padding-top:7px}.terrain-sources{font-size:11px}}

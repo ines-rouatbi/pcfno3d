@@ -1,0 +1,47 @@
+/* The scene uses a stable dark canvas in both themes; wind colours keep their encoding. */
+.three{height:clamp(540px,68vh,850px);min-height:540px;border:1px solid #2d4b44;border-radius:10px;background:radial-gradient(ellipse at 50% 10%,#36524b,#1b302b 70%);isolation:isolate}
+.three .glass{background:#20392ef2;color:#e7eee2;border:1px solid #5b76665c;border-radius:6px;backdrop-filter:none;padding:12px}
+.three .muted,.three .marks,.three .legend{color:#b8cbbb}
+.three .btn,.three .inp{background:#294439;color:#ecf1e9;border-color:#57725e;font-size:12px;min-height:33px}
+.three .btn.primary{background:#c7d8b2;color:#20352b;border-color:#c7d8b2}
+.three .btn[aria-pressed="true"]{border-color:#c7d8b2;box-shadow:inset 0 0 0 1px #c7d8b2}
+.three .ov.tl{top:18px;left:18px;max-width:270px;pointer-events:none}
+.three .ov.tl .glass{border:0;background:none;padding:0}
+.three .ov.tl b{font-size:14px;font-weight:550}.three .ov.tl .muted{font-size:11px!important;line-height:1.5;display:block;max-width:240px}
+.three .ov.tr{top:18px;right:18px;left:auto;max-width:57%;justify-content:flex-end;gap:6px}
+.three .ov.bl{left:18px;right:84px;bottom:18px;pointer-events:none}
+.three .hslider{width:min(100%,500px);pointer-events:auto;gap:3px}
+.three .hslider label{font-size:12px}
+.three .marks{font-size:10px;gap:4px}.three .marks span{text-align:center}
+.three .legend{font-size:10px}.three .legend .ramp{height:4px;width:100px}
+.three #aw3d{right:18px!important;top:106px!important;width:245px!important;max-height:calc(100% - 275px)!important;font-size:12px!important;scrollbar-width:thin;z-index:5!important}
+.three #aw3d:not([open]){width:auto!important}
+.three #aw3d summary{font-size:12px;padding:1px 2px;min-height:20px}
+.three #aw3d label{font-size:12px}
+.three #aw3d input[type="checkbox"],.three #aw3d input[type="radio"]{width:14px;height:14px;accent-color:#c7d8b2}
+.three #aw3d select{font-size:12px;min-height:30px}.three #aw3d-ips{font:8px var(--f-data)!important}
+.three .lbl3d{font-size:11px;background:#1a3028bd;color:#e0ead9;border:1px solid #91aa7c5c;border-radius:3px;padding:2px 6px;font-weight:450;max-width:160px;overflow:hidden;text-overflow:ellipsis;transition:opacity .15s}
+.three .lbl3d.st{color:#d2e5cf;border-color:#aac6ad}
+.three .ov.tc{top:160px;font-size:13px;z-index:6;width:min(450px,70%)}
+.scene-perspectives{display:flex;gap:5px;position:absolute;left:18px;top:100px;z-index:4}
+.scene-hint{position:absolute;left:18px;bottom:152px;font:8px var(--f-data);color:#c6d6c3;pointer-events:none;max-width:350px}
+.scene-north{right:18px!important;bottom:18px!important}
+.scene-pause{min-width:80px}
+.scene-tools{position:relative}
+.scene-tools summary{list-style:none;cursor:pointer}
+.scene-tools-panel{position:absolute;right:0;top:42px;width:240px;display:grid;gap:8px;padding:14px;background:#20392ef5;border:1px solid #57725e;border-radius:7px;z-index:7}
+.scene-tools-panel small{font-size:11px;color:#b8cbbb;line-height:1.6}
+.scene-tools-panel select{width:100%!important}
+
+@media(max-width:700px){
+  .three{height:72dvh;min-height:580px;border-radius:8px;overflow:hidden}
+  .three .ov.tl{top:15px;left:14px;max-width:none}.three .ov.tl b{font-size:13px}
+  .three .ov.tr{top:48px;left:14px;right:14px;gap:5px;justify-content:flex-start}
+  .three .ov.tr .btn{font-size:11px;padding:7px 8px;min-height:35px}.three .ov.tr .inp{font-size:11px;min-height:35px;width:140px}
+  .three #aw3d{top:196px!important;right:14px!important;max-height:calc(100% - 350px)!important;width:215px!important;padding:10px}.three #aw3d:not([open]){width:auto!important}
+  .scene-perspectives{left:14px;top:155px;right:14px;gap:4px;flex-wrap:wrap}.scene-perspectives .btn{font-size:11px;min-height:35px;padding:6px 8px}
+  .scene-hint{bottom:154px;left:14px;font-size:9px;max-width:calc(100% - 30px)}
+  .three .ov.bl{left:14px;right:14px;bottom:14px}.three .hslider{padding:10px;gap:4px}.three .marks{font-size:9px}.three .hslider label{font-size:11px}.three .legend{font-size:9px;gap:4px}.three .legend .ramp{width:65px}
+  .three .scene-north{bottom:152px!important;right:14px!important;width:40px!important;height:40px!important;padding:0!important}.three .scene-north svg{width:35px;height:35px}
+  .three .lbl3d{font-size:10px;max-width:110px}.three .ov.tc{top:242px;width:calc(100% - 28px);font-size:12px}
+}

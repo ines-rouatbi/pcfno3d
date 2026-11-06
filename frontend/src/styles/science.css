@@ -1,0 +1,53 @@
+@import 'tailwindcss';
+@import './science-legacy.css' layer(legacy);
+@import './tokens.css';
+body{margin:0;background:var(--bg);color:var(--ink);font:13px/1.7 var(--f-body);-webkit-font-smoothing:antialiased}
+.science-masthead{display:flex;align-items:center;justify-content:space-between;padding:22px 36px;border-bottom:1px solid var(--line);background:var(--surface);gap:20px}
+.atom-brand{display:flex;align-items:center;gap:9px;font-size:22px;line-height:1.1;font-weight:800;letter-spacing:-.06em;color:var(--ink);text-decoration:none}
+.atom-brand small{display:block;font:7px var(--f-data);letter-spacing:.1em;margin-top:5px;color:var(--muted)}
+.brand-wind{font-weight:450}
+.science-masthead .brand-word{font:400 30px/1 var(--f-editorial);letter-spacing:-.06em}
+.science-masthead .brand-wind{font:400 15px/1 var(--f-body);letter-spacing:-.03em;margin-left:4px}
+.science-intro h1{font-family:var(--f-editorial);font-weight:400}
+.science-masthead>a:last-child{color:var(--accent);font-size:11px;text-decoration:none}
+.science-intro{max-width:1440px;margin:auto;padding:42px 36px 24px}
+.eyebrow{font:9px var(--f-data);color:var(--accent);letter-spacing:.1em}
+.science-intro h1{font-size:clamp(25px,3vw,38px);font-weight:550;letter-spacing:-.05em;margin:10px 0}
+.science-intro p{color:var(--muted);margin:0;font-size:12px}
+#root>header{margin:0 auto;max-width:1368px;background:transparent;border:0;padding:0 0 14px}
+#root>header .brand{display:none}#root>header .status{margin-left:36px}
+main{max-width:1440px;margin:0 auto;padding:0 36px 40px}
+.tabs{border-bottom:1px solid var(--line);gap:20px;margin-bottom:24px;padding:0;flex-wrap:wrap}
+.tabs button{font-size:12px;padding:13px 0;border-radius:0;border:0;border-bottom:2px solid transparent;background:none}
+.tabs button.active{background:none;color:var(--accent);border:0;border-bottom:2px solid var(--accent)}
+.card{border-radius:9px;box-shadow:none;padding:23px;background:var(--surface);border-color:var(--line)}
+.grid{grid-template-columns:minmax(0,1fr) 290px;gap:22px}
+.controls label{font-size:10px;letter-spacing:.03em;margin-top:19px;text-transform:none;font-weight:600}
+select,input[type=text],input[type=password],input[type=number]{padding:10px;border:1px solid var(--line);border-radius:5px;background:var(--surface);font-size:12px;min-height:42px}
+button{border-radius:5px;font-size:12px;min-height:39px;padding:8px 12px;border:1px solid var(--line);background:var(--surface)}
+button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+input[type=range]{min-height:32px;accent-color:var(--accent)}
+input[type=checkbox]{accent-color:var(--accent)}
+canvas{border-radius:4px;background:var(--surface-2)}
+.canvas-wrap{border:1px solid var(--line);border-radius:5px;overflow:hidden}
+.hint{background:var(--ink);color:var(--bg);font-size:10px;left:12px;bottom:12px;padding:6px 10px;border-radius:4px}
+.legend{margin-top:20px;font:10px var(--f-data);gap:12px}.ramp{height:6px;border-radius:2px}
+h2{font-weight:600;font-size:18px;letter-spacing:-.025em}h3{font-weight:600;font-size:14px}
+.muted{color:var(--muted)}dl{font-size:11px;padding-top:18px;margin-top:20px}dd{font-family:var(--f-data);font-size:10px}
+pre,code{font-family:var(--f-data);font-size:11px;border-radius:5px}pre{padding:18px;line-height:1.9;background:var(--surface-2);border-color:var(--line)}
+th{font-size:9px;background:var(--surface-2)}th,td{padding:12px 10px}td{font-size:11px}table{border-collapse:collapse}
+.gate{padding:10px 20px 60px}.gate .card{max-width:480px;padding:32px}.gate h2{font-size:24px}.gate p{font-size:12px}
+.gate input{width:100%}
+:focus-visible{outline:2px solid var(--accent);outline-offset:4px}
+@media(max-width:900px){.grid{grid-template-columns:1fr}.controls{display:grid;grid-template-columns:1fr 1fr;gap:7px 18px}.controls>label,.controls>dl,.controls>.ticks{grid-column:1/-1}.controls>label{margin-top:10px}.controls>select,.controls>input,.controls>button{grid-column:1/-1}}
+@media(max-width:600px){.science-masthead{padding:19px 16px}.science-masthead>a:last-child{font-size:9px;max-width:100px;text-align:right}.science-intro{padding:30px 16px 22px}.science-intro h1{font-size:27px}.science-intro p{font-size:10px}.atom-brand{font-size:19px}.atom-brand small{font-size:6px}main{padding:0 16px 30px}.tabs{gap:14px}.tabs button{font-size:10px;padding:10px 0;min-height:44px}.card{padding:17px}.hint{position:static;border-radius:0;font-size:9px}.gate .card{padding:24px}#root>header .status{margin-left:16px}.controls{gap:6px}.scroll-x{overflow:auto}.brand span{margin:0}}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+.export-header{background:transparent;border:0;padding:0 36px 22px;max-width:1440px;margin:auto;display:block}
+.export-header h1{display:none}.export-header .meta{font-size:11px;color:var(--muted)}
+.export-instruments main{display:grid;grid-template-columns:minmax(0,1fr) 290px;gap:22px;align-items:start}
+.export-instruments main>div>.card:first-child canvas{min-height:250px;object-fit:contain;image-rendering:pixelated}
+.export-instruments .meta,.export-instruments label{font-size:11px;color:var(--muted)}
+.export-instruments .legend{font:10px var(--f-data);display:flex;align-items:center;gap:10px;margin-top:14px}.export-instruments .ramp{flex:1}
+.export-instruments label{display:block;margin:16px 0 6px}.export-instruments input,.export-instruments select{width:100%}
+.export-instruments #src{font:11px var(--f-data);min-height:44px}
+@media(max-width:800px){.export-instruments main{grid-template-columns:1fr}.export-instruments .controls{display:block}.export-header{padding-inline:16px}}

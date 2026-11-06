@@ -1,0 +1,10 @@
+import { memo } from "react";
+import ViewMonvent from "./ViewMonvent";
+import ViewAgri from "./ViewAgri";
+import ViewTableau from "./ViewTableau";
+import ViewCarte3D from "./ViewCarte3D";
+import ViewAlertes from "./ViewAlertes";
+import ViewEolien from "./ViewEolien";
+import ViewAdmin from "./ViewAdmin";
+import ViewFiabilite from "./ViewFiabilite";
+export default memo(function InstrumentViews(){ return <><ViewMonvent/><ViewAgri/><ViewTableau/><ViewCarte3D/><ViewAlertes/><ViewEolien/><ViewAdmin/><ViewFiabilite/></>; });
