@@ -1,0 +1,91 @@
+# PC-FNO3D reel NATIONAL (Tunisie entiere, noeuds 1 km) : la methode du Grand Tunis v4 etendue au
+# pays (demande d'Ines, 2026-11-06). Meme verite (generateur force par ERA5, relief Copernicus,
+# sol ESA WorldCover, AUCUNE station dans la verite), meme decoupage temporel que le Grand Tunis.
+#   domaine : 30,150-37,615 N, 7,450-11,644 E (828 x 388 km) ; surface 500 m (1656 x 776), noeuds
+#   1 km (828 x 388), 16 niveaux de 25 a 2500 m au-dessus de la mer (relief jusqu'a 1544 m) ;
+#   capteurs d'entree : les 12 aeroports METAR (configs/national/stations_metar.csv) + ERA5 10 m.
+#   Approximations (grille_reelle.json) : plan local a pas constant, echelle est-ouest 1,041 au sud
+#   et 0,954 au nord ; Coriolis constant 8,13e-5 (7,3e-5 a 8,9e-5 du sud au nord), en partie
+#   compense par le recalage ERA5 maille par maille du generateur.
+# Jeu et cache : notebooks/current/pcfno3d_national_generation_colab.ipynb (scripts/make_national_nb.py).
+# Depart : les poids du Grand Tunis v4 (memes 34 canaux, memes modes ; l'echelle physique d'un mode
+# est 10 fois plus grande ici : un point de depart, pas un transfert garanti).
+name: national_1km
+
+paths:
+  data_dir: /content/national/jeu
+  cache_dir: /content/national/cache
+  run_dir: /content/drive/MyDrive/pcfno3d_national/runs/national_1km
+  forcage_era5: /content/donnees/national/forcage_era5.csv
+  cache_mirror: null
+  local_dir: /content/run_local_national_1km
+  web_dir: /content/national/web
+
+model:                      # architecture du Grand Tunis v4 (= v7) : ses poids servent de depart
+  width: 48
+  modes: [6, 32, 32]
+  n_layers: 4
+  pad: [4, 8, 8]
+  proj_hidden: 128
+  local_conv: true
+  pool_surface: true        # le cache est agrege 2 x 2 par le generateur
+  recalcul_activations: false   # le carnet passe a true si la memoire du GPU ne suffit pas
+  residuel_era5: true       # u, v = ERA5 au noeud + correction apprise
+
+train:
+  epochs: 30
+  steps_per_epoch: 200
+  val_samples: 64
+  batch_size: 1
+  accum_steps: 2
+  lr: 3.0e-4                # nouveau domaine : pas de depart comme le Grand Tunis v1 depuis la v7
+  weight_decay: 1.0e-4
+  warmup_phys_epochs: 3
+  num_workers: 4
+  ema_decay: 0.999
+  grad_clip: 1.0
+  save_every: 5
+  seed: 42
+  init_from: /content/drive/MyDrive/pcfno3d_grand_tunis/runs/grand_tunis_v9_production/best.pt
+  sync_last: false          # Drive charge : seul best.pt est recopie
+  select_by: dso
+
+loss:
+  lambda_mass: 5.0          # reglages de la v4
+  mass_ref: 5.0e-7
+  lambda_bc: 0.1
+  lambda_smooth: 0.0
+  lambda_grad: 0.5
+  w_weight: 2.0
+  w_level_max: 25.0
+
+mask:
+  entree: era5_stations     # ERA5 10 m tous les 2 km + les 12 aeroports METAR (production)
+  pas_era5_m: 2000.0
+  p_station: 0.8
+  keep_train: [0.2, 1.0]
+  keep_eval: 1.0
+
+dso:
+  rmse: 0.5
+  r2: 0.95
+  r2_all: 0.95
+  mass_rms: 1.0e-4
+  roughness_range: [0.9, 1.1]
+  time_s: 1.0
+  rmse_25pct: 0.7
+  min_level_cover: 0.05
+
+inference:
+  tta: 1
+  tta_keep: 0.7
+  w_continuite: true
+
+terrain_smooth_m: 300.0     # comme le generateur (TERRAIN_SMOOTH_M)
+f_coriolis: 8.131e-5        # latitude centrale 33,885 N (grille_reelle.json)
+
+real:
+  origin_lat: 30.15
+  origin_lon: 7.45
+  rotation_deg: 0.0
+  origin_assumed: false

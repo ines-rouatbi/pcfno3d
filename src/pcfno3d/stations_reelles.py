@@ -79,7 +79,8 @@ def cellules_codes(geom) -> dict[str, tuple[int, int]]:
         st = json.loads((geom.cfg.paths.data_dir / "stations.json").read_text(encoding="utf-8"))
         cache = {}
         for s in st:
-            code = ("DTTA" if "DTTA" in s["nom"] else "INM60729" if "60729" in s["nom"]
+            # code porte par la station (grille nationale), sinon les 3 du Grand Tunis par leur nom
+            code = s.get("code") or ("DTTA" if "DTTA" in s["nom"] else "INM60729" if "60729" in s["nom"]
                     else "INM60728" if "60728" in s["nom"] else None)
             if code:
                 cache[code] = (int(s["iy"]), int(s["ix"]))

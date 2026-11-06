@@ -1552,7 +1552,7 @@ def generer_cache(args, tasks, split, static_path: Path, out_dir: Path) -> None:
     if info is not None and info.exists():
         st = json.loads(info.read_text(encoding="utf-8")).get("stations", {})
         cellules = [{"nom": n, "iy": int(v["iy"]) // STRIDE, "ix": int(v["ix"]) // STRIDE,
-                     "lat": v["lat"], "lon": v["lon"]}
+                     "lat": v["lat"], "lon": v["lon"], **({"code": v["code"]} if "code" in v else {})}
                     for n, v in st.items() if v.get("dans_la_zone")]
         (out_dir / "stations.json").write_text(json.dumps(cellules, indent=2, ensure_ascii=False),
                                                encoding="utf-8")

@@ -177,7 +177,8 @@ def agreger_z0(z0: np.ndarray, bloc: int) -> np.ndarray:
 
 def construire(dem_dir: Path, lat_sud: float, lon_ouest: float, nx: int, ny: int, dx: float,
                graine: int = 2026, hauteur_capteur: float | None = None,
-               mer_si_tuile_absente: bool = False) -> tuple[pd.DataFrame, dict]:
+               mer_si_tuile_absente: bool = False,
+               stations: dict | None = None) -> tuple[pd.DataFrame, dict]:
     """`mer_si_tuile_absente` (domaine national) : Copernicus ne publie pas de tuile de pleine
     mer ; une tuile absente y vaut 0 m, et la liste des tuiles absentes est ecrite dans la
     sortie. On verifie ensuite que WorldCover y voit bien de l'eau (sinon : erreur)."""
@@ -253,11 +254,14 @@ def construire(dem_dir: Path, lat_sud: float, lon_ouest: float, nx: int, ny: int
         "lat": np.round(lat.ravel(), 6), "lon": np.round(lon.ravel(), 6)})
     df["geom_wkt"] = "POINT (" + df["x_m"].map("{:.1f}".format) + " " + df["y_m"].map("{:.1f}".format) + ")"
 
-    stations = {}
-    for nom, (la, lo) in STATIONS.items():
+    # stations : {nom: (lat, lon)} (Grand Tunis, STATIONS) ou {nom: (lat, lon, code)} (--stations-csv)
+    places = {}
+    for nom, val in (stations or STATIONS).items():
+        la, lo = val[0], val[1]
         j, i = (la - lat_sud) * m_lat / dx, (lo - lon_ouest) * m_lon / dx
         dedans = 0 <= j < ny and 0 <= i < nx
-        stations[nom] = {"lat": la, "lon": lo, "dans_la_zone": bool(dedans),
+        places[nom] = {"lat": la, "lon": lo, "dans_la_zone": bool(dedans),
+                       **({"code": val[2]} if len(val) > 2 else {}),
                          **({"ix": int(i), "iy": int(j), "z_terrain_m": float(zt[int(j), int(i)])}
                             if dedans else {})}
     info = {
@@ -278,7 +282,7 @@ def construire(dem_dir: Path, lat_sud: float, lon_ouest: float, nx: int, ny: int
         "relief_m": {"min": float(zt.min()), "max": float(zt.max()), "moyenne": float(zt.mean())},
         "part_eau": float((occ == 1).mean()),
         "occupation": {NOMS[k]: float((occ == k).mean()) for k in NOMS},
-        "stations": stations, "sources": SOURCES,
+        "stations": places, "sources": SOURCES,
     }
     return df, info
 
@@ -320,10 +324,16 @@ def main() -> int:
                     help="hauteur des capteurs (m) ; anemometres reels : 10")
     ap.add_argument("--mer-si-tuile-absente", action="store_true",
                     help="domaine national : tuile Copernicus absente = pleine mer (0 m), verifie par WorldCover")
+    ap.add_argument("--stations-csv", default=None,
+                    help="stations a placer (colonnes code, nom, lat, lon) ; defaut : celles du Grand Tunis")
     args = ap.parse_args()
+    stations = None
+    if args.stations_csv:
+        st = pd.read_csv(args.stations_csv)
+        stations = {f"{r.code} {r.nom}": (float(r.lat), float(r.lon), str(r.code)) for r in st.itertuples()}
     df, info = construire(Path(args.dem), args.lat_sud, args.lon_ouest, args.nx, args.ny, args.dx,
                           hauteur_capteur=args.hauteur_capteur,
-                          mer_si_tuile_absente=args.mer_si_tuile_absente)
+                          mer_si_tuile_absente=args.mer_si_tuile_absente, stations=stations)
     out = Path(args.sortie)
     out.mkdir(parents=True, exist_ok=True)
     df.to_csv(out / "aneo_grid_points_surface.csv", index=False, lineterminator="\n")

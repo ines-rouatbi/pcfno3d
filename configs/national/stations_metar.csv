@@ -1,0 +1,13 @@
+code,nom,lat,lon,elevation_m,source
+DTKA,Tabarka,36.95,8.75,21.0,"METAR (archive IEM, reseau TN__ASOS), coordonnees du rapport"
+DTMB,Monastir,35.7581,10.7547,2.0,"METAR (archive IEM, reseau TN__ASOS), coordonnees du rapport"
+DTNH,Enfidha-Hammamet,36.0688,10.4319,2.0,"METAR (archive IEM, reseau TN__ASOS), coordonnees du rapport"
+DTTA,Tunis-Carthage,36.8439,10.2278,0.0,"METAR (archive IEM, reseau TN__ASOS), coordonnees du rapport"
+DTTB,Bizerte,37.2454,9.7914,3.0,"METAR (archive IEM, reseau TN__ASOS), coordonnees du rapport"
+DTTD,Remada,32.3167,10.4,301.0,"METAR (archive IEM, reseau TN__ASOS), coordonnees du rapport"
+DTTF,Gafsa,34.422,8.8225,314.0,"METAR (archive IEM, reseau TN__ASOS), coordonnees du rapport"
+DTTG,Gabes,33.8769,10.1033,5.0,"METAR (archive IEM, reseau TN__ASOS), coordonnees du rapport"
+DTTJ,Djerba-Zarzis,33.875,10.7755,4.0,"METAR (archive IEM, reseau TN__ASOS), coordonnees du rapport"
+DTTK,Kairouan,35.6667,10.1,68.0,"METAR (archive IEM, reseau TN__ASOS), coordonnees du rapport"
+DTTX,Sfax,34.718,10.691,23.0,"METAR (archive IEM, reseau TN__ASOS), coordonnees du rapport"
+DTTZ,Tozeur,33.9397,8.1106,93.0,"METAR (archive IEM, reseau TN__ASOS), coordonnees du rapport"
