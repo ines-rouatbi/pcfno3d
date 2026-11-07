@@ -179,6 +179,11 @@ class TrainCfg:
     #   "dso"       : pire rapport mesure / seuil des DSO sur la validation — c'est le
     #                 critere qui correspond a l'objectif, la loss moyenne ne l'est pas.
     select_by: str = "val_score"
+    # Rapports DSO comptes dans ce score (None = tous : dso1_rmse, dso2_masse, dso3_rugosite,
+    # r2_uvw). v6 : sans r2_uvw, que le R2 de w par continuite aux niveaux hauts (< 0, rapport
+    # ~40) ecrase, si bien que le choix de l'epoque ignorerait DSO1 (u, v) et DSO3. Regle de
+    # VALIDATION seulement ; le test publie tous les verdicts, r2_uvw compris.
+    select_criteres: list[str] | None = None
     # Affinage sur les stations : codes des stations pouvant servir de CIBLE (None = toutes).
     # Validation croisee spatiale : on en retire une, jugee ensuite sans avoir jamais ete cible.
     stations_cibles: list[str] | None = None
@@ -189,6 +194,11 @@ class TrainCfg:
     def __post_init__(self) -> None:
         if self.select_by not in ("val_score", "dso"):
             raise ValueError(f"train.select_by : 'val_score' ou 'dso', recu {self.select_by!r}")
+        connus = {"dso1_rmse", "dso2_masse", "dso3_rugosite", "r2_uvw"}
+        if self.select_criteres is not None:
+            self.select_criteres = [str(c) for c in self.select_criteres]
+            if not self.select_criteres or set(self.select_criteres) - connus:
+                raise ValueError(f"train.select_criteres : parmi {sorted(connus)}, recu {self.select_criteres}")
 
 
 @dataclass
@@ -200,6 +210,9 @@ class LossCfg:
     lambda_bc: float = 0.1
     lambda_smooth: float = 0.0    # donnees deja lisses : desactive
     lambda_grad: float = 0.15
+    # v6 (DSO3) : poids de l'ecart de rugosite par niveau, (log rugosite pred / verite)^2
+    # (losses.PhysicsLoss.roughness_levels). 0 = desactive : tous les modeles d'avant.
+    lambda_rough: float = 0.0
     w_weight: float = 1.0
     w_level_max: float = 25.0     # plafond du poids de w par niveau
     # Affinage sur les stations reelles (pcfno3d.stations_reelles.perte_station) : poids de

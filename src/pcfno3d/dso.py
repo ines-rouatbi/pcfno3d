@@ -128,11 +128,16 @@ def score(m: LevelMetrics, cfg: Config, geom: Geometry) -> dict:
         "dso3_rugosite": dso3_ecart(rough, d.roughness_range),
         "r2_uvw": (1.0 - float(np.nanmin(r2))) / (1.0 - d.r2_all),
     }
-    worst = max(ratios, key=ratios.get)
+    # criteres retenus pour la selection (train.select_criteres) ; tous les rapports restent
+    # publies dans « ratios »
+    choisis = getattr(cfg.train, "select_criteres", None) or list(ratios)
+    retenus = {k: ratios[k] for k in choisis}
+    worst = max(retenus, key=retenus.get)
     k_worst = levels[int(np.nanargmax(np.nanmax(rmse, axis=0)))]
     return {
         "score": float(ratios[worst]),
-        "score_sum": float(sum(ratios.values())),
+        "score_sum": float(sum(retenus.values())),
+        "criteres": choisis,
         "limitant": worst,
         "ratios": ratios,
         "rmse_max": float(np.nanmax(rmse)),

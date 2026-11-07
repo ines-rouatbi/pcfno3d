@@ -341,3 +341,34 @@ def test_niveau_quasi_vide_exclu_de_la_comparaison(cfg, geom, index, norm):
                              np.load(cfg.paths.cache_dir / f"{stem}_Y.npy"))
     gardes = {int(geom.z_levels[k]) for k in geom.eval_levels()}
     assert set(table["z_m"]) <= gardes
+
+
+def test_selection_v6_sans_r2_uvw(cfg, geom):
+    """v6 : train.select_criteres retire r2_uvw du score de selection (le R2 de w par continuite
+    aux niveaux hauts l'ecraserait) ; tous les rapports restent publies. Defaut : inchange."""
+    import copy
+
+    from pcfno3d import dso
+
+    m = dso.LevelMetrics(geom.nz)
+    rng = np.random.default_rng(0)
+    for k in range(geom.nz):
+        for c in range(3):
+            t = rng.normal(5, 1, 200)
+            p = t + rng.normal(0, 0.45 if c < 2 else 3.0, 200)      # w tres mauvais : R2 < 0
+            m.n[c, k] += 200
+            m.sse[c, k] += float(((p - t) ** 2).sum())
+            m.s1[c, k] += float(t.sum())
+            m.s2[c, k] += float((t ** 2).sum())
+    m.mass.append(1e-5)
+    m.rough.append(0.85)
+    tout = dso.score(m, cfg, geom)
+    assert tout["limitant"] == "r2_uvw"
+    c = copy.deepcopy(cfg)
+    c.train.select_criteres = ["dso1_rmse", "dso2_masse", "dso3_rugosite"]
+    v6 = dso.score(m, c, geom)
+    assert v6["limitant"] in ("dso1_rmse", "dso3_rugosite") and v6["score"] < tout["score"]
+    assert "r2_uvw" in v6["ratios"] and v6["criteres"] == c.train.select_criteres
+    with pytest.raises(ValueError):
+        from pcfno3d.config import TrainCfg
+        TrainCfg(select_criteres=["inconnu"])

@@ -90,13 +90,42 @@ class PhysicsLoss:
             l_smooth = ((pred[:, :2, :, :, 1:] - pred[:, :2, :, :, :-1]) ** 2).mean() + \
                        ((pred[:, :2, :, 1:, :] - pred[:, :2, :, :-1, :]) ** 2).mean()
 
-        total = l_data + cfg.lambda_grad * l_grad + phys_w * (
+        # v6 (DSO3) : ecart de rugosite prediction / verite, NIVEAU PAR NIVEAU, en log. L_grad
+        # (erreur quadratique des gradients) pousse vers la moyenne conditionnelle, donc vers un
+        # champ trop lisse quand une part des petites echelles est imprevisible ; ce terme vise
+        # directement le DSO3 (rugosite 0,9-1,1). 0 = desactive (tous les modeles d'avant).
+        l_rough = torch.zeros((), device=pred.device)
+        if cfg.lambda_rough > 0 and not partial:
+            ratio = self.roughness_levels(u, v, y)
+            l_rough = (torch.log(ratio) ** 2).mean() if ratio.numel() else l_rough
+
+        total = l_data + cfg.lambda_grad * l_grad + cfg.lambda_rough * l_rough + phys_w * (
             cfg.lambda_mass * l_mass / cfg.mass_ref
             + cfg.lambda_bc * l_bc
             + cfg.lambda_smooth * l_smooth
         )
         return total, {"data": l_data.item(), "mass": l_mass.item(), "bc": l_bc.item(),
-                       "smooth": l_smooth.item(), "grad": l_grad.item()}
+                       "smooth": l_smooth.item(), "grad": l_grad.item(), "rough": l_rough.item()}
+
+    def roughness_levels(self, u: torch.Tensor, v: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+        """Rugosite prediction / verite par niveau evalue (meme definition que `roughness`,
+        |dA/dx| + |dA/dy| sur les paires de voisins valides, u et v sommes) : (n_niveaux,).
+        Seuls les niveaux evalues (couverture >= dso.min_level_cover) et non plats comptent."""
+        mx, my = self.geom.grad_mask_x_t, self.geom.grad_mask_y_t       # (nz, ny, nx-1), (nz, ny-1, nx)
+
+        def par_niveau(a):                                               # (B, nz, ny, nx) -> (nz,)
+            gx = (a[..., :, 1:] - a[..., :, :-1]).abs() * mx
+            gy = (a[..., 1:, :] - a[..., :-1, :]).abs() * my
+            nb = a.shape[0]
+            return gx.sum(dim=(0, 2, 3)) / (mx.sum(dim=(1, 2)) * nb).clamp(min=1) \
+                + gy.sum(dim=(0, 2, 3)) / (my.sum(dim=(1, 2)) * nb).clamp(min=1)
+
+        num = par_niveau(u) + par_niveau(v)
+        den = par_niveau(y[:, 0]) + par_niveau(y[:, 1])
+        niveaux = torch.tensor(self.geom.eval_levels(), dtype=torch.long, device=u.device)
+        num, den = num[niveaux], den[niveaux]
+        garde = den > 1e-8
+        return (num[garde] + 1e-12) / den[garde]
 
     def val_score(self, parts: dict[str, float]) -> float:
         """Score de selection du meilleur modele (meme formule que le BLOC 9)."""

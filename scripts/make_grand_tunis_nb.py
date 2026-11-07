@@ -929,6 +929,100 @@ u et v seulement, w rapporté à part. Aucun bruit n'est ajouté aux prédiction
     ], gpu=True)
 
 
+def v6_dso() -> dict:
+    """v6 : affinage depuis la v4 visant DSO1 (25 m) et DSO3 (rugosite), demande d'Ines du 07/11/2026.
+    Poids par niveau sur la validation de la v4, terme de rugosite par niveau, epoque choisie sur
+    DSO1/DSO2/DSO3 de la validation ; test lu une fois ; decision_v6 (regle fixee avant le test)."""
+    chaine = CHOIX_POIDS + r'''
+from google.colab import runtime
+import shlex
+import traceback
+RUNS = GT / "runs"
+V4, V6 = "grand_tunis_v4_dso_colab", "grand_tunis_v6_dso_colab"
+R4, R6 = RUNS / "grand_tunis_v4_dso", RUNS / "grand_tunis_v6_dso"
+R6.mkdir(parents=True, exist_ok=True)
+POIDS = R6 / "uv_level_weight.json"
+INIT = shlex.quote(str(choisir_poids(R4)))
+
+def entraine():
+    h = R6 / "history.json"
+    return h.exists() and any(r.get("epoch") == 14 for r in json.loads(h.read_text()))
+
+def evalue(run, dossier):
+    f = run / "eval_pcfno3d" / dossier / "test_par_niveau_synoptique.csv"
+    return f.exists() and "rugosite" in f.read_text().splitlines()[0]
+
+etapes = (
+    # poids u, v par niveau : RMSE de VALIDATION de la v4 (jamais le test)
+    ("poids_v6", f"python -u -m pcfno3d -c {V4} {OPTS} --set inference.w_continuite=true dso-weights --checkpoint {INIT} --out {POIDS}",
+     POIDS.exists),
+    ("entrainer_v6", f"python -u -m pcfno3d -c {V6} {OPTS} --set loss.uv_level_weight={POIDS} "
+                     f"--set train.init_from={INIT} train", entraine),
+    ("evaluer_v6_wcont", f"python -u -m pcfno3d -c {V6} {OPTS} evaluate", lambda: evalue(R6, "best_wcont")),
+    ("valider_v6", f"python -u scripts/valider_grand_tunis_reel.py -c {V6} --obs {OBS}",
+     lambda: (R6 / "validation_reelle" / "test" / "stations_bilan.csv").exists()),
+    # variante PROPOSEE (DSO3 sur la partie previsible) : publiee, jamais lue par la decision
+    ("variantes_v6", f"python -u scripts/dso_variantes_grand_tunis.py -c {V6} --donnees {DON / 'grand_tunis'} --w-continuite",
+     lambda: (R6 / "eval_pcfno3d" / "best_wcont" / "dso3_previsible.json").exists()),
+)
+try:
+    for nom, cmd, fait in etapes:
+        if fait():
+            print(f"[{nom}] deja fait : saute")
+            continue
+        try:
+            lancer(nom, cmd)
+        except Exception:
+            if nom in ("poids_v6", "entrainer_v6", "evaluer_v6_wcont"):
+                raise                                  # sans eux, pas de decision possible
+            traceback.print_exc()
+    DEC = "python -u scripts/decision_v6_grand_tunis.py --runs " + str(RUNS)
+    code_dec = subprocess.run(DEC, shell=True, cwd="/content/PFE").returncode
+    if code_dec not in (0, 3):
+        raise RuntimeError(f"decision v6 impossible (code {code_dec}) : evaluations incompletes")
+    if code_dec == 0:
+        # v6 livree : DSO6 sur la v6 sans reentrainement (calibration validation, verdict test)
+        CAL = R6 / "fiabilite_pcfno3d" / "best_wcont" / "calibration_validation.json"
+        D6 = R6 / "eval_pcfno3d" / "best_wcont" / "dso6_modele_livre.json"
+        if not CAL.exists():
+            lancer("calibrer_dso6_v6", f"python -u -m pcfno3d -c {V6} {OPTS} calibrate-reliability --out {CAL}")
+        if not D6.exists():
+            try:
+                lancer("dso6_v6", f"python -u -m pcfno3d -c {V6} {OPTS} dso6 --calibration {CAL} --out {D6}")
+            except RuntimeError as exc:          # code 3 = NON CONFORME : le verdict est ecrit
+                print(exc)
+    print((RUNS / "rapport_v6.md").read_text(encoding="utf-8"))
+except Exception:
+    traceback.print_exc()
+finally:
+    runtime.unassign()
+'''
+    mem = MEM.replace("configs/grand_tunis_colab.yaml", "configs/grand_tunis_v6_dso_colab.yaml")
+    return carnet([
+        md("""
+# PC-FNO3D réel (Grand Tunis) v6 — affinage visant DSO1 et DSO3 (Colab, A100)
+
+La v4 livrée manque **DSO1 au seul niveau 25 m** (RMSE 0,528 pour 0,5) et **DSO3** (rugosité 0,805
+pour [0,9 ; 1,1]) : le champ est trop lisse. Étapes : (1) poids u, v par niveau mesurés sur la
+**validation** de la v4 ; (2) affinage 15 époques depuis la v4, avec un **terme de rugosité par
+niveau** (`loss.lambda_rough`), l'époque étant choisie sur DSO1, DSO2 et DSO3 de la **validation** ;
+(3) test 2022 (w par continuité), lu une fois ; (4) vraies mesures ; (5) **décision**
+(`scripts/decision_v6_grand_tunis.py`, règle fixée le 07/11/2026 avant le test) : la v6 n'est livrée
+que si DSO1 et DSO3 sont conformes, sans recul sur DSO2, DSO4, DSO5 et les vraies mesures ; sinon la
+v4 reste ; (6) DSO6 si la v6 est livrée. Aucun bruit n'est ajouté aux prédictions.
+`decision_v4.json` (lu par le service) n'est pas modifié. La session s'arrête à la fin.
+"""),
+        md("## 1. Drive, code et données"),
+        code(COMMUN),
+        md("## 2. Cache (3 parties) et observations"),
+        code(ENT.replace("grand_tunis_colab", "grand_tunis_v6_dso_colab") + OBS),
+        md("## 3. Mémoire du GPU"),
+        code(mem),
+        md("## 4. Poids, affinage v6, test, vraies mesures, décision, fin de la session"),
+        code(chaine),
+    ], gpu=True)
+
+
 def os6_reseau() -> dict:
     """OS6 : plan de deploiement du reseau ANEO (OSSE) sur le modele LIVRE (decision_v4.json),
     sans entrainement. Placement glouton sur la validation, courbe sur le test, plan S18."""
@@ -1142,6 +1236,7 @@ def main() -> int:
                     ("pcfno3d_grand_tunis_v3b_colab.ipynb", v3b()),
                     ("pcfno3d_grand_tunis_atom_colab.ipynb", service_v2()),
                     ("pcfno3d_grand_tunis_v4_dso_colab.ipynb", v4_dso()),
+                    ("pcfno3d_grand_tunis_v6_dso_colab.ipynb", v6_dso()),
                     ("pcfno3d_grand_tunis_os6_colab.ipynb", os6_reseau()),
                     ("pcfno3d_grand_tunis_os7_colab.ipynb", os7_prevision())):
         (out / nom).write_text(json.dumps(nb, indent=1, ensure_ascii=False), encoding="utf-8")

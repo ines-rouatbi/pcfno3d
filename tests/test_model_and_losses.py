@@ -38,7 +38,7 @@ def test_la_loss_est_differentiable(cfg, geom, index, norm):
     total, parts = loss_fn(pred, y, phys_w=1.0)
     total.backward()
     assert torch.isfinite(total)
-    assert set(parts) == {"data", "mass", "bc", "smooth", "grad"}
+    assert set(parts) == {"data", "mass", "bc", "smooth", "grad", "rough"}
     grads = [p.grad for p in model.parameters() if p.grad is not None]
     assert grads and all(torch.isfinite(g).all() for g in grads)
 
@@ -108,3 +108,34 @@ def test_w_par_continuite_annule_le_residu_de_masse(geom):
     w_bc = (u * geom.dzt_dx_t + v * geom.dzt_dy_t)[:, geom.first_valid_t]
     torch.testing.assert_close(w[:, geom.first_valid_t], w_bc, atol=1e-5, rtol=1e-5)
     assert float(w[:, ~geom.valid_t].abs().max()) == 0.0
+
+
+def test_terme_de_rugosite_v6(cfg, geom, index, norm):
+    """v6 (DSO3) : nul sur la verite, positif sur un champ trop lisse, et son gradient pousse vers
+    PLUS de rugosite ; desactive (0) par defaut, donc sans effet sur les modeles d'avant."""
+    import copy
+
+    _, _, _, y = _batch(cfg, geom, index)
+    assert PhysicsLoss(cfg, geom, norm)(norm.normalize_target(y), y, 0.0)[1]["rough"] == 0.0
+    c = copy.deepcopy(cfg)
+    c.loss.lambda_rough = 1.0
+    loss_fn = PhysicsLoss(c, geom, norm)
+    ratio = loss_fn.roughness_levels(y[:, 0], y[:, 1], y)
+    assert ratio.numel() > 0 and torch.allclose(ratio, torch.ones_like(ratio), atol=1e-5)
+    _, parts = loss_fn(norm.normalize_target(y), y, phys_w=0.0)
+    assert parts["rough"] < 1e-8
+    # un champ deux fois plus lisse (ecarts a la moyenne divises par 2) : terme ~ log(0,5)^2
+    lisse = y.clone()
+    for k in (0, 1):
+        m = lisse[:, k][:, geom.valid_t].mean()
+        lisse[:, k] = m + 0.5 * (lisse[:, k] - m)
+    pred = norm.normalize_target(lisse).requires_grad_(True)
+    total, parts = loss_fn(pred, y, phys_w=0.0)
+    assert abs(parts["rough"] - float(np.log(0.5)) ** 2) < 0.05
+    total.backward()
+    # descendre le gradient d'un petit pas rend le champ plus rugueux, donc plus proche de 1
+    with torch.no_grad():
+        p2 = pred - 1e-3 * pred.grad / pred.grad.abs().max()
+        u2, v2, _ = norm.denorm(p2)
+        u1, v1, _ = norm.denorm(pred)
+    assert loss_fn.roughness_levels(u2, v2, y).mean() > loss_fn.roughness_levels(u1, v1, y).mean()
