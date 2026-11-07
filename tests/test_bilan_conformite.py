@@ -81,3 +81,24 @@ def test_references_de_tests_existent():
     for code, _, _, source in m.DOCUMENTES:
         for f in re.findall(r"tests/[\w*]+\.py", source):
             assert (REPO / f).exists(), (code, f)
+
+
+def test_resultats_os7_lus_dans_le_dossier_voisin(tmp_path):
+    """Le carnet OS7 ecrit dans <Drive>/os7/, a cote de runs/ : PREV1 (v5) est lu, la reference sans
+    affinage est publiee a part et ne compte pas pour le verdict."""
+    m = _script()
+    runs = tmp_path / "runs"
+    runs.mkdir()
+    for dossier, rmse, ok in (("v5_f24", 2.64, True), ("sans_affinage_f24", 2.81, True)):
+        d = tmp_path / "os7" / dossier
+        d.mkdir(parents=True)
+        (d / "prevision_bilan.json").write_text(json.dumps({
+            "critere": "PREV1", "echeance_h": 24, "modele": "best.pt", "paires": 509, "conforme": ok,
+            "verdicts": {"toutes": {"rmse_vect": {"prevision": rmse, "gfs": 2.89, "persistance": 4.09}}}}),
+            encoding="utf-8")
+    lignes = {l["code"]: l for l in m.prevision(runs)}
+    assert lignes["PREV1"]["statut"] == "conforme" and lignes["PREV1"]["valeur"] == 2.64
+    assert "os7" in lignes["PREV1"]["source"]
+    ref = [l for c, l in lignes.items() if c.startswith("PREV1 (référence")]
+    assert ref and ref[0]["statut"].startswith("référence")
+    assert lignes["PREV2"]["statut"] == "à mesurer"

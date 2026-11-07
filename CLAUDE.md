@@ -215,6 +215,20 @@ show the site correction as **spots around the stations**: mean vector differenc
 import for every non-calm report (`metar.py`), IGRA launch time of 00 UTC balloons dated the
 previous day (`igra_radiosondages.py`; matching was already on `temps`).
 
+**OS7 RESULT (A100, 2026-11-07; v5 = delivered v4 fine-tuned 12 epochs on GFS f24, results in
+`<Drive>/pcfno3d_grand_tunis/os7/`; 991/996 of 1000 GFS f24/f48 instants, the 9 missing NOAA files are
+dropped by `load_index`):** PREV1 (+24 h) CONFORMING, vector RMSE at the 3 stations v5 2.64 vs raw GFS 2.89
+vs persistence 4.09 m/s, better than GFS at every station; PREV2 (+48 h) CONFORMING, 2.82 vs 3.09 vs 4.51.
+Reference (delivered model fed by GFS, no fine-tune) 2.81 / 2.99, worse than GFS at Zaghouan — the fine-tune
+is what makes it conform. PREV3 (treatment decision the day before vs measured): agreement +24 h 65.6 %
+(κ 0.36) vs GFS 63.1 % vs persistence 60.7 %; +48 h 64.6 % vs 61.5 % vs 57.8 %; dangerous "yes" 2.75 % /
+1.96 % (≤ 5 %, but raw GFS is lower, 1.2 % / 1.0 %). AGRI1 (delivered model, station hidden) 62.7 %
+agreement, AGRI2 2.36 % conforming. `bilan_conformite.py` now also reads `<runs>/../os7/` (it reported PREV
+"à mesurer" before). **v6 DSO (2026-11-07, rule fixed before the test): NOT delivered, v4 stays** — the
+roughness term reached DSO3 (0.939, conforming) but DSO1 got worse (worst level 0.693 vs 0.528, 25 m),
+DSO5 0.696 (> v4 + 1 %) and the real stations 2.544 vs 2.469 m/s: the DSO1/DSO3 trade-off predicted
+before the run, now measured. v4's own DSO3 is 0.805 (0.37 at 25 m … 0.93 at 650 m).
+
 **National model (started 2026-11-06, Ines's request; not trained yet).** The Grand Tunis v4 method over
 all of Tunisia: `configs/national_1km_colab.yaml`, domain 30.15–37.615 N × 7.45–11.644 E (828 × 388 km),
 surface 500 m (1656 × 776), nodes 1 km, 16 ASL levels 25…2500 m (`generate_aneo_3d.py --dx 500 --niveaux …`,

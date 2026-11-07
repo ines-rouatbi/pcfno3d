@@ -148,19 +148,38 @@ def sondes(dossier: Path) -> list[dict]:
     return out
 
 
+def _racines(runs: Path) -> list[Path]:
+    """runs/ et le dossier os7/ voisin : le carnet OS7 ecrit ses resultats dans <Drive>/os7/."""
+    return [runs] + [d for d in (runs.parent / "os7",) if d.is_dir()]
+
+
+def _rel(f: Path, runs: Path) -> str:
+    try:
+        return str(f.relative_to(runs))
+    except ValueError:
+        return str(f.relative_to(runs.parent))
+
+
+def _trouver(runs: Path, nom: str) -> list[Path]:
+    return sorted({f for r in _racines(runs) for f in r.rglob(nom)})
+
+
 def prevision(runs: Path) -> list[dict]:
     out, vus = [], set()
-    for f in sorted(runs.rglob("prevision_bilan.json")):
+    for f in _trouver(runs, "prevision_bilan.json"):
         r = json.loads(f.read_text(encoding="utf-8"))
         t = r.get("verdicts", {}).get("toutes", {})
         code = r.get("critere", "PREV?")
-        vus.add(code)
-        out.append(_ligne(code, f"Prévision à +{r.get('echeance_h')} h aux stations : erreur < GFS brut et < persistance",
-                          "conforme" if r.get("conforme") else "non conforme",
+        reference = "sans_affinage" in f.parent.name
+        if not reference:
+            vus.add(code)
+        out.append(_ligne(code + (" (référence : modèle livré sans affinage)" if reference else ""),
+                          f"Prévision à +{r.get('echeance_h')} h aux stations : erreur < GFS brut et < persistance",
+                          ("référence " if reference else "") + ("conforme" if r.get("conforme") else "non conforme"),
                           valeur=t.get("rmse_vect", {}).get("prevision"),
                           seuil=f"< GFS {t.get('rmse_vect', {}).get('gfs')} et < persistance "
                                 f"{t.get('rmse_vect', {}).get('persistance')}",
-                          source=str(f.relative_to(runs)), detail={"modele": r.get("modele"), "paires": r.get("paires")}))
+                          source=_rel(f, runs), detail={"modele": r.get("modele"), "paires": r.get("paires")}))
     for code, h in (("PREV1", 24), ("PREV2", 48)):
         if code not in vus:
             out.append(_ligne(code, f"Prévision à +{h} h aux stations : erreur < GFS brut et < persistance",
@@ -169,7 +188,7 @@ def prevision(runs: Path) -> list[dict]:
 
 
 def decisions(runs: Path) -> list[dict]:
-    fichiers = sorted(runs.rglob("decisions_agricoles.json"))
+    fichiers = _trouver(runs, "decisions_agricoles.json")
     if not fichiers:
         return [_ligne(c, t, "à mesurer", source="notebook OS7") for c, t in
                 (("PREV3", "Conseil de la veille : décision prévue = décision mesurée le lendemain"),
@@ -178,7 +197,7 @@ def decisions(runs: Path) -> list[dict]:
     out = []
     for f in fichiers:
         r = json.loads(f.read_text(encoding="utf-8"))
-        rel = str(f.relative_to(runs))
+        rel = _rel(f, runs)
         prevu = any(k.startswith("prevision") for k in r.get("agri1", {}))
         code1 = "PREV3" if prevu else "AGRI1"
         a1 = r.get("agri1", {})
