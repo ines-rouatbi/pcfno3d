@@ -11,7 +11,7 @@ Sur le Drive :
     MyDrive/pcfno3d_national/national_donnees.zip   grille, grille_reelle.json, forcage ERA5
                                                     (scripts/package_national_colab.py)
 Le jeu (1 000 instants) est genere en 3 parties ; chaque partie terminee est un point de reprise
-(cache_partie_<k>.zip dans MyDrive/pcfno3d_national/). Environ 50 Go au total : verifier la place
+(cache_v2_partie_<k>.zip dans MyDrive/pcfno3d_national/). Environ 50 Go au total : verifier la place
 sur le Drive avant de lancer.
 """
 from __future__ import annotations
@@ -26,6 +26,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from make_grand_tunis_nb import CHOIX_POIDS, carnet, code, md  # noqa: E402
 
 # niveaux des noeuds (m au-dessus de la mer) : ceux de la v7 puis jusqu'a 2500 m (relief 1544 m)
+# jeu v2 (07/11/2026) : forcage aux profils combles au-dessus de 700 hPa ; le premier jeu
+# (cache_partie_*.zip) avait un vent nul a 0,5 % des noeuds de 2500 m et n'est plus lu
 NIVEAUX = "25,50,75,100,150,200,300,400,500,650,800,1000,1250,1500,2000,2500"
 
 COMMUN = r'''
@@ -96,7 +98,7 @@ if (NAT / "calendrier.json").exists():
     shutil.copy2(NAT / "calendrier.json", JEU / "calendrier.json")
 
 PARTIES = {1: [("train", "1/2")], 2: [("train", "2/2"), ("val", None)], 3: [("test", None)]}
-faites = [k for k in PARTIES if (NAT / f"cache_partie_{k}.zip").exists()]
+faites = [k for k in PARTIES if (NAT / f"cache_v2_partie_{k}.zip").exists()]
 PARTIE = next((k for k in PARTIES if k not in faites), None)
 print("parties deja sur le Drive :", faites, "| a faire maintenant :", PARTIE)
 '''
@@ -133,33 +135,33 @@ else:
     if manque and PARTIE in (2, 3):
         raise RuntimeError(f"forcage ERA5 absent pour {manque[:5]}... : deposer un forcage a jour")
 
-    tmp = NAT / f"cache_partie_{PARTIE}.zip.part"
+    tmp = NAT / f"cache_v2_partie_{PARTIE}.zip.part"
     with zipfile.ZipFile(tmp, "w", compression=zipfile.ZIP_STORED) as zf:
         for f in sorted(cache.iterdir()):
             nom = f"index_partie_{PARTIE}.csv" if f.name == "index.csv" else f.name
             zf.write(f, nom)
-    tmp.replace(NAT / f"cache_partie_{PARTIE}.zip")
-    if not (NAT / "jeu.zip").exists():
-        with zipfile.ZipFile(NAT / "jeu.zip", "w", compression=zipfile.ZIP_DEFLATED, compresslevel=1) as zf:
+    tmp.replace(NAT / f"cache_v2_partie_{PARTIE}.zip")
+    if not (NAT / "jeu_v2.zip").exists():
+        with zipfile.ZipFile(NAT / "jeu_v2.zip", "w", compression=zipfile.ZIP_DEFLATED, compresslevel=1) as zf:
             for f in sorted(JEU.iterdir()):
                 if f.is_file():
                     zf.write(f, f.name)
     print(f"point de reprise {PARTIE}/3 sur le Drive : "
-          f"{(NAT / f'cache_partie_{PARTIE}.zip').stat().st_size / 1e9:.1f} Go")
+          f"{(NAT / f'cache_v2_partie_{PARTIE}.zip').stat().st_size / 1e9:.1f} Go")
 '''.replace("NIVEAUX_NOEUDS", NIVEAUX)
 
 ENT = r'''
 LOC = Path("/content/national")
 CACHE, JEU = LOC / "cache", LOC / "jeu"
 for k in (1, 2, 3):
-    if not (NAT / f"cache_partie_{k}.zip").exists():
-        raise FileNotFoundError(f"cache_partie_{k}.zip absent : finir le carnet de generation")
+    if not (NAT / f"cache_v2_partie_{k}.zip").exists():
+        raise FileNotFoundError(f"cache_v2_partie_{k}.zip absent : finir le carnet de generation")
 if not (CACHE / "index.csv").exists():
     CACHE.mkdir(parents=True, exist_ok=True)
     for k in (1, 2, 3):
-        with zipfile.ZipFile(NAT / f"cache_partie_{k}.zip") as zf:
+        with zipfile.ZipFile(NAT / f"cache_v2_partie_{k}.zip") as zf:
             zf.extractall(CACHE)
-    with zipfile.ZipFile(NAT / "jeu.zip") as zf:
+    with zipfile.ZipFile(NAT / "jeu_v2.zip") as zf:
         zf.extractall(JEU)
     import pandas as pd
     idx = pd.concat([pd.read_csv(CACHE / f"index_partie_{k}.csv") for k in (1, 2, 3)])
@@ -211,7 +213,7 @@ RUNS_GT = GT / "runs"
 DECISION = RUNS_GT / "decision_v4.json"
 livre = json.loads(DECISION.read_text())["modele_livre"] if DECISION.exists() else "grand_tunis_v2_long"
 INIT = shlex.quote(str(choisir_poids(RUNS_GT / livre)))
-RUN = NAT / "runs" / "national_1km"
+RUN = NAT / "runs" / "national_1km_v2"
 print("depart :", INIT)
 try:
     lancer("entrainer", f"python -u -m pcfno3d -c national_1km_colab {OPTS} --set train.init_from={INIT} train")
@@ -249,9 +251,9 @@ sur le Drive** (affichée par la première cellule).
 
 | partie | contenu | point de reprise |
 |---|---|---|
-| 1 | entraînement, 1re moitié | `cache_partie_1.zip` |
-| 2 | entraînement, 2e moitié + validation | `cache_partie_2.zip` |
-| 3 | test (janv.–mars et juillet–août 2022) | `cache_partie_3.zip` |
+| 1 | entraînement, 1re moitié | `cache_v2_partie_1.zip` |
+| 2 | entraînement, 2e moitié + validation | `cache_v2_partie_2.zip` |
+| 3 | test (janv.–mars et juillet–août 2022) | `cache_v2_partie_3.zip` |
 """),
         md("## 1. Drive, code et données"),
         code(COMMUN),
@@ -275,7 +277,7 @@ mode de Fourier est ici 10 fois plus grande.
 
 **Environnement : GPU A100.** Reprise automatique : relancer **Tout exécuter** après une coupure
 reprend à la dernière copie sur le Drive. La session s'arrête à la fin. Résultats :
-`MyDrive/pcfno3d_national/runs/national_1km/`.
+`MyDrive/pcfno3d_national/runs/national_1km_v2/`.
 """),
         md("## 1. Drive, code et données"),
         code(COMMUN),

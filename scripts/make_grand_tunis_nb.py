@@ -1043,10 +1043,15 @@ try:
         d = OS7 / f"sans_affinage_f{e}"
         if not (d / "prevision_bilan.json").exists():
             try:
+                # le modele LIVRE : ses statistiques de normalisation (run_dir en lecture seule,
+                # le script n'ecrit que dans --sortie)
                 lancer(f"prevision_sans_affinage_f{e}",
                        f"python -u scripts/evaluer_prevision.py -c {V5} {OPTS} {forcage(e)} --checkpoint {INIT} "
+                       f"--set paths.run_dir={shlex.quote(str(RUNS / livre))} "
                        f"--obs {OBS} --echeance {e} --sortie {d}")
             except RuntimeError as exc:                 # code 3 = PREV non conforme : resultat ecrit
+                if "(code 3)" not in str(exc):
+                    raise
                 print(exc)
 
     # 3. affinage v5 (GFS +24 h en entree, meme verite) depuis le modele livre
@@ -1061,7 +1066,9 @@ try:
             try:
                 lancer(f"prevision_v5_f{e}", f"python -u scripts/evaluer_prevision.py -c {V5} {OPTS} {forcage(e)} "
                                              f"--obs {OBS} --echeance {e} --sortie {d}")
-            except RuntimeError as exc:
+            except RuntimeError as exc:                 # code 3 = PREV non conforme : resultat ecrit
+                if "(code 3)" not in str(exc):
+                    raise
                 print(exc)
         if (d / "prevision_paires.csv").exists() and not (d / "decisions" / "decisions_agricoles.json").exists():
             lancer(f"prev3_f{e}", f"python -u scripts/verifier_decisions.py --paires {d / 'prevision_paires.csv'} "

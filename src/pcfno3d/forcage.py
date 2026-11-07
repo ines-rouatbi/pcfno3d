@@ -71,6 +71,10 @@ class ForcageERA5:
             self.lat = d["lat"].astype(np.float64)
             self.lon = d["lon"].astype(np.float64)
             self.hauteurs = d["hauteurs_sol"].astype(np.float64)
+            for nom in ("u", "v"):
+                if np.isnan(d[nom]).any():
+                    raise ValueError(f"{npz.name} : {nom} contient des NaN (profil au-dessus du dernier "
+                                     "niveau ERA5) : refaire le forcage avec scripts/forcage_era5.py a jour")
             self.u = d["u"].astype(np.float32)
             self.v = d["v"].astype(np.float32)
         self.forme_cellules = (2,) + self.u.shape[1:]           # (2, nh, ny_e, nx_e)

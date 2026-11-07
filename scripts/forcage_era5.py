@@ -146,7 +146,22 @@ def forcage(era5: Path, info: dict, marge: float = 0.15, slx: bool = True,
             df[f"{c}_era5_{int(zk)}"] = np.nanmean(prof[k], axis=(1, 2))
         # champ par maille pour le recalage spatial, en HAUTEUR AU-DESSUS DU SOL ERA5 : le
         # generateur le relit a la meme hauteur au-dessus de SON relief (suivi du terrain)
-        champs[c] = interpoler_hauteurs(h, val, [oro + hh for hh in hauteurs_sol])
+        prof_s = interpoler_hauteurs(h, val, [oro + hh for hh in hauteurs_sol])   # (nh, t, y, x)
+        # au-dessus du dernier niveau de pression (700 hPa, ~3 km) le profil est vide (NaN) : sur le
+        # relief national (mailles a 500-1000 m), 2000-2500 m au-dessus du sol y sont. Valeur
+        # valide la plus proche dans la colonne, comme le temps reel GFS (temps_reel._boucher) :
+        # sans cela le generateur ecrivait un vent nul a ces noeuds et le modele recevait des NaN.
+        trous = int(np.isnan(prof_s).sum())
+        for k in range(1, prof_s.shape[0]):
+            prof_s[k] = np.where(np.isfinite(prof_s[k]), prof_s[k], prof_s[k - 1])
+        for k in range(prof_s.shape[0] - 2, -1, -1):
+            prof_s[k] = np.where(np.isfinite(prof_s[k]), prof_s[k], prof_s[k + 1])
+        if trous:
+            print(f"{c} : {trous} valeurs au-dessus du profil ERA5 comblees par la plus proche "
+                  f"({trous / prof_s.size:.2%})", flush=True)
+        if np.isnan(prof_s).any():
+            raise ValueError(f"{c} : colonnes ERA5 entierement vides")
+        champs[c] = prof_s
     lat = pl["latitude"].values
     o = np.argsort(lat)
     df.attrs["champs"] = {"temps": pd.to_datetime(communs).values.astype("datetime64[s]").astype(np.int64),

@@ -618,7 +618,13 @@ def lire_champs(chemin_forcage) -> dict | None:
     if not f.exists():
         return None
     with np.load(f) as d:
-        return {k: d[k] for k in d.files}
+        champs = {k: d[k] for k in d.files}
+    # un profil NaN (au-dessus du dernier niveau ERA5) donnerait un vent nul dans la verite
+    for nom in ("u", "v"):
+        if nom in champs and np.isnan(champs[nom]).any():
+            raise ValueError(f"{f.name} : {nom} contient des NaN : refaire le forcage avec "
+                             "scripts/forcage_era5.py a jour (profils combles)")
+    return champs
 
 
 def _bilineaire(lat_e, lon_e, champ, lat, lon):
