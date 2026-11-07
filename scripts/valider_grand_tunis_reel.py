@@ -42,7 +42,7 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from pcfno3d.forcage import charger_e  # noqa: E402
-from pcfno3d.stations_reelles import (CODES, H_STATION, cellules_codes,  # noqa: E402,F401
+from pcfno3d.stations_reelles import (CODES, H_STATION, cellules_codes, noms_stations,  # noqa: E402,F401
                                      entree_reelle, lire_observations, obs_a, vent_a_hauteur)
 
 SITE_SONDE = "TSM00060715"             # radiosondage de Tunis-Carthage
@@ -112,7 +112,8 @@ def valider(cfg, dossier_obs: Path, jeu: str = "test", checkpoint=None,
         stems = stems[:max_instants]
     row = index.set_index("stem")
     cellules = cellules_codes(geom)
-    obs = lire_observations(Path(dossier_obs))
+    noms = noms_stations(geom)
+    obs = lire_observations(Path(dossier_obs), codes=list(cellules))
     f_sonde = Path(dossier_obs) / f"radiosondages_{SITE_SONDE}.csv"
     sondes = pd.read_csv(f_sonde) if f_sonde.exists() else pd.DataFrame()
     if len(sondes):
@@ -142,7 +143,7 @@ def valider(cfg, dossier_obs: Path, jeu: str = "test", checkpoint=None,
         t = pd.Timestamp(r["timestamp"])
         hour, doy = float(r["hour"]), int(r["doy"])
         mesures = obs_a(obs, t)
-        a_sonder = len(sondes) and t.hour in (0, 12) and (sondes["t"] == t).any()
+        a_sonder = len(sondes) and "DTTA" in cellules and t.hour in (0, 12) and (sondes["t"] == t).any()
         if not mesures and not a_sonder:
             continue
         cache = cfg.paths.cache_dir
@@ -154,7 +155,7 @@ def valider(cfg, dossier_obs: Path, jeu: str = "test", checkpoint=None,
             S_in, cap = entree_reelle(S, E, geom, cellules, mesures, exclue=code)
             u, v = passe(S_in, cap, hour, doy, extra)
             um, vm = vent_a_hauteur(u[:, iy, ix], v[:, iy, ix], h_noeuds[:, iy, ix], geom.z0[iy, ix])
-            paires.append({"station": CODES[code], "stem": stem, "temps": t, "u_obs": uo, "v_obs": vo,
+            paires.append({"station": noms.get(code, code), "stem": stem, "temps": t, "u_obs": uo, "v_obs": vo,
                            "u_modele": um, "v_modele": vm,
                            "u_era5": float(E[0, iy, ix]), "v_era5": float(E[1, iy, ix]),
                            "u_generateur": float(S[0, iy, ix]), "v_generateur": float(S[1, iy, ix])})

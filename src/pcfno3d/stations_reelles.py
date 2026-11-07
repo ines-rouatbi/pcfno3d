@@ -32,15 +32,16 @@ N_CIBLE = 10                           # k_a, k_b, w_a, w_b, iy, ix, u, v, prese
 
 
 # ---------------------------------------------------------------------- observations
-def lire_observations(dossier: Path, verbose: bool = True) -> pd.DataFrame:
-    """METAR + SYNOP des trois stations du domaine ; u, v recalcules s'ils manquent ; mois en
-    panne (vent nul a plus de 90 %, au moins 20 mesures) et periodes de EXCLUSIONS ecartes."""
+def lire_observations(dossier: Path, verbose: bool = True, codes=None) -> pd.DataFrame:
+    """METAR + SYNOP des stations `codes` (defaut : les trois du Grand Tunis, CODES) ; u, v
+    recalcules s'ils manquent ; mois en panne (vent nul a plus de 90 %, au moins 20 mesures) et
+    periodes de EXCLUSIONS ecartes."""
     dossier = Path(dossier)
     fichiers = sorted(dossier.glob("metar_*.csv")) + sorted(dossier.glob("synop_*.csv"))
     if not fichiers:
         raise FileNotFoundError(f"aucun metar_*.csv / synop_*.csv dans {dossier}")
     obs = pd.concat([pd.read_csv(f) for f in fichiers], ignore_index=True)
-    obs = obs[obs["station_id"].isin(list(CODES))].copy()
+    obs = obs[obs["station_id"].isin(list(codes or CODES))].copy()
     obs["t"] = pd.to_datetime(obs["timestamp_utc"], utc=True).dt.tz_localize(None)
     rad = np.radians(obs["wind_dir_deg"])
     calme = obs["wind_speed_m_s"] == 0
@@ -58,6 +59,19 @@ def lire_observations(dossier: Path, verbose: bool = True) -> pd.DataFrame:
         ecart = obs[panne].groupby(["station_id", obs.loc[panne, "t"].dt.to_period("M")]).size()
         print("mois ecartes (anemometre en panne) :", ", ".join(f"{s} {m}" for s, m in ecart.index))
     return obs[~panne].sort_values("t").reset_index(drop=True)
+
+
+def noms_stations(geom) -> dict[str, str]:
+    """{code: nom} des stations du domaine : CODES (Grand Tunis), completes par les noms de
+    stations.json (grille nationale : « DTTX Sfax » -> DTTX: Sfax)."""
+    noms = dict(CODES)
+    f = geom.cfg.paths.data_dir / "stations.json"
+    if f.exists():
+        for s in json.loads(f.read_text(encoding="utf-8")):
+            if s.get("code") and s["code"] not in noms:
+                nom = s["nom"]
+                noms[s["code"]] = nom.split(" ", 1)[1] if nom.startswith(s["code"] + " ") else nom
+    return noms
 
 
 def obs_a(obs: pd.DataFrame, t: pd.Timestamp) -> dict[str, tuple[float, float]]:

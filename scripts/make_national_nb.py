@@ -217,6 +217,11 @@ try:
     lancer("entrainer", f"python -u -m pcfno3d -c national_1km_colab {OPTS} --set train.init_from={INIT} train")
     if not (RUN / "eval_pcfno3d" / "best_wcont" / "test_summary.json").exists():
         lancer("evaluer", f"python -u -m pcfno3d -c national_1km_colab {OPTS} evaluate")
+    # validation sur les VRAIES mesures : 12 aeroports METAR (chacun retire de l'entree quand il
+    # est juge) et radiosondages de Tunis-Carthage ; test 2022
+    if (G / "obs").exists() and not (RUN / "validation_reelle" / "test" / "bilan.json").exists():
+        lancer("validation_reelle", f"python -u scripts/valider_grand_tunis_reel.py -c national_1km_colab "
+                                    f"{OPTS} --obs {G / 'obs'} --jeu test")
     for f in sorted(RUN.rglob("test_summary.json")):
         print(f); print(f.read_text()[:4000])
     for f in sorted(RUN.rglob("test_par_niveau_synoptique.csv")):

@@ -24,6 +24,8 @@ def main() -> int:
     ap.add_argument("--grille", required=True, help="dossier de sortie de grille_reelle.py")
     ap.add_argument("--forcage", required=True, help="forcage_era5.csv (le .npz a cote)")
     ap.add_argument("--sortie", required=True)
+    ap.add_argument("--obs", default=None,
+                    help="dossier des mesures reelles (metar_*.csv, radiosondages_*.csv) -> national/obs/")
     ap.add_argument("--niveaux", default="25,50,75,100,150,200,300,400,500,650,800,1000,1250,1500,2000,2500")
     args = ap.parse_args()
     g, f = Path(args.grille), Path(args.forcage)
@@ -42,11 +44,18 @@ def main() -> int:
         print("hauteurs par maille :", d["hauteurs_sol"].tolist())
     info = json.loads(fichiers["grille_reelle.json"].read_text(encoding="utf-8"))
     print("domaine :", info["zone"], "| stations :", sum(s["dans_la_zone"] for s in info["stations"].values()))
+    obs = []
+    if args.obs:
+        obs = sorted(Path(args.obs).glob("metar_*.csv")) + sorted(Path(args.obs).glob("radiosondages_*.csv"))
+    if args.obs and not obs:
+        raise SystemExit(f"aucun metar_*.csv / radiosondages_*.csv dans {args.obs}")
     sortie = Path(args.sortie)
     tmp = sortie.with_suffix(".zip.part")
     with zipfile.ZipFile(tmp, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6) as zf:
         for nom, p in fichiers.items():
             zf.write(p, f"national/{nom}")
+        for p in obs:
+            zf.write(p, f"national/obs/{p.name}")
     tmp.replace(sortie)
     print(f"-> {sortie} ({sortie.stat().st_size / 1e6:.0f} Mo), a deposer dans MyDrive/pcfno3d_national/")
     return 0
