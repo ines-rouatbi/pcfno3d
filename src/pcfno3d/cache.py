@@ -160,8 +160,33 @@ def load_index(cfg: Config) -> pd.DataFrame:
             f"{path} absent : lance d'abord `python -m pcfno3d build-cache`"
         )
     index = pd.read_csv(path)
-    return (index.drop_duplicates("stem", keep="last")
-            .sort_values(["day", "timestamp"]).reset_index(drop=True))
+    index = (index.drop_duplicates("stem", keep="last")
+             .sort_values(["day", "timestamp"]).reset_index(drop=True))
+    return _avec_forcage(cfg, index)
+
+
+def _avec_forcage(cfg: Config, index: pd.DataFrame) -> pd.DataFrame:
+    """Avec paths.forcage_era5 : ecarte les instants sans echeance de forcage a moins de 3 h
+    (pcfno3d.forcage les refuserait). ERA5 couvre tout le cache : rien n'est ecarte. Un forcage
+    GFS archive a quelques trous (NOAA : run absent ou fichier manquant, ~1 %) : ces instants
+    sortent de l'entrainement ET des jeux juges, et la liste est affichee."""
+    chemin = getattr(cfg.paths, "forcage_era5", None)
+    if not chemin or not Path(chemin).exists() or "timestamp" not in index.columns:
+        return index
+    from .forcage import ECART_MAX_S
+
+    f = np.sort(pd.to_datetime(pd.read_csv(chemin, usecols=["timestamp_utc"])["timestamp_utc"], utc=True)
+                .dt.tz_localize(None).to_numpy().astype("datetime64[s]").astype(np.int64))
+    t = pd.to_datetime(index["timestamp"], utc=True).dt.tz_localize(None).to_numpy() \
+        .astype("datetime64[s]").astype(np.int64)
+    i = np.clip(np.searchsorted(f, t), 1, len(f) - 1)
+    ecart = np.minimum(np.abs(t - f[i - 1]), np.abs(f[i] - t))
+    loin = ecart > ECART_MAX_S
+    if loin.any():
+        par_jeu = index.loc[loin, "split"].value_counts().to_dict() if "split" in index.columns else {}
+        print(f"{int(loin.sum())} instants sans echeance de forcage a moins de 3 h ({Path(chemin).name}) "
+              f"ecartes {par_jeu} : {list(index.loc[loin, 'timestamp'][:6])}", flush=True)
+    return index[~loin].reset_index(drop=True)
 
 
 def check_ground_truth(cfg: Config, geom: Geometry, n: int = 3) -> list[dict]:

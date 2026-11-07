@@ -97,3 +97,27 @@ def test_sans_national(tmp_path, monkeypatch):
                    travailleurs=1, verbose=False, national=False)
     assert all(z == ("mailles",) for *_, z in appels)
     assert not list((tmp_path / "r").glob("*_tn.npz"))
+
+
+def test_instants_sans_forcage_ecartes(tmp_path, capsys):
+    """Un forcage GFS archive a des trous (NOAA) : load_index ecarte les instants sans echeance a
+    moins de 3 h, au lieu de laisser l'entrainement s'arreter ; un forcage complet n'ecarte rien."""
+    from types import SimpleNamespace
+
+    from pcfno3d.cache import load_index
+
+    idx = pd.DataFrame({"stem": ["a", "b", "c", "d"], "day": [0, 0, 1, 2],
+                        "timestamp": ["2021-01-01 00:00:00", "2021-01-01 12:00:00",
+                                      "2021-01-02 12:00:00", "2021-01-03 03:00:00"],
+                        "split": ["train", "train", "val", "test"]})
+    idx.to_csv(tmp_path / "index.csv", index=False)
+    # forcage : rien autour du 1er janvier, puis le 2 a 12 h et le 3 a 0 h
+    pd.DataFrame({"timestamp_utc": ["2021-01-02T12:00:00Z", "2021-01-03T00:00:00Z"]}).to_csv(
+        tmp_path / "forcage.csv", index=False)
+    cfg = SimpleNamespace(paths=SimpleNamespace(index_csv=tmp_path / "index.csv",
+                                                forcage_era5=tmp_path / "forcage.csv"))
+    garde = load_index(cfg)
+    assert list(garde["stem"]) == ["c", "d"]                      # a, b : a plus de 3 h
+    assert "2 instants sans echeance" in capsys.readouterr().out
+    cfg.paths.forcage_era5 = None
+    assert len(load_index(cfg)) == 4

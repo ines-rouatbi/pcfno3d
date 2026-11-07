@@ -350,7 +350,15 @@ def main() -> int:
         print(f"passe {passe + 1} : echeances manquantes, nouvelle tentative", flush=True)
     if not args.sans_national:
         assembler_national(reprise, args.echeance, sortie.parent / f"gfs_tunisie_f{args.echeance}.npz")
-    return 0 if not erreurs.exists() else 4
+    if not erreurs.exists():
+        return 0
+    # trous permanents de l'archive NOAA (run absent en 0,25 deg avant 2021, fichier manquant) :
+    # quelques echeances sur 1 000 ; les instants sans forcage sont ecartes par load_index. Au-dela
+    # de 2 %, c'est un vrai probleme (reseau, archive) : echec.
+    manque = len(json.loads(erreurs.read_text(encoding="utf-8")))
+    print(f"{manque} echeances absentes de l'archive apres 3 passes ({erreurs.name}) sur {len(instants)}",
+          flush=True)
+    return 0 if manque <= 0.02 * len(instants) else 4
 
 
 if __name__ == "__main__":
