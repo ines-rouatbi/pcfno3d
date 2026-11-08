@@ -216,7 +216,10 @@ INIT = shlex.quote(str(choisir_poids(RUNS_GT / livre)))
 RUN = NAT / "runs" / "national_1km_v2"
 print("depart :", INIT)
 try:
-    lancer("entrainer", f"python -u -m pcfno3d -c national_1km_colab {OPTS} --set train.init_from={INIT} train")
+    # choix de l'epoque sur DSO1, DSO2, DSO3 de la validation, passe ici aussi : le carnet marche
+    # alors avec une archive de code anterieure a ce reglage dans configs/national_1km_colab.yaml
+    SEL = shlex.quote('train.select_criteres=["dso1_rmse","dso2_masse","dso3_rugosite"]')
+    lancer("entrainer", f"python -u -m pcfno3d -c national_1km_colab {OPTS} --set {SEL} --set train.init_from={INIT} train")
     if not (RUN / "eval_pcfno3d" / "best_wcont" / "test_summary.json").exists():
         lancer("evaluer", f"python -u -m pcfno3d -c national_1km_colab {OPTS} evaluate")
     # DSO6 (fiabilite) sans reentrainement : ensemble par masquage, calibration sur la VALIDATION,
