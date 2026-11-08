@@ -219,11 +219,24 @@ try:
     lancer("entrainer", f"python -u -m pcfno3d -c national_1km_colab {OPTS} --set train.init_from={INIT} train")
     if not (RUN / "eval_pcfno3d" / "best_wcont" / "test_summary.json").exists():
         lancer("evaluer", f"python -u -m pcfno3d -c national_1km_colab {OPTS} evaluate")
+    # DSO6 (fiabilite) sans reentrainement : ensemble par masquage, calibration sur la VALIDATION,
+    # couverture 80 % et correlation incertitude / erreur sur le test (lu une fois)
+    CAL = RUN / "fiabilite_pcfno3d" / "best_wcont" / "calibration_validation.json"
+    D6 = RUN / "eval_pcfno3d" / "best_wcont" / "dso6_modele_livre.json"
+    if not CAL.exists():
+        lancer("calibrer_dso6", f"python -u -m pcfno3d -c national_1km_colab {OPTS} calibrate-reliability --out {CAL}")
+    if not D6.exists():
+        try:
+            lancer("dso6", f"python -u -m pcfno3d -c national_1km_colab {OPTS} dso6 --calibration {CAL} --out {D6}")
+        except RuntimeError as exc:                     # code 3 = NON CONFORME : verdict ecrit
+            if "(code 3)" not in str(exc):
+                raise
+            print(exc)
     # validation sur les VRAIES mesures : 12 aeroports METAR (chacun retire de l'entree quand il
     # est juge) et radiosondages de Tunis-Carthage ; test 2022
     if (G / "obs").exists() and not (RUN / "validation_reelle" / "test" / "bilan.json").exists():
         lancer("validation_reelle", f"python -u scripts/valider_grand_tunis_reel.py -c national_1km_colab "
-                                    f"{OPTS} --obs {G / 'obs'} --jeu test")
+                                    f"--obs {G / 'obs'} --jeu test")
     for f in sorted(RUN.rglob("test_summary.json")):
         print(f); print(f.read_text()[:4000])
     for f in sorted(RUN.rglob("test_par_niveau_synoptique.csv")):
