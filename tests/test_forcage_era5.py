@@ -203,6 +203,19 @@ def test_predicteur_era5_et_verdict_national(cfg_era5, index, norm, tmp_path):
     assert lu["dso7_conforme"] is None                       # pas de validation reelle ici
     assert (out.parent / "verdict_national.md").exists()
 
+    # DSO par tranches au-dessus du sol : modele et ERA5 sur les memes noeuds
+    from pcfno3d.dso_tranches import dso_tranches, masques_tranches
+    bornes = (0.0, 60.0, 150.0, 400.0)
+    m = masques_tranches(g, bornes)
+    total = sum(x.sum() for _, x in m)
+    assert total == g.valid.sum()                        # chaque noeud valide dans une tranche
+    v_t = dso_tranches(c, device="cpu", bornes=bornes, verbose=False)
+    assert len(v_t["modele"]["par_tranche"]) == len(bornes)       # 3 tranches + information
+    assert "era5" in v_t and "domaine_0_1km" in v_t["era5"]
+    r = [x for x in v_t["modele"]["par_tranche"] if x["noeuds_par_instant"] > 0]
+    assert r and all(np.isfinite(x["rmse_u"]) and "degradation_25pct" in x for x in r)
+    assert (out.parent / "dso_tranches.md").exists()
+
 
 def _jeu_reel(cfg_era5, index, tmp_path):
     """Mini-jeu en mode era5_stations (3 stations, _E, forcage) + observations synthetiques

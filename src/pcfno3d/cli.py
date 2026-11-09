@@ -133,6 +133,16 @@ def cmd_verdict_national(args) -> int:
     return 0 if all(v[k] is not False for k in v if k.endswith("_conforme")) else 3
 
 
+def cmd_dso_tranches(args) -> int:
+    """DSO1, R2, DSO3, DSO5 par tranches de hauteur au-dessus du sol (0-1 km), modele et ERA5."""
+    from .dso_tranches import TRANCHES_DEFAUT, dso_tranches
+
+    cfg = _load_cfg(args)
+    bornes = [float(b) for b in args.bornes.split(",")] if args.bornes else TRANCHES_DEFAUT
+    v = dso_tranches(cfg, checkpoint=args.checkpoint, device=args.device, bornes=bornes)
+    return 0
+
+
 def cmd_calibrate_reliability(args) -> int:
     """Fiabilite (M2) : facteurs k sur la VALIDATION -> JSON gele (jamais ecrase)."""
     from .evaluate import Evaluator
@@ -962,6 +972,13 @@ def build_parser() -> argparse.ArgumentParser:
                             "apres evaluate, dso6 et la validation reelle")
     s.add_argument("--checkpoint"), s.add_argument("--device")
     s.set_defaults(func=cmd_verdict_national)
+
+    s = sub.add_parser("dso-tranches",
+                       help="DSO par tranches au-dessus du sol (0-100, 100-300, 300-600, 600-1000 m) ; "
+                            "modele et ERA5 interpole")
+    s.add_argument("--checkpoint"), s.add_argument("--device")
+    s.add_argument("--bornes", help="bornes en m au-dessus du sol (defaut 0,100,300,600,1000)")
+    s.set_defaults(func=cmd_dso_tranches)
 
     s = sub.add_parser("calibrate-reliability",
                        help="fiabilite : facteurs k sur la VALIDATION (M2, DSO6)")
