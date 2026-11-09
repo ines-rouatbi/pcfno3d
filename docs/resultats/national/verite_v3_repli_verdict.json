@@ -1,0 +1,22 @@
+{
+  "regle": "configs\\national\\regle_verite_v3_repli.json",
+  "sha256_regle": "76834911ae4e9f0319d55bc899ac14e98de33a157d0419467cc82d97df3fbacd",
+  "variante_choisie": "ph1_p0_b0.5_r1_beta0.5",
+  "reglages": {
+    "passe_haut": true,
+    "perturb": 0.0,
+    "brise": 0.5,
+    "relief": 1.0,
+    "beta": 0.5
+  },
+  "acceptation": {
+    "rmse_aeroports_verite": 2.9245565752019465,
+    "rmse_aeroports_era5": 2.9399265551569136,
+    "stations_verite_meilleure": 8,
+    "stations": 12,
+    "ecart_v300": 0.433852593140392,
+    "ecart_v800": 0.32025612578882534
+  },
+  "acceptee": true,
+  "suite": "proposer a Ines la regeneration complete de la verite v3 avec la base et beta (son accord ecrit est requis)"
+}

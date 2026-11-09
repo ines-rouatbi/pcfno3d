@@ -160,6 +160,40 @@ Les durées sont estimées sur A100 pour le GPU et sur un Colab CPU de 8 cœurs 
   calibration d'α montre que le détail local n'est pas corrélé à l'erreur réelle. Si le critère
   n'est pas atteint, l'option de repli est une vérité dont le détail local est atténué.
 
+**Résultats de la phase 2 (09/11/2026, en local, validation 2021 seulement)**
+
+Règle `configs/national/regle_verite_v3.json` (sha256 4792413…), écrite avant le calcul. Les 12 variantes
+utilisent toutes l'amortissement passe-haut. Erreur vectorielle aux 12 aéroports, sur les 20 instants de
+calibration (ERA5 seule : 2,700 m/s) :
+
+| Perturbations | Brise | Relief 0 | Relief 0,5 | Relief 1 |
+|---|---|---|---|---|
+| 0 | 0,5 | 2,716 | 2,719 | 2,721 |
+| 0 | 1 | 2,748 | 2,751 | 2,753 |
+| 0,4 | 0,5 | 2,736 | 2,739 | 2,741 |
+| 0,4 | 1 | 2,768 | 2,770 | 2,773 |
+
+Variante choisie par la règle : perturbations 0, brise 0,5, relief 1. Sur les 20 instants d'acceptation
+(jours disjoints), elle donne 2,948 m/s contre 2,940 pour ERA5 seule : **refusée**, de 0,3 %.
+
+**Repli** (règle `configs/national/regle_verite_v3_repli.json`, sha256 7683491…, écrite avant le calcul) :
+garder une part β du détail local, u, v = ERA5 + β (généré − ERA5), w par la continuité.
+
+| β | Aéroports, calibration (m/s) | Écart v 300 / 800 m |
+|---|---|---|
+| 0,25 | 2,687 | 0,236 / 0,201 |
+| **0,5** | **2,685** | 0,449 / 0,355 |
+| 0,75 | 2,696 | 0,669 / 0,519 |
+
+**β = 0,5 ACCEPTÉ** : 2,925 m/s contre 2,940 pour ERA5 seule sur les instants d'acceptation, meilleure à
+8 aéroports sur 12. C'est la première vérité d'entraînement nationale qui fait mieux qu'ERA5 aux stations.
+L'écart vérité − ERA5 sur v à 300 m tombe de 1,46 (v2) à 0,43 m/s.
+
+Réglages de la vérité v3 : passe-haut, perturbations 0, brise 0,5, relief 1, β = 0,5. Carnet de
+régénération : `notebooks/current/pcfno3d_national_generation_v3_colab.ipynb`
+(`scripts/make_national_nb.py --verite-v3`), fichiers `cache_v3_partie_*` distincts de la v2.
+**Régénération complète : en attente de l'accord écrit d'Ines.**
+
 ### Phase 3 : modèle national v4 (dépend de la phase 2)
 - **Fichiers** :
   - `src/pcfno3d/forcage.py`, `geometry.py`, `dataset.py` : scalaires par cellule (grille ERA5 de
