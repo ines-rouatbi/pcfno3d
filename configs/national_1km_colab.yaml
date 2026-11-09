@@ -47,7 +47,7 @@ train:
   save_every: 5
   seed: 42
   init_from: /content/drive/MyDrive/pcfno3d_grand_tunis/runs/grand_tunis_v9_production/best.pt
-  sync_last: false          # Drive charge : seul best.pt est recopie
+  sync_last: true           # last.pt (~7 Go) recopie toutes les save_every epoques : une coupure Colab reprend la (le 08/11 : coupure a l epoque 6)
   select_by: dso
   # epoque choisie sur DSO1 (RMSE u, v), DSO2, DSO3 de la VALIDATION : avec r2_uvw, le R2 de w par
   # continuite aux niveaux hauts (< 0 pour le Grand Tunis v4) ecrase le score (lecon de la v6)
