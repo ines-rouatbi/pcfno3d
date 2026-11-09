@@ -28,15 +28,21 @@ import pandas as pd
 REPO = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(REPO / "scripts"), str(REPO / "src")]
 NAT = REPO / "artifacts" / "national"
-CONFIGS = ("actuel", "sans_amort", "passe_haut", "sans_brise", "sans_pente", "sans_relief", "sans_perturb")
+CONFIGS = ("actuel", "sans_amort", "passe_haut", "sans_brise", "sans_pente", "sans_relief", "sans_perturb",
+           "sans_recalage", "sans_profil_cl")
 HAUTEURS = (300.0, 800.0)
 INSTANTS = (("2023-02-14", 3), ("2023-02-14", 15), ("2024-08-06", 3), ("2024-08-06", 15))
+# phase 1 (diagnostic 4) : 12 instants de VALIDATION (2021), 3 h et 15 h
+INSTANTS_VAL = tuple((j, h) for j in ("2021-01-05", "2021-01-19", "2021-02-03", "2021-02-17",
+                                       "2021-07-08", "2021-07-22") for h in (3, 15))
 
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--sortie", default=str(NAT / "attribution_v"))
+    ap.add_argument("--validation", action="store_true", help="12 instants de validation 2021")
     a = ap.parse_args()
+    instants = INSTANTS_VAL if a.validation else INSTANTS
     import calibrer_generateur_stations as C
     info = json.loads((NAT / "grille" / "grille_reelle.json").read_text(encoding="utf-8"))
     C._env(info, 0.4)
@@ -78,12 +84,25 @@ def main() -> int:
         elif cfg == "sans_relief":
             P = {**P0, "relief": np.zeros_like(P0["relief"])}
         acc = {}
-        for jour, h_utc in INSTANTS:
+        for jour, h_utc in instants:
             st = G.DayStateERA5(0, pd.Timestamp(jour), 0, S, 7 + int(jour[-2:]), F, CH)
             if cfg == "sans_brise":
                 st.brise = lambda t_sec, g: 0.0
-            _, vol, _ = G.compute_fields(st, S, P, h_utc * 3600.0, None)
-            champ = st.champ_cible(h_utc * 3600.0)
+            champ0 = st.champ_cible(h_utc * 3600.0)        # ERA5 de reference (meme pour toutes)
+            if cfg == "sans_recalage":
+                # recalage par cellule coupe : la grande echelle est recalee sur la MOYENNE ERA5 du
+                # domaine seulement (profil_cible), comme sans champs par maille
+                st.champ_cible = lambda t_sec: None
+            if cfg == "sans_profil_cl":
+                vrai_profil = G.wind_profile_factor
+                G.wind_profile_factor = lambda z_agl, z0, h_bl, s, st_, g: (
+                    np.where(z_agl <= 0.0, 0.0, 1.0) * np.ones_like(z_agl, float), 0.0 * z_agl)
+            try:
+                _, vol, _ = G.compute_fields(st, S, P, h_utc * 3600.0, None)
+            finally:
+                if cfg == "sans_profil_cl":
+                    G.wind_profile_factor = vrai_profil
+            champ = champ0
             for h in HAUTEURS:
                 for c, nom in ((0, "u"), (1, "v")):
                     vrai = a_hauteur(vol["uv"[c]], h)

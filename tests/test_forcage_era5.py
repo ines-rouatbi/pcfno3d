@@ -406,3 +406,24 @@ def test_diagnostic_forcage_regional(cfg_era5, index, tmp_path):
                        env={**__import__("os").environ, "PYTHONIOENCODING": "utf-8"})
     assert p.returncode == 0, p.stderr[-2500:]
     assert (tmp_path / "run" / "diagnostic_forcage" / "resume.json").exists()
+
+
+def test_diagnostic_v_phase1(cfg_era5, index, tmp_path):
+    """scripts/diagnostic_v_phase1.py : modes, spectres et tranches entrainement / test, mini-jeu."""
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    c = copy.deepcopy(cfg_era5)
+    c.apply_overrides({"paths.run_dir": tmp_path / "run", "model.residuel_era5": True})
+    Trainer(c, device="cpu", verbose=False).fit()
+    f = c.save(tmp_path / "c.yaml")
+    repo = Path(__file__).resolve().parents[1]
+    p = subprocess.run([sys.executable, str(repo / "scripts" / "diagnostic_v_phase1.py"), "-c", str(f),
+                        "--device", "cpu", "--n-train", "3", "--hauteurs", "40,80"], capture_output=True, text=True, cwd=repo,
+                       env={**__import__("os").environ, "PYTHONIOENCODING": "utf-8"})
+    assert p.returncode == 0, p.stderr[-2500:]
+    d = tmp_path / "run" / "diagnostic_v_phase1"
+    import json as _json
+    r = _json.loads((d / "resume.json").read_text(encoding="utf-8"))
+    assert r["modes"]["lambda_min_y_km"] > 0 and (d / "tranches.csv").exists()
