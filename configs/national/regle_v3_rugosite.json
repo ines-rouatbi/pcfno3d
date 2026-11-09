@@ -1,0 +1,11 @@
+{
+  "fixee_le": "2026-11-09, avant tout entrainement et tout test de la v3",
+  "reference": "national_1km_v2, epoque 30 (test 2022 : DSO1 max v 1.158 m/s a 2500 m, DSO3 0.785, DSO5 1.136, aeroports 3.045 m/s en moyenne, modele seul station retiree)",
+  "candidat": "national_1km_v3_rugosite : affinage de la v2 (epoque 30), 15 epoques, lr 5e-5, loss.lambda_rough 1.0 (reglage de la v6 Grand Tunis)",
+  "la_v3_remplace_la_v2_si": [
+    "DSO3 (rugosite test) dans [0.9 ; 1.1]",
+    "DSO1 : RMSE max u, v par niveau <= 1.05 x celui de la v2 (1.158 -> 1.216 m/s)",
+    "aeroports : RMSE vectoriel moyen sur les 12 <= 1.01 x celui de la v2 (3.045 -> 3.075 m/s)"
+  ],
+  "sinon": "la v2 reste le modele national livre ; la v3 est publiee comme essai"
+}
