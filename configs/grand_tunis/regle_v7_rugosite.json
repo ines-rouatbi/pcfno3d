@@ -1,0 +1,13 @@
+{
+  "fixee_le": "2026-11-09, avant tout entrainement et tout test de la v7 (plan approuve par Rayen)",
+  "reference": "grand_tunis_v4_dso (livre) : DSO3 0,805 ; DSO1 au-dessus du sol (scripts/dso_hauteur_sol.py) conforme, RMSE max 0,486 m/s (0-100 m) ; erreur vectorielle moyenne aux 3 stations reelles 2,469 m/s (test 2022, station retiree de l'entree)",
+  "candidat": "grand_tunis_v7_rugosite : affinage depuis la v4 (epoque evaluee), loss.lambda_rough 0,3, 10 epoques, lr 5e-5, epoque choisie sur la VALIDATION (DSO1, DSO2, DSO3) ; configs/grand_tunis_v7_rugosite_colab.yaml",
+  "la_v7_est_livree_si_toutes": [
+    "DSO3 (rugosite, test_summary.json du test 2022, forme livree w par continuite) dans [0,9 ; 1,1]",
+    "DSO1 au-dessus du sol conforme : scripts/dso_hauteur_sol.py (meme regle 0-1 km que la v4), verdicts.modele.dso1_conforme = true",
+    "stations reelles : erreur vectorielle moyenne des 3 stations <= 1,03 x celle de la v4 (2,469 -> 2,543 m/s)"
+  ],
+  "sinon": "la v4 reste le modele livre",
+  "lecture": "un seul passage sur le test, apres l'entrainement ; les seuils ne changent pas ; rien n'est choisi sur le test ; aucun bruit ajoute aux predictions",
+  "interpretation": "« pas plus de 3 % de degradation aux stations reelles » est lu sur la MOYENNE des 3 stations, comme le critere des stations des regles v4 / v6"
+}

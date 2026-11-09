@@ -1,0 +1,96 @@
+# PC-FNO3D reel (Grand Tunis) v7 : affinage RUGOSITE depuis la v4 livree, plan approuve par Rayen
+# (09/11/2026) : lambda_rough 0,3 (au lieu de 1,0 pour la v6), 10 epoques, selection sur la
+# VALIDATION (DSO1, DSO2, DSO3). Regle de livraison fixee AVANT : configs/grand_tunis/regle_v7_rugosite.json.
+# Le reste est celui de la v6 (configs/grand_tunis_v6_dso_colab.yaml).
+# PC-FNO3D reel (Grand Tunis) v6 : AFFINAGE VISANT DSO1 (25 m) ET DSO3 depuis la v4 livree
+# (demande d'Ines, 2026-11-07). La v4 (test 2022) manque DSO1 au seul niveau 25 m (RMSE 0,528 pour
+# 0,5) et DSO3 (rugosite 0,805 pour [0,9 ; 1,1] ; 0,37 a 25 m ... 0,93 a 650 m) : champ trop lisse,
+# la perte quadratique pousse vers la moyenne des petites echelles imprevisibles.
+# Leviers (tout regle sur la VALIDATION, le test lu une seule fois) :
+#   - loss.lambda_rough : ecart de rugosite pred / verite NIVEAU PAR NIVEAU (losses.roughness_levels) ;
+#   - poids u, v par niveau mesures sur la validation de la v4 (`pcfno3d dso-weights`), 25 m en tete ;
+#   - choix de l'epoque sur DSO1 (RMSE u, v), DSO2, DSO3 seulement (train.select_criteres) : avec
+#     r2_uvw, le R2 de w par continuite aux niveaux hauts (< 0) ecrase le score et l'epoque ne
+#     recompenserait ni DSO1 ni DSO3.
+# Livraison : scripts/decision_v6_grand_tunis.py (regle ecrite AVANT le test) ; sinon la v4 reste.
+name: grand_tunis_v7_rugosite
+
+paths:
+  data_dir: /content/grand_tunis/jeu
+  cache_dir: /content/grand_tunis/cache
+  run_dir: /content/drive/MyDrive/pcfno3d_grand_tunis/runs/grand_tunis_v7_rugosite
+  forcage_era5: /content/donnees/grand_tunis/forcage_era5.csv
+  cache_mirror: null
+  local_dir: /content/run_local_grand_tunis_v7_rugosite
+  web_dir: /content/grand_tunis/web
+
+model:                      # architecture v4 (= v7) : les poids de la v4 servent de depart
+  width: 48
+  modes: [6, 32, 32]
+  n_layers: 4
+  pad: [4, 8, 8]
+  proj_hidden: 128
+  local_conv: true
+  pool_surface: true
+  recalcul_activations: false   # le carnet passe a true si la memoire du GPU ne suffit pas
+  residuel_era5: true
+
+train:
+  epochs: 10
+  steps_per_epoch: 200
+  val_samples: 64
+  batch_size: 1
+  accum_steps: 2
+  lr: 5.0e-5                # affinage depuis la v4, comme la v4 depuis la v2
+  weight_decay: 1.0e-4
+  warmup_phys_epochs: 3
+  num_workers: 4
+  ema_decay: 0.999
+  grad_clip: 1.0
+  save_every: 5
+  seed: 42
+  init_from: /content/drive/MyDrive/pcfno3d_grand_tunis/runs/grand_tunis_v4_dso/best.pt   # le carnet passe le poids verifie
+  sync_last: false
+  select_by: dso
+  select_criteres: [dso1_rmse, dso2_masse, dso3_rugosite]
+
+loss:
+  lambda_mass: 5.0
+  mass_ref: 5.0e-7
+  lambda_bc: 0.1
+  lambda_smooth: 0.0
+  lambda_grad: 0.5
+  # (log rugosite pred / verite)^2 moyen sur les niveaux evalues : ~0,18 pour la v4 (0,37 a 25 m),
+  # du meme ordre que lambda_grad x L_grad ; a 1, le terme pese sans ecraser L_data
+  lambda_rough: 0.3
+  w_weight: 2.0
+  w_level_max: 25.0
+
+mask:
+  entree: era5_stations
+  pas_era5_m: 2500.0
+  p_station: 0.8
+  keep_train: [0.2, 1.0]
+  keep_eval: 1.0
+
+dso:
+  rmse: 0.5
+  r2: 0.95
+  r2_all: 0.95
+  mass_rms: 1.0e-4
+  roughness_range: [0.9, 1.1]
+  time_s: 1.0
+  rmse_25pct: 0.7
+  min_level_cover: 0.05
+
+terrain_smooth_m: 300.0
+f_coriolis: 8.705e-5
+
+real:
+  origin_lat: 36.395
+  origin_lon: 10.04
+  rotation_deg: 0.0
+  origin_assumed: false
+
+inference:
+  w_continuite: true        # forme servie : la selection et le test la mesurent
