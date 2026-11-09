@@ -1,0 +1,25 @@
+{
+  "fixee_le": "2026-11-09, avant toute execution des diagnostics 2, 3 et 4 de la phase 1",
+  "modele_diagnostique": "national_1km_v2, epoque 30 (aucun entrainement, aucune generation complete)",
+  "statut": "regle d'INTERPRETATION : elle oriente les ablations de la phase 3 et les corrections de la phase 2 ; aucun choix de reglage n'est fait sur le test, chaque piste retenue est jugee ensuite sur la VALIDATION 2021",
+  "diagnostic_2_spectres": {
+    "donnees": "180 instants synoptiques du test 2022, a 300 et 800 m au-dessus du sol, scripts/diagnostic_v_phase1.py",
+    "piste_modes_y": "proposer l'ablation modes [6, 64, 32] si, a 300 OU 800 m, la part d'energie de l'erreur modele sur v le long de y dans la bande 13-26 km est >= 0.25 ET depasse d'au moins 0.05 la meme part pour u",
+    "piste_grande_echelle": "si la part > 50 km de l'erreur sur v (axe y) est >= 0.5, la cause est la verite d'entrainement ou le forcage, pas la resolution spectrale : priorite a la phase 2"
+  },
+  "diagnostic_3_entrainement_contre_test": {
+    "donnees": "60 instants d'entrainement et 60 du test, memes entrees de production, graine 2000",
+    "sur_apprentissage": "signale si RMSE test / RMSE entrainement > 1.15 pour u ou v sur une tranche 0-1 km",
+    "sous_apprentissage_v": "si le rapport v/u sur l'entrainement est >= 1.3 sur la tranche 0-1 km, l'ecart v/u est deja appris tel quel : il vient de la verite d'entrainement ou de l'architecture, pas de la generalisation"
+  },
+  "diagnostic_4_mecanismes_generateur": {
+    "donnees": "12 instants de validation 2021 (3 h et 15 h), scripts/attribution_v_generateur.py --validation",
+    "mecanisme_responsable": "un mecanisme est retenu pour correction en phase 2 si le couper reduit l'ecart rms verite d'entrainement - ERA5 sur v d'au moins 30 % a 300 OU 800 m par rapport a la configuration actuelle",
+    "correction_amortissement": "la correction passe_haut est retenue pour la phase 2 si elle reduit l'ecart sur v d'au moins 30 % a 300 et 800 m sans augmenter celui de u de plus de 10 %"
+  },
+  "interdits": [
+    "aucun bruit ajoute aux predictions",
+    "ERA5 et la verite generee sont appelees verite d'entrainement, jamais mesures",
+    "aucun seuil DSO n'est modifie"
+  ]
+}
