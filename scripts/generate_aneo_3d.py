@@ -96,6 +96,9 @@ AMORT_PASSE_HAUT = os.environ.get("ANEO_GEN_AMORT_PASSE_HAUT", "0") == "1"
 # par le relief ; 1 = generateur inchange
 BRISE_FACTEUR = float(os.environ.get("ANEO_GEN_BRISE", 1.0))
 RELIEF_FACTEUR = float(os.environ.get("ANEO_GEN_RELIEF", 1.0))
+# repli de la phase 2 : part beta du detail local garde autour d'ERA5 (u, v = ERA5 + beta (genere - ERA5),
+# w reintegre par la continuite) ; 1 = generateur inchange
+DETAIL_BETA = float(os.environ.get("ANEO_GEN_DETAIL", 1.0))
 A_ROT, A_DIV = A_ROT * PERTURB, A_DIV * PERTURB
 # brise de mer / de terre (forcage ERA5 seulement) : profondeur, penetration terre et mer
 H_BRISE_M, L_BRISE_TERRE_M, L_BRISE_MER_M = 400.0, 15000.0, 10000.0
@@ -1037,6 +1040,13 @@ def compute_fields(st: DayState, static: dict, pre: dict, t_sec: float, episode:
         vol["v"][k] += gy / vol["rho"][k]
         rho_w = integrate_w()
 
+    if DETAIL_BETA != 1.0 and cu is not None:
+        for k in range(NZ):
+            h_sol = np.maximum(Z_LEVELS[k] - zt_v, MIN_ZREL_NODE)
+            for i_c, cle in ((0, "u"), (1, "v")):
+                e = _era5_au_sol(st.champs, champ[i_c], lat_v, lon_v, h_sol)
+                vol[cle][k] = e + DETAIL_BETA * (vol[cle][k] - e)
+
     # 3) integration finale (w exactement coherent avec u, v definitifs)
     rho_w = integrate_w()
     vol["w"] = rho_w / vol["rho"]
@@ -1070,6 +1080,11 @@ def compute_fields(st: DayState, static: dict, pre: dict, t_sec: float, episode:
     # meme correction potentielle que le volume, interpolee a l'altitude du capteur
     surf["u"] = surf["u"] + at_zabs(up(corr_gx)) / surf["rho"]
     surf["v"] = surf["v"] + at_zabs(up(corr_gy)) / surf["rho"]
+
+    if DETAIL_BETA != 1.0 and cu is not None:
+        for i_c, cle in ((0, "u"), (1, "v")):
+            e = _era5_au_sol(st.champs, champ[i_c], static["lat"], static["lon"], static["zrel"])
+            surf[cle] = e + DETAIL_BETA * (surf[cle] - e)
 
     # w de surface : interpolation entre le sol (condition cinematique) et le noeud valide au-dessus
     w_up = up(vol["w"])
