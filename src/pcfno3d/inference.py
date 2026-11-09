@@ -415,8 +415,11 @@ class WindFieldModel:
 
         self.norm = Normalizer.from_file(cfg.paths.norm_stats, self.geom,
                                          cfg.loss.w_level_max)
-        self.amp_dtype = torch.bfloat16 if self.device.type == "cuda" else torch.float32
-        self.use_amp = self.device.type == "cuda"
+        # bf16 seulement sur les GPU qui le calculent nativement (Ampere et plus : A100, L4) ;
+        # T4 / P100 (Kaggle) passent en float32 plutot qu'en bf16 emule
+        bf16 = self.device.type == "cuda" and torch.cuda.get_device_capability(self.device)[0] >= 8
+        self.amp_dtype = torch.bfloat16 if bf16 else torch.float32
+        self.use_amp = bf16
         # une seule passe avant a la fois : sur CPU, la v7 prend ~5 Go par passe, et
         # l'application web lance 3-4 requetes en parallele a chaque instant. Sans verrou,
         # chacune lancerait sa propre passe et la machine saturerait sa memoire. La passe
