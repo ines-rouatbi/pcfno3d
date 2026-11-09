@@ -29,6 +29,7 @@ REPO = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(REPO / "scripts"), str(REPO / "src")]
 NAT = REPO / "artifacts" / "national"
 REGLE = REPO / "configs" / "national" / "regle_verite_v3.json"
+REGLE_REPLI = REPO / "configs" / "national" / "regle_verite_v3_repli.json"
 VAL = (("2021-01-01", "2021-02-28"), ("2021-07-01", "2021-07-31"))
 HEURES = (3, 9, 15, 21)
 
@@ -68,7 +69,14 @@ def variantes(regle: dict) -> list[dict]:
 
 
 def nom(v: dict) -> str:
-    return f"ph{int(v['passe_haut'])}_p{v['perturb']:g}_b{v['brise']:g}_r{v['relief']:g}"
+    n = f"ph{int(v['passe_haut'])}_p{v['perturb']:g}_b{v['brise']:g}_r{v['relief']:g}"
+    return n + (f"_beta{v['beta']:g}" if "beta" in v else "")
+
+
+def choisir_beta(t: pd.DataFrame) -> pd.Series:
+    """Critere de regle_verite_v3_repli.json : plus petit RMSE aux aeroports ; a 0.005 pres, le plus grand beta."""
+    meilleur = t.rmse_aeroports_verite.min()
+    return t[t.rmse_aeroports_verite <= meilleur + 0.005].sort_values("beta", ascending=False).iloc[0]
 
 
 def choisir(t: pd.DataFrame, regle: dict) -> pd.Series:
@@ -88,8 +96,14 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--sortie", default=str(NAT / "verite_v3"))
     ap.add_argument("--instants", type=int, default=20)
+    ap.add_argument("--repli", action="store_true", help="option de repli (regle_verite_v3_repli.json)")
     a = ap.parse_args()
     regle, h_regle = charger_regle()
+    if a.repli:
+        v3 = json.loads((Path(a.sortie) / "verdict.json").read_text(encoding="utf-8"))
+        if v3.get("acceptee"):
+            raise SystemExit("la verite v3 est acceptee : le repli ne se declenche pas")
+        regle, h_regle = charger_regle(REGLE_REPLI)
     out = Path(a.sortie)
     out.mkdir(parents=True, exist_ok=True)
 
@@ -125,6 +139,7 @@ def main() -> int:
         G.A_ROT, G.A_DIV = a_rot1 * v["perturb"], a_div1 * v["perturb"]
         G.AMORT_PASSE_HAUT = bool(v["passe_haut"])
         G.BRISE_FACTEUR, G.RELIEF_FACTEUR = v["brise"], v["relief"]
+        G.DETAIL_BETA = float(v.get("beta", 1.0))
         err, dev = [], {key: np.zeros(2) for key in ("v300", "v800", "u300", "u800")}
         for jour, hh in insts:
             seed = 2026 * 1000 + int((jour - pd.Timestamp("2021-01-01")).days) + 1
@@ -156,10 +171,13 @@ def main() -> int:
                 "stations_verite_meilleure": int((par.eg <= par.ee).sum()), "stations": int(len(par)),
                 **{f"ecart_{key}": float(np.sqrt(s[0] / s[1])) for key, s in dev.items()}}
 
-    f_cal = out / "calibration.csv"
+    suffixe = "_repli" if a.repli else ""
+    f_cal = out / f"calibration{suffixe}.csv"
     deja = pd.read_csv(f_cal) if f_cal.exists() else pd.DataFrame()
     i_cal = instants(a.instants, 2026)
-    for v in variantes(regle):
+    liste = ([{**v3["reglages"], "beta": float(b)} for b in regle["valeurs_beta"]] if a.repli
+             else variantes(regle))
+    for v in liste:
         if len(deja) and nom(v) in set(deja.variante):
             continue
         ligne = mesurer(v, i_cal, "calibration")
@@ -167,11 +185,13 @@ def main() -> int:
         deja.to_csv(f_cal, index=False)
     t = deja.copy()
     t["passe_haut"] = t["passe_haut"].astype(bool)
-    choix = choisir(t, regle)
+    choix = choisir_beta(t) if a.repli else choisir(t, regle)
     v_choix = {"passe_haut": bool(choix.passe_haut), "perturb": float(choix.perturb),
                "brise": float(choix.brise), "relief": float(choix.relief)}
+    if a.repli:
+        v_choix["beta"] = float(choix.beta)
 
-    f_acc = out / "acceptation.csv"
+    f_acc = out / f"acceptation{suffixe}.csv"
     if f_acc.exists() and nom(v_choix) in set(pd.read_csv(f_acc).variante):
         acc = pd.read_csv(f_acc).set_index("variante").loc[nom(v_choix)].to_dict()
     else:
@@ -179,14 +199,15 @@ def main() -> int:
         acc = mesurer(v_choix, i_acc, "acceptation")
         pd.DataFrame([acc]).to_csv(f_acc, index=False)
     G.A_ROT, G.A_DIV, G.AMORT_PASSE_HAUT, G.BRISE_FACTEUR, G.RELIEF_FACTEUR = a_rot1, a_div1, False, 1.0, 1.0
+    G.DETAIL_BETA = 1.0
     acceptee = acc["rmse_aeroports_verite"] <= acc["rmse_aeroports_era5"]
-    verdict = {"regle": str(REGLE.relative_to(REPO)), "sha256_regle": h_regle, "variante_choisie": nom(v_choix),
+    verdict = {"regle": str((REGLE_REPLI if a.repli else REGLE).relative_to(REPO)), "sha256_regle": h_regle, "variante_choisie": nom(v_choix),
                "reglages": v_choix, "acceptation": {k_: acc[k_] for k_ in ("rmse_aeroports_verite", "rmse_aeroports_era5",
                                                                            "stations_verite_meilleure", "stations",
                                                                            "ecart_v300", "ecart_v800")},
                "acceptee": bool(acceptee),
                "suite": regle["si_acceptee"] if acceptee else regle["si_refusee"]}
-    (out / "verdict.json").write_text(json.dumps(verdict, indent=2, ensure_ascii=False), encoding="utf-8")
+    (out / f"verdict{suffixe}.json").write_text(json.dumps(verdict, indent=2, ensure_ascii=False), encoding="utf-8")
     pd.set_option("display.width", 250)
     print(t.drop(columns=["jeu"]).round(3).to_string(index=False))
     print(json.dumps(verdict, indent=2, ensure_ascii=False))

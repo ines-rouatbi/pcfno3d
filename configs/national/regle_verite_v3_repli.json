@@ -1,0 +1,19 @@
+{
+  "fixee_le": "2026-11-09 20 h 40, pendant la calibration de regle_verite_v3 et avant tout calcul de repli (aucun resultat beta n'existe)",
+  "declenchement": "seulement si regle_verite_v3.json refuse la variante choisie (verdict.json : acceptee = false)",
+  "objet": "option de repli de la feuille de route : verite d'entrainement dont le detail local est attenue, u, v = ERA5 + beta (genere - ERA5) aux noeuds et en surface, w reintegre par la continuite (ANEO_GEN_DETAIL) ; ce n'est PAS une generation complete",
+  "base": "la variante choisie par regle_verite_v3.json sur la calibration (memes facteurs passe-haut / perturbations / brise / relief)",
+  "donnees": "memes instants que regle_verite_v3.json : calibration = 20 instants de validation (graine 2026), acceptation = 20 autres instants de validation sur des jours disjoints (graine 2027) ; jamais le test 2022",
+  "valeurs_beta": [0.25, 0.5, 0.75],
+  "exclu": "beta = 0 (la verite serait ERA5 seule, sans detail : pas de verite d'entrainement nouvelle)",
+  "choix_sur_la_calibration": "la valeur de beta de plus petit RMSE vectoriel moyen aux 12 aeroports ; a egalite a 0.005 m/s pres, la plus grande (plus de detail garde)",
+  "acceptation": "beta choisi accepte si, sur les 20 instants d'acceptation, le RMSE vectoriel moyen de la verite aux 12 aeroports est <= celui d'ERA5 seule",
+  "si_acceptee": "proposer a Ines la regeneration complete de la verite v3 avec la base et beta (son accord ecrit est requis)",
+  "si_refusee": "ne rien generer ; rapporter a Ines : le generateur, meme attenue, n'egale pas ERA5 aux aeroports ; la verite d'entrainement nationale reste celle de la v2",
+  "interdits": [
+    "aucun instant du test 2022",
+    "aucune correction propre a une station",
+    "aucun bruit ajoute aux predictions",
+    "ERA5 et la verite generee sont appelees verite d'entrainement, jamais mesures"
+  ]
+}
