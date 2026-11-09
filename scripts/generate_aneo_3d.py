@@ -92,6 +92,10 @@ PERTURB = float(os.environ.get("ANEO_GEN_PERTURB", 1.0))
 # forcage ERA5 : correction d'amortissement de w filtree en passe-haut (< 12 km) pour que la grande
 # echelle reste celle d'ERA5 (diagnostic du 09/11/2026). 0 = comportement des jeux deja generes.
 AMORT_PASSE_HAUT = os.environ.get("ANEO_GEN_AMORT_PASSE_HAUT", "0") == "1"
+# phase 2 nationale (recalibration sur la VALIDATION) : facteurs de la brise et de l'acceleration
+# par le relief ; 1 = generateur inchange
+BRISE_FACTEUR = float(os.environ.get("ANEO_GEN_BRISE", 1.0))
+RELIEF_FACTEUR = float(os.environ.get("ANEO_GEN_RELIEF", 1.0))
 A_ROT, A_DIV = A_ROT * PERTURB, A_DIV * PERTURB
 # brise de mer / de terre (forcage ERA5 seulement) : profondeur, penetration terre et mer
 H_BRISE_M, L_BRISE_TERRE_M, L_BRISE_MER_M = 400.0, 15000.0, 10000.0
@@ -832,7 +836,7 @@ def compute_fields(st: DayState, static: dict, pre: dict, t_sec: float, episode:
     s = st.stability(t_sec, g)
     h_bl = st.hauteur_cl(t_sec, s)
     h = t_sec / 3600.0
-    a_brise = st.brise(t_sec, g)
+    a_brise = BRISE_FACTEUR * st.brise(t_sec, g)
 
     # Advection des perturbations par le vent moyen de couche limite
     shift_x = 0.8 * ug * t_sec
@@ -887,7 +891,7 @@ def compute_fields(st: DayState, static: dict, pre: dict, t_sec: float, episode:
         env = 1.0 - 0.5 * np.minimum(np.maximum(z_agl, 0) / h_bl, 1.0)
 
         rel = pre["relief"][sl]
-        speedup = np.clip(1.0 + 0.15 * rel / 100.0 * np.exp(-np.maximum(z_agl, 0) / 300.0), 0.6, 1.6)
+        speedup = np.clip(1.0 + 0.15 * RELIEF_FACTEUR * rel / 100.0 * np.exp(-np.maximum(z_agl, 0) / 300.0), 0.6, 1.6)
         mod = speedup * (1.0 + a_div * div_s[sl] * env)
 
         ang = np.radians(rot + (front_s[sl] if isinstance(front_s, np.ndarray) else front_s))

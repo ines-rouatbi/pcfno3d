@@ -1,0 +1,27 @@
+{
+  "fixee_le": "2026-11-09, avant tout calcul de la phase 2 (recalibration du generateur national)",
+  "objet": "choisir les reglages du generateur de la verite d'entrainement nationale v3 et decider si elle peut etre generee ; ce n'est PAS une generation complete",
+  "base": "generateur du jeu national v2 + amortissement de w filtre passe-haut (ANEO_GEN_AMORT_PASSE_HAUT=1), retenu par la regle b543873 (diagnostic 4)",
+  "donnees": {
+    "jeu": "VALIDATION 2021 uniquement (janvier-fevrier et juillet 2021) ; jamais le test 2022",
+    "calibration": "20 instants, 10 jours tires avec la graine 2026 (memes instants que le test B1 des facteurs de perturbation), heures 3/15 ou 9/21",
+    "acceptation": "20 autres instants, 10 jours tires avec la graine 2027 parmi les jours de validation NON utilises pour la calibration",
+    "mesures": "vent a 10 m des 12 aeroports METAR, a 30 min au plus ; la verite est prise sur le bloc 2 x 2 du cache ; ERA5 seule au meme point"
+  },
+  "variantes": {
+    "amortissement_passe_haut": [true],
+    "facteur_perturbations": [0.0, 0.4],
+    "facteur_brise": [0.5, 1.0],
+    "facteur_relief": [0.0, 0.5, 1.0]
+  },
+  "choix_sur_la_calibration": "la variante de plus petit RMSE vectoriel moyen aux aeroports, parmi celles dont l'ecart rms verite - ERA5 sur v a 300 et 800 m au-dessus du sol ne depasse pas 1.10 x celui de la base (facteurs 0.4 / 1 / 1) ; a egalite a 0.005 m/s pres, la plus proche du generateur v2 (facteurs 1, puis perturbations 0.4)",
+  "acceptation": "la variante choisie est acceptee si, sur les 20 instants d'acceptation, son RMSE vectoriel moyen aux 12 aeroports est <= celui d'ERA5 seule",
+  "si_acceptee": "proposer a Ines la regeneration complete de la verite v3 avec ces reglages (son accord ecrit est requis)",
+  "si_refusee": "ne rien generer ; rapporter l'ecart et proposer l'option de repli de la feuille de route (detail local attenue)",
+  "interdits": [
+    "aucun instant du test 2022",
+    "aucune correction propre a une station : seuls des facteurs globaux du generateur",
+    "aucun bruit ajoute aux predictions",
+    "ERA5 et la verite generee sont appelees verite d'entrainement, jamais mesures"
+  ]
+}
