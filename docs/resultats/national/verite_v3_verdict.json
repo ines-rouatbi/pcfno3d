@@ -1,0 +1,21 @@
+{
+  "regle": "configs\\national\\regle_verite_v3.json",
+  "sha256_regle": "479241314e2f086f52f06b5c0a6f88501bfb05eb9a0a5a391a293b4671bdea45",
+  "variante_choisie": "ph1_p0_b0.5_r1",
+  "reglages": {
+    "passe_haut": true,
+    "perturb": 0.0,
+    "brise": 0.5,
+    "relief": 1.0
+  },
+  "acceptation": {
+    "rmse_aeroports_verite": 2.9479154113807327,
+    "rmse_aeroports_era5": 2.9399265551569136,
+    "stations_verite_meilleure": 8,
+    "stations": 12,
+    "ecart_v300": 0.8611294802075936,
+    "ecart_v800": 0.6147186772720045
+  },
+  "acceptee": false,
+  "suite": "ne rien generer ; rapporter l'ecart et proposer l'option de repli de la feuille de route (detail local attenue)"
+}

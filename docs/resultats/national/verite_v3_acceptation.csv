@@ -1,0 +1,2 @@
+jeu,variante,passe_haut,perturb,brise,relief,paires_aeroports,rmse_aeroports_verite,rmse_aeroports_era5,stations_verite_meilleure,stations,ecart_v300,ecart_v800,ecart_u300,ecart_u800
+acceptation,ph1_p0_b0.5_r1,True,0.0,0.5,1.0,226,2.9479154113807327,2.9399265551569136,8,12,0.8611294802075936,0.6147186772720045,0.7316515070892934,0.5183090555209136
