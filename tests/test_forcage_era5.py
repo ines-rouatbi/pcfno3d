@@ -216,6 +216,26 @@ def test_predicteur_era5_et_verdict_national(cfg_era5, index, norm, tmp_path):
     assert r and all(np.isfinite(x["rmse_u"]) and "degradation_25pct" in x for x in r)
     assert (out.parent / "dso_tranches.md").exists()
 
+    # scripts/dso_hauteur_sol.py (memes tranches par defaut) : memes RMSE que dso-tranches, pour
+    # le modele et pour ERA5 (deux chemins : canaux d'entree / cellules de tfeat apres N_SCAL)
+    import importlib.util
+    from pathlib import Path
+    spec = importlib.util.spec_from_file_location(
+        "dso_hauteur_sol", Path(__file__).resolve().parents[1] / "scripts" / "dso_hauteur_sol.py")
+    H = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(H)
+    ev = Evaluator(c, device="cpu", verbose=False)
+    tab, info = H.mesurer(ev, c, None, None)
+    ref = dso_tranches(c, device="cpu", verbose=False)
+    for src in ("modele", "era5"):
+        for r in ref[src]["par_tranche"][:-1]:
+            if r["noeuds_par_instant"] == 0:
+                continue
+            h = tab[(tab.predicteur == src) & (tab.tranche == r["tranche"])].iloc[0]
+            assert abs(h.rmse_u - r["rmse_u"]) < 1e-4 and abs(h.rmse_v - r["rmse_v"]) < 1e-4
+    vd = H.verdicts(tab, info["global"], c, None)
+    assert set(vd) == {"modele", "era5"} and "dso1_conforme" in vd["modele"]
+
 
 def _jeu_reel(cfg_era5, index, tmp_path):
     """Mini-jeu en mode era5_stations (3 stations, _E, forcage) + observations synthetiques
