@@ -41,19 +41,25 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--sortie", default=str(NAT / "attribution_v"))
     ap.add_argument("--validation", action="store_true", help="12 instants de validation 2021")
+    ap.add_argument("--donnees", default=None, help="dossier national (grille, grille_reelle.json, forcage) ; "
+                                                   "defaut artifacts/national")
     a = ap.parse_args()
+    D = Path(a.donnees) if a.donnees else None
+    f_info = D / "grille_reelle.json" if D else NAT / "grille" / "grille_reelle.json"
+    f_grille = D / "aneo_grid_points_surface.csv" if D else NAT / "grille" / "aneo_grid_points_surface.csv"
+    f_forc = D / "forcage_era5.csv" if D else NAT / "forcage_era5.csv"
     instants = INSTANTS_VAL if a.validation else INSTANTS
     import calibrer_generateur_stations as C
-    info = json.loads((NAT / "grille" / "grille_reelle.json").read_text(encoding="utf-8"))
+    info = json.loads(f_info.read_text(encoding="utf-8"))
     C._env(info, 0.4)
     import generate_aneo_3d as G
     from scipy.ndimage import gaussian_filter
 
-    df = G.load_or_build_grid(NAT / "grille" / "aneo_grid_points_surface.csv", np.random.default_rng(0))
+    df = G.load_or_build_grid(f_grille, np.random.default_rng(0))
     S = G.build_static(df)
     P0 = G.precompute_static_derived(S)
-    F = G.lire_forcage(str(NAT / "forcage_era5.csv"))
-    CH = G.lire_champs(str(NAT / "forcage_era5.csv"))
+    F = G.lire_forcage(str(f_forc))
+    CH = G.lire_champs(str(f_forc))
     k = G.STRIDE
     lat_v, lon_v = S["lat"][::k, ::k][:G.NY_V, :G.NX_V], S["lon"][::k, ::k][:G.NY_V, :G.NX_V]
     zt_v = S["zt"][::k, ::k][:G.NY_V, :G.NX_V]
