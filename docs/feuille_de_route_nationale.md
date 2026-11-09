@@ -32,7 +32,7 @@ Discipline, à chaque phase :
 | 1 | Modes de Fourier, grille, plus petite longueur d'onde | **fait** (ci-dessous) |
 | 2 | Spectres de l'erreur à 300 / 800 m au-dessus du sol, 180 instants de test | prêt (`scripts/diagnostic_v_phase1.py`, commit 1d3236a), à exécuter sur Colab |
 | 3 | RMSE u, v par tranche, 60 instants d'entraînement contre test | prêt (même script), à exécuter sur Colab |
-| 4 | Mécanismes du générateur coupés un par un, 12 instants de validation 2021 | prêt (`scripts/attribution_v_generateur.py --validation`, commit 7602acb), à exécuter sur Colab ; en local, environ 3 instants par heure, trop lent |
+| 4 | Mécanismes du générateur coupés un par un, 12 instants de validation 2021 | **fait** (09/11, en local, ci-dessous) |
 | 5 | Biais aux aéroports | **fait** (ci-dessous) |
 
 Les diagnostics 2 à 4 ont besoin du point de contrôle v2 et du cache, qui sont sur le Drive. Le
@@ -48,6 +48,32 @@ carnet Colab est prêt (cellule 4). Il reste à le lancer et à valider la conne
 | Plus petite longueur d'onde spectrale | — | (828 + 8) / 31 ≈ **27,0 km** | (388 + 8) / 31 ≈ **12,8 km** |
 
 Largeur 48, convolution locale activée.
+
+**Diagnostic 4 : mécanismes du générateur sur la VALIDATION 2021** (`scripts/attribution_v_generateur.py
+--validation`, 12 instants à 3 h et 15 h UTC, 6 jours de janvier, février et juillet 2021). Écart rms entre la vérité
+d'entraînement et ERA5 (m/s), au-dessus du sol. Entre parenthèses, la réduction par rapport au générateur actuel.
+Verdict rendu par `scripts/juger_phase1.py` selon la règle b543873 (sha256 2982322…0bd1da), fixée avant le calcul.
+
+| Configuration | u 300 m | v 300 m | u 800 m | v 800 m |
+|---|---|---|---|---|
+| actuel | 1,188 | 1,461 | 1,150 | 1,381 |
+| sans amortissement de w | 0,252 (−79 %) | 0,264 (−82 %) | 0,151 (−87 %) | 0,155 (−89 %) |
+| **correction passe-haut** | 0,533 (−55 %) | 0,555 (−62 %) | 0,414 (−64 %) | 0,456 (−67 %) |
+| sans brise | 1,186 | 1,455 | 1,149 | 1,380 |
+| sans vents de pente | 1,180 | 1,433 | 1,186 | 1,403 |
+| sans relief | 1,191 | 1,462 | 1,150 | 1,381 |
+| sans perturbations aléatoires | 1,182 | 1,456 | 1,146 | 1,377 |
+| sans profil de couche limite | 1,102 (−7 %) | 1,393 (−5 %) | 1,108 (−4 %) | 1,339 (−3 %) |
+| sans recalage par cellule | 3,565 (+200 %) | 2,761 (+89 %) | 3,200 (+178 %) | 2,460 (+78 %) |
+
+Verdicts selon la règle :
+- **Mécanisme à corriger en phase 2 : l'amortissement de w**, seul au-dessus de 30 %. Il porte 82 à 89 % de l'écart
+  sur v. Les autres mécanismes pèsent 0 à 7 %, et le recalage par cellule est indispensable.
+- **Correction passe-haut RETENUE pour la phase 2** : elle réduit v de 62 à 67 % à 300 et 800 m, et u baisse aussi
+  (−55 à −64 %) au lieu d'augmenter.
+- L'asymétrie entre v et u vient du générateur : le rapport v/u de l'écart passe de 1,20–1,23 avec le générateur
+  actuel à 1,04–1,10 avec la correction.
+- Ces chiffres confirment sur la validation ceux mesurés plus tôt sur des jours d'entraînement (85 à 92 %).
 
 Le même nombre de modes sur un axe deux fois plus long fait que la partie spectrale est **deux
 fois plus grossière du nord au sud que d'est en ouest**. Entre 2 et 27 km dans la direction
