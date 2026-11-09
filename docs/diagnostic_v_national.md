@@ -100,3 +100,27 @@ Sur tout le test 2022 (`scripts/carte_v_generateur.py`, 180 instants), l'écart 
 vaut u 1,449 et v 2,083 m/s à 300 m au-dessus du sol, et u 1,353 et v 1,909 m/s à 800 m, avec un
 biais moyen nul. Cartes sur le Drive : `runs/national_1km_v2/diagnostic_v/carte_v_300m.png` et
 `carte_v_800m.png`.
+
+## 7. Part des perturbations aléatoires du générateur (vérité prévisible, 9 novembre 2026)
+
+Mesure par `scripts/dso_previsible_national.py`, à titre d'information. 12 instants de test
+2022 ont été régénérés sans perturbations aléatoires, avec le même forçage et la même graine.
+Pour contrôle, 2 instants régénérés avec la graine d'origine reproduisent le cache à 0,004 et
+0,008 m/s près.
+
+Chaque colonne donne le RMSE du national v2, en m/s, contre la vérité indiquée. La dernière
+colonne est la part de l'écart sur v due aux perturbations.
+
+| Tranche (au-dessus du sol) | Contre la vérité du cache, u / v | Contre la vérité prévisible, u / v | Part de v due aux perturbations |
+|---|---|---|---|
+| 0–100 m | 0,430 / 0,561 | 0,406 / 0,542 | 6,7 % |
+| 100–300 m | 0,478 / 0,617 | 0,456 / 0,600 | 5,4 % |
+| 300–600 m | 0,555 / 0,694 | 0,540 / 0,682 | 3,3 % |
+| 600–1000 m | 0,529 / 0,679 | 0,517 / 0,670 | 2,7 % |
+| > 1000 m (information) | 0,582 / 0,841 | 0,573 / 0,834 | 1,5 % |
+
+Les perturbations aléatoires n'expliquent que **1,5 à 7 %** de l'erreur sur v (au plus 16 % au
+niveau 150 m). Même contre la vérité prévisible, le DSO1 du national resterait non conforme :
+0,682 m/s au pire sur 0–1 km. Le facteur de perturbation n'est donc pas le levier principal.
+C'est l'amortissement de w, qui explique 85 à 92 % de l'écart entre la vérité et ERA5 en
+altitude (section 6).
