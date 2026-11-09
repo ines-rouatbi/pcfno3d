@@ -89,6 +89,9 @@ A_ROT, A_DIV, A_SLOPE = 0.12, 0.03, 1.0     # amplitudes des perturbations (rota
 # forcage ERA5 : les perturbations aleatoires de petite echelle sont reduites (facteur), pour que la
 # verite ne contienne pas de structures inventees que les stations reelles ne peuvent pas confirmer
 PERTURB = float(os.environ.get("ANEO_GEN_PERTURB", 1.0))
+# forcage ERA5 : correction d'amortissement de w filtree en passe-haut (< 12 km) pour que la grande
+# echelle reste celle d'ERA5 (diagnostic du 09/11/2026). 0 = comportement des jeux deja generes.
+AMORT_PASSE_HAUT = os.environ.get("ANEO_GEN_AMORT_PASSE_HAUT", "0") == "1"
 A_ROT, A_DIV = A_ROT * PERTURB, A_DIV * PERTURB
 # brise de mer / de terre (forcage ERA5 seulement) : profondeur, penetration terre et mer
 H_BRISE_M, L_BRISE_TERRE_M, L_BRISE_MER_M = 400.0, 15000.0, 10000.0
@@ -1017,6 +1020,14 @@ def compute_fields(st: DayState, static: dict, pre: dict, t_sec: float, episode:
         chi_hat[0, 0] = 0.0
         gx = np.fft.ifft2(chi_hat * (2j * np.pi * pre["kx_v"][None, :])).real
         gy = np.fft.ifft2(chi_hat * (2j * np.pi * pre["ky_v"][:, None])).real
+        if AMORT_PASSE_HAUT and cu is not None:
+            # la correction vient APRES le recalage sur ERA5 : sa partie de grande echelle
+            # (Poisson par FFT, periodique, sur tout le domaine) ecartait la verite d'ERA5 de
+            # 1,4 a 2 m/s, surtout sur v (docs/diagnostic_v_national.md). On n'en garde que les
+            # echelles < 12 km ; w est reintegre ensuite, la continuite reste exacte.
+            sig_c = 12000.0 / (static["dx_s"] * STRIDE)
+            gx = gx - _passe_bas(gx, sig_c)
+            gy = gy - _passe_bas(gy, sig_c)
         corr_gx[k], corr_gy[k] = gx, gy
         vol["u"][k] += gx / vol["rho"][k]
         vol["v"][k] += gy / vol["rho"][k]
