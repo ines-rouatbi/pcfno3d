@@ -73,3 +73,30 @@ donc sur v. Rien ne la ramène vers ERA5.
 - La limite des modes de Fourier dans l'axe nord-sud (26 km, contre 12 km est-ouest) reste une
   anisotropie du modèle. Elle n'est pas nécessaire pour expliquer le rapport v/u, déjà présent
   dans ERA5 seule contre la vérité.
+
+## 6. Attribution par composante, à 300 et 800 m au-dessus du sol (9 novembre 2026)
+
+`scripts/attribution_v_generateur.py`. Diagnostic, pas une régénération du jeu : 4 instants
+d'entraînement (2023-02-14 et 2024-08-06, à 3 h et 15 h UTC), calculés en coupant une composante
+à la fois, avec les mêmes graines. Valeurs : écart RMS vérité − ERA5 (m/s), et entre parenthèses
+sa part au-dessus de 12 km.
+
+| Configuration | 300 m u | 300 m v | 800 m u | 800 m v |
+|---|---|---|---|---|
+| actuel (jeu v2) | 1,05 (0,93) | 1,28 (1,15) | 0,90 (0,83) | 1,35 (1,28) |
+| sans amortissement de w | **0,17 (0,12)** | **0,15 (0,09)** | **0,10 (0,06)** | **0,11 (0,07)** |
+| amortissement filtré < 12 km (correction) | 0,38 (0,19) | 0,45 (0,21) | 0,25 (0,14) | 0,31 (0,18) |
+| sans brise | 1,05 | 1,27 | 0,90 | 1,35 |
+| sans vents de pente | 1,04 | 1,24 | 0,93 | 1,39 |
+| sans accélération par le relief | 1,05 | 1,28 | 0,90 | 1,35 |
+| sans perturbations aléatoires | 1,04 | 1,27 | 0,90 | 1,34 |
+
+À ces hauteurs, **l'amortissement de w explique 85 à 92 % de l'écart**, et presque tout l'excès
+sur v. La brise, les vents de pente, le relief et les perturbations aléatoires y changent l'écart
+de 0,01 à 0,05 m/s seulement. Au sol (10 m), aux aéroports, c'est en revanche la brise qui pèse le
+plus (docs/diagnostic_generateur_national.md).
+
+Sur tout le test 2022 (`scripts/carte_v_generateur.py`, 180 instants), l'écart RMS vérité − ERA5
+vaut u 1,449 et v 2,083 m/s à 300 m au-dessus du sol, et u 1,353 et v 1,909 m/s à 800 m, avec un
+biais moyen nul. Cartes sur le Drive : `runs/national_1km_v2/diagnostic_v/carte_v_300m.png` et
+`carte_v_800m.png`.
