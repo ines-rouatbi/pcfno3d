@@ -172,6 +172,38 @@ def test_entrainement_puis_service_de_bout_en_bout(cfg_era5, index, tmp_path):
     assert summary
 
 
+def test_predicteur_era5_et_verdict_national(cfg_era5, index, norm, tmp_path):
+    """La reference ERA5 interpolee rend exactement le vent ERA5 aux noeuds valides ; le
+    verdict national s'ecrit apres l'evaluation, avec un gain sur ERA5 par niveau."""
+    import json
+
+    from pcfno3d.dso_national import predicteur_era5, verdict_national
+    from pcfno3d.evaluate import Evaluator
+
+    g = Geometry(cfg_era5, device="cpu")
+    (s_raw, sensor, tfeat, y, _), _ = _item(g, index)
+    u, v, w = predicteur_era5(g, norm)(s_raw[None], sensor[None], tfeat[None], y[None], 0, "x")
+    dense = g.interp_era5.dense(tfeat[None, N_TFEAT + N_SCAL:])[0]
+    valid = torch.from_numpy(g.valid)
+    torch.testing.assert_close(u[0][valid], dense[0][valid], atol=1e-4, rtol=0)
+    torch.testing.assert_close(v[0][valid], dense[1][valid], atol=1e-4, rtol=0)
+    assert (u[0][~valid] == 0).all() and w.shape == u.shape
+
+    c = copy.deepcopy(cfg_era5)
+    c.apply_overrides({"paths.run_dir": tmp_path / "run", "model.residuel_era5": True})
+    Trainer(c, device="cpu", verbose=False).fit()
+    Evaluator(c, device="cpu", verbose=False).run()
+    v_nat = verdict_national(c, device="cpu", verbose=False)
+    out = next((tmp_path / "run" / "eval_pcfno3d").glob("*/verdict_national.json"))
+    lu = json.loads(out.read_text(encoding="utf-8"))
+    assert lu["conformes"] == v_nat["conformes"]
+    couverts = [r for r in lu["par_niveau"] if r["couverture"] > 0]   # 25 m : sous le relief
+    assert couverts and all(np.isfinite(r["rmse_vect_era5"]) and np.isfinite(r["gain_era5"])
+                            for r in couverts)
+    assert lu["dso7_conforme"] is None                       # pas de validation reelle ici
+    assert (out.parent / "verdict_national.md").exists()
+
+
 def _jeu_reel(cfg_era5, index, tmp_path):
     """Mini-jeu en mode era5_stations (3 stations, _E, forcage) + observations synthetiques
     aux instants de test et d'entrainement ; renvoie (config, dossier des observations)."""

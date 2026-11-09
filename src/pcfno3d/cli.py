@@ -124,6 +124,15 @@ def cmd_evaluate(args) -> int:
     return 0
 
 
+def cmd_verdict_national(args) -> int:
+    """DSO du modele national (dso_national) : ERA5 interpole en reference, apres `evaluate`."""
+    from .dso_national import verdict_national
+
+    cfg = _load_cfg(args)
+    v = verdict_national(cfg, checkpoint=args.checkpoint, device=args.device)
+    return 0 if all(v[k] is not False for k in v if k.endswith("_conforme")) else 3
+
+
 def cmd_calibrate_reliability(args) -> int:
     """Fiabilite (M2) : facteurs k sur la VALIDATION -> JSON gele (jamais ecrase)."""
     from .evaluate import Evaluator
@@ -947,6 +956,12 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--tta", type=int, help="moyenne de N passes (defaut : inference.tta)")
     s.add_argument("--tta-keep", type=float, help="capteurs gardes par passe (defaut 0.7)")
     s.set_defaults(func=cmd_evaluate)
+
+    s = sub.add_parser("verdict-national",
+                       help="DSO du modele national (gain sur ERA5 interpole, aeroports) ; "
+                            "apres evaluate, dso6 et la validation reelle")
+    s.add_argument("--checkpoint"), s.add_argument("--device")
+    s.set_defaults(func=cmd_verdict_national)
 
     s = sub.add_parser("calibrate-reliability",
                        help="fiabilite : facteurs k sur la VALIDATION (M2, DSO6)")

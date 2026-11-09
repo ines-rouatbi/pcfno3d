@@ -530,6 +530,26 @@ class DSOCfg:
 
 
 @dataclass
+class DSONationalCfg:
+    """DSO du modele NATIONAL (pcfno3d.dso_national), fixes le 09/11/2026 APRES le test de la
+    national v2 (le cahier des charges ne definissait les DSO que pour le Grand Tunis). Ils
+    COMPLETENT les DSO du cahier (`dso`), toujours calcules et affiches a cote.
+
+    Pourquoi d'autres seuils : 12 aeroports sur 828 x 388 km (l'information vient surtout
+    d'ERA5), 16 niveaux jusqu'a 2500 m (le vent croit avec la hauteur) et une couverture de
+    24 % seulement a 25 m (relief)."""
+
+    z_max_m: float = 1000.0           # verdict DSO1 jusqu'a 1000 m (objectif initial) ; au-dessus : rapporte
+    rel: float = 0.10                 # DSO1a : RMSE u, v <= max(plancher ; rel x vitesse moyenne du niveau)
+    plancher: float = 0.5
+    gain_era5_min: float = 0.0        # DSO1b : 1 - RMSE vect. modele / ERA5 interpole, par niveau
+    r2: float = 0.95                  # DSO1c : R2 u, v par niveau (w : rapporte, garanti par DSO2)
+    dso3_couverture_min: float = 0.5  # DSO3 : niveaux couvrant au moins la moitie du domaine
+    dso5_degradation_max: float = 0.10  # DSO5 : RMSE max a 25 % des capteurs <= 1,10 x a 100 %
+    stations_rapport_max: float = 1.0   # DSO7 : RMSE vect. moyen aux aeroports <= ERA5 seul
+
+
+@dataclass
 class RealCfg:
     """Donnees reelles (pcfno3d.realdata) : ancrage geographique et controle qualite."""
 
@@ -550,7 +570,8 @@ class RealCfg:
 
 SECTIONS: dict[str, type] = {
     "paths": Paths, "model": ModelCfg, "train": TrainCfg,
-    "loss": LossCfg, "mask": MaskCfg, "dso": DSOCfg, "inference": InferenceCfg,
+    "loss": LossCfg, "mask": MaskCfg, "dso": DSOCfg, "dso_national": DSONationalCfg,
+    "inference": InferenceCfg,
     "real": RealCfg, "reliability": ReliabilityCfg, "alerts": AlertsCfg,
     "wind_farm": WindFarmCfg,
 }
@@ -568,6 +589,7 @@ class Config:
     loss: LossCfg = field(default_factory=LossCfg)
     mask: MaskCfg = field(default_factory=MaskCfg)
     dso: DSOCfg = field(default_factory=DSOCfg)
+    dso_national: DSONationalCfg = field(default_factory=DSONationalCfg)
     inference: InferenceCfg = field(default_factory=InferenceCfg)
     real: RealCfg = field(default_factory=RealCfg)
     reliability: ReliabilityCfg = field(default_factory=ReliabilityCfg)
