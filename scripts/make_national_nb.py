@@ -315,8 +315,59 @@ reprend à la dernière copie sur le Drive. La session s'arrête à la fin. Rés
     ], gpu=True)
 
 
+COMMIT_V3 = "fcc91e4"     # generateur avec ANEO_GEN_BRISE / ANEO_GEN_RELIEF (phase 2 nationale)
+
+ENV_V3 = '''
+# verite d'entrainement v3 (regle @SHA@, variante @VARIANTE@)
+os.environ["ANEO_GEN_AMORT_PASSE_HAUT"] = "@PASSE_HAUT@"
+os.environ["ANEO_GEN_BRISE"] = "@BRISE@"
+os.environ["ANEO_GEN_RELIEF"] = "@RELIEF@"
+RAW = "https://raw.githubusercontent.com/ines-rouatbi/pcfno3d/@COMMIT@"
+subprocess.run(["wget", "-q", "-O", "/content/PFE/scripts/generate_aneo_3d.py",
+                f"{RAW}/scripts/generate_aneo_3d.py"], check=True)
+assert "ANEO_GEN_BRISE" in open("/content/PFE/scripts/generate_aneo_3d.py").read()
+'''
+
+
+def generation_v3(verdict: Path | None = None) -> dict:
+    """Carnet de la verite v3 : memes parties que la v2, fichiers distincts (cache_v3_partie_*, jeu_v3.zip ;
+    rien n'est ecrase), reglages lus dans le verdict de configs/national/regle_verite_v3.json. Refuse de se
+    construire si la variante n'a pas ete acceptee. A lancer seulement avec l'accord ecrit d'Ines."""
+    verdict = Path(verdict or REPO / "artifacts" / "national" / "verite_v3" / "verdict.json")
+    v = json.loads(verdict.read_text(encoding="utf-8"))
+    if not v.get("acceptee"):
+        raise SystemExit(f"verite v3 non acceptee par la regle ({verdict}) : pas de carnet de generation")
+    r, acc = v["reglages"], v["acceptation"]
+    env = (ENV_V3.replace("@SHA@", v["sha256_regle"][:12]).replace("@VARIANTE@", v["variante_choisie"])
+           .replace("@PASSE_HAUT@", str(int(r["passe_haut"]))).replace("@BRISE@", f"{r['brise']:g}")
+           .replace("@RELIEF@", f"{r['relief']:g}").replace("@COMMIT@", COMMIT_V3))
+    gen = (GEN + env).replace("cache_v2_partie", "cache_v3_partie")
+    run = (GEN_RUN.replace("cache_v2_partie", "cache_v3_partie").replace("jeu_v2.zip", "jeu_v3.zip")
+           .replace("--perturbations 0.4", f"--perturbations {r['perturb']:g}"))
+    titre = f"""
+# PC-FNO3D réel NATIONAL — génération de la vérité d'entraînement **v3** (Colab, CPU)
+
+Générateur corrigé selon la phase 2 (`configs/national/regle_verite_v3.json`, sha256
+`{v["sha256_regle"][:12]}…`) : amortissement de w passe-haut = {bool(r["passe_haut"])}, perturbations
+{r["perturb"]:g}, brise {r["brise"]:g}, relief {r["relief"]:g}. Acceptation sur la validation : vérité
+{acc["rmse_aeroports_verite"]:.3f} m/s aux 12 aéroports contre ERA5 seule {acc["rmse_aeroports_era5"]:.3f} m/s.
+
+**Génération complète : uniquement avec l'accord écrit d'Ines.** Fichiers distincts de la v2
+(`cache_v3_partie_<k>.zip`, `jeu_v3.zip`) ; ~50 Go de plus sur le Drive.
+"""
+    return carnet([md(titre), md("## 1. Drive, code et données"), code(COMMUN),
+                   md("## 2. Calendrier, partie à faire, réglages v3"), code(gen),
+                   md("## 3. Génération de la partie, puis point de reprise sur le Drive"), code(run)],
+                  gpu=False)
+
+
 def main() -> int:
     out = REPO / "notebooks" / "current"
+    if "--verite-v3" in sys.argv:
+        nom = "pcfno3d_national_generation_v3_colab.ipynb"
+        (out / nom).write_text(json.dumps(generation_v3(), indent=1, ensure_ascii=False), encoding="utf-8")
+        print(out / nom)
+        return 0
     for nom, nb in (("pcfno3d_national_generation_colab.ipynb", generation()),
                     ("pcfno3d_national_colab.ipynb", entrainement())):
         (out / nom).write_text(json.dumps(nb, indent=1, ensure_ascii=False), encoding="utf-8")
