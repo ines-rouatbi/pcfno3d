@@ -17,6 +17,7 @@ sur le Drive avant de lancer.
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -364,8 +365,143 @@ Générateur corrigé selon la phase 2 (`configs/national/regle_verite_v3.json`,
                   gpu=False)
 
 
+CODE_GIT = '''
+# code du depot public au commit fige (remplace l'archive du Drive, plus ancienne)
+COMMIT = "@COMMIT@"
+subprocess.run(f"rm -rf /content/PFE && git init -q /content/PFE && cd /content/PFE && git remote add origin "
+               f"https://github.com/ines-rouatbi/pcfno3d.git && git fetch -q --depth 1 origin {COMMIT} "
+               f"&& git checkout -q FETCH_HEAD", shell=True, check=True)
+subprocess.run([sys.executable, "-m", "pip", "install", "-q", "--no-deps", "-e", "/content/PFE"], check=True)
+os.chdir("/content/PFE")
+import hashlib
+for f, h in (("regle_v4_national.json", "@SHA_V4@"),):
+    assert hashlib.sha256((CODE / "configs" / "national" / f).read_bytes()).hexdigest() == h, f
+print("code", COMMIT, "| regle v4 verifiee")
+'''
+
+TRAIN_V4 = r'''
+import shlex
+from google.colab import runtime
+import traceback
+GRAINE = @GRAINE@
+RUN = NAT / "runs" / f"national_1km_v4_C_s{GRAINE}"
+INIT = shlex.quote(str(choisir_poids(NAT / "runs" / "national_1km_v2")))
+print("depart :", INIT, "| run :", RUN)
+try:
+    SEL = shlex.quote('train.select_criteres=["dso1_rmse","dso2_masse","dso3_rugosite"]')
+    lancer(f"entrainer_v4_s{GRAINE}",
+           f"python -u -m pcfno3d -c national_1km_colab {OPTS} --set {SEL} --set train.sync_last=true "
+           f"--set train.init_from={INIT} --set train.lr=1e-4 --set train.seed={GRAINE} "
+           f"--set paths.run_dir={shlex.quote(str(RUN))} --set paths.local_dir=/content/run_local_v4_s{GRAINE} train")
+    # AUCUNE lecture du test ici (regle_v4_national.json) : seul le carnet de test lit le test, une fois
+    print((RUN / "history.json").read_text()[-3000:])
+except Exception:
+    traceback.print_exc()
+finally:
+    runtime.unassign()
+'''
+
+TEST_V4 = r'''
+import shlex
+from google.colab import runtime
+import traceback
+regle = json.loads((CODE / "configs" / "national" / "regle_v4_national.json").read_text(encoding="utf-8"))
+scores = {}
+for g in regle["candidat"]["graines"]:
+    h = NAT / "runs" / f"national_1km_v4_C_s{g}" / "history.json"
+    if not h.exists():
+        raise FileNotFoundError(f"graine {g} pas entrainee ({h})")
+    scores[g] = min(float(e["val_score"]) for e in json.loads(h.read_text()) if "val_score" in e)
+print("scores de selection (validation) :", scores)
+GRAINE = min(scores, key=scores.get)
+RUN = NAT / "runs" / f"national_1km_v4_C_s{GRAINE}"
+choix = {"regle_sha256": "@SHA_V4@", "scores_validation": scores, "graine_choisie": GRAINE}
+(NAT / "runs" / "choix_graine_v4.json").write_text(json.dumps(choix, indent=2))
+import yaml
+c = yaml.safe_load(open(CODE / "configs" / "national_1km_colab.yaml"))
+c["name"] = "national_v4_eval"
+c["paths"]["run_dir"], c["paths"]["local_dir"] = str(RUN), f"/content/run_local_v4_s{GRAINE}"
+yaml.safe_dump(c, open(CODE / "configs" / "national_v4_eval.yaml", "w"), sort_keys=False)
+O = OPTS
+try:
+    if not (RUN / "eval_pcfno3d" / "best_wcont" / "test_summary.json").exists():   # test lu une fois
+        lancer("evaluer_v4", f"python -u -m pcfno3d -c national_v4_eval {O} evaluate")
+    CAL = RUN / "fiabilite_pcfno3d" / "best_wcont" / "calibration_validation.json"
+    D6 = RUN / "eval_pcfno3d" / "best_wcont" / "dso6_modele_livre.json"
+    if not CAL.exists():
+        lancer("calibrer_dso6_v4", f"python -u -m pcfno3d -c national_v4_eval {O} calibrate-reliability --out {CAL}")
+    if not D6.exists():
+        try:
+            lancer("dso6_v4", f"python -u -m pcfno3d -c national_v4_eval {O} dso6 --calibration {CAL} --out {D6}")
+        except RuntimeError as exc:
+            if "(code 3)" not in str(exc):
+                raise
+            print(exc)
+    if not (RUN / "validation_reelle" / "test" / "bilan.json").exists():
+        lancer("validation_reelle_v4", f"python -u scripts/valider_grand_tunis_reel.py -c national_v4_eval "
+                                       f"--obs {G / 'obs'} --jeu test")
+    for cmd, nom in ((f"python -u -m pcfno3d -c national_v4_eval {O} verdict-national", "verdict_national_v4"),
+                     ("python -u scripts/dso_hauteur_sol.py -c national_v4_eval regle", "dso_sol_regle_v4"),
+                     ("python -u scripts/dso_hauteur_sol.py -c national_v4_eval mesure", "dso_sol_v4"),
+                     ("python -u scripts/dso_hauteur_sol.py -c national_v4_eval mesure --keep 0.25", "dso_sol_dso5_v4")):
+        try:
+            lancer(nom, cmd)
+        except RuntimeError as exc:
+            if "(code 3)" not in str(exc):
+                raise
+            print(exc)
+    for f in sorted(RUN.rglob("bilan.json")) + sorted(RUN.rglob("verdict_national.json")):
+        print(f); print(f.read_text()[:3000])
+except Exception:
+    traceback.print_exc()
+finally:
+    runtime.unassign()
+'''
+
+
+def _ent_v3() -> str:
+    return ENT.replace("cache_v2_partie", "cache_v3_partie").replace("jeu_v2.zip", "jeu_v3.zip")
+
+
+def v4_carnets(commit: str) -> dict[str, dict]:
+    """Phase 3 (regle_v4_national.json) : un carnet d'entrainement par graine (aucune lecture du test) et
+    un carnet de test (graine choisie sur la validation, test lu une fois). Verite v3 (cache_v3_partie_*)."""
+    sha = (REPO / "configs" / "national" / "regle_v4_national.json.sha256").read_text(encoding="ascii").split()[0]
+    git = CODE_GIT.replace("@COMMIT@", commit).replace("@SHA_V4@", sha)
+    regle = json.loads((REPO / "configs" / "national" / "regle_v4_national.json").read_text(encoding="utf-8"))
+    tete = (f"Règle `configs/national/regle_v4_national.json` (sha256 `{sha[:12]}…`), vérifiée par le carnet. "
+            "**Uniquement avec l'accord écrit d'Ines.** Vérité d'entraînement v3 (`cache_v3_partie_*`).")
+    out = {}
+    for g in regle["candidat"]["graines"]:
+        out[f"pcfno3d_national_v4_s{g}_colab.ipynb"] = carnet([
+            md(f"# PC-FNO3D NATIONAL v4 (ablation C) — entraînement, graine {g} (Colab, A100)\n\n{tete}\n\n"
+               "Aucune lecture du test dans ce carnet."),
+            md("## 1. Drive, code et données"), code(COMMUN + git),
+            md("## 2. Cache v3 et contrôle de la vérité"), code(_ent_v3()),
+            md("## 3. Mémoire du GPU"), code(MEM),
+            md("## 4. Entraînement (validation seulement), fin de la session"),
+            code(CHOIX_POIDS + TRAIN_V4.replace("@GRAINE@", str(g)))], gpu=True)
+    out["pcfno3d_national_v4_test_colab.ipynb"] = carnet([
+        md(f"# PC-FNO3D NATIONAL v4 — lecture UNIQUE du test 2022 (Colab, A100)\n\n{tete}\n\n"
+           "La graine est choisie sur le score de validation des trois entraînements ; le test n'est lu "
+           "que pour elle, une fois."),
+        md("## 1. Drive, code et données"), code(COMMUN + git),
+        md("## 2. Cache v3"), code(_ent_v3()),
+        md("## 3. Mémoire du GPU"), code(MEM),
+        md("## 4. Choix de la graine, test, DSO, mesures réelles"),
+        code(TEST_V4.replace("@SHA_V4@", sha))], gpu=True)
+    return out
+
+
 def main() -> int:
     out = REPO / "notebooks" / "current"
+    if "--v4" in sys.argv:
+        commit = subprocess.run(["git", "rev-parse", "HEAD"], cwd=REPO, capture_output=True, text=True,
+                                check=True).stdout.strip()
+        for nom, nb in v4_carnets(commit).items():
+            (out / nom).write_text(json.dumps(nb, indent=1, ensure_ascii=False), encoding="utf-8")
+            print(out / nom)
+        return 0
     if "--verite-v3" in sys.argv:
         nom = "pcfno3d_national_generation_v3_colab.ipynb"
         v3 = REPO / "artifacts" / "national" / "verite_v3"

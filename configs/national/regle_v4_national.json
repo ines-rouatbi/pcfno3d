@@ -1,0 +1,25 @@
+{
+  "fixee_le": "2026-11-09 23 h, avant la regeneration de la verite v3 et avant tout entrainement de la v4 nationale ; PROPOSITION soumise a l'accord ecrit d'Ines (une version modifiee aurait une nouvelle empreinte)",
+  "verite": "verite d'entrainement nationale v3 : generateur passe-haut, perturbations 0, brise 0.5, relief 1, beta 0.5 (configs/national/regle_verite_v3_repli.json, acceptee le 09/11 : 2.925 contre ERA5 2.940 m/s aux aeroports sur la validation)",
+  "candidat": {
+    "nom": "national_1km_v4_C (ablation C de la feuille de route : architecture et entrees de la v2, nouvelle verite)",
+    "depart": "poids de la v2 nationale (runs/national_1km_v2, epoque evaluee)",
+    "entrainement": "30 epoques, lr 1e-4, choix de l'epoque sur la VALIDATION (dso1_rmse, dso2_masse, dso3_rugosite), comme la v2",
+    "graines": [42, 43, 44],
+    "run_dir": "runs/national_1km_v4_C_s<graine> (un dossier par graine ; rien n'est ecrase)"
+  },
+  "choix_de_la_graine": "celle dont le score de selection de la VALIDATION (history.json, epoque retenue) est le meilleur ; les deux autres sont rapportees (moyenne et ecart des scores de validation) ; le test n'est jamais lu pour choisir",
+  "test": "test 2022 lu UNE fois, pour la seule graine choisie : evaluate (w par continuite), DSO6, validation sur les 12 aeroports (chacun retire de l'entree quand il est juge) et radiosondages, verdict-national, dso_hauteur_sol (0-1 km au-dessus du sol)",
+  "comparabilite": "les DSO 1 a 5 se mesurent contre la verite d'entrainement, qui change entre v2 et v4 : ils ne sont PAS compares d'un modele a l'autre ; seules les mesures reelles (aeroports, radiosondages) le sont",
+  "la_v4_remplace_la_v2_si": [
+    "aeroports : RMSE vectoriel moyen du modele (station retiree) sur le test <= celui de la v2 (3.045 m/s)",
+    "radiosondages de Tunis-Carthage : RMSE vectoriel 0-1 km <= 1.03 x celui de la v2"
+  ],
+  "conformite": "les DSO sont rapportes avec les seuils inchanges (0-1 km au-dessus du sol, scripts/dso_hauteur_sol.py) ; le modele n'est dit conforme a un DSO que si le verdict ecrit l'est",
+  "sinon": "la v2 reste le modele national livre ; la v4 est publiee comme essai",
+  "interdits": [
+    "aucun reglage choisi sur le test",
+    "aucun bruit ajoute aux predictions",
+    "ERA5 et la verite generee sont appelees verite d'entrainement, jamais mesures"
+  ]
+}
