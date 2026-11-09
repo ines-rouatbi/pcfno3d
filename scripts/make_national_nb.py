@@ -240,6 +240,15 @@ try:
     if (G / "obs").exists() and not (RUN / "validation_reelle" / "test" / "bilan.json").exists():
         lancer("validation_reelle", f"python -u scripts/valider_grand_tunis_reel.py -c national_1km_colab "
                                     f"--obs {G / 'obs'} --jeu test")
+    # DSO nationaux (docs/dso_national.md) : gain sur ERA5 interpole par niveau, aeroports ;
+    # code 3 = au moins un DSO national non conforme, verdict ecrit
+    if not (RUN / "eval_pcfno3d" / "best_wcont" / "verdict_national.json").exists():
+        try:
+            lancer("verdict_national", f"python -u -m pcfno3d -c national_1km_colab {OPTS} verdict-national")
+        except RuntimeError as exc:
+            if "(code 3)" not in str(exc):
+                raise
+            print(exc)
     for f in sorted(RUN.rglob("test_summary.json")):
         print(f); print(f.read_text()[:4000])
     for f in sorted(RUN.rglob("test_par_niveau_synoptique.csv")):

@@ -45,3 +45,25 @@ def test_observations_filtrees_par_codes(tmp_path):
     assert set(obs["station_id"]) == {"DTTX", "DTTZ"}
     assert abs(obs["wind_u_m_s"].iloc[0] - 5.0) < 1e-9                     # vent d'ouest : u > 0
     assert set(lire_observations(tmp_path, verbose=False)["station_id"]) == {"DTTA"}   # defaut : Grand Tunis
+
+
+def test_affinage_lit_toutes_les_stations_du_domaine(tmp_path):
+    """Affinage sur les stations (table_stations) : les mesures lues sont celles des stations
+    de stations.json (12 aeroports au national), pas seulement les 3 codes du Grand Tunis."""
+    from pcfno3d.stations_reelles import table_stations
+
+    lignes = [{"station_id": c, "timestamp_utc": "2023-05-01T12:00:00Z", "wind_speed_m_s": 4.0,
+               "wind_dir_deg": 180.0, "wind_u_m_s": None, "wind_v_m_s": None}
+              for c in ("DTTX", "DTTZ", "DTTA")]
+    obs = tmp_path / "obs"
+    obs.mkdir()
+    pd.DataFrame(lignes).to_csv(obs / "metar_2023.csv", index=False)
+    pd.DataFrame({"stem": ["0001_120000"], "timestamp": ["2023-05-01 12:00:00"]}).to_csv(
+        tmp_path / "index.csv", index=False)
+    g = _geom(tmp_path, [{"nom": "DTTX Sfax", "code": "DTTX", "iy": 5, "ix": 6},
+                         {"nom": "DTTZ Tozeur", "code": "DTTZ", "iy": 7, "ix": 8}])
+    g.cfg.paths.stations_obs = obs
+    g.cfg.paths.index_csv = tmp_path / "index.csv"
+    t = table_stations(g)["0001_120000"]
+    assert set(t) == {"DTTX", "DTTZ"}
+    assert abs(t["DTTX"][1] - 4.0) < 1e-9                                   # vent du sud : v > 0

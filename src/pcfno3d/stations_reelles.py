@@ -175,7 +175,9 @@ def table_stations(geom) -> dict[str, dict[str, tuple[float, float]]]:
     cache = getattr(geom, "_table_stations", None)
     if cache is None:
         cfg = geom.cfg
-        obs = lire_observations(cfg.paths.stations_obs, verbose=False)
+        # stations du domaine (stations.json) : les 3 du Grand Tunis, les 12 aeroports du national
+        obs = lire_observations(cfg.paths.stations_obs, verbose=False,
+                                codes=list(cellules_codes(geom)) or None)
         index = pd.read_csv(cfg.paths.index_csv, usecols=["stem", "timestamp"])
         cache = {str(s): obs_a(obs, pd.Timestamp(t)) for s, t in zip(index["stem"], index["timestamp"])}
         geom._table_stations = cache
@@ -193,7 +195,7 @@ def entree_affinage(S: np.ndarray, chemin_e, geom, rng: np.random.Generator,
     cfg = geom.cfg
     k = max(int(round(cfg.mask.pas_era5_m / geom.dx)), 1)
     mesures = table_stations(geom).get(str(stem), {})
-    autorisees = cfg.train.stations_cibles or list(CODES)
+    autorisees = cfg.train.stations_cibles or list(cellules_codes(geom)) or list(CODES)
     candidates = sorted(c for c in mesures if c in autorisees)
     cible = candidates[int(rng.integers(len(candidates)))] if candidates else None
     entrees = {c: uv for c, uv in mesures.items()
