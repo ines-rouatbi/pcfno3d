@@ -368,3 +368,23 @@ def test_diagnostic_v(cfg_era5, index, tmp_path):
     t = pd.read_csv(tmp_path / "run" / "diagnostic_v" / "diagnostic_v.csv")
     ok = t[t["couverture"] > 0]
     assert len(ok) and np.isfinite(ok[["era5_rmse_u", "era5_rmse_v", "corr_u_u", "corr_v_v"]]).all().all()
+
+
+def test_carte_v_generateur(cfg_era5, index, tmp_path):
+    """scripts/carte_v_generateur.py : cartes de l'ecart verite - ERA5 a hauteur fixe au-dessus
+    du sol (forcage lineaire du mini-jeu : cartes finies la ou la colonne monte assez haut)."""
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    c = copy.deepcopy(cfg_era5)
+    c.apply_overrides({"paths.run_dir": tmp_path / "run"})
+    f = c.save(tmp_path / "c.yaml")
+    repo = Path(__file__).resolve().parents[1]
+    p = subprocess.run([sys.executable, str(repo / "scripts" / "carte_v_generateur.py"), "-c", str(f)],
+                       capture_output=True, text=True, cwd=repo)
+    assert p.returncode == 0, p.stderr[-2000:]
+    d = tmp_path / "run" / "diagnostic_v"
+    assert (d / "carte_v_300m.png").exists() and (d / "cartes.npz").exists()
+    z = np.load(d / "cartes.npz")
+    assert {"rmse_v_300m", "rmse_u_800m", "biais_v_300m"} <= set(z.files)
