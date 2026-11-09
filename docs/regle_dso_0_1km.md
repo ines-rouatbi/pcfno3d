@@ -75,3 +75,33 @@ Ce qu'il faut retenir :
   l'artefact du générateur sur v est fort (docs/diagnostic_v_national.md).
 - Contre la même vérité, le modèle divise l'erreur d'ERA5 par 2,3 : RMSE vectoriel 0,96 m/s
   contre 2,22 sur 0–1 km.
+
+## Résultat : Grand Tunis v4 livrée, test 2022 (180 instants, 9 novembre 2026)
+
+Même règle et même script (`runs/grand_tunis_v4_dso/dso_hauteur_sol/`), sur les poids de
+l'époque évaluée (le dossier contient deux `best.pt`).
+
+| Tranche (au-dessus du sol) | Modèle, RMSE u / v | ERA5 interpolé, RMSE u / v | R² u / v (modèle) | R² w (modèle) |
+|---|---|---|---|---|
+| 0–100 m | 0,486 / 0,478 | 1,018 / 0,946 | 0,987 / 0,986 | 0,863 |
+| 100–300 m | 0,375 / 0,375 | 1,147 / 1,204 | 0,995 / 0,995 | 0,523 |
+| 300–600 m | 0,348 / 0,322 | 0,892 / 0,981 | 0,996 / 0,997 | −1,098 |
+| 600–1000 m | 0,286 / 0,287 | 0,426 / 0,475 | 0,997 / 0,998 | −2,005 |
+| **0–1 km (domaine)** | **0,382 / 0,374** | 0,923 / 0,951 | 0,995 / 0,995 | 0,246 |
+
+| Verdict sur 0–1 km | Grand Tunis v4 | National v2 |
+|---|---|---|
+| DSO1, RMSE ≤ 0,5 m/s dans chaque tranche | **conforme** (max 0,486, 0–100 m) | non conforme (0,881) |
+| DSO1, critère OMM | conforme | non conforme |
+| R² u, v ≥ 0,95 | conforme (min 0,986) | conforme (0,969) |
+| R² u, v, w ≥ 0,95 | non conforme (w par continuité) | non conforme |
+| DSO2, masse | conforme (1,06·10⁻⁵) | conforme |
+| DSO3, rugosité | non conforme (0,805) | non conforme (0,786) |
+| DSO5, 25 % des entrées ≤ 0,7 m/s | **conforme** (0,486) | non conforme (0,900) |
+| Direction, MAE | 3,3° (ERA5 : 5,5°) | 6,0° (ERA5 : 11,7°) |
+
+**À lire avec la traçabilité.** Pour le Grand Tunis, le verdict par niveau d'altitude reste non
+conforme : 0,528 m/s au niveau 25 m, qui ne couvre que les basses terres. En hauteur au-dessus du
+sol, les nœuds de 0 à 100 m sont regroupés et le DSO1 devient conforme. La règle 0–1 km a été
+écrite **après** les deux tests : les deux verdicts doivent être publiés côte à côte, et l'adoption
+de la règle revient à l'entreprise (cahier des charges).
