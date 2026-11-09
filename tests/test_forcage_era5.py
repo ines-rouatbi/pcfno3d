@@ -349,3 +349,22 @@ def test_service_entree_de_production_en_mode_reel(cfg_era5, index, tmp_path):
     from pcfno3d.stations_reelles import cellules_codes
     iy, ix = cellules_codes(wf2.geom)["DTTA"]
     assert S2[7, iy, ix] == 1.0 and S2[0, iy, ix] == pytest.approx(4.0)   # vraie mesure
+
+
+def test_diagnostic_v(cfg_era5, index, tmp_path):
+    """scripts/diagnostic_v.py : ERA5 seule contre la verite, u et v, par niveau ; le forcage
+    synthetique etant lineaire, ERA5 aux noeuds suit la verite du cache (correlations finies)."""
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    c = copy.deepcopy(cfg_era5)
+    c.apply_overrides({"paths.run_dir": tmp_path / "run"})
+    f = c.save(tmp_path / "c.yaml")
+    repo = Path(__file__).resolve().parents[1]
+    p = subprocess.run([sys.executable, str(repo / "scripts" / "diagnostic_v.py"), "-c", str(f)],
+                       capture_output=True, text=True, cwd=repo)
+    assert p.returncode == 0, p.stderr[-2000:]
+    t = pd.read_csv(tmp_path / "run" / "diagnostic_v" / "diagnostic_v.csv")
+    ok = t[t["couverture"] > 0]
+    assert len(ok) and np.isfinite(ok[["era5_rmse_u", "era5_rmse_v", "corr_u_u", "corr_v_v"]]).all().all()
