@@ -229,7 +229,20 @@ roughness term reached DSO3 (0.939, conforming) but DSO1 got worse (worst level 
 DSO5 0.696 (> v4 + 1 %) and the real stations 2.544 vs 2.469 m/s: the DSO1/DSO3 trade-off predicted
 before the run, now measured. v4's own DSO3 is 0.805 (0.37 at 25 m … 0.93 at 650 m).
 
-**National model (started 2026-11-06, Ines's request; not trained yet).** The Grand Tunis v4 method over
+**National model — state 2026-11-09.** v2 TRAINED (Colab A100, 30 epochs, no overfitting,
+`MyDrive/pcfno3d_national/runs/national_1km_v2/best.pt`) and delivered as the national reference; test 2022:
+DSO1 non-conforming (worst level 1.158 m/s at 2500 m; 0–1 km AGL 0.881), DSO2/DSO4/DSO6 conforming, DSO3 0.785,
+DSO5 1.136, airports 3.045 vs ERA5 2.857 m/s. v3 (roughness fine-tune) rejected by `configs/national/regle_v3_rugosite.json`.
+Diagnosis (`docs/diagnostic_v_national.md`): v is 1.4× worse than u because of the TRAINING TRUTH — the generator's
+w-damping (potential flow added after the ERA5 recalibration) explains 85–92 % of truth−ERA5 at 300/800 m AGL; fix
+written (`ANEO_GEN_AMORT_PASSE_HAUT=1`, not used for any generation yet). Ines's national roadmap (phases 1–9,
+`docs/feuille_de_route_nationale.md`): DSOs judged 0–1 km AGL (`scripts/dso_hauteur_sol.py`); every computation has a
+dated, hashed rule written first (`configs/national/regle_*.json` + `.sha256`, verdicts by `scripts/juger_phase1.py`);
+tuning on validation only; test 2022 read once per model; NO training or full generation without her written
+approval, phase by phase; no noise added to predictions; each new model its own run_dir. Grand Tunis is frozen (v4,
+no more training). The Colab notebook `pcfno3d_national_colab.ipynb` no longer trains (section 4 = phase-1
+diagnostics). History of the start:
+**National model (started 2026-11-06, Ines's request).** The Grand Tunis v4 method over
 all of Tunisia: `configs/national_1km_colab.yaml`, domain 30.15–37.615 N × 7.45–11.644 E (828 × 388 km),
 surface 500 m (1656 × 776), nodes 1 km, 16 ASL levels 25…2500 m (`generate_aneo_3d.py --dx 500 --niveaux …`,
 `forcage_era5.py --niveaux …`; defaults unchanged for Grand Tunis), inputs = ERA5 10 m every 2 km + the
