@@ -63,6 +63,9 @@ loss:
   # (log rugosite pred / verite)^2 moyen sur les niveaux evalues : ~0,18 pour la v4 (0,37 a 25 m),
   # du meme ordre que lambda_grad x L_grad ; a 1, le terme pese sans ecraser L_data
   lambda_rough: 0.3
+  # PROPOSITION (09/11, a valider par Ines avant tout lancement) : la v4 est trop lisse surtout pres du
+  # sol (rugosite 0,37 a 25 m, 0,65 a 100 m ; 0,89-0,98 au-dessus de 300 m) : 25-150 m x3, 200-300 m x2
+  poids_rugosite_niveaux: {25: 3.0, 50: 3.0, 75: 3.0, 100: 3.0, 150: 3.0, 200: 2.0, 300: 2.0}
   w_weight: 2.0
   w_level_max: 25.0
 

@@ -213,6 +213,9 @@ class LossCfg:
     # v6 (DSO3) : poids de l'ecart de rugosite par niveau, (log rugosite pred / verite)^2
     # (losses.PhysicsLoss.roughness_levels). 0 = desactive : tous les modeles d'avant.
     lambda_rough: float = 0.0
+    # Poids de chaque niveau dans ce terme : {altitude du niveau (m) : poids}, niveaux absents a 1.
+    # None = moyenne simple (v6). Ex. v7 : niveaux bas (25-150 m), les plus lisses, renforces.
+    poids_rugosite_niveaux: dict[float, float] | None = None
     w_weight: float = 1.0
     w_level_max: float = 25.0     # plafond du poids de w par niveau
     # Affinage sur les stations reelles (pcfno3d.stations_reelles.perte_station) : poids de

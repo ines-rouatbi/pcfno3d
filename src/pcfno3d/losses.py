@@ -96,8 +96,9 @@ class PhysicsLoss:
         # directement le DSO3 (rugosite 0,9-1,1). 0 = desactive (tous les modeles d'avant).
         l_rough = torch.zeros((), device=pred.device)
         if cfg.lambda_rough > 0 and not partial:
-            ratio = self.roughness_levels(u, v, y)
-            l_rough = (torch.log(ratio) ** 2).mean() if ratio.numel() else l_rough
+            ratio, poids = self.roughness_levels(u, v, y, avec_poids=True)
+            if ratio.numel():
+                l_rough = (poids * torch.log(ratio) ** 2).sum() / poids.sum()
 
         total = l_data + cfg.lambda_grad * l_grad + cfg.lambda_rough * l_rough + phys_w * (
             cfg.lambda_mass * l_mass / cfg.mass_ref
@@ -107,7 +108,8 @@ class PhysicsLoss:
         return total, {"data": l_data.item(), "mass": l_mass.item(), "bc": l_bc.item(),
                        "smooth": l_smooth.item(), "grad": l_grad.item(), "rough": l_rough.item()}
 
-    def roughness_levels(self, u: torch.Tensor, v: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+    def roughness_levels(self, u: torch.Tensor, v: torch.Tensor, y: torch.Tensor,
+                         avec_poids: bool = False):
         """Rugosite prediction / verite par niveau evalue (meme definition que `roughness`,
         |dA/dx| + |dA/dy| sur les paires de voisins valides, u et v sommes) : (n_niveaux,).
         Seuls les niveaux evalues (couverture >= dso.min_level_cover) et non plats comptent."""
@@ -125,7 +127,14 @@ class PhysicsLoss:
         niveaux = torch.tensor(self.geom.eval_levels(), dtype=torch.long, device=u.device)
         num, den = num[niveaux], den[niveaux]
         garde = den > 1e-8
-        return (num[garde] + 1e-12) / den[garde]
+        ratio = (num[garde] + 1e-12) / den[garde]
+        if not avec_poids:
+            return ratio
+        table = self.cfg.loss.poids_rugosite_niveaux or {}
+        z = [float(self.geom.z_levels[k]) for k in self.geom.eval_levels()]
+        poids = torch.tensor([float(table.get(zk, table.get(int(zk), 1.0))) for zk in z],
+                             dtype=ratio.dtype, device=ratio.device)[garde]
+        return ratio, poids
 
     def val_score(self, parts: dict[str, float]) -> float:
         """Score de selection du meilleur modele (meme formule que le BLOC 9)."""

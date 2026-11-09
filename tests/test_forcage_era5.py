@@ -388,3 +388,21 @@ def test_carte_v_generateur(cfg_era5, index, tmp_path):
     assert (d / "carte_v_300m.png").exists() and (d / "cartes.npz").exists()
     z = np.load(d / "cartes.npz")
     assert {"rmse_v_300m", "rmse_u_800m", "biais_v_300m"} <= set(z.files)
+
+
+def test_diagnostic_forcage_regional(cfg_era5, index, tmp_path):
+    """scripts/diagnostic_forcage_regional.py tourne de bout en bout sur le mini-jeu (modele court)."""
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    c = copy.deepcopy(cfg_era5)
+    c.apply_overrides({"paths.run_dir": tmp_path / "run", "model.residuel_era5": True})
+    Trainer(c, device="cpu", verbose=False).fit()
+    f = c.save(tmp_path / "c.yaml")
+    repo = Path(__file__).resolve().parents[1]
+    p = subprocess.run([sys.executable, str(repo / "scripts" / "diagnostic_forcage_regional.py"), "-c", str(f),
+                        "--device", "cpu", "--hauteur", "60"], capture_output=True, text=True, cwd=repo,
+                       env={**__import__("os").environ, "PYTHONIOENCODING": "utf-8"})
+    assert p.returncode == 0, p.stderr[-2500:]
+    assert (tmp_path / "run" / "diagnostic_forcage" / "resume.json").exists()

@@ -139,3 +139,25 @@ def test_terme_de_rugosite_v6(cfg, geom, index, norm):
         u2, v2, _ = norm.denorm(p2)
         u1, v1, _ = norm.denorm(pred)
     assert loss_fn.roughness_levels(u2, v2, y).mean() > loss_fn.roughness_levels(u1, v1, y).mean()
+
+
+def test_poids_de_rugosite_par_niveau(cfg, geom, index, norm):
+    """loss.poids_rugosite_niveaux : moyenne ponderee des (log rapport)^2 par niveau ; None =
+    moyenne simple (v6, inchangee) ; un niveau absent de la table compte 1."""
+    import copy
+
+    _, _, _, y = _batch(cfg, geom, index)
+    c = copy.deepcopy(cfg)
+    c.loss.lambda_rough = 1.0
+    lisse = y.clone()
+    k0 = geom.eval_levels()[0]
+    m = lisse[:, 0][:, geom.valid_t].mean()
+    lisse[:, 0, k0] = m + 0.5 * (lisse[:, 0, k0] - m)          # seul le niveau le plus bas est lisse
+    pred = norm.normalize_target(lisse)
+    simple = PhysicsLoss(c, geom, norm)(pred, y, phys_w=0.0)[1]["rough"]
+    ratio, poids = PhysicsLoss(c, geom, norm).roughness_levels(lisse[:, 0], lisse[:, 1], y, avec_poids=True)
+    assert torch.allclose(poids, torch.ones_like(poids))
+    assert abs(simple - float((torch.log(ratio) ** 2).mean())) < 1e-6
+    c.loss.poids_rugosite_niveaux = {float(geom.z_levels[k0]): 4.0}
+    pondere = PhysicsLoss(c, geom, norm)(pred, y, phys_w=0.0)[1]["rough"]
+    assert pondere > simple                    # le niveau lisse pese 4 fois plus
