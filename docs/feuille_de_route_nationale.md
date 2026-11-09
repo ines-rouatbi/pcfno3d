@@ -23,7 +23,39 @@ Discipline, à chaque phase :
 | d) Scripts fournis | `scripts/dso_hauteur_sol.py` est dans la branche (commit 1b25f31), avec une correction de l'index ERA5 dans `tfeat`. **`scripts/postraitement_grand_tunis.py` n'a pas été reçu** : il n'est ni dans les messages, ni dans le dépôt, ni sur le disque. |
 | e) Post-traitement du Grand Tunis | Non fait, faute du script. Dès réception : étapes `regles` puis `validation`, et envoi de `validation_variantes.csv` avant l'étape `test`. |
 
-## 1. Phase 1 : diagnostics nationaux (faite, sans entraînement)
+## 1. Phase 1 : diagnostics nationaux (sans entraînement)
+
+**État des 5 diagnostics (09/11/2026)**
+
+| # | Diagnostic | État |
+|---|---|---|
+| 1 | Modes de Fourier, grille, plus petite longueur d'onde | **fait** (ci-dessous) |
+| 2 | Spectres de l'erreur à 300 / 800 m au-dessus du sol, 180 instants de test | prêt (`scripts/diagnostic_v_phase1.py`, commit 1d3236a), à exécuter sur Colab |
+| 3 | RMSE u, v par tranche, 60 instants d'entraînement contre test | prêt (même script), à exécuter sur Colab |
+| 4 | Mécanismes du générateur coupés un par un, 12 instants de validation 2021 | prêt (`scripts/attribution_v_generateur.py --validation`, commit 7602acb), à exécuter sur Colab ; en local, environ 3 instants par heure, trop lent |
+| 5 | Biais aux aéroports | **fait** (ci-dessous) |
+
+Les diagnostics 2 à 4 ont besoin du point de contrôle v2 et du cache, qui sont sur le Drive. Le
+carnet Colab est prêt (cellule 4). Il reste à le lancer et à valider la connexion au Drive.
+
+**Diagnostic 1 : modes de Fourier du national v2** (`configs/national_1km_colab.yaml`)
+
+| | z | y (nord-sud) | x (est-ouest) |
+|---|---|---|---|
+| Grille | 16 niveaux | 828 nœuds à 1 km | 388 nœuds à 1 km |
+| Pad | 4 | 8 | 8 |
+| Modes gardés | 6 | 32 | 32 |
+| Plus petite longueur d'onde spectrale | — | (828 + 8) / 31 ≈ **27,0 km** | (388 + 8) / 31 ≈ **12,8 km** |
+
+Largeur 48, convolution locale activée.
+
+Le même nombre de modes sur un axe deux fois plus long fait que la partie spectrale est **deux
+fois plus grossière du nord au sud que d'est en ouest**. Entre 2 et 27 km dans la direction
+nord-sud, seule la convolution locale reconstruit le champ.
+
+C'est une cause possible de l'écart entre v et u. Le diagnostic 2 la confirmera ou l'écartera :
+si l'erreur sur v se concentre dans la bande 13–26 km le long de y, il faudra augmenter les modes
+en y (par exemple [6, 64, 32]) dans les ablations de la phase 3.
 
 **Forçage.** Les 7 scalaires (`scripts/forcage_era5.py`) sont des **moyennes sur tout le
 domaine** (828 × 388 km plus une marge de 0,15°) :
