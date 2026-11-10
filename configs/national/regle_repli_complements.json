@@ -1,0 +1,31 @@
+{
+  "fixee_le": "2026-11-10 10 h 30, avant tout calcul (demande d'Ines du 10/11, points 1 et 2, avant son accord pour la regeneration) ; aucune regeneration, aucun entrainement, aucun instant du test 2022",
+  "instants": "ceux de la phase 2 : 20 de calibration (graine 2026) et 20 d'acceptation (graine 2027, jours disjoints), VALIDATION 2021, scripts/calibrer_verite_v3.py",
+  "verites": {
+    "v3_beta": "generateur passe-haut, perturbations 0, brise 0,5, relief 1, beta dans {0,25 ; 0,5 ; 0,75}",
+    "v2": "generateur du jeu v2 : passe-haut non, perturbations 0,4, brise 1, relief 1, beta 1"
+  },
+  "calcul_beta": "un seul passage du generateur a beta = 1 par instant ; les trois beta s'en deduisent exactement par linearite (u, v = ERA5 + beta (genere - ERA5), au point de surface et a chaque niveau). Controle obligatoire : les RMSE aeroports deja publies (verite_v3_repli_calibration.csv, verite_v3_repli_acceptation.csv) doivent etre retrouves a 1e-6 m/s pres ; sinon chaque beta est recalcule directement",
+  "point_1_aeroports": {
+    "mesure": "comme la phase 2 : vent a 10 m, moyenne du bloc 2 x 2, METAR a 30 min au plus, RMSE vectoriel sur les paires ; ecart = RMSE verite - RMSE ERA5 seule, memes paires",
+    "intervalle": "IC 95 % par bootstrap sur les INSTANTS (un instant tire garde toutes ses paires), 5000 tirages, graine 2029, percentiles 2,5 et 97,5",
+    "verdict_par_beta": "meilleure qu'ERA5 si la borne haute de l'IC < 0 ; equivalente a ERA5 si l'IC contient 0 ; moins bonne si la borne basse > 0. Le verdict de la regle d'origine (regle_verite_v3_repli.json : RMSE d'acceptation <= ERA5) est rapporte tel quel, sans changement",
+    "validation_croisee_stations": {
+      "retenues_pour_le_jugement": ["DTKA Tabarka", "DTTF Gafsa", "DTTX Sfax", "DTTJ Djerba-Zarzis"],
+      "choix": "beta choisi sur les 8 AUTRES aeroports et les 20 instants de CALIBRATION : RMSE minimal, egalite a 0,005 pres -> le plus grand beta (meme critere que regle_verite_v3_repli.json)",
+      "jugement": "beta choisi, sur les 4 aeroports retenus et les 20 instants d'ACCEPTATION (stations et jours jamais vus par le choix) : ecart a ERA5 et son IC ; les trois beta y sont rapportes pour information",
+      "verdict": "le choix generalise si l'ecart du beta choisi sur les 4 aeroports est <= 0, qualifie par son IC comme ci-dessus"
+    }
+  },
+  "point_2_detail": {
+    "verites": "v2 et v3 beta 0,5 (les autres beta pour information), 20 instants d'acceptation",
+    "mesures": [
+      "ecart rms verite - ERA5 sur u et v a 300 et 800 m au-dessus du sol (meme definition que la phase 2)",
+      "rugosite de la verite rapportee a celle d'ERA5 a 300 et 800 m au-dessus du sol : moyenne des |differences| entre noeuds voisins (1 km) en x et en y, u et v sommes, les deux noeuds valides a cette hauteur, rapport moyenne sur les instants (definition de pcfno3d.dso_tranches)"
+    ]
+  },
+  "interdits": [
+    "aucune regeneration, aucun entrainement, aucun instant du test 2022",
+    "ERA5 et la verite generee sont appelees verite d'entrainement, jamais mesures ; les METAR sont des mesures"
+  ]
+}
