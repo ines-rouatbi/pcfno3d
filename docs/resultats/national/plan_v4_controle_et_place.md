@@ -34,7 +34,7 @@ Le protocole est fixé avant que le jeu existe. Il tourne sur Colab CPU, sur les
 
 Le résultat te sera envoyé avant toute demande d'accord pour la v4.
 
-## 2. Règle v4 corrigée : `configs/national/regle_v4_national.json` (sha256 `81cf4b45…`)
+## 2. Règle v4 corrigée : `configs/national/regle_v4_national.json` (sha256 `eed8fd49…` ; une première version `81cf4b45…` est remplacée : les critères y sont reliés aux clés exactes que mesurent les scripts, la rugosité étant celle du domaine 0–1 km)
 
 Elle remplace la proposition du 09/11 (sha256 `ebeb761d…`).
 - **Même vérité.**
