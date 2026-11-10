@@ -1,41 +1,60 @@
 {
-  "fixee_le": "2026-11-10 15 h, avant tout entrainement de la v4 nationale et avant toute lecture du test de la verite v3 ; remplace la proposition du 09/11 (sha256 ebeb761d...), corrigee a la demande d'Ines : la v4 et le modele livre sont compares sur la MEME verite (v3). PROPOSITION soumise a l'accord ecrit d'Ines (une version modifiee aurait une nouvelle empreinte)",
+  "fixee_le": "2026-11-10 16 h 30, avant tout entrainement de la v4 nationale et avant toute lecture du test de la verite v3 ; remplace eed8fd49... (09-10/11 : ebeb761d..., 81cf4b45..., eed8fd49...), modifiee a la demande d'Ines : deux candidats C' et D, reference ERA5 seule, place sur le Drive. PROPOSITION soumise a l'accord ecrit d'Ines (une version modifiee aurait une nouvelle empreinte)",
   "verite": "verite d'entrainement nationale v3 : generateur passe-haut, perturbations 0, brise 0,5, relief 1, beta 0,5 (configs/national/regle_verite_v3_repli.json ; regeneree le 10/11 avec l'accord ecrit d'Ines, cache_v3_partie_<k>.zip)",
-  "candidat": {
-    "nom": "national_1km_v4_C (ablation C de la feuille de route : architecture et entrees de la v2, verite v3)",
-    "depart": "poids de la v2 nationale (runs/national_1km_v2/best.pt)",
-    "entrainement": "30 epoques, lr 1e-4, choix de l'epoque sur la VALIDATION de la verite v3 (dso1_rmse, dso2_masse, dso3_rugosite), comme la v2",
-    "graines": [42, 43, 44],
-    "run_dir": "runs/national_1km_v4_C_s<graine> (un dossier par graine ; rien n'est ecrase)"
+  "candidats": {
+    "commun": {
+      "depart": "poids de la v2 nationale (runs/national_1km_v2/best.pt)",
+      "entrainement": "30 epoques, lr 1e-4, loss.lambda_rough 1,0 (terme de rugosite, comme l'affinage v3 national), choix de l'epoque sur la VALIDATION de la verite v3 (dso1_rmse, dso2_masse, dso3_rugosite), comme la v2",
+      "graines": [42, 43, 44]
+    },
+    "C_prime": {
+      "nom": "national_1km_v4_Cp : architecture et entrees de la v2 (ERA5 10 m tous les 2 km + 12 aeroports, profil ERA5 aux noeuds), verite v3, terme de rugosite",
+      "run_dir": "runs/national_1km_v4_Cp_s<graine>"
+    },
+    "D": {
+      "nom": "national_1km_v4_D : C' + entree ANEO pendant l'ENTRAINEMENT seulement",
+      "degradation_era5": "a chaque instant d'entrainement, un champ aleatoire gaussien (u, v independants) est ajoute aux mailles ERA5 de l'instant (profil a toutes les hauteurs : entree dense ET base du residuel) et, au meme point, au vent ERA5 a 10 m du treillis d'entree ; ecart-type par composante = RMS de (ERA5 10 m - METAR) aux 12 aeroports sur les JOURS D'ENTRAINEMENT seulement (METAR a 30 min au plus) ; correlation spatiale exponentielle de longueur L ajustee sur la correlation des ecarts entre paires d'aeroports en fonction de la distance (bornee a [50 ; 400] km) ; meme perturbation a toutes les hauteurs ; parametres ecrits dans run_dir/degradation_era5.json AVANT l'entrainement",
+      "masquage_par_zones": "a chaque instant d'entrainement, avec une probabilite 0,5, un disque de rayon tire uniformement entre 50 et 150 km (centre tire sur la terre) ou les points ERA5 a 10 m du treillis d'entree sont retires et ou le profil ERA5 (entree dense et base du residuel) est remplace par le profil ERA5 moyen du domaine a l'instant ; les cellules des aeroports restent en entree",
+      "validation_et_test": "sans degradation ni masquage (memes entrees que C' et que la production), pour que le score de selection soit le meme",
+      "run_dir": "runs/national_1km_v4_D_s<graine>",
+      "usage": "D sert de toute facon a la phase 5 (reseau ANEO), sous sa propre regle, meme s'il n'est pas retenu ici"
+    }
   },
-  "choix_de_la_graine": "celle dont le score de selection de la VALIDATION (history.json, minimum de val_score) est le meilleur ; les deux autres sont rapportees ; le test n'est jamais lu pour choisir",
+  "choix_du_candidat": "parmi les 6 entrainements (C' et D, 3 graines chacun), celui dont le score de selection de la VALIDATION (history.json, minimum de val_score, meme score pour tous) est le meilleur ; les 5 autres sont rapportes (moyenne et ecart des scores par candidat) ; le test n'est jamais lu pour choisir",
   "reference": {
     "modele": "le modele national livre (v2, runs/national_1km_v2/best.pt et norm_stats.json, inchanges)",
-    "evaluation": "copie des poids dans runs/national_1km_v2_sur_verite_v3 (dossier neuf, rien n'est ecrase), evaluee sur la verite v3"
+    "evaluation": "copie des poids dans runs/national_1km_v2_sur_verite_v3 (dossier neuf, rien n'est ecrase), evaluee sur la verite v3",
+    "era5_seule": "le predicteur « era5 » de scripts/dso_hauteur_sol.py (ERA5 aux noeuds, w par continuite), mesure sur les memes instants, entrees et noeuds que le candidat"
   },
-  "test": "test 2022 de la verite v3 (180 instants synoptiques), lu UNE fois pour la graine choisie et UNE fois pour le modele livre, memes instants, memes entrees (ERA5 10 m + 12 aeroports), w par continuite, memes scripts : evaluate, scripts/dso_hauteur_sol.py (0-1 km au-dessus du sol, tranches 0-100, 100-300, 300-600, 600-1000 m) mesure et mesure --keep 0.25, verdict-national ; DSO6 pour la v4",
+  "test": "test 2022 de la verite v3 (180 instants synoptiques), lu UNE fois pour l'entrainement choisi et UNE fois pour le modele livre, memes instants, memes entrees (ERA5 10 m + 12 aeroports), w par continuite, memes scripts : evaluate, scripts/dso_hauteur_sol.py (0-1 km au-dessus du sol, tranches 0-100, 100-300, 300-600, 600-1000 m) mesure et mesure --keep 0.25, verdict-national ; DSO6 pour le candidat ; le test d'un candidat non choisi n'est pas lu ici",
   "comparaison_meme_verite": {
-    "la_v4_est_au_moins_aussi_bonne_si": [
-      "DSO1 : RMSE u, v maximal sur les tranches 0-1 km (scripts/dso_hauteur_sol.py, cle rmse_max_uv) de la v4 <= 1,01 x celui du modele livre",
-      "DSO3 : ecart de la rugosite a 1 (|rugosite - 1|, rugosite du domaine 0-1 km au-dessus du sol mesuree par scripts/dso_hauteur_sol.py, cle dso3_rugosite) de la v4 <= celui du modele livre + 0,02",
-      "DSO5 : RMSE maximal a 25 % des points d'entree (0-1 km, dso_hauteur_sol.py mesure --keep 0.25, cle rmse_max_uv) de la v4 <= 1,01 x celui du modele livre",
+    "le_candidat_est_au_moins_aussi_bon_que_le_livre_si": [
+      "DSO1 : RMSE u, v maximal sur les tranches 0-1 km (scripts/dso_hauteur_sol.py, cle rmse_max_uv) du candidat <= 1,01 x celui du modele livre",
+      "DSO3 : ecart de la rugosite a 1 (|rugosite - 1|, rugosite du domaine 0-1 km au-dessus du sol mesuree par scripts/dso_hauteur_sol.py, cle dso3_rugosite) du candidat <= celui du modele livre + 0,02",
+      "DSO5 : RMSE maximal a 25 % des points d'entree (0-1 km, dso_hauteur_sol.py mesure --keep 0.25, cle rmse_max_uv) du candidat <= 1,01 x celui du modele livre",
       "DSO2 (masse, w par continuite) et DSO4 (temps) restent conformes"
+    ],
+    "le_candidat_fait_mieux_que_l_era5_seule_si": [
+      "DSO1 : rmse_max_uv du candidat < rmse_max_uv du predicteur era5 (meme bilan dso_hauteur_sol)",
+      "DSO3 : |dso3_rugosite - 1| du candidat < |dso3_rugosite - 1| du predicteur era5 (meme bilan)"
     ]
   },
   "comparaison_independante_mesures_reelles": {
-    "aeroports": "12 aeroports METAR, chacun retire de l'entree quand il est juge (scripts/valider_grand_tunis_reel.py --jeu test), memes instants pour les deux modeles ; RMSE vectoriel moyen ; ecart v4 - livre et IC 95 % par bootstrap sur les instants (5000 tirages, graine 2030)",
-    "radiosondages": "Tunis-Carthage, RMSE vectoriel 0-1 km, v4 et livre sur les memes sondages",
-    "la_v4_ne_degrade_pas_les_mesures_si": [
-      "aeroports : moyenne sur les stations du RMSE vectoriel par station (definition du DSO7 de verdict-national) de la v4 <= celle du modele livre ; IC 95 % de l'ecart rapporte",
-      "radiosondages : RMSE vectoriel sur toutes les paires 0-1 km de la v4 <= 1,03 x celui du modele livre"
+    "aeroports": "12 aeroports METAR, chacun retire de l'entree quand il est juge (scripts/valider_grand_tunis_reel.py --jeu test), memes instants pour le candidat et le modele livre ; ecart candidat - livre et IC 95 % par bootstrap sur les instants (5000 tirages, graine 2030) ; ERA5 seule rapportee",
+    "radiosondages": "Tunis-Carthage, RMSE vectoriel 0-1 km, candidat et livre sur les memes sondages ; ERA5 seule rapportee",
+    "le_candidat_ne_degrade_pas_les_mesures_si": [
+      "aeroports : moyenne sur les stations du RMSE vectoriel par station (definition du DSO7 de verdict-national) du candidat <= celle du modele livre ; IC 95 % de l'ecart rapporte",
+      "radiosondages : RMSE vectoriel sur toutes les paires 0-1 km du candidat <= 1,03 x celui du modele livre"
     ]
   },
-  "la_v4_remplace_le_modele_livre_si": "les quatre conditions de la comparaison sur la meme verite ET les deux conditions des mesures reelles sont remplies",
-  "conformite": "les DSO sont rapportes avec les seuils inchanges (0-1 km au-dessus du sol) pour la v4 ET pour le modele livre sur la verite v3 ; un modele n'est dit conforme a un DSO que si le verdict ecrit l'est ; les chiffres du modele livre sur la verite v2 restent publies a part et ne sont pas melanges",
-  "sinon": "le modele livre (v2) reste le modele national livre ; la v4 est publiee comme essai, avec tous ses chiffres",
+  "le_candidat_remplace_le_modele_livre_si": "les quatre conditions face au modele livre, les deux conditions face a l'ERA5 seule ET les deux conditions des mesures reelles sont remplies (huit conditions)",
+  "publication": "chaque table de DSO (par tranche et sur 0-1 km), de validation reelle et de decision porte, a cote du candidat et du modele livre, la ligne ERA5 seule",
+  "conformite": "les DSO sont rapportes avec les seuils inchanges (0-1 km au-dessus du sol) pour le candidat, le modele livre et l'ERA5 seule sur la verite v3 ; un modele n'est dit conforme a un DSO que si le verdict ecrit l'est ; les chiffres du modele livre sur la verite v2 restent publies a part et ne sont pas melanges",
+  "sinon": "le modele livre (v2) reste le modele national livre ; le candidat est publie comme essai, avec tous ses chiffres",
+  "place_drive": "plan A : last.pt ne quitte pas le disque local de Colab (train.sync_last false) ; seul best.pt est recopie dans run_dir ; rien n'est supprime sur le Drive sans l'accord d'Ines",
   "interdits": [
     "aucun reglage choisi sur le test",
-    "aucun bruit ajoute aux predictions",
+    "aucun bruit ajoute aux predictions (la degradation de D ne touche que les ENTREES d'entrainement)",
     "ERA5 et la verite generee sont appelees verite d'entrainement, jamais mesures ; les METAR et radiosondages sont les mesures"
   ]
 }
