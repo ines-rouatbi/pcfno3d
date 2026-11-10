@@ -505,7 +505,11 @@ class WindFieldModel:
             from .stations_reelles import cellules_codes, entree_reelle, lire_observations, obs_a
             obs = getattr(self, "_obs_stations", None)
             if obs is None:
-                obs = self._obs_stations = lire_observations(self.cfg.paths.stations_obs, verbose=False)
+                # stations du domaine (stations.json) : les 3 du Grand Tunis, les 12 aeroports du
+                # national (avant le 11/11/2026 : les 3 codes du Grand Tunis seulement, les autres
+                # aeroports nationaux etaient alors sans mesure)
+                obs = self._obs_stations = lire_observations(
+                    self.cfg.paths.stations_obs, verbose=False, codes=list(cellules_codes(self.geom)) or None)
             E = np.load(E_path).astype(np.float32)
             S_in, capteur = entree_reelle(S, E, self.geom, cellules_codes(self.geom),
                                           obs_a(obs, pd.Timestamp(stamp)))
