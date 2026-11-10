@@ -64,6 +64,19 @@ class ANEO3D(Dataset):
         # le cache du generateur reel stocke la cible en float16 (moitie du disque)
         Y = np.load(self.cache_dir / f"{stem}_Y.npy").astype(np.float32, copy=False)
         cible = None
+        # forcage ERA5 de l'instant : 7 scalaires + cellules u, v (pcfno3d.forcage) ; candidat D
+        # national : cellules degradees / masquees par zones a l'ENTRAINEMENT seulement (aneo_entree)
+        vec = delta_e = zone = None
+        if self.geom.forcage is not None:
+            from .forcage import horodatage
+            vec = self.geom.forcage.vecteur(horodatage(self.geom, stem))
+            if self.train:
+                from .aneo_entree import entree_aneo
+                aneo = entree_aneo(self.geom)
+                if aneo is not None:
+                    n_sc = len(vec) - self.geom.forcage.n_cellules
+                    cel, delta_e, zone = aneo.appliquer(vec[n_sc:], rng)
+                    vec = np.concatenate([vec[:n_sc], cel]).astype(np.float32)
         if self.geom.cfg.mask.entree == "era5_stations" and self.train and affinage_stations(self.geom.cfg):
             # affinage sur les stations : vraies mesures en entree, une station en cible
             from .stations_reelles import entree_affinage
@@ -71,7 +84,7 @@ class ANEO3D(Dataset):
                                                rng, stem)
         elif self.geom.cfg.mask.entree == "era5_stations":
             S, sensor = entree_era5_stations(S, self.cache_dir / f"{stem}_E.npy", self.geom,
-                                             rng, self.train, keep=keep)
+                                             rng, self.train, keep=keep, delta_e=delta_e, zone=zone)
         elif not self.train and self.reseau is not None:
             sensor = (S[7] > 0.5) & self.reseau
         elif not self.train and self.spacing_m:
@@ -79,10 +92,8 @@ class ANEO3D(Dataset):
         else:
             sensor = (S[7] > 0.5) & (rng.random(S[7].shape) < keep)
         tfeat = time_geo_features(S, sensor, self.hours[j], self.doys[j], self.geom)
-        if self.geom.forcage is not None:
-            # forcage ERA5 de l'instant : 7 scalaires + cellules u, v (pcfno3d.forcage)
-            from .forcage import horodatage
-            tfeat = np.concatenate([tfeat, self.geom.forcage.vecteur(horodatage(self.geom, stem))])
+        if vec is not None:
+            tfeat = np.concatenate([tfeat, vec])
         out = (torch.from_numpy(S[:N_SURF]), torch.from_numpy(sensor.astype(np.float32)),
                torch.from_numpy(tfeat), torch.from_numpy(Y), j)
         # 6e element seulement a l'entrainement avec affinage (Trainer._epochs le lit)
@@ -110,7 +121,8 @@ def cellules_stations(geom: Geometry) -> np.ndarray:
 
 
 def entree_era5_stations(S: np.ndarray, chemin_e, geom: Geometry, rng: np.random.Generator,
-                         train: bool, keep: float = 1.0) -> tuple[np.ndarray, np.ndarray]:
+                         train: bool, keep: float = 1.0, delta_e: np.ndarray | None = None,
+                         zone: np.ndarray | None = None) -> tuple[np.ndarray, np.ndarray]:
     """Entree de production du modele reel : vent ERA5 a 10 m sur un reseau regulier (tous
     les `mask.pas_era5_m`) + les stations reelles (valeur du cache = verite generee au point).
 
@@ -123,10 +135,14 @@ def entree_era5_stations(S: np.ndarray, chemin_e, geom: Geometry, rng: np.random
     m = geom.cfg.mask
     from .forcage import charger_e
     E = charger_e(geom, chemin_e)
+    if delta_e is not None:                     # candidat D : ERA5 degradee (aneo_entree)
+        E = E + delta_e
     k = max(int(round(m.pas_era5_m / geom.dx)), 1)
     o = (int(rng.integers(0, k)), int(rng.integers(0, k))) if train else (k // 2, k // 2)
     reseau = np.zeros(S.shape[1:], dtype=bool)
     reseau[o[0]::k, o[1]::k] = True
+    if zone is not None:                        # candidat D : zone sans ERA5 (aneo_entree)
+        reseau &= ~zone
     st = np.zeros_like(reseau)
     for iy, ix in (cellules_stations(geom) if m.stations_entree else ()):
         if not train or rng.random() < m.p_station:

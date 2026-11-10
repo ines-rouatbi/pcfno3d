@@ -278,8 +278,19 @@ class MaskCfg:
     e_source: str = "cache"
     # Stations en entree. False : prevision (OS7) — leurs mesures de demain n'existent pas.
     stations_entree: bool = True
+    # Candidat D national (regle_v4_national.json), ENTRAINEMENT seulement : ERA5 degradee par un
+    # champ gaussien correle (parametres : JSON de scripts/degradation_era5.py, ecart ERA5 - METAR
+    # aux aeroports sur les jours d'entrainement) et masquee par zones (probabilite aneo_p_zone,
+    # disque de rayon tire dans aneo_rayon_km). None / 0 = desactive (tous les modeles d'avant).
+    aneo_degradation: str | None = None
+    aneo_p_zone: float = 0.0
+    aneo_rayon_km: tuple[float, float] = (50.0, 150.0)
 
     def __post_init__(self) -> None:
+        self.aneo_rayon_km = tuple(float(r) for r in self.aneo_rayon_km)   # type: ignore[assignment]
+        if not 0.0 <= float(self.aneo_p_zone) <= 1.0:
+            raise ValueError(f"mask.aneo_p_zone doit etre dans [0, 1], recu {self.aneo_p_zone}")
+        self.aneo_p_zone = float(self.aneo_p_zone)
         if self.entree not in ("capteurs", "era5_stations"):
             raise ValueError(f"mask.entree : 'capteurs' ou 'era5_stations', recu {self.entree!r}")
         if self.e_source not in ("cache", "forcage"):
