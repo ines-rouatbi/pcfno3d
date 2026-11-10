@@ -106,3 +106,28 @@ meilleure (2,925 m/s) et a été acceptée par la règle de repli.
   réduisent cet écart de 81 % à instants égaux. La vérité devient alors meilleure qu'ERA5 aux aéroports.
 - **La suite (phase 3, ablation C)** consiste à régénérer la vérité v3 avec β = 0,5 et à entraîner la v4. Elle
   attend l'accord écrit d'Ines.
+
+## Complément : DSO prévisibles de la vérité v3 avant tout entraînement (10/11, règle 51d0064)
+
+`scripts/dso_previsible_v3.py`, sur les 20 instants d'acceptation (validation 2021). Le prédicteur est ERA5 seule aux
+nœuds : c'est la base du résiduel du modèle, u, v = ERA5 + correction apprise. Les résultats sont dans
+`docs/resultats/national/dso_previsible_v3/`.
+
+| Tranche au-dessus du sol | Vérité v2 : RMSE u / v | R² v | Rugosité ERA5 / vérité | Vérité v3 (β = 0,5) : RMSE u / v | R² v | Rugosité ERA5 / vérité |
+|---|---|---|---|---|---|---|
+| 0–100 m | 1,097 / 1,441 | 0,918 | 0,48 | **0,284 / 0,305** | 0,996 | 0,77 |
+| 100–300 m | 1,477 / 1,955 | 0,893 | 0,44 | **0,349 / 0,365** | 0,996 | 0,85 |
+| 300–600 m | 1,423 / 2,109 | 0,883 | 0,42 | **0,309 / 0,362** | 0,997 | 0,83 |
+| 600–1000 m | 1,236 / 2,049 | 0,891 | 0,52 | **0,231 / 0,279** | 0,998 | 0,92 |
+
+**Lecture, avec ses limites.**
+- **DSO1 et R², déjà atteints par ERA5 seule sur la vérité v3 :** RMSE ≤ 0,365 m/s dans chaque tranche de 0 à 1 km
+  (seuil 0,5) et R² ≥ 0,995 (seuil 0,95).
+- **Pourquoi c'est en partie par construction :** la vérité v3 vaut ERA5 + 0,5 × le détail du générateur. Elle est
+  donc plus proche d'ERA5 que la v2.
+- **Pourquoi c'est légitime :** cette vérité a été acceptée contre les **mesures réelles** des aéroports (2,925
+  contre 2,940 m/s pour ERA5 seule), alors que la vérité v2 était moins bonne qu'ERA5 (3,114).
+- **Ce que la règle v4 prévoit :** les DSO 1 à 5 ne sont pas comparés d'une vérité à l'autre (`regle_v4_national.json`).
+  Seules les mesures réelles, aéroports et radiosondages, départagent v2 et v4.
+- **DSO3 reste à gagner par le modèle :** ERA5 seule est trop lisse (rugosité 0,77 à 0,92 pour une cible de 0,9 à
+  1,1). La v4 doit ajouter le détail local que porte la vérité v3, sans dégrader DSO1.
