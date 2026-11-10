@@ -515,8 +515,42 @@ def v4_carnets(commit: str) -> dict[str, dict]:
     return out
 
 
+CONTROLE_V3 = r'''
+# controle qualite du jeu v3 (docs/resultats/national/plan_v4_controle_et_place.md, point 1) : aucun entrainement
+from google.colab import runtime
+SORTIE = NAT / "controle_v3"
+try:
+    lancer("controle_v3", f"python -u scripts/controle_jeu_v3.py -c national_1km_colab --nat {NAT} "
+                          f"--donnees {G} --sortie {SORTIE}")
+    print((SORTIE / "bilan_controle_v3.json").read_text()[:6000])
+finally:
+    runtime.unassign()
+'''
+
+
+def controle_v3(commit: str) -> dict:
+    """Carnet du controle qualite du jeu v3 complet (Colab CPU, aucun entrainement)."""
+    sha = (REPO / "configs" / "national" / "regle_v4_national.json.sha256").read_text(encoding="ascii").split()[0]
+    git = CODE_GIT.replace("@COMMIT@", commit).replace("@SHA_V4@", sha)
+    return carnet([
+        md("# PC-FNO3D NATIONAL — contrôle qualité du jeu v3 (Colab, CPU, sans entraînement)\n\n"
+           "Conservation de la masse (v3 entier, v2 validation et test pour référence), manifeste du cache, "
+           "10 instants de validation régénérés et chiffres du rapport recalculés. Protocole : "
+           "`docs/resultats/national/plan_v4_controle_et_place.md`. Sorties : `MyDrive/pcfno3d_national/controle_v3/`."),
+        md("## 1. Drive, code et données"), code(COMMUN + git),
+        md("## 2. Cache v3"), code(_ent_v3()),
+        md("## 3. Contrôle, puis fin de la session"), code(CONTROLE_V3)], gpu=False)
+
+
 def main() -> int:
     out = REPO / "notebooks" / "current"
+    if "--controle-v3" in sys.argv:
+        commit = subprocess.run(["git", "rev-parse", "HEAD"], cwd=REPO, capture_output=True, text=True,
+                                check=True).stdout.strip()
+        f = out / "pcfno3d_national_controle_v3_colab.ipynb"
+        f.write_text(json.dumps(controle_v3(commit), indent=1, ensure_ascii=False), encoding="utf-8")
+        print(f)
+        return 0
     if "--v4" in sys.argv:
         commit = subprocess.run(["git", "rev-parse", "HEAD"], cwd=REPO, capture_output=True, text=True,
                                 check=True).stdout.strip()
