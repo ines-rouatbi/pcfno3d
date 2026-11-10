@@ -26,7 +26,7 @@ REGLE = REPO / "configs" / "national" / "regle_os6_national.json"
 NOM = "pcfno3d_national_os6_colab.ipynb"
 
 VERIF_OS6 = '''
-# regle OS6 nationale (PROPOSITION validee par Ines) : empreinte inscrite dans ce carnet, verifiee ici
+# regle OS6 nationale (PROPOSITION tant qu'Ines ne l'a pas validee) : empreinte inscrite dans ce carnet, verifiee ici
 from pcfno3d import os6
 REGLE = CODE / "configs" / "national" / "regle_os6_national.json"
 regle, sha_os6 = os6.charger_regle(REGLE)
@@ -125,7 +125,7 @@ Expériences de simulation de systèmes d'observation (OSSE) sur la vérité d'e
    jusqu'à {P["n_max"]}) ;
 5. **courbe de dimensionnement** sur le **test 2022, lu une fois** : optimisé, grille régulière, hasard, pour
    {", ".join(str(n) for n in P["tailles"])} capteurs ; nombre recommandé = plus petit nombre dont le RMSE u, v
-   maximal sur 0–1 km au-dessus du sol est ≤ {P["seuil_m_s"]:g} m/s ; courbe ERA5 dégradée en information ;
+   maximal sur 0–1 km au-dessus du sol est ≤ {str(P["seuil_m_s"]).replace(".", ",")} m/s ; courbe ERA5 dégradée en information ;
 6. **plan** : `MyDrive/pcfno3d_national/runs/os6_national_D_s<graine>/` (`plan_aneo.csv`, `.geojson`,
    `courbe_test.csv`, `carte.png`, `os6.json`…), au format du Grand Tunis (onglet admin de la phase 8).
 
