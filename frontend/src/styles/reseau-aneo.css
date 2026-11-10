@@ -1,0 +1,38 @@
+/* Onglet d'administration « Réseau ANEO » — habillage PROVISOIRE (maquette reseau_aneo.html non fournie).
+   Toutes les règles sont préfixées « ra- » et ne s'appliquent que dans #aneo-reseau : remplacer ce fichier
+   suffit pour reprendre le style de la maquette, sans toucher au reste de l'application. */
+#aneo-reseau{display:grid;gap:16px}
+#aneo-reseau .ra-bandeau{display:flex;flex-wrap:wrap;gap:6px 12px;align-items:baseline;border:1px solid var(--line);border-left:4px solid var(--accent);border-radius:6px;padding:10px 14px;background:var(--surface);font-size:14px}
+#aneo-reseau .ra-bandeau.demo{border-left-color:var(--warn);background:var(--warn-soft, var(--surface))}
+#aneo-reseau .ra-bandeau span{color:var(--muted)}
+#aneo-reseau .ra-titre{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;justify-content:space-between;margin-bottom:8px}
+#aneo-reseau .ra-titre h3{margin:0}
+#aneo-reseau .ra-haut{align-items:start}
+#aneo-reseau .ra-svg{display:block;width:100%;max-height:560px;height:auto;border-radius:4px;background:var(--surface-2)}
+#aneo-reseau .ra-capteur{cursor:pointer;outline:none}
+#aneo-reseau .ra-capteur:focus-visible circle{stroke:var(--accent);stroke-width:3}
+#aneo-reseau .ra-legende{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:8px;font-size:13px}
+#aneo-reseau .ra-leg{display:inline-flex;align-items:center;gap:6px}
+#aneo-reseau .ra-leg i{display:inline-block;width:11px;height:11px;border-radius:50%}
+#aneo-reseau .ra-leg i.ra-anneau{background:none;border:2.5px solid var(--go)}
+#aneo-reseau .ra-leg i.ra-tri{border-radius:0;width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-bottom:10px solid #3a6fd2}
+#aneo-reseau .ra-note{font-size:13px;margin:8px 0 0}
+#aneo-reseau .ra-dl{display:grid;grid-template-columns:1fr;gap:4px;margin:8px 0}
+#aneo-reseau .ra-dl div{display:flex;justify-content:space-between;gap:12px;border-bottom:1px solid var(--line);padding:4px 0}
+#aneo-reseau .ra-dl dt{color:var(--muted);font-size:14px}
+#aneo-reseau .ra-dl dd{margin:0;font-variant-numeric:tabular-nums;text-align:end}
+#aneo-reseau .ra-coche{display:inline-flex;gap:6px;align-items:center;font-size:14px;cursor:pointer}
+#aneo-reseau #ra-n{width:100%;margin:6px 0 12px}
+#aneo-reseau .ra-lecture{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+#aneo-reseau .ra-lecture div{display:flex;flex-direction:column;gap:2px;border-left:3px solid var(--line);padding-left:10px}
+#aneo-reseau .ra-lecture span{color:var(--muted);font-size:13px}
+#aneo-reseau .ra-lecture b{font-size:20px;font-variant-numeric:tabular-nums}
+#aneo-reseau .ra-svg-courbe{width:100%;min-width:360px;height:auto}
+#aneo-reseau .ra-svg-courbe text{fill:var(--muted)}
+#aneo-reseau .ra-pastille{display:inline-block;width:10px;height:10px;border-radius:50%;vertical-align:middle}
+#aneo-reseau tr.ra-choisi td{background:var(--surface-2)}
+#aneo-reseau .ra-lien{border:0;background:none;padding:0;color:var(--accent);font-weight:650;cursor:pointer;text-decoration:underline}
+#aneo-reseau .ra-commande{white-space:pre-wrap;word-break:break-all;font-family:var(--f-mono, ui-monospace, monospace);font-size:12.5px;background:var(--surface-2);border:1px solid var(--line);border-radius:4px;padding:10px;margin:8px 0}
+#aneo-reseau .ra-exports{display:flex;flex-wrap:wrap;gap:8px}
+#aneo-reseau .ra-message{font-size:14px;color:var(--accent);margin:8px 0 0}
+@media(max-width:700px){#aneo-reseau .ra-lecture b{font-size:17px}}

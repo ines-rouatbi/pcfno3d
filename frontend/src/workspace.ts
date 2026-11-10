@@ -54,6 +54,8 @@ export function startApplication() {
       await mountTerrain(document.getElementById('terrain-host')!);
     };
     await import('./engine/atom-3d.js');
+    // onglet d'administration « Réseau ANEO » : avant atom-data.js, qui lance la page
+    await import('./engine/reseau-aneo.js');
     await import('./engine/atom-data.js');
   })();
 }

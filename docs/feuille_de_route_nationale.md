@@ -399,6 +399,19 @@ Sorties dans `MyDrive/pcfno3d_national/phase6_7/<run>/` ; chaque script refuse d
   - `scripts/build_atom_wind.py`, ancres, i18n (fr, en, ar), accès admin seulement ;
   - tests web.
 - **Durée** : environ 2 à 3 jours de développement.
+- **État (11/11, branche de la phase 8, non fusionnée)** :
+  - fait : routes et page selon le domaine servi (blocs de 4 km au national, 97 × 207 ; 500 m au Grand Tunis,
+    inchangé), stations, lieux et projection lus dans `/atom-wind/grille`, carte et vue 3D à l'échelle du
+    pays, temps réel GFS par paquets de mailles (champs gardés 6 h, METAR des 12 aéroports toutes les 30 min) ;
+    onglet admin « Réseau ANEO » PROVISOIRE (`frontend/src/engine/reseau-aneo.js`, `styles/reseau-aneo.css`,
+    accroche 21 de la maquette historique), branché sur `/api/atom-wind/reseau-aneo?detail=true` ; phases =
+    paliers de la courbe de dimensionnement ; coût unitaire lu dans `os6_parametres.json` (jamais inventé) ;
+    le statut « installé » écrit `os6_installes.csv` et donne la commande `--installes`, que le service ne lance
+    pas ;
+  - attend : la maquette `reseau_aneo.html` (habillage de l'onglet), les sorties OS6 nationales de la phase 5
+    (sans elles : bandeau « Démonstration : plan d'exemple »), le coût unitaire de Tukhnanutha, le zoom
+    automatique sur le modèle 100 m du Grand Tunis, la construction `npm run build` et les tests de
+    navigateur (Playwright) sur un service national.
 
 ### Phase 9 : documents
 Fiche du modèle national, historique des versions des DSO, DSO1 par niveau et par tranche

@@ -1451,13 +1451,55 @@ def atom_atlas_fichier(nom: str, _: ApiKeyRecord | None = Depends(require_eolien
 
 
 @router.get("/atom-wind/reseau-aneo", tags=["atom-wind"])
-def atom_reseau(_: ApiKeyRecord | None = Depends(require_read)):
-    """Plan de deploiement ANEO (OS6, scripts/os6_reseau_aneo.py) en GeoJSON, s'il existe."""
+def atom_reseau(request: Request, detail: bool = Query(False, description="true : vue complete de l'onglet "
+                                                       "d'administration « Reseau ANEO » (portee admin)"),
+                _: ApiKeyRecord | None = Depends(require_read)):
+    """Plan de deploiement ANEO (OS6, scripts/os6_reseau_aneo.py) en GeoJSON, s'il existe (couche ANEO de la
+    page). `detail=true` (portee admin) : la vue de l'onglet « Reseau ANEO » — plan ordonne avec phases et
+    statut prevu / installe, courbe de dimensionnement (optimise / grille / hasard, seuil DSO1), cout unitaire
+    s'il est renseigne, commande --installes ; plan d'exemple signale tant que les resultats OS6 manquent."""
+    from service import atom_outils
+    if detail:
+        _check(request, "admin")
+        try:
+            return atom_outils.reseau_aneo(model())
+        except ValueError as exc:                   # fichier depose illisible (os6_installes.csv...)
+            raise HTTPException(422, str(exc)) from exc
     from pcfno3d import atom_wind
     f = atom_wind.plan_aneo(model().cfg.paths.run_dir)
     if f is None:
         raise HTTPException(404, "plan OS6 non calcule (scripts/os6_reseau_aneo.py)")
     return FileResponse(f, media_type="application/geo+json")
+
+
+class CapteursInstalles(BaseModel):
+    installes: list[str] = Field(..., max_length=5000, description="identifiants du plan (ANEO-001...) poses")
+
+
+@router.post("/atom-wind/reseau-aneo/installes", tags=["atom-wind"])
+def atom_reseau_installes(c: CapteursInstalles, _: ApiKeyRecord | None = Depends(require_admin)) -> dict:
+    """Statut « installe » (BF78, portee admin) : ecrit os6_installes.csv dans le run_dir servi et renvoie la
+    commande `scripts/os6_reseau_aneo.py --installes` qui relance le plan a partir d'eux. Le service ne lance
+    AUCUN calcul (GPU, carnet OS6)."""
+    from service import atom_outils
+    try:
+        return atom_outils.marquer_installes(model(), c.installes)
+    except KeyError as exc:
+        raise HTTPException(422, str(exc.args[0])) from exc
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+
+
+@router.get("/atom-wind/reseau-aneo/fichier/{nom}", tags=["atom-wind"])
+def atom_reseau_fichier(nom: str, _: ApiKeyRecord | None = Depends(require_admin)):
+    """Une sortie OS6 telle qu'ecrite par scripts/os6_reseau_aneo.py (export CSV / GeoJSON, figures ; admin)."""
+    from pcfno3d import atom_wind
+    d = atom_wind.dossier_os6(model().cfg.paths.run_dir)
+    if d is None or nom not in atom_wind.FICHIERS_OS6 or not (d / nom).exists():
+        raise HTTPException(404, "sortie OS6 absente")
+    types = {".csv": "text/csv", ".geojson": "application/geo+json", ".json": "application/json",
+             ".png": "image/png"}
+    return FileResponse(d / nom, media_type=types[Path(nom).suffix], filename=nom)
 
 
 @router.get("/exports/{stem}.{fmt}", tags=["donnees"])

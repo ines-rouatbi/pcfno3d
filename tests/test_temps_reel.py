@@ -110,6 +110,93 @@ def test_forcage_gfs_formules():
     assert u[0, 0, 0, 0] == pytest.approx(-5 * math.sin(math.radians(260)), rel=1e-5)
 
 
+def test_open_meteo_par_paquets(monkeypatch):
+    """Domaine national (~580 mailles) : requetes de PAQUET_MAILLES mailles au plus, reponses recollees dans
+    l'ordre des mailles ; le Grand Tunis (16 mailles) reste une seule requete."""
+    from pcfno3d import temps_reel as tr
+
+    monkeypatch.delenv("PCFNO3D_OPEN_METEO_CLE", raising=False)
+    vues = []
+
+    def lire(url):
+        q = dict(urllib.parse.parse_qsl(urllib.parse.urlparse(url).query))
+        vues.append(len(q["latitude"].split(",")))
+        return fausse_source(url)
+
+    lat, lon = np.arange(30.0, 37.75, 0.25), np.arange(7.5, 12.0, 0.25)          # 31 x 18 = 558 mailles
+    c = tr.telecharger_gfs(lat, lon, "2026-10-26", "2026-10-26", lire=lire)
+    assert vues == [100] * 5 + [58] and c["wind_speed_850hPa"].shape == (24, 31, 18)
+    # meme ordre que la.ravel() : la temperature de la fausse source alterne 20 / 21 deg C par maille
+    assert np.array_equal(c["temperature_2m"][0].ravel(), 20.0 + (np.arange(558) % 100 % 2))
+    vues.clear()
+    tr.telecharger_gfs(np.array([36.0, 36.25, 36.5, 36.75]), np.array([10.0, 10.25, 10.5, 10.75]),
+                       "2026-10-26", "2026-10-26", lire=lire)
+    assert vues == [16]
+    # cle d'abonnement : serveur client, cle dans la requete seulement
+    monkeypatch.setenv("PCFNO3D_OPEN_METEO_CLE", "cle-de-test")
+    u = tr._url(tr.OPEN_METEO, {"a": 1})
+    assert u.startswith("https://customer-api.open-meteo.com/") and "apikey=cle-de-test" in u
+
+
+def test_stations_du_domaine(tmp_path):
+    """Stations du temps reel : celles de stations.json du domaine servi (national : les aeroports METAR) ;
+    sans fichier, celles du Grand Tunis."""
+    from types import SimpleNamespace
+
+    from pcfno3d import temps_reel as tr
+
+    geom = SimpleNamespace(cfg=SimpleNamespace(paths=SimpleNamespace(data_dir=tmp_path)))
+    assert tr.stations_direct(geom) == (["DTTA"], {"60729": "INM60729", "60728": "INM60728"})
+    assert tr.description_stations(geom) == "METAR DTTA (aviationweather.gov), SYNOP 60729 / 60728 (OGIMET)"
+    (tmp_path / "stations.json").write_text(json.dumps([
+        {"nom": "DTTX Sfax", "code": "DTTX", "iy": 1, "ix": 1}, {"nom": "DTTZ Tozeur", "code": "DTTZ", "iy": 2, "ix": 2}]))
+    geom2 = SimpleNamespace(cfg=geom.cfg)
+    assert tr.stations_direct(geom2) == (["DTTX", "DTTZ"], {})
+    corps = json.dumps([{"icaoId": "DTTX", "reportTime": "2026-10-26T06:00:00Z", "wspd": 10, "wdir": 90},
+                        {"icaoId": "DTTZ", "reportTime": "2026-10-26T06:00:00Z", "wspd": 0, "wdir": 0},
+                        {"icaoId": "LFPG", "reportTime": "2026-10-26T06:00:00Z", "wspd": 5, "wdir": 0}]).encode()
+    urls = []
+    t = tr.metar(["DTTX", "DTTZ"], 6, lire=lambda url: urls.append(url) or corps)
+    assert "ids=DTTX,DTTZ" in urls[0] and list(t["station_id"]) == ["DTTX", "DTTZ"]
+    assert t.iloc[0]["wind_u_m_s"] == pytest.approx(-10 * 0.514444) and t.iloc[1]["wind_u_m_s"] == 0.0
+    s = tr.lire_synop("60720,2026,10,26,09,00,AAXX 26094 60720 26/// /1005 10228=", {"60720": "INM60720"})
+    assert list(s["station_id"]) == ["INM60720"]
+
+
+def test_fenetre_gfs_commune(tmp_path):
+    """National : aujourd'hui a apres-demain d'un seul telechargement GFS, garde ttl_gfs_s ; les mesures sont
+    relues a chaque expiration de ttl_s. Sans fenetre commune (Grand Tunis) : un telechargement par journee."""
+    from types import SimpleNamespace
+
+    from pcfno3d import atom_wind
+    from pcfno3d import temps_reel as tr
+
+    lat, lon = np.array([36.0, 36.25]), np.array([10.0, 10.25])
+    hauteurs = np.array([10.0, 100.0, 500.0])
+    geom = SimpleNamespace(forcage=SimpleNamespace(lat=lat, lon=lon, hauteurs=hauteurs,
+                                                    u=np.zeros((1, 3, 2, 2), np.float32)),
+                           cfg=SimpleNamespace(paths=SimpleNamespace(data_dir=tmp_path)))
+    n = {"gfs": 0, "metar": 0}
+
+    def lire(url):
+        if "open-meteo" in url:
+            n["gfs"] += 1
+        if "aviationweather" in url:
+            n["metar"] += 1
+        return fausse_source(url)
+
+    src = tr.SourceDirect(geom, ttl_s=0.0, lire=lire, ttl_gfs_s=3600.0, fenetre_commune=True)
+    for j in (0, 1, 2, 0):
+        e = src.journee(atom_wind.date_locale_aujourdhui(j))
+        assert e["forcage"].u.shape[1:] == (3, 2, 2)
+    assert n["gfs"] == 1 and n["metar"] == 4
+    n["gfs"] = 0
+    src = tr.SourceDirect(geom, ttl_s=1800.0, lire=lire)
+    for j in (0, 1, 2, 0):
+        src.journee(atom_wind.date_locale_aujourdhui(j))
+    assert n["gfs"] == 3
+
+
 @pytest.fixture(scope="module")
 def jeu(cfg_era5, index, tmp_path_factory):  # noqa: F811
     from pcfno3d.train import Trainer

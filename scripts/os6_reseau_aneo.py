@@ -44,7 +44,7 @@ def main() -> int:
     from pcfno3d import os6
     from pcfno3d.config import Config
     from pcfno3d.inference import WindFieldModel
-    from pcfno3d.realdata import GeoRef
+    from pcfno3d.realdata import georef_grille
 
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("-c", "--config", required=True)
@@ -111,10 +111,9 @@ def main() -> int:
     if args.georef == "grille":
         georef = os6.GeoRefGrille.depuis_geometrie(g)
     else:
-        try:
-            georef = GeoRef.from_cfg(cfg)
-        except ValueError:
-            georef = None
+        # projection du relief (plan a la latitude centrale) : sur le domaine national, celle du coin sud-ouest
+        # (GeoRef) deplacerait l'est du plan d'environ 15 km ; Grand Tunis : moins de 0,15 km d'ecart
+        georef = georef_grille(cfg, g)
     if regle is not None:                     # national : contraintes de la regle, pas d'un fichier libre
         if args.contraintes:
             raise SystemExit("--regle fixe les contraintes : --contraintes refuse (zones : --zones-exclues)")

@@ -249,9 +249,12 @@ def test_application_web_servie(client):
     import re
     assets = re.findall(r'(?:src|href)="(/app/assets/[^\"]+)"', page.text)
     assert assets
+    assert client.get("/", follow_redirects=False).status_code in (307, 302)
+    from pathlib import Path
+    if not (Path(__file__).resolve().parents[1] / "webapp" / "assets").is_dir():
+        pytest.skip("bundles React non construits (webapp/assets/ est ignore par git) : npm ci && npm run build")
     for asset in assets:
         assert client.get(asset).status_code == 200, asset
-    assert client.get("/", follow_redirects=False).status_code in (307, 302)
 
 
 # ---------------------------------------------------------------------------- MCP

@@ -1,22 +1,28 @@
 import { renderTerritory } from '../territory-map';
 export function startWorkspace(){
 "use strict";
-// ---------------- géographie (zone réelle du Grand Tunis, km) ----------------
-const LAT0 = 36.395, LON0 = 10.04, KX = 89.42, KY = 110.97, W = 68, H = 56;
+// ---------------- géographie (km) ----------------
+// Zone réelle du Grand Tunis (maquette) ; ou le domaine du modèle servi quand ce n'est pas le Grand Tunis
+// (phase 8 nationale : emprise, projection, blocs et stations de /atom-wind/grille, ATOM.domaine()).
+const DOM = (window.ATOM && ATOM.domaine) ? ATOM.domaine() : null;
+const LAT0 = DOM ? DOM.lat0 : 36.395, LON0 = DOM ? DOM.lon0 : 10.04, KX = DOM ? DOM.kx : 89.42, KY = DOM ? DOM.ky : 110.97, W = DOM ? DOM.w : 68, H = DOM ? DOM.h : 56;
+const ZONE = DOM ? DOM.nom : "Grand Tunis";
 const xy = (lat, lon) => [(lon - LON0) * KX, (lat - LAT0) * KY];
 const poly = pts => pts.map(([a, b]) => xy(a, b));
-const GULF = poly([[36.95,10.29],[36.90,10.29],[36.878,10.325],[36.85,10.33],[36.818,10.305],[36.79,10.29],[36.765,10.285],[36.735,10.33],[36.715,10.40],[36.72,10.46],[36.745,10.52],[36.80,10.555],[36.845,10.585],[36.90,10.625],[36.95,10.625]]);
-const HAMM = poly([[36.36,10.60],[36.40,10.61],[36.43,10.68],[36.45,10.745],[36.48,10.79],[36.51,10.84],[36.36,10.84]]);
-const LAKES = [[...xy(36.81,10.235), 4.6, 2.2], [...xy(36.775,10.14), 4.0, 2.4]];
-const URB = [[...xy(36.80,10.18),6],[...xy(36.75,10.23),3],[...xy(36.87,10.31),2.5],[...xy(36.455,10.72),2],[...xy(36.725,10.34),1.6]];
-const HILLS = [[36.61,10.33,720,2.6],[36.705,10.375,520,1.9],[36.36,10.10,950,6.5],[36.76,10.64,480,5],[36.58,10.43,240,4],[36.86,10.12,230,4],[36.50,10.22,260,5]].map(([a,b,h,s]) => [...xy(a,b),h,s]);
+// côte, lacs, villes et reliefs schématiques de la journée d'exemple : Grand Tunis seulement (le relief réel
+// de l'API les remplace ; sur un autre domaine, l'eau vient de la grille)
+const GULF = DOM ? [] : poly([[36.95,10.29],[36.90,10.29],[36.878,10.325],[36.85,10.33],[36.818,10.305],[36.79,10.29],[36.765,10.285],[36.735,10.33],[36.715,10.40],[36.72,10.46],[36.745,10.52],[36.80,10.555],[36.845,10.585],[36.90,10.625],[36.95,10.625]]);
+const HAMM = DOM ? [] : poly([[36.36,10.60],[36.40,10.61],[36.43,10.68],[36.45,10.745],[36.48,10.79],[36.51,10.84],[36.36,10.84]]);
+const LAKES = DOM ? [] : [[...xy(36.81,10.235), 4.6, 2.2], [...xy(36.775,10.14), 4.0, 2.4]];
+const URB = DOM ? [] : [[...xy(36.80,10.18),6],[...xy(36.75,10.23),3],[...xy(36.87,10.31),2.5],[...xy(36.455,10.72),2],[...xy(36.725,10.34),1.6]];
+const HILLS = DOM ? [] : [[36.61,10.33,720,2.6],[36.705,10.375,520,1.9],[36.36,10.10,950,6.5],[36.76,10.64,480,5],[36.58,10.43,240,4],[36.86,10.12,230,4],[36.50,10.22,260,5]].map(([a,b,h,s]) => [...xy(a,b),h,s]);
 function inPoly(x, y, P){ let c=false; for(let i=0,j=P.length-1;i<P.length;j=i++){ const [xi,yi]=P[i],[xj,yj]=P[j]; if(((yi>y)!==(yj>y)) && x < (xj-xi)*(y-yi)/(yj-yi)+xi) c=!c; } return c; }
 function waterType(x, y){ if(inPoly(x,y,GULF)||inPoly(x,y,HAMM)) return 1; for(const [cx,cy,rx,ry] of LAKES){ const dx=(x-cx)/rx, dy=(y-cy)/ry; if(dx*dx+dy*dy<1) return 2; } return 0; }
 function elevRaw(x, y){ let h = 18 + 6*Math.sin(x*.31)*Math.cos(y*.27) + 4*Math.sin(x*.9+y*.4); for(const [cx,cy,hh,s] of HILLS){ const d2=(x-cx)**2+(y-cy)**2; h += hh*Math.exp(-d2/(2*s*s)); } return Math.max(2,h); }
 function urbanAt(x,y){ for(const [cx,cy,r] of URB) if((x-cx)**2+(y-cy)**2<r*r) return true; return false; }
 
-// grille à 0,5 km
-const G = 2, NX = W*G, NY = H*G;
+// grille à 0,5 km (Grand Tunis) ; celle des blocs de l'API sur un autre domaine (national : 4 km)
+const G = DOM ? DOM.g : 2, NX = DOM ? DOM.nx : W*G, NY = DOM ? DOM.ny : H*G;
 const AIRP = xy(36.851,10.227); // aéroport de Tunis-Carthage : terrain dégagé (pistes, herbe)
 const elev = new Float32Array(NX*NY), wat = new Uint8Array(NX*NY), z0 = new Float32Array(NX*NY), sdist = new Float32Array(NX*NY);
 for(let j=0;j<NY;j++) for(let i=0;i<NX;i++){ const x=(i+.5)/G, y=(j+.5)/G, k=j*NX+i, w=waterType(x,y); wat[k]=w; elev[k]= w ? 0 : elevRaw(x,y); z0[k]= w===1 ? .0002 : w===2 ? .001 : Math.hypot(x-AIRP[0],y-AIRP[1])<1.8 ? .03 : urbanAt(x,y) ? .8 : elev[k]>300 ? .4 : .08; }
@@ -55,7 +61,7 @@ function smoothstep(a,b,x){ const t=Math.min(1,Math.max(0,(x-a)/(b-a))); return 
 function gustF(x,y,z){ if(window.ATOM && ATOM.facteurRafale){ const f=ATOM.facteurRafale(x,y,z,state.hour); if(f) return f; } const zr=z0[idx(x,y)], g0 = zr>.5 ? 1.65 : zr>.05 ? 1.45 : 1.22; return 1 + (g0-1)*Math.exp(-z/300); }
 
 // fiabilité
-const STATIONS = [{n:"Tunis-Carthage", p:xy(36.8504,10.2156)},{n:"Zaghouan", p:xy(36.4333,10.0833)},{n:"Nabeul", p:xy(36.45,10.7333)}];
+const STATIONS = DOM ? DOM.stations.map(s => ({n:s.nom, p:xy(s.lat,s.lon)})) : [{n:"Tunis-Carthage", p:xy(36.8504,10.2156)},{n:"Zaghouan", p:xy(36.4333,10.0833)},{n:"Nabeul", p:xy(36.45,10.7333)}];
 const ANEO = (window.ATOM && ATOM.planXY(xy)) || (() => { const pts=[]; const cand=[]; for(let j=2;j<NY;j+=4) for(let i=2;i<NX;i+=4){ const k=j*NX+i; if(!wat[k] && elev[k]<650) cand.push([(i+.5)/G,(j+.5)/G]); }
   const all = STATIONS.map(s=>s.p); for(let n=0;n<36;n++){ let best=null, bd=-1; for(const c of cand){ let d=1e9; for(const p of all.concat(pts)) d=Math.min(d,Math.hypot(c[0]-p[0],c[1]-p[1])); if(d>bd){bd=d; best=c;} } pts.push(best); } return pts; })();
 let relMode = "reel";
@@ -92,9 +98,11 @@ const ACTS = {
   turbine:{n:"Produire avec une éolienne", z:80, kind:"power", rule:k => k<11 ? ["info","Production très faible : vent trop faible"] : k<90 ? ["go","Bonne production"] : ["stop","Arrêt de sécurité : vent trop fort"],
     todo:{go:"Bonne période pour produire ; reportez la maintenance.", info:"Bon moment pour la maintenance : l'éolienne produit peu.", stop:"L'éolienne se met en sécurité automatiquement."}}
 };
-const PLACES = [["Tunis-Carthage (aéroport)",36.8504,10.2156],["Tunis centre",36.80,10.18],["La Marsa",36.878,10.325],["Ben Arous",36.75,10.23],["Hammam-Lif",36.728,10.34],["Mornag (vignes)",36.68,10.29],["Djebel Ressas",36.61,10.33],["Soliman",36.69,10.49],["Grombalia (agrumes)",36.60,10.50],["Korbous",36.82,10.57],["Nabeul",36.455,10.715],["Zaghouan (station)",36.4333,10.0833],["Mohamedia",36.68,10.16]];
+// lieux : ceux du Grand Tunis, ou les stations du domaine servi (national : les 12 aéroports)
+const PLACES = DOM ? (DOM.stations.length ? DOM.stations.map(s => [s.nom, s.lat, s.lon]) : [[`${ZONE} (centre)`, LAT0 + H/2/KY, LON0 + W/2/KX]]) : [["Tunis-Carthage (aéroport)",36.8504,10.2156],["Tunis centre",36.80,10.18],["La Marsa",36.878,10.325],["Ben Arous",36.75,10.23],["Hammam-Lif",36.728,10.34],["Mornag (vignes)",36.68,10.29],["Djebel Ressas",36.61,10.33],["Soliman",36.69,10.49],["Grombalia (agrumes)",36.60,10.50],["Korbous",36.82,10.57],["Nabeul",36.455,10.715],["Zaghouan (station)",36.4333,10.0833],["Mohamedia",36.68,10.16]];
 
-const state = { hour:15, act:"spray", pin:xy(36.68,10.29), pinName:"Mornag (vignes)" };
+const P0 = DOM ? (PLACES.find(p => /Tunis/.test(p[0])) || PLACES[0]) : null;
+const state = { hour:15, act:"spray", pin: P0 ? xy(P0[1],P0[2]) : xy(36.68,10.29), pinName: P0 ? P0[0] : "Mornag (vignes)" };
 function evalAt(actKey, x, y, h){
   const a = ACTS[actKey], [u,v] = wind(x,y,a.z,h), sp = Math.hypot(u,v), g = sp*gustF(x,y,a.z);
   const val = a.kind==="gust" ? kmh(g) : kmh(sp), [cls,title] = a.rule(val);
@@ -304,6 +312,7 @@ function renderTB(){
   document.getElementById("tbhero").innerHTML=`<div class="territory-average"><span>Moyenne du territoire</span><b>${reading[0]} <small>${reading.slice(1).join(" ")}</small></b></div>`;
   renderTerritory(document.getElementById("tbmap"),{
     water:[GULF,HAMM],lakes:LAKES,hills:HILLS,selected:state.pin,
+    width:W,height:H,zone:DOM ? (DOM.national ? "la Tunisie" : DOM.nom) : "le Grand Tunis",seaLabel:DOM ? null : "Golfe de Tunis",
     sample:(x,y)=>wind(x,y,10,state.hour),
     places:PLACES.map(p=>{const point=xy(p[1],p[2]);return {name:p[0],point,speed:fmtSpeed(Math.hypot(...wind(...point,10,state.hour))),selected:Math.hypot(point[0]-state.pin[0],point[1]-state.pin[1])<.01};}),
     select:selectTerritoryPlace
@@ -313,7 +322,7 @@ function renderTB(){
   const selectedPlace=PLACES.findIndex(p=>Math.hypot(xy(p[1],p[2])[0]-state.pin[0],xy(p[1],p[2])[1]-state.pin[1])<.01);
   placeSelector.value=selectedPlace<0?"pin":String(selectedPlace);
   placeSelector.onchange=()=>selectTerritoryPlace(+placeSelector.value);
-  document.getElementById("tblocations").innerHTML=[1,2,5,6,10].map(i=>{const p=PLACES[i],point=xy(p[1],p[2]);return `<button data-territory-place="${i}" aria-pressed="${i===selectedPlace}"><span>${p[0].split(" (")[0]}</span><b>${fmtSpeed(Math.hypot(...wind(...point,10,state.hour)))}</b></button>`;}).join("");
+  document.getElementById("tblocations").innerHTML=[1,2,5,6,10].filter(i=>PLACES[i]).map(i=>{const p=PLACES[i],point=xy(p[1],p[2]);return `<button data-territory-place="${i}" aria-pressed="${i===selectedPlace}"><span>${p[0].split(" (")[0]}</span><b>${fmtSpeed(Math.hypot(...wind(...point,10,state.hour)))}</b></button>`;}).join("");
   document.querySelectorAll("[data-territory-place]").forEach(button=>button.onclick=()=>{const index=button.dataset.territoryPlace,keyboard=button.matches(":focus-visible");selectTerritoryPlace(+index);if(keyboard)document.querySelector(`[data-territory-place="${index}"]`)?.focus();});
   const [pu,pv]=wind(...state.pin,10,state.hour),pointSpeed=Math.hypot(pu,pv),pointRel=sigma(...state.pin,"reel"),[quality,qualityLabel]=relClass(pointRel.s),pointReading=fmtSpeed(pointSpeed).split(" ");
   document.getElementById("tbpoint").innerHTML=`<div class="point-reading"><span>Vent à 10 m du sol · ${state.hour} h</span><strong>${pointReading[0]}<small> ${pointReading.slice(1).join(" ")}</small></strong><p>${arrowSvg(fromDeg(pu,pv),20)}Il vient ${dirName(pu,pv)}</p></div><dl class="point-facts"><div><dt>Rafales estimées</dt><dd>${fmtSpeed(pointSpeed*gustF(...state.pin,10))}</dd></div><div><dt>Fiabilité indicative</dt><dd><span class="point-quality ${quality}">${qualityLabel}</span></dd></div></dl>`;
@@ -461,7 +470,7 @@ function et0Day(x,y,d=0,du=0){ // FAO-56 Penman-Monteith, pas journalier ; du = 
   const Ts=[], RH=[], U=[]; for(let h=0;h<24;h++){ Ts.push(Tair(h,x,y,d)); RH.push(RHair(h,x,y,d)); U.push(Math.hypot(...windD(x,y,10,h,d))*0.748 + du); }
   const Tmax=Math.max(...Ts), Tmin=Math.min(...Ts), T=(Tmax+Tmin)/2, u2=U.reduce((a,b)=>a+b)/24, rh=RH.reduce((a,b)=>a+b)/24, z=elev[idx(x,y)];
   const D=4098*esat(T)/((T+237.3)**2), P=101.3*((293-.0065*z)/293)**5.26, g=.000665*P, es=(esat(Tmax)+esat(Tmin))/2, ea=es*rh/100;
-  const J=(window.ATOM && ATOM.doyJour(d)) || 200+d, phi=36.65*Math.PI/180, dr=1+.033*Math.cos(2*Math.PI*J/365), dl=.409*Math.sin(2*Math.PI*J/365-1.39), ws=Math.acos(-Math.tan(phi)*Math.tan(dl));
+  const J=(window.ATOM && ATOM.doyJour(d)) || 200+d, phi=(DOM ? LAT0 + y/KY : 36.65)*Math.PI/180, dr=1+.033*Math.cos(2*Math.PI*J/365), dl=.409*Math.sin(2*Math.PI*J/365-1.39), ws=Math.acos(-Math.tan(phi)*Math.tan(dl));
   const Ra=24*60/Math.PI*.082*dr*(ws*Math.sin(phi)*Math.sin(dl)+Math.cos(phi)*Math.cos(dl)*Math.sin(ws)), Rs=(window.ATOM && ATOM.rsJour(d)!==null) ? ATOM.rsJour(d) : .72*Ra, Rso=(.75+2e-5*z)*Ra;
   const Rnl=4.903e-9*(((Tmax+273.16)**4+(Tmin+273.16)**4)/2)*(.34-.14*Math.sqrt(ea))*(1.35*Rs/Rso-.35), Rn=.77*Rs-Rnl;
   const et0=(.408*D*Rn + g*900/(T+273)*u2*(es-ea))/(D+g*(1+.34*u2));
@@ -581,9 +590,11 @@ function init3d(){
   if(!window.THREE){ host.insertAdjacentHTML("beforeend",`<div class="nogl"><div class="card"><b>La vue 3D n'a pas pu se charger.</b><br><span class="muted">Vérifiez la connexion, puis rechargez la page.</span></div></div>`); return; }
   let renderer; try{ renderer=new THREE.WebGLRenderer({antialias:true, alpha:true}); }catch(e){ host.insertAdjacentHTML("beforeend",`<div class="nogl"><div class="card"><b>Votre appareil n'affiche pas la 3D.</b><br><span class="muted">Utilisez l'onglet « Mon vent ».</span></div></div>`); return; }
   renderer.setPixelRatio(Math.min(1.75,devicePixelRatio)); renderer.outputColorSpace=THREE.SRGBColorSpace; renderer.toneMapping=THREE.ACESFilmicToneMapping; renderer.toneMappingExposure=1.15; host.prepend(renderer.domElement);
-  const scene=new THREE.Scene(), cam=new THREE.PerspectiveCamera(45,host.clientWidth/host.clientHeight,.1,500); let EX=11/1000, AW3=null; const OBJ3={stations:[],turb:[]};
-  scene.fog=new THREE.FogExp2(0x21382e,.004); scene.add(new THREE.HemisphereLight(0xeaf1de,0x344838,2.1)); const sun=new THREE.DirectionalLight(0xfff1cf,2.4); sun.position.set(-30,40,20); scene.add(sun);
-  const SEG=[136,112], geo=new THREE.PlaneGeometry(W,H,SEG[0],SEG[1]); geo.rotateX(-Math.PI/2);
+  // K3 : échelle de la caméra, du brouillard et des repères quand le domaine dépasse le Grand Tunis (national : × 12)
+  const K3 = DOM ? Math.max(W, H) / 68 : 1;
+  const scene=new THREE.Scene(), cam=new THREE.PerspectiveCamera(45,host.clientWidth/host.clientHeight,.1,500*K3); let EX=11/1000, AW3=null; const OBJ3={stations:[],turb:[]};
+  scene.fog=new THREE.FogExp2(0x21382e,.004/K3); scene.add(new THREE.HemisphereLight(0xeaf1de,0x344838,2.1)); const sun=new THREE.DirectionalLight(0xfff1cf,2.4); sun.position.set(-30,40,20); scene.add(sun);
+  const SEG=DOM ? [NX, NY] : [136,112], geo=new THREE.PlaneGeometry(W,H,SEG[0],SEG[1]); geo.rotateX(-Math.PI/2);
   const pos=geo.attributes.position, cols=new Float32Array(pos.count*3);
   for(let i=0;i<pos.count;i++){ const x=pos.getX(i)+W/2, y=H/2-pos.getZ(i), k=idx(x,y); pos.setY(i, wat[k]?-.02:elev[k]*EX); pos.setX(i,x-W/2); pos.setZ(i,-(y-H/2)); }
   geo.computeVertexNormals(); geo.setAttribute("color",new THREE.BufferAttribute(cols,3));
@@ -596,16 +607,16 @@ function init3d(){
   colorTerrain();
   // particules
   const N=Math.min(2800,Math.max(800,Math.round(host.clientWidth*host.clientHeight/260))), pp=new Float32Array(N*3), pc=new Float32Array(N*3), P=[]; const pg=new THREE.BufferGeometry(); pg.setAttribute("position",new THREE.BufferAttribute(pp,3)); pg.setAttribute("color",new THREE.BufferAttribute(pc,3));
-  const pts=new THREE.Points(pg,new THREE.PointsMaterial({size:.16, vertexColors:true, transparent:true, opacity:.8, depthWrite:false})); scene.add(pts);
+  const pts=new THREE.Points(pg,new THREE.PointsMaterial({size:.16*K3, vertexColors:true, transparent:true, opacity:.8, depthWrite:false})); scene.add(pts);
   for(let i=0;i<N;i++) P.push({x:Math.random()*W, y:Math.random()*H, a:Math.random()*90|0});
   // stations et éoliennes
-  for(const s of STATIONS){ const k=idx(...s.p), m=new THREE.Mesh(new THREE.CylinderGeometry(.18,.18,1.2,10),new THREE.MeshLambertMaterial({color:0x3a6fd2})); m.position.set(s.p[0]-W/2,elev[k]*EX+.6,-(s.p[1]-H/2)); scene.add(m); OBJ3.stations.push({m,p:s.p}); }
+  for(const s of STATIONS){ const k=idx(...s.p), m=new THREE.Mesh(new THREE.CylinderGeometry(.18*K3,.18*K3,1.2*K3,10),new THREE.MeshLambertMaterial({color:0x3a6fd2})); m.position.set(s.p[0]-W/2,elev[k]*EX+.6*K3,-(s.p[1]-H/2)); scene.add(m); OBJ3.stations.push({m,p:s.p}); }
   for(const t of TURB){ const k=idx(...t.p), m=new THREE.Mesh(new THREE.CylinderGeometry(.06,.1,80*EX*4,8),new THREE.MeshLambertMaterial({color:0xf2f2f2})); m.position.set(t.p[0]-W/2,elev[k]*EX+80*EX*2,-(t.p[1]-H/2)); scene.add(m); OBJ3.turb.push({m,p:t.p}); }
   const pin=new THREE.Mesh(new THREE.ConeGeometry(.5,1.6,16),new THREE.MeshLambertMaterial({color:0x0a6e7d})); pin.rotation.x=Math.PI; pin.visible=false; scene.add(pin);
-  const labels=[...STATIONS.map(s=>({t:s.n,p:s.p,st:true})), {t:"Djebel Ressas",p:xy(36.61,10.33)},{t:"Golfe de Tunis",p:xy(36.84,10.42)},{t:"Tunis",p:xy(36.80,10.18)},{t:"Parc éolien virtuel",p:xy(36.612,10.33)}]
+  const labels=[...STATIONS.map(s=>({t:s.n,p:s.p,st:true})), ...(DOM ? [] : [{t:"Djebel Ressas",p:xy(36.61,10.33)},{t:"Golfe de Tunis",p:xy(36.84,10.42)},{t:"Tunis",p:xy(36.80,10.18)}]),{t:"Parc éolien virtuel",p:xy(36.612,10.33)}]
     .map(l=>{ const d=document.createElement("div"); d.className="lbl3d"+(l.st?" st":""); d.textContent=l.t; host.appendChild(d); const k=idx(...l.p); return {d, p:l.p, st:!!l.st, v:new THREE.Vector3(l.p[0]-W/2, (wat[k]?0:elev[k]*EX)+1.6, -(l.p[1]-H/2))}; });
-  const ctl=new THREE.OrbitControls(cam,renderer.domElement); ctl.enableDamping=true; ctl.dampingFactor=.09; ctl.screenSpacePanning=true; ctl.zoomSpeed=.8; ctl.panSpeed=.75; ctl.maxPolarAngle=Math.PI*.47; ctl.minDistance=12; ctl.maxDistance=280;
-  const home=()=>{ cam.position.set(-20,68,82).multiplyScalar(Math.max(1,.95/cam.aspect)); ctl.target.set(0,2,0); ctl.update(); }; home();
+  const ctl=new THREE.OrbitControls(cam,renderer.domElement); ctl.enableDamping=true; ctl.dampingFactor=.09; ctl.screenSpacePanning=true; ctl.zoomSpeed=.8; ctl.panSpeed=.75; ctl.maxPolarAngle=Math.PI*.47; ctl.minDistance=12*(DOM ? 2 : 1); ctl.maxDistance=280*K3;
+  const home=()=>{ cam.position.set(-20,68,82).multiplyScalar(Math.max(1,.95/cam.aspect)*K3); ctl.target.set(0,2,0); ctl.update(); }; home();
   document.getElementById("recenter").onclick=home;
   const rb=document.getElementById("relbtn"); rb.onclick=()=>{ relOn=!relOn; rb.setAttribute("aria-pressed",relOn); rb.textContent=relOn?"Masquer la fiabilité":"Afficher la fiabilité"; colorTerrain(); };
   const hs=document.getElementById("h3"); hs.oninput=()=>{ z3=H3[+hs.value]; document.getElementById("h3txt").textContent=`${z3.toLocaleString("fr-FR")} m`;if(window.ATOM?.workspace)publishWorkspace(); };
@@ -681,7 +692,7 @@ function init3d(){
       if(labelRects.some(b=>bounds.x<b.x+b.w&&bounds.x+bounds.w>b.x&&bounds.y<b.y+b.h&&bounds.y+bounds.h>b.y))vis=false;
       if(vis&&!l.cache)labelRects.push(bounds);
       l.d.hidden=!vis||!!l.cache; if(vis){ l.d.style.left=((tmp.x+1)/2*r.width)+"px"; l.d.style.top=((1-tmp.y)/2*r.height)+"px"; } } }
-  if(window.ATOM && ATOM.vue3d) try{ AW3=ATOM.vue3d({THREE, scene, cam, ctl, renderer, host, mesh, geo, pos, pts, pg, pp, pc, P, N, labels, objets:OBJ3, pin, hring, hs, H3, NX, NY, G, ex:()=>EX, setEx:v=>{EX=v}, z3:()=>z3, cutObjs:()=>cutObjs, wind, sigma, relClass, idx, elev, wat, W, H, STATIONS, TURB, ANEO, state, speedColor, kmh, fmtSpeed, dirName, fromDeg, nearestName, openSheet, setHour}); }catch(e){ console.error("vue 3D complète", e); AW3=null; }
+  if(window.ATOM && ATOM.vue3d) try{ AW3=ATOM.vue3d({THREE, scene, cam, ctl, renderer, host, mesh, geo, pos, pts, pg, pp, pc, P, N, labels, objets:OBJ3, pin, hring, hs, H3, NX, NY, G, ex:()=>EX, setEx:v=>{EX=v}, z3:()=>z3, cutObjs:()=>cutObjs, wind, sigma, relClass, idx, elev, wat, W, H, STATIONS, TURB, ANEO, state, speedColor, kmh, fmtSpeed, dirName, fromDeg, nearestName, openSheet, setHour, echelle:K3}); }catch(e){ console.error("vue 3D complète", e); AW3=null; }
   ATOM.sceneStats=()=>({...stats,drawCalls:renderer.info.render.calls,triangles:renderer.info.render.triangles,geometries:renderer.info.memory.geometries,textures:renderer.info.memory.textures,pixelRatio:renderer.getPixelRatio()});
   ATOM.invalidateScene=schedule;
   ctl.addEventListener("change",schedule);
@@ -701,8 +712,8 @@ const ROLES = {
   eolien:{n:"Exploitant éolien", auto:false, home:"eolien", d:"Production prévue, rotor, gisement"},
   admin:{n:"Administrateur", auto:false, home:"admin", d:"Comptes, rôles, clés d'API"}
 };
-const ACCESS = { monvent:"*", carte3d:"*", alertes:"*", agri:["agri","admin"], tableau:["eolien","admin"], eolien:["eolien","admin"], fiabilite:["eolien","admin"], admin:["admin"] };
-const TABNAME = { monvent:"Mon vent", agri:"Agriculteur", tableau:"Tableau de bord", carte3d:"Carte 3D", alertes:"Alertes", eolien:"Éolien", fiabilite:"Fiabilité", admin:"Administration" };
+const ACCESS = { monvent:"*", carte3d:"*", alertes:"*", agri:["agri","admin"], tableau:["eolien","admin"], eolien:["eolien","admin"], fiabilite:["eolien","admin"], admin:["admin"], reseau:["admin"] };
+const TABNAME = { monvent:"Mon vent", agri:"Agriculteur", tableau:"Tableau de bord", carte3d:"Carte 3D", alertes:"Alertes", eolien:"Éolien", fiabilite:"Fiabilité", admin:"Administration", reseau:"Réseau ANEO" };
 const store = { get(k,d){ try{ const v=localStorage.getItem(k); return v?JSON.parse(v):d; }catch(e){ return d; } }, set(k,v){ try{ localStorage.setItem(k,JSON.stringify(v)); }catch(e){} } };
 let USERS = store.get("aw-users", null);
 if(!Array.isArray(USERS)){ USERS = [
@@ -820,7 +831,9 @@ document.getElementById("k-add").onclick=()=>{ const name=document.getElementByI
 
 function show(v){ if(!document.getElementById("v-"+v)) v="monvent";
   if(!allowed(v)){ toast(me ? `L'espace « ${TABNAME[v]} » n'est pas inclus dans votre rôle (${ROLES[me.role].n}).` : `Connectez-vous pour accéder à l'espace « ${TABNAME[v]} ».`); if(!me) openAuth("login"); v = me ? ROLES[me.role].home : "monvent"; }
-  if(v==="admin") renderAdmin();if(v==="tableau")renderTB(); document.querySelectorAll("section.view").forEach(s=>s.classList.toggle("on",s.id==="v-"+v)); document.querySelectorAll("nav.tabs a").forEach(a=>a.setAttribute("aria-current",a.dataset.v===v?"page":"false")); sheet.hidden=true; if(v==="carte3d")setSceneMode(sceneMode); currentView=v; if(window.ATOM?.workspace) publishWorkspace(); }
+  if(v==="admin") renderAdmin();if(v==="tableau")renderTB();
+  // accroche « reseau-aneo » : onglet d'administration Réseau ANEO (engine/reseau-aneo.js, habillage provisoire)
+  if(v==="reseau" && window.ATOM?.reseauAneo) ATOM.reseauAneo.afficher(); document.querySelectorAll("section.view").forEach(s=>s.classList.toggle("on",s.id==="v-"+v)); document.querySelectorAll("nav.tabs a").forEach(a=>a.setAttribute("aria-current",a.dataset.v===v?"page":"false")); sheet.hidden=true; if(v==="carte3d")setSceneMode(sceneMode); currentView=v; if(window.ATOM?.workspace) publishWorkspace(); }
 function navigate(v,replace=false){
   show(v);
   try{if(location.hash!=="#"+currentView)history[replace?"replaceState":"pushState"](null,"","#"+currentView);}catch(_){}
@@ -921,7 +934,7 @@ document.getElementById("b-search").onclick=palOpen;
 document.addEventListener("keydown", e=>{ if((e.ctrlKey||e.metaKey) && e.key.toLowerCase()==="k"){ e.preventDefault(); pal.hidden?palOpen():palClose(); } else if(e.key==="/" && !/input|select|textarea/i.test(document.activeElement.tagName) && pal.hidden){ e.preventDefault(); palOpen(); } else if(e.key==="Escape"){ palClose(); closeAuth(); } });
 
 // ---------------- visite guidée ----------------
-const TOUR=[["Le vent partout, même sans capteur","ATOM Wind calcule le vent sur tout le Grand Tunis, du sol jusqu'à 1 000 m, à partir des stations météo et de la météo de grande échelle.",'<svg width="200" height="90" viewBox="0 0 200 90"><path d="M10 40c40-25 70 15 110-5s60 5 70 0M10 60c40-20 80 15 120-5s40 5 60 0" stroke="var(--accent)" stroke-width="4" fill="none" stroke-linecap="round"/></svg>'],
+const TOUR=[["Le vent partout, même sans capteur",DOM ? "ATOM Wind calcule le vent sur toute la Tunisie, du sol jusqu'à 1 000 m, à partir des stations météo et de la météo de grande échelle." : "ATOM Wind calcule le vent sur tout le Grand Tunis, du sol jusqu'à 1 000 m, à partir des stations météo et de la météo de grande échelle.",'<svg width="200" height="90" viewBox="0 0 200 90"><path d="M10 40c40-25 70 15 110-5s60 5 70 0M10 60c40-20 80 15 120-5s40 5 60 0" stroke="var(--accent)" stroke-width="4" fill="none" stroke-linecap="round"/></svg>'],
   ["Une question, une réponse","Placez votre position, dites ce que vous voulez faire, et ATOM Wind répond tout de suite : vert, vous pouvez ; orange, attention ; rouge, c'est déconseillé.",'<svg width="200" height="90" viewBox="0 0 200 90"><circle cx="50" cy="45" r="22" fill="var(--go)"/><circle cx="100" cy="45" r="22" fill="var(--warn)"/><circle cx="150" cy="45" r="22" fill="var(--stop)"/></svg>'],
   ["Toujours dire si c'est sûr","Chaque valeur indique sa fiabilité. Loin des stations, elle est plus faible : la carte devient plus pâle et l'erreur probable est affichée.",'<svg width="200" height="90" viewBox="0 0 200 90"><rect x="20" y="25" width="50" height="40" rx="8" fill="var(--go)"/><rect x="75" y="25" width="50" height="40" rx="8" fill="var(--warn)" opacity=".7"/><rect x="130" y="25" width="50" height="40" rx="8" fill="var(--stop)" opacity=".35"/></svg>']];
 const tourEl=document.getElementById("tour");
@@ -945,7 +958,7 @@ async function loadLeaflet(){
   });
   await leafletPromise;
 }
-function reliefDataURL(){ const RW=340, RH=280, c=document.createElement("canvas"); c.width=RW; c.height=RH; const g=c.getContext("2d"), img=g.createImageData(RW,RH);
+function reliefDataURL(){ const RW=DOM?Math.max(120,Math.round(420*W/Math.max(W,H))):340, RH=DOM?Math.max(120,Math.round(420*H/Math.max(W,H))):280, c=document.createElement("canvas"); c.width=RW; c.height=RH; const g=c.getContext("2d"), img=g.createImageData(RW,RH);
   for(let j=0;j<RH;j++) for(let i=0;i<RW;i++){ const x=(i+.5)/RW*W, y=(1-(j+.5)/RH)*H, k=idx(x,y), o=(j*RW+i)*4; let col, a=150;
     if(wat[k]){ col=[0,0,0]; a=0; } else { const t=Math.min(1,elev[k]/700); col=[150+40*t, 185-55*t, 120-30*t]; const kE=idx(x+.4,y), sh=Math.max(-.3,Math.min(.3,(elev[kE]-elev[k])*.004)); col=col.map(q=>q*(1-sh)); a=Math.round(70+120*Math.min(1,t*1.6)); }
     img.data[o]=col[0]; img.data[o+1]=col[1]; img.data[o+2]=col[2]; img.data[o+3]=a; }
@@ -970,20 +983,20 @@ async function initLeaflet(){
   if(leafletStarting||lmap)return;leafletStarting=true;
   try{ await loadLeaflet(); }catch(e){leafletStarting=false;setBasemap("relief");toast("Le fond de carte est indisponible. Le relief reste affiché ; vous pouvez réessayer « Vraie carte ».");console.error(e);return;}
   const bounds=L.latLngBounds(toLL(0,0), toLL(W,H));
-  lmap=L.map("lmap",{zoomControl:true, minZoom:8, maxZoom:16, maxBounds:bounds.pad(.4), zoomSnap:.25}).fitBounds(bounds,{padding:[4,4]});leafletStarting=false;
+  lmap=L.map("lmap",{zoomControl:true, minZoom:DOM ? 5 : 8, maxZoom:16, maxBounds:bounds.pad(.4), zoomSnap:.25}).fitBounds(bounds,{padding:[4,4]});leafletStarting=false;
   const tiles=L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:19, attribution:'© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'}).addTo(lmap);
   tiles.on("tileerror",()=>{ if(tilesFailed) return; tilesFailed=true; const n=document.getElementById("lnotice"); n.hidden=false; n.innerHTML='Les rues OpenStreetMap sont indisponibles. Le vent reste visible ; vous pouvez choisir le fond Relief.<button aria-label="Fermer">×</button>'; n.querySelector("button").onclick=ev=>{ ev.stopPropagation(); n.hidden=true; }; });
   L.imageOverlay(reliefDataURL(), bounds, {opacity:.75, interactive:false}).addTo(lmap);
   L.rectangle(bounds,{color:"#0a6e7d", weight:2, fill:false, dashArray:"6 6", interactive:false}).addTo(lmap);
   for(const st of STATIONS) L.circleMarker(toLL(...st.p),{radius:7, color:"#fff", weight:2, fillColor:"#3a6fd2", fillOpacity:1}).addTo(lmap).bindTooltip(`Station ${st.n} (INM)`);
   for(const p of PLACES){ const ll=[p[1],p[2]]; L.circleMarker(ll,{radius:3, color:"#14232b", weight:1, fillColor:"#fff", fillOpacity:1, interactive:false}).addTo(lmap).bindTooltip(p[0].split(" (")[0],{permanent:true, direction:"right", offset:[4,0], className:"llbl"}); }
-  const lblZoom=()=>document.getElementById("lmap").classList.toggle("lmap-nolbl", lmap.getZoom() < (innerWidth<700?11:10)); lmap.on("zoomend", lblZoom); lblZoom();
+  const lblZoom=()=>document.getElementById("lmap").classList.toggle("lmap-nolbl", lmap.getZoom() < (DOM ? 7 : innerWidth<700?11:10)); lmap.on("zoomend", lblZoom); lblZoom();
   lwind=new (makeWindLayer())(); lwind.addTo(lmap); syncLeafletPin();
-  lmap.on("click", e=>{ const [x,y]=toXY(e.latlng.lat,e.latlng.lng); if(x<0||x>W||y<0||y>H){ toast("Ce point est en dehors de la zone calculée (Grand Tunis)."); return; } placePin(x,y); });
+  lmap.on("click", e=>{ const [x,y]=toXY(e.latlng.lat,e.latlng.lng); if(x<0||x>W||y<0||y>H){ toast(DOM ? `Ce point est en dehors de la zone calculée (${ZONE}).` : "Ce point est en dehors de la zone calculée (Grand Tunis)."); return; } placePin(x,y); });
   lmap.on("mousemove", e=>{ const [x,y]=toXY(e.latlng.lat,e.latlng.lng); if(x<0||x>W||y<0||y>H){ hideTip("map"); return; } const z=ACTS[state.act].z, k=idx(x,y), [u,v]=wind(x,y,z,state.hour), deg=(fromDeg(u,v)+180)%360, [,rl]=relClass(sigma(x,y).s);
     showTip(`<div style="display:flex;gap:8px;align-items:center"><b>${fmtSpeed(Math.hypot(u,v))}</b>${arrowSvg(deg,18,"currentColor")}</div>Vent ${dirName(u,v)}, à ${z} m du sol<br><span class="sub">${wat[k]===1?"En mer":`Sol à ${Math.round(elev[k])} m`} · fiabilité ${rl} · près de ${nearestName([x,y])}</span>`, e.originalEvent.clientX, e.originalEvent.clientY, "map"); });
   lmap.on("mouseout", ()=>hideTip("map"));
-  lmap.on("locationfound", e=>{ const [x,y]=toXY(e.latlng.lat,e.latlng.lng); if(x<0||x>W||y<0||y>H){ toast("Vous êtes en dehors du Grand Tunis : ATOM Wind ne calcule pas encore votre zone."); return; } placePin(x,y); syncLeafletPin(true); toast("Position trouvée."); });
+  lmap.on("locationfound", e=>{ const [x,y]=toXY(e.latlng.lat,e.latlng.lng); if(x<0||x>W||y<0||y>H){ toast(DOM ? "Vous êtes en dehors de la zone calculée : ATOM Wind ne calcule pas encore votre zone." : "Vous êtes en dehors du Grand Tunis : ATOM Wind ne calcule pas encore votre zone."); return; } placePin(x,y); syncLeafletPin(true); toast("Position trouvée."); });
   lmap.on("locationerror", ()=>toast("Position indisponible : autorisez la localisation ou choisissez votre ville dans la liste."));
 }
 function setBasemap(b){ const osm=b==="osm"; document.getElementById("bm-relief").setAttribute("aria-pressed",!osm); document.getElementById("bm-osm").setAttribute("aria-pressed",osm);

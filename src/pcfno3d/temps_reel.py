@@ -17,16 +17,24 @@ courte echeance, heures a venir = prevision. Les 11 niveaux de pression d'ERA5 (
 existent dans GFS. Le modele a appris avec ERA5 : l'ecart ERA5 / GFS n'est pas corrige tant que
 l'affinage OS7 sur les previsions GFS archivees n'est pas fait.
 
-Stations : METAR de Tunis-Carthage (aviationweather.gov, comme pcfno3d.metar) et SYNOP de
-Zaghouan (60729) et Nabeul (60728) (OGIMET), la mesure la plus proche a 30 min au plus, comme
+Stations : celles du domaine SERVI (data_dir/stations.json, `stations_direct`) — Grand Tunis : METAR de
+Tunis-Carthage (aviationweather.gov, comme pcfno3d.metar) et SYNOP de Zaghouan (60729) et Nabeul (60728)
+(OGIMET) ; national : les 12 aeroports METAR. La mesure la plus proche a 30 min au plus, comme
 `stations_reelles.obs_a`. La surface hors stations (T, p, HR, rho) vient des champs GFS ramenes
 au relief de la grille ; seul le vent des points d'entree compte pour le modele (les autres
 cellules sont masquees).
+
+Domaine national (~580 mailles de 0,25 deg contre 16 pour le Grand Tunis) : Open-Meteo est interroge par
+paquets de PAQUET_MAILLES mailles (adresse courte), avec une pause entre paquets sous la limite gratuite par
+minute (PCFNO3D_OPEN_METEO_PAUSE_S pour l'imposer ; aucune pause avec une cle d'abonnement
+PCFNO3D_OPEN_METEO_CLE, jamais ecrite dans le depot ni dans les journaux).
 """
 from __future__ import annotations
 
 import json
 import math
+import os
+import re
 import time
 import urllib.parse
 import urllib.request
@@ -49,6 +57,9 @@ NOEUD = 0.514444
 SYNOP_CODES = {"60729": "INM60729", "60728": "INM60728"}
 UA = {"User-Agent": "pcfno3d-atom-wind/1.0 (PFE Tukhnanutha)"}
 FENETRE = pd.Timedelta(minutes=30)
+PAQUET_MAILLES = 100            # mailles par requete Open-Meteo (le Grand Tunis en a 16 : une seule requete)
+APPELS_PAR_MINUTE = 500.0       # Open-Meteo gratuit : 600 appels / min, une maille = un appel x (variables / 10)
+ICAO = re.compile(r"^[A-Z]{4}$")
 
 
 def _contexte_tls():
@@ -89,17 +100,52 @@ def _vars_gfs() -> list[str]:
     return v
 
 
+def n_mailles(geom) -> int:
+    """Nombre de mailles du forcage (Grand Tunis 16, national ~580) : autant de points Open-Meteo."""
+    f = getattr(geom, "forcage", None)
+    return 0 if f is None else int(len(f.lat) * len(f.lon))
+
+
+def _url(base: str, q: dict) -> str:
+    """Adresse Open-Meteo ; avec une cle d'abonnement (PCFNO3D_OPEN_METEO_CLE), le serveur client."""
+    cle = os.environ.get("PCFNO3D_OPEN_METEO_CLE")
+    if cle:
+        base = base.replace("://api.", "://customer-api.").replace("://ensemble-api.", "://customer-ensemble-api.")
+        q = {**q, "apikey": cle}
+    return f"{base}?{urllib.parse.urlencode(q)}"
+
+
+def _pause(n_points: int, poids: float, lire) -> None:
+    """Pause entre deux paquets : sous APPELS_PAR_MINUTE (requetes reelles, sans cle d'abonnement)."""
+    if lire is not None or os.environ.get("PCFNO3D_OPEN_METEO_CLE"):
+        return
+    impose = os.environ.get("PCFNO3D_OPEN_METEO_PAUSE_S")
+    time.sleep(float(impose) if impose else 60.0 * n_points * poids / APPELS_PAR_MINUTE)
+
+
+def _points(base: str, q: dict, la: np.ndarray, lo: np.ndarray, lire, poids: float) -> list[dict]:
+    """Reponses Open-Meteo des mailles (meme ordre que la.ravel()), par paquets de PAQUET_MAILLES."""
+    lat, lon = la.ravel(), lo.ravel()
+    out: list[dict] = []
+    for k, i in enumerate(range(0, lat.size, PAQUET_MAILLES)):
+        j = min(i + PAQUET_MAILLES, lat.size)
+        if k:
+            _pause(j - i, poids, lire)
+        qq = {"latitude": ",".join(f"{x:.4f}" for x in lat[i:j]),
+              "longitude": ",".join(f"{x:.4f}" for x in lon[i:j]), **q}
+        d = json.loads((lire or _get)(_url(base, qq)))
+        out += d if isinstance(d, list) else [d]
+    return out
+
+
 def telecharger_gfs(lat: np.ndarray, lon: np.ndarray, debut: str, fin: str,
                     lire=None) -> dict:
     """Champs horaires GFS aux mailles (lat x lon) de `debut` a `fin` (AAAA-MM-JJ, UTC).
     Renvoie {"temps": int64 s, "elevation": (ny, nx), <variable>: (T, ny, nx)}."""
     la, lo = np.meshgrid(lat, lon, indexing="ij")
-    q = {"latitude": ",".join(f"{x:.4f}" for x in la.ravel()),
-         "longitude": ",".join(f"{x:.4f}" for x in lo.ravel()),
-         "hourly": ",".join(_vars_gfs()), "models": MODELE_GFS, "wind_speed_unit": "ms",
+    q = {"hourly": ",".join(_vars_gfs()), "models": MODELE_GFS, "wind_speed_unit": "ms",
          "timezone": "GMT", "cell_selection": "nearest", "start_date": debut, "end_date": fin}
-    d = json.loads((lire or _get)(f"{OPEN_METEO}?{urllib.parse.urlencode(q)}"))
-    d = d if isinstance(d, list) else [d]
+    d = _points(OPEN_METEO, q, la, lo, lire, poids=len(_vars_gfs()) / 10.0)
     if len(d) != la.size:
         raise ValueError(f"Open-Meteo : {len(d)} points recus pour {la.size} mailles")
     temps = pd.to_datetime(d[0]["hourly"]["time"]).values.astype("datetime64[s]").astype(np.int64)
@@ -198,12 +244,46 @@ def _boucher(a: np.ndarray) -> np.ndarray:
 
 
 # ---------------------------------------------------------------------- stations
+def stations_direct(geom) -> tuple[list[str], dict[str, str]]:
+    """(identifiants METAR, {bloc SYNOP : code}) des stations du domaine servi (data_dir/stations.json) ;
+    sans fichier : celles du Grand Tunis (DTTA, SYNOP 60729 / 60728)."""
+    try:
+        from .stations_reelles import cellules_codes
+        codes = list(cellules_codes(geom))
+    except (FileNotFoundError, OSError, KeyError, ValueError):
+        codes = []
+    if not codes:
+        return ["DTTA"], dict(SYNOP_CODES)
+    return ([c for c in codes if ICAO.match(c)],
+            {c[3:]: c for c in codes if c.startswith("INM") and c[3:].isdigit()})
+
+
+def description_stations(geom) -> str:
+    """« METAR DTTA (aviationweather.gov), SYNOP 60729 / 60728 (OGIMET) » pour le domaine servi."""
+    metar, synop = stations_direct(geom)
+    parts = [f"METAR {', '.join(metar)} (aviationweather.gov)"] if metar else []
+    if synop:
+        parts.append(f"SYNOP {' / '.join(synop)} (OGIMET)")
+    return ", ".join(parts) or "aucune station"
+
+
 def metar_dtta(heures: int = 30, lire=None) -> pd.DataFrame:
-    corps = (lire or _get)(f"{URL_METAR}?ids=DTTA&format=json&hours={int(heures)}")
+    return metar(["DTTA"], heures, lire)
+
+
+def metar(ids, heures: int = 30, lire=None) -> pd.DataFrame:
+    """Derniers METAR des aeroports `ids` (aviationweather.gov, une requete pour tous)."""
+    ids = list(ids)
+    if not ids:
+        return pd.DataFrame(columns=["station_id", "t", "wind_u_m_s", "wind_v_m_s"])
+    corps = (lire or _get)(f"{URL_METAR}?ids={','.join(ids)}&format=json&hours={int(heures)}")
     lignes = []
     for o in (json.loads(corps) if corps.strip() else []):
         t = o.get("reportTime") or o.get("obsTime")
         if t is None or o.get("wspd") is None:
+            continue
+        code = o.get("icaoId") or (ids[0] if len(ids) == 1 else None)
+        if code not in ids:
             continue
         t = (pd.Timestamp(t, unit="s") if isinstance(t, (int, float)) else
              pd.Timestamp(t).tz_convert("UTC").tz_localize(None))
@@ -214,17 +294,19 @@ def metar_dtta(heures: int = 30, lire=None) -> pd.DataFrame:
             u, v = _uv(ff, float(o["wdir"]))
         else:
             continue                                   # direction variable : inconnue
-        lignes.append({"station_id": "DTTA", "t": t, "wind_u_m_s": float(u), "wind_v_m_s": float(v)})
+        lignes.append({"station_id": code, "t": t, "wind_u_m_s": float(u), "wind_v_m_s": float(v)})
     return pd.DataFrame(lignes, columns=["station_id", "t", "wind_u_m_s", "wind_v_m_s"])
 
 
-def lire_synop(texte: str) -> pd.DataFrame:
-    """Lignes OGIMET « IIiii,AAAA,MM,JJ,HH,mm,AAXX ... » -> vent (u, v) des stations connues.
-    Groupe Nddff (et 00fff si ff >= 99) ; iw (dernier chiffre de YYGGi) : 0-1 m/s, 3-4 noeuds."""
+def lire_synop(texte: str, codes: dict[str, str] | None = None) -> pd.DataFrame:
+    """Lignes OGIMET « IIiii,AAAA,MM,JJ,HH,mm,AAXX ... » -> vent (u, v) des stations connues (`codes` :
+    {bloc : code}, defaut SYNOP_CODES). Groupe Nddff (et 00fff si ff >= 99) ; iw (dernier chiffre de YYGGi) :
+    0-1 m/s, 3-4 noeuds."""
+    codes = SYNOP_CODES if codes is None else codes
     lignes = []
     for ligne in texte.splitlines():
         champs = ligne.strip().split(",")
-        if len(champs) < 7 or champs[0] not in SYNOP_CODES:
+        if len(champs) < 7 or champs[0] not in codes:
             continue
         try:
             t = pd.Timestamp(int(champs[1]), int(champs[2]), int(champs[3]), int(champs[4]), int(champs[5]))
@@ -250,18 +332,19 @@ def lire_synop(texte: str) -> pd.DataFrame:
             continue                               # variable : direction inconnue
         else:
             u, v = _uv(vitesse, dd * 10.0)
-        lignes.append({"station_id": SYNOP_CODES[champs[0]], "t": t,
+        lignes.append({"station_id": codes[champs[0]], "t": t,
                        "wind_u_m_s": float(u), "wind_v_m_s": float(v)})
     return pd.DataFrame(lignes, columns=["station_id", "t", "wind_u_m_s", "wind_v_m_s"])
 
 
-def synop_ogimet(debut: datetime, fin: datetime, lire=None) -> pd.DataFrame:
+def synop_ogimet(debut: datetime, fin: datetime, lire=None, codes: dict[str, str] | None = None) -> pd.DataFrame:
     lire = lire or _get
+    codes = SYNOP_CODES if codes is None else codes
     tables = []
-    for bloc in SYNOP_CODES:
+    for bloc in codes:
         url = (f"{OGIMET}?block={bloc}&begin={debut:%Y%m%d%H%M}&end={fin:%Y%m%d%H%M}")
         try:
-            tables.append(lire_synop(lire(url).decode("utf-8", "replace")))
+            tables.append(lire_synop(lire(url).decode("utf-8", "replace"), codes))
         except Exception:                          # noqa: BLE001  (une station muette n'arrete rien)
             continue
     return pd.concat(tables, ignore_index=True) if tables else \
@@ -347,14 +430,43 @@ def entree_production_active(wf) -> bool:
 
 
 class SourceDirect:
-    """Les champs GFS et les mesures d'une journee, rafraichis au plus toutes les `ttl` s."""
+    """Les champs GFS et les mesures d'une journee : mesures rafraichies au plus toutes les `ttl_s` s, champs GFS
+    toutes les `ttl_gfs_s` s (defaut : ttl_s). `fenetre_commune` (domaine national) : les champs d'aujourd'hui
+    a apres-demain viennent d'UN telechargement (veille a J+3) au lieu d'un par journee."""
 
-    def __init__(self, geom, ttl_s: float = 1800.0, lire=None) -> None:
+    def __init__(self, geom, ttl_s: float = 1800.0, lire=None, ttl_gfs_s: float | None = None,
+                 fenetre_commune: bool = False) -> None:
         if geom.forcage is None:
             raise ValueError("temps reel : modele sans forcage ERA5 (paths.forcage_era5)")
         self.geom, self.ttl, self.lire = geom, ttl_s, lire
+        self.ttl_gfs = ttl_s if ttl_gfs_s is None else float(ttl_gfs_s)
+        self.fenetre_commune = fenetre_commune
+        self.metar_ids, self.synop_codes = stations_direct(geom)
         self._cache: dict = {}
+        self._cache_gfs: dict = {}
         self._cache_gefs: dict = {}
+
+    def _fenetre(self, j: pd.Timestamp) -> tuple[str, str]:
+        """(debut, fin) des champs GFS d'une journee : la veille au lendemain, ou la fenetre commune."""
+        if self.fenetre_commune:
+            auj = (pd.Timestamp.now(tz="UTC").tz_localize(None) + pd.Timedelta(hours=1)).normalize()
+            d0, d1 = auj - pd.Timedelta(days=1), auj + pd.Timedelta(days=3)
+            if d0 <= j - pd.Timedelta(days=1) and j + pd.Timedelta(days=1) <= d1:
+                return d0.strftime("%Y-%m-%d"), d1.strftime("%Y-%m-%d")
+        return (j - pd.Timedelta(days=1)).strftime("%Y-%m-%d"), (j + pd.Timedelta(days=1)).strftime("%Y-%m-%d")
+
+    def _champs(self, debut: str, fin: str) -> dict:
+        e = self._cache_gfs.get((debut, fin))
+        if e is not None and time.time() - e["obtenu"] < self.ttl_gfs:
+            return e
+        g = self.geom
+        c = telecharger_gfs(g.forcage.lat, g.forcage.lon, debut, fin, lire=self.lire)
+        temps, scal, u, v = forcage_gfs(c, g.forcage.hauteurs)
+        e = {"forcage": ForcageDirect(temps, scal, u, v, g.forcage), "champs": c, "obtenu": time.time()}
+        self._cache_gfs[(debut, fin)] = e
+        while len(self._cache_gfs) > 3:
+            self._cache_gfs.pop(next(iter(self._cache_gfs)))
+        return e
 
     def journee(self, jour_utc: str) -> dict:
         """{"forcage": ForcageDirect, "champs": c, "obs": DataFrame, "obtenu": epoch}."""
@@ -362,22 +474,19 @@ class SourceDirect:
         if e is not None and time.time() - e["obtenu"] < self.ttl:
             return e
         j = pd.Timestamp(jour_utc)
-        debut, fin = (j - pd.Timedelta(days=1)).strftime("%Y-%m-%d"), (j + pd.Timedelta(days=1)).strftime("%Y-%m-%d")
-        g = self.geom
-        c = telecharger_gfs(g.forcage.lat, g.forcage.lon, debut, fin, lire=self.lire)
-        temps, scal, u, v = forcage_gfs(c, g.forcage.hauteurs)
-        f = ForcageDirect(temps, scal, u, v, g.forcage)
+        gfs = self._champs(*self._fenetre(j))
+        f, c = gfs["forcage"], gfs["champs"]
         maintenant = datetime.now(timezone.utc).replace(tzinfo=None)
         d0 = j.to_pydatetime() - timedelta(hours=3)
         d1 = min(j.to_pydatetime() + timedelta(days=1, hours=1), maintenant + timedelta(hours=1))
         obs = []
         try:
-            obs.append(metar_dtta(heures=int((maintenant - d0).total_seconds() // 3600) + 2,
-                                  lire=self.lire))
+            obs.append(metar(self.metar_ids, heures=int((maintenant - d0).total_seconds() // 3600) + 2,
+                             lire=self.lire))
         except Exception:                          # noqa: BLE001
             pass
-        if d1 > d0:
-            obs.append(synop_ogimet(d0, d1, lire=self.lire))
+        if d1 > d0 and self.synop_codes:
+            obs.append(synop_ogimet(d0, d1, lire=self.lire, codes=self.synop_codes))
         obs = pd.concat(obs, ignore_index=True) if obs else pd.DataFrame(
             columns=["station_id", "t", "wind_u_m_s", "wind_v_m_s"])
         e = {"forcage": f, "champs": c, "obs": obs, "obtenu": time.time()}
@@ -412,12 +521,9 @@ def telecharger_gefs(lat, lon, debut: str, fin: str, lire=None) -> dict:
     """Vent a 10 m des 31 membres GEFS 0,25 deg (Open-Meteo, seules les variables de surface y sont)
     aux mailles : {"temps", "u10": (M, T, ny, nx), "v10": (M, T, ny, nx)}."""
     la, lo = np.meshgrid(lat, lon, indexing="ij")
-    q = {"latitude": ",".join(f"{x:.4f}" for x in la.ravel()),
-         "longitude": ",".join(f"{x:.4f}" for x in lo.ravel()),
-         "hourly": "wind_speed_10m,wind_direction_10m", "models": MODELE_GEFS, "wind_speed_unit": "ms",
+    q = {"hourly": "wind_speed_10m,wind_direction_10m", "models": MODELE_GEFS, "wind_speed_unit": "ms",
          "timezone": "GMT", "cell_selection": "nearest", "start_date": debut, "end_date": fin}
-    d = json.loads((lire or _get)(f"{URL_ENSEMBLE}?{urllib.parse.urlencode(q)}"))
-    d = d if isinstance(d, list) else [d]
+    d = _points(URL_ENSEMBLE, q, la, lo, lire, poids=2 * N_MEMBRES_GEFS / 10.0)
     if len(d) != la.size:
         raise ValueError(f"Open-Meteo ensemble : {len(d)} points recus pour {la.size} mailles")
     temps = pd.to_datetime(d[0]["hourly"]["time"]).values.astype("datetime64[s]").astype(np.int64)
