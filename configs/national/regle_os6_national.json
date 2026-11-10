@@ -1,0 +1,77 @@
+{
+  "statut": "PROPOSITION du 11/11/2026, a valider par Ines : aucun calcul OS6 national avant son accord ecrit. Si Ines modifie un point avant l'accord, la regle est reecrite et son empreinte recalculee ; apres le premier calcul, elle ne change plus (le carnet et le script verifient l'empreinte, un dossier de sortie ne sert qu'a une regle)",
+  "fixee_le": "2026-11-11, avant tout calcul OS6 national : aucun placement, aucune passe du modele D sur la validation pour l'OS6, aucune lecture du test",
+  "objet": "phase 5 de docs/feuille_de_route_nationale.md : dimensionner et placer le reseau ANEO sur toute la Tunisie (OSSE), avec le candidat D national",
+  "modele": {
+    "candidat": "D de configs/national/regle_v4_national.json (sha256 60671e843ee6...), « D est GARDE pour la phase 5 » : C' + entree ANEO a l'entrainement (ERA5 degradee, zones masquees, 20 a 200 capteurs simules a 25 m)",
+    "choix_de_la_graine": "parmi runs/national_1km_v4_D_s42, _s43, _s44 : celle dont le minimum de val_score (history.json, VALIDATION de la verite v3, meme score que le choix de la regle v4) est le plus bas (pcfno3d.os6.meilleure_graine) ; ecrit dans <sortie>/choix_modele.json AVANT tout calcul ; le test n'est jamais lu pour choisir",
+    "poids": "best.pt du run_dir retenu (choisir_poids des carnets : l'epoque du test evalue s'il existe, sinon le plus recent), norm_stats.json du meme run_dir ; rien n'est ecrit dans ce run_dir",
+    "w": "par continuite (inference.w_continuite, comme le modele servi)"
+  },
+  "verite": "verite d'entrainement nationale v3 (cache_v3_partie_<k>.zip, regle_verite_v3_repli.json) : generee, appelee verite d'entrainement, jamais mesures",
+  "capteur_simule": "comme a l'entrainement de D (aneo_entree.EntreeANEO, code reutilise tel quel) : valeur = verite d'entrainement interpolee a 25 m au-dessus du sol dans la colonne (EntreeANEO.valeur_a_hauteur : couche de surface du cache + noeuds valides plus hauts, lineaire en ln h) + bruit gaussien par composante d'ecart-type 0,1 m/s + 2 % de la vitesse (EntreeANEO.SIGMA_CAPTEUR) ; entree comme une station (cellule du treillis, prioritaire sur le pseudo-capteur ERA5) ; un tirage du bruit par (instant, maille), graine fixe, commun a toutes les dispositions (comparaison a bruit egal) ; aucun bruit n'est ajoute aux predictions",
+  "entree": "condition principale « propre » : entree de production du modele (ERA5 10 m tous les 2 km + 12 aeroports METAR), comme la validation et le test de D (regle v4, « validation_et_test ») ; les capteurs ANEO s'y ajoutent",
+  "candidats": "pcfno3d.os6.candidats avec les contraintes par defaut de l'OS6, les memes que les candidats des capteurs simules de D : colonne au-dessus du relief, terre z0 >= 0,005 m, altitude <= 650 m, pente <= 20 deg, a 1 km au moins du bord du domaine, des 12 aeroports et des autres capteurs, un candidat par noeud de 1 km ; zones exclues : AUCUNE inventee, seulement un GeoJSON fourni par Tukhnanutha (--zones-exclues, empreinte ecrite dans os6.json)",
+  "georeferencement": "lat, lon des noeuds par la projection de la grille (scripts/grille_reelle.py, forcage.InterpERA5 : plan local a pas metrique pris a la latitude centrale), pcfno3d.os6.GeoRefGrille ; pas l'equirectangulaire au coin sud-ouest (decalage d'environ 15 km a l'est du domaine)",
+  "placement": "glouton sur la VALIDATION (24 instants repartis sur val_selection, graine 1000) : a chaque etape, 5 capteurs aux candidats ou l'erreur vectorielle quadratique moyenne du domaine 0-1 km au-dessus du sol, lissee par un noyau gaussien de 10 km, est la plus forte (distance minimale respectee), puis nouvelle passe ; jusqu'a 400 capteurs ; gain de chaque etape = baisse du RMSE vectoriel 0-1 km de la validation",
+  "courbe": "TEST 2022 de la verite v3 (tous les instants synoptiques, graine 2000), calcule UNE fois : reseau actuel (0 capteur), puis pour 10, 20, 30, 50, 75, 100, 150, 200, 300, 400 capteurs : placement optimise (les n premiers du glouton), grille reguliere, hasard (moyenne de 3 tirages, graines 0, 1, 2) ; metriques par niveau (comme le Grand Tunis) et par tranche au-dessus du sol (0-100, 100-300, 300-600, 600-1000 m, comme scripts/dso_hauteur_sol.py, tranche de moins de 1 % des noeuds sans verdict)",
+  "seuil_et_nombre_recommande": "critere = rmse_max_uv_sol, RMSE u ou v maximal sur les tranches 0-1 km au-dessus du sol (definition du DSO1 national de dso_hauteur_sol.py) ; seuil 0,5 m/s (dso.rmse, inchange) ; nombre recommande = plus petit nombre de capteurs du placement optimise qui respecte le seuil sur le test ; aucun si la courbe ne l'atteint pas (ecrit « null », pas extrapole)",
+  "information_sans_effet": "courbe_test_era5_degradee* : memes dispositions, memes instants de test, ERA5 degradee par le champ correle de D (runs/degradation_era5_v4.json, ecrit sur les jours d'entrainement en phase 3, sans zones, tirage graine du jeu + instant comme scripts/info_capteurs_v4.py) : ce que vaudrait le reseau si l'ERA5 reelle s'ecarte du vent comme ERA5 des METAR ; publiee a cote, SANS EFFET sur le nombre recommande",
+  "sorties": {
+    "dossier": "MyDrive/pcfno3d_national/runs/os6_national_D_s<graine> (neuf ; un dossier existant n'est repris que s'il porte la meme regle)",
+    "fichiers_du_grand_tunis_memes_colonnes": [
+      "candidats.csv : iy, ix",
+      "ordre_validation.csv : ordre, etape, iy, ix, score_erreur_m2_s2, gain_rmse_validation_m_s, rmse_validation_apres_m_s",
+      "plan_aneo.csv : id, ordre, etape, iy, ix, score_erreur_m2_s2, gain_rmse_validation_m_s, rmse_validation_apres_m_s, x_m, y_m, lat, lon, altitude_sol_m, hauteur_mat_m, gain_cumule_m_s",
+      "plan_aneo.geojson : FeatureCollection, metadata, un Point par capteur (proprietes = colonnes du plan sauf lat, lon, + type « capteur ANEO propose ») et par aeroport (id, type « station existante », iy, ix)",
+      "courbe_test_par_niveau.csv : strategie, n_capteurs, graine, n_effectif, z_m, n, rmse_u, rmse_v, r2_u, r2_v, rmse_vect, pire_rmse_niveau (+ rmse_vect_sol, rmse_max_uv_sol)",
+      "courbe_test.csv : strategie, n_capteurs, rmse_vect, pire_rmse_niveau (+ rmse_vect_sol, rmse_max_uv_sol), seuil_respecte",
+      "os6.json, courbe.png, carte.png"
+    ],
+    "fichiers_nationaux_en_plus": [
+      "regle_os6.json (copie verifiee), choix_modele.json",
+      "courbe_test_par_tranche.csv : strategie, n_capteurs, graine, n_effectif, tranche, n, rmse_u, rmse_v, retenue, rmse_vect_sol, rmse_max_uv_sol",
+      "courbe_test_era5_degradee.csv, _par_niveau.csv, _par_tranche.csv (information)"
+    ],
+    "note": "dans le plan national, gain_rmse_validation_m_s et rmse_validation_apres_m_s portent sur le RMSE vectoriel 0-1 km au-dessus du sol, et hauteur_mat_m = 25 (le mat simule) ; os6.json le dit (metrique_seuil, capteur_simule)"
+  },
+  "ressources_estimees": "Colab A100 40 Go, sans entrainement ; estimations NON mesurees (pas de GPU en local) : environ 5 a 6 Go de GPU par disposition (grille 16 x 828 x 388, largeur 48, bf16, FFT en fp32), lots de 4 dispositions, environ 20 a 24 Go (un lot trop grand est recoupe en deux automatiquement ; le script affiche le pic mesure au premier instant) ; RAM : un lot de sorties a la fois (environ 62 Mo par disposition) ; temps : placement environ 30 min (81 passes x 24 instants), courbe propre environ 1 h 30 (51 dispositions x 180 instants), courbe d'information autant ; total environ 3 h 30 sur A100, 2 a 3 fois plus sur L4",
+  "interdits": [
+    "aucun entrainement, aucun reglage choisi sur le test (le placement n'utilise que la validation ; la courbe du test n'est calculee qu'une fois, une reprise relit les fichiers)",
+    "aucun bruit ajoute aux predictions (le bruit de mesure ne touche que les ENTREES des capteurs simules, comme a l'entrainement de D)",
+    "la verite generee et ERA5 sont appelees verite d'entrainement, jamais mesures ; les capteurs simules ne sont pas des mesures",
+    "aucun run_dir ecrase : sortie dans un dossier neuf"
+  ],
+  "a_trancher_par_ines": [
+    "condition principale « propre » (comme le test de D) ou « ERA5 degradee » (plus proche de l'ecart reel ERA5 - mesures) : la proposition garde « propre » pour le nombre recommande et publie l'autre en information",
+    "rayon de lissage du glouton : 10 km proposes (1,5 km au Grand Tunis, maille 10 fois plus fine)",
+    "altitude maximale 650 m : celle de l'entrainement de D ; elle exclut les hauteurs de la Dorsale",
+    "hauteur de mat (25 m, celle de D), zones exclues et cout unitaire : parametres attendus de Tukhnanutha (le cout n'entre pas dans le calcul)",
+    "seuil 0,5 m/s sur 0-1 km au-dessus du sol et tailles 10 a 400"
+  ],
+  "parametres": {
+    "hauteur_capteur_m": 25.0,
+    "graine_capteurs": 2026,
+    "metrique": "sol",
+    "georeferencement": "grille",
+    "rayon_influence_m": 10000.0,
+    "graines_hasard": [0, 1, 2],
+    "n_val": 24,
+    "n_test": null,
+    "par_etape": 5,
+    "n_max": 400,
+    "tailles": [10, 20, 30, 50, 75, 100, 150, 200, 300, 400],
+    "seuil_m_s": 0.5,
+    "courbe_information_era5_degradee": true,
+    "contraintes": {
+      "altitude_max_m": 650.0,
+      "pente_max_deg": 20.0,
+      "marge_bord_m": 1000.0,
+      "distance_min_m": 1000.0,
+      "pas_candidats_m": 500.0,
+      "z0_min_m": 0.005,
+      "exclusions": [],
+      "n_max": 400
+    }
+  }
+}

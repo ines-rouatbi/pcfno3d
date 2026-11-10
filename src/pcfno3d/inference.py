@@ -683,7 +683,8 @@ class WindFieldModel:
     @torch.no_grad()
     def _members(self, S: np.ndarray, masks: list[np.ndarray], hour: float, doy: int,
                  batch: int | None = None, secondaire: bool = False,
-                 extra: np.ndarray | None = None
+                 extra: np.ndarray | None = None,
+                 surfaces: list[np.ndarray] | None = None
                  ) -> list[tuple[np.ndarray, np.ndarray, np.ndarray]]:
         """Les passes de l'ensemble de fiabilite, une par masque et dans l'ordre, faites par
         LOTS : un seul passage avant du reseau pour `batch` passes (defaut
@@ -694,17 +695,28 @@ class WindFieldModel:
 
         Sur GPU, un lot qui ne tient pas en memoire est recoupe en deux (meme resultat).
         secondaire : chaque lot cede le verrou du modele aux passes servies en attente
-        (fiabilite differee, ModelLock.secondaire)."""
+        (fiabilite differee, ModelLock.secondaire).
+        surfaces (OS6 national, capteurs ANEO simules) : une surface S PAR masque, au lieu de la
+        surface commune S (meme longueur que masks) ; sans elle, rien ne change."""
         geom = self.geom
         lot = max(1, int(self.cfg.reliability.batch if batch is None else batch))
+        if surfaces is not None and len(surfaces) != len(masks):
+            raise ValueError("surfaces : une surface par masque")
         s_t = torch.from_numpy(np.ascontiguousarray(S[:N_SURF]))[None].to(self.device)
         s_feat = s_t[0].float().cpu().numpy()        # memes entrees que ensemble_forward
         out: list = []
         i0 = 0
         while i0 < len(masks):
             part = masks[i0:i0 + lot]
-            tfeat = np.stack([caracteristiques(s_feat, m, hour, doy, geom, extra)
-                              for m in part])
+            if surfaces is None:
+                s_lot = s_t.expand(len(part), -1, -1, -1)
+                feats = [s_feat] * len(part)
+            else:
+                s_lot = torch.from_numpy(np.ascontiguousarray(
+                    np.stack([x[:N_SURF] for x in surfaces[i0:i0 + lot]]))).to(self.device)
+                feats = list(s_lot.float().cpu().numpy())
+            tfeat = np.stack([caracteristiques(f, m, hour, doy, geom, extra)
+                              for f, m in zip(feats, part)])
             m_t = torch.from_numpy(np.stack(part).astype(np.float32)).to(self.device)
             t_t = torch.from_numpy(tfeat).to(self.device)
             verrou = self._lock.secondaire() if secondaire else self._lock
@@ -712,8 +724,8 @@ class WindFieldModel:
                 with verrou:
                     with torch.autocast(device_type=self.device.type, dtype=self.amp_dtype,
                                         enabled=self.use_amp):
-                        pred = self.model(assemble_input(s_t.expand(len(part), -1, -1, -1),
-                                                         m_t, t_t, geom, self.norm)).float()
+                        pred = self.model(assemble_input(s_lot, m_t, t_t, geom,
+                                                         self.norm)).float()
                     u_t, v_t, w_t = self.norm.denorm(pred.float())
                     if self.cfg.inference.w_continuite:
                         w_t = geom.w_continuite(u_t, v_t)    # comme la passe servie (DSO6 de w)
@@ -726,7 +738,8 @@ class WindFieldModel:
                 lot = max(1, lot // 2)
                 continue
             for b, kept in enumerate(part):
-                out.append(self._post_member(S, kept, hour, doy,
+                sb = S if surfaces is None else surfaces[i0 + b]
+                out.append(self._post_member(sb, kept, hour, doy,
                                              (uvw[0][b], uvw[1][b], uvw[2][b])))
             i0 += len(part)
         return out

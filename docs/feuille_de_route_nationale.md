@@ -290,6 +290,26 @@ seulement**. L'entraînement de la v4 demandera un accord distinct.
 - **Condition** : comme au Grand Tunis, le résultat sera négatif si le modèle n'apprend pas à
   exploiter les capteurs. C'est l'objet de l'ablation D (entrée ANEO) en phase 3.
 
+**État de la phase 5 (11/11/2026) : code, règle PROPOSÉE et carnet écrits ; rien n'est calculé.**
+- **Règle** `configs/national/regle_os6_national.json` (+ `.sha256`), statut **PROPOSITION** : à valider par
+  Ines avant tout calcul. Points à trancher listés dans la règle (`a_trancher_par_ines`) : condition principale
+  « propre » ou « ERA5 dégradée », lissage du glouton (10 km proposés), altitude ≤ 650 m (celle de D),
+  hauteur de mât, zones exclues et coût (Tukhnanutha), seuil et tailles.
+- **Code** : `pcfno3d.os6` généralisé (pas de copie) et `scripts/os6_reseau_aneo.py --regle`. Capteur simulé
+  comme à l'entraînement de D (`os6.CapteursSimules`, qui réutilise `aneo_entree.EntreeANEO.valeur_a_hauteur` et
+  `SIGMA_CAPTEUR` : vérité d'entraînement à 25 m au-dessus du sol + 0,1 m/s + 2 %), entré comme une station
+  (prioritaire sur le pseudo-capteur ERA5) ; critère 0–1 km au-dessus du sol (tranches de `dso_hauteur_sol.py`) ;
+  lat, lon par la projection de la grille (`os6.GeoRefGrille`) ; zones exclues en GeoJSON (`--zones-exclues`) ;
+  graine de D choisie sur la validation (`os6.meilleure_graine`). Sans `--regle`, le Grand Tunis donne les mêmes
+  fichiers et les mêmes colonnes qu'avant (vérifié sur le mini-jeu : mêmes candidats, même ordre, écarts
+  numériques sous 1e-6 m/s).
+- **Carnet** `notebooks/current/pcfno3d_national_os6_colab.ipynb` (`scripts/make_national_os6_nb.py`), A100,
+  sans entraînement, code au commit figé, **uniquement avec l'accord écrit d'Ines**. Sorties :
+  `MyDrive/pcfno3d_national/runs/os6_national_D_s<graine>/`, mêmes fichiers que le Grand Tunis (plan CSV et
+  GeoJSON, `courbe_test.csv`…) plus `courbe_test_par_tranche.csv`, la courbe d'information ERA5 dégradée,
+  `choix_modele.json` et la copie de la règle.
+- **Ressources estimées (non mesurées)** : environ 3 h 30 sur A100, 20 à 24 Go de GPU par lot de 4 dispositions.
+
 ### Phase 6 : agriculture nationale (dépend de la phase 4)
 - **Données** : SYNOP INM via NOAA ISD (`scripts/isd_synop.py`). Il y a 26 stations tunisiennes
   actives en 2021–2022. 12 sont déjà couvertes par les METAR ; **14 stations INM à télécharger**
