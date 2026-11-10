@@ -412,7 +412,7 @@ print("depart :", INIT, "| run :", RUN)
 try:
     SEL = shlex.quote('train.select_criteres=["dso1_rmse","dso2_masse","dso3_rugosite"]')
     lancer(f"entrainer_v4_s{GRAINE}",
-           f"python -u -m pcfno3d -c national_1km_colab {OPTS} --set {SEL} --set train.sync_last=true "
+           f"python -u -m pcfno3d -c national_1km_colab {OPTS} --set {SEL} --set train.sync_last=@SYNC_LAST@ "
            f"--set train.init_from={INIT} --set train.lr=1e-4 --set train.seed={GRAINE} "
            f"--set paths.run_dir={shlex.quote(str(RUN))} --set paths.local_dir=/content/run_local_v4_s{GRAINE} train")
     # AUCUNE lecture du test ici (regle_v4_national.json) : seul le carnet de test lit le test, une fois
@@ -472,7 +472,41 @@ try:
             if "(code 3)" not in str(exc):
                 raise
             print(exc)
-    for f in sorted(RUN.rglob("bilan.json")) + sorted(RUN.rglob("verdict_national.json")):
+    # modele livre (v2, poids inchanges) sur la MEME verite v3, dossier neuf (regle_v4_national.json)
+    REF = NAT / "runs" / "national_1km_v2_sur_verite_v3"
+    REF.mkdir(parents=True, exist_ok=True)
+    V2 = NAT / "runs" / "national_1km_v2"
+    for src, dst in ((choisir_poids(V2), REF / "best.pt"), (V2 / "norm_stats.json", REF / "norm_stats.json")):
+        if not dst.exists():
+            shutil.copy2(src, dst)
+    c2 = yaml.safe_load(open(CODE / "configs" / "national_1km_colab.yaml"))
+    c2["name"] = "national_v2_sur_v3_eval"
+    c2["paths"]["run_dir"], c2["paths"]["local_dir"] = str(REF), "/content/run_local_v2_sur_v3"
+    yaml.safe_dump(c2, open(CODE / "configs" / "national_v2_sur_v3_eval.yaml", "w"), sort_keys=False)
+    if not (REF / "eval_pcfno3d" / "best_wcont" / "test_summary.json").exists():   # test lu une fois
+        lancer("evaluer_v2_sur_v3", f"python -u -m pcfno3d -c national_v2_sur_v3_eval {O} evaluate")
+    if not (REF / "validation_reelle" / "test" / "bilan.json").exists():
+        lancer("validation_reelle_v2_sur_v3", f"python -u scripts/valider_grand_tunis_reel.py -c national_v2_sur_v3_eval "
+                                              f"--obs {G / 'obs'} --jeu test")
+    for cmd, nom in ((f"python -u -m pcfno3d -c national_v2_sur_v3_eval {O} verdict-national", "verdict_national_v2_sur_v3"),
+                     ("python -u scripts/dso_hauteur_sol.py -c national_v2_sur_v3_eval regle", "dso_sol_regle_v2_sur_v3"),
+                     ("python -u scripts/dso_hauteur_sol.py -c national_v2_sur_v3_eval mesure", "dso_sol_v2_sur_v3"),
+                     ("python -u scripts/dso_hauteur_sol.py -c national_v2_sur_v3_eval mesure --keep 0.25",
+                      "dso_sol_dso5_v2_sur_v3")):
+        try:
+            lancer(nom, cmd)
+        except RuntimeError as exc:
+            if "(code 3)" not in str(exc):
+                raise
+            print(exc)
+    try:
+        lancer("decision_v4_national", f"python -u scripts/decision_v4_national.py --v4 {RUN} --livre {REF} "
+                                       f"--sortie {NAT / 'runs'}")
+    except RuntimeError as exc:
+        if "(code 3)" not in str(exc):
+            raise
+        print(exc)
+    for f in sorted(RUN.rglob("bilan.json")) + sorted(RUN.rglob("verdict_national.json"))             + [NAT / "runs" / "decision_v4_national.json"]:
         print(f); print(f.read_text()[:3000])
 except Exception:
     traceback.print_exc()
@@ -485,7 +519,7 @@ def _ent_v3() -> str:
     return ENT.replace("cache_v2_partie", "cache_v3_partie").replace("jeu_v2.zip", "jeu_v3.zip")
 
 
-def v4_carnets(commit: str) -> dict[str, dict]:
+def v4_carnets(commit: str, sync_last: str = "false") -> dict[str, dict]:
     """Phase 3 (regle_v4_national.json) : un carnet d'entrainement par graine (aucune lecture du test) et
     un carnet de test (graine choisie sur la validation, test lu une fois). Verite v3 (cache_v3_partie_*)."""
     sha = (REPO / "configs" / "national" / "regle_v4_national.json.sha256").read_text(encoding="ascii").split()[0]
@@ -502,7 +536,7 @@ def v4_carnets(commit: str) -> dict[str, dict]:
             md("## 2. Cache v3 et contrôle de la vérité"), code(_ent_v3()),
             md("## 3. Mémoire du GPU"), code(MEM),
             md("## 4. Entraînement (validation seulement), fin de la session"),
-            code(CHOIX_POIDS + TRAIN_V4.replace("@GRAINE@", str(g)))], gpu=True)
+            code(CHOIX_POIDS + TRAIN_V4.replace("@GRAINE@", str(g)).replace("@SYNC_LAST@", sync_last))], gpu=True)
     out["pcfno3d_national_v4_test_colab.ipynb"] = carnet([
         md(f"# PC-FNO3D NATIONAL v4 — lecture UNIQUE du test 2022 (Colab, A100)\n\n{tete}\n\n"
            "La graine est choisie sur le score de validation des trois entraînements ; le test n'est lu "
@@ -511,7 +545,7 @@ def v4_carnets(commit: str) -> dict[str, dict]:
         md("## 2. Cache v3"), code(_ent_v3()),
         md("## 3. Mémoire du GPU"), code(MEM),
         md("## 4. Choix de la graine, test, DSO, mesures réelles"),
-        code(TEST_V4.replace("@SHA_V4@", sha))], gpu=True)
+        code(CHOIX_POIDS + TEST_V4.replace("@SHA_V4@", sha))], gpu=True)
     return out
 
 
@@ -554,7 +588,8 @@ def main() -> int:
     if "--v4" in sys.argv:
         commit = subprocess.run(["git", "rev-parse", "HEAD"], cwd=REPO, capture_output=True, text=True,
                                 check=True).stdout.strip()
-        for nom, nb in v4_carnets(commit).items():
+        # option A du plan de place (last.pt reste sur Colab) sauf --sync-last (option B, place a liberer)
+        for nom, nb in v4_carnets(commit, "true" if "--sync-last" in sys.argv else "false").items():
             (out / nom).write_text(json.dumps(nb, indent=1, ensure_ascii=False), encoding="utf-8")
             print(out / nom)
         return 0

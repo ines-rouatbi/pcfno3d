@@ -16,9 +16,9 @@
   "test": "test 2022 de la verite v3 (180 instants synoptiques), lu UNE fois pour la graine choisie et UNE fois pour le modele livre, memes instants, memes entrees (ERA5 10 m + 12 aeroports), w par continuite, memes scripts : evaluate, scripts/dso_hauteur_sol.py (0-1 km au-dessus du sol, tranches 0-100, 100-300, 300-600, 600-1000 m) mesure et mesure --keep 0.25, verdict-national ; DSO6 pour la v4",
   "comparaison_meme_verite": {
     "la_v4_est_au_moins_aussi_bonne_si": [
-      "DSO1 : RMSE u, v maximal sur les tranches 0-1 km de la v4 <= 1,01 x celui du modele livre",
-      "DSO3 : ecart de la rugosite a 1 (pire tranche 0-1 km, |rugosite - 1|) de la v4 <= celui du modele livre + 0,02",
-      "DSO5 : RMSE maximal a 25 % des points d'entree (0-1 km) de la v4 <= 1,01 x celui du modele livre",
+      "DSO1 : RMSE u, v maximal sur les tranches 0-1 km (scripts/dso_hauteur_sol.py, cle rmse_max_uv) de la v4 <= 1,01 x celui du modele livre",
+      "DSO3 : ecart de la rugosite a 1 (|rugosite - 1|, rugosite du domaine 0-1 km au-dessus du sol mesuree par scripts/dso_hauteur_sol.py, cle dso3_rugosite) de la v4 <= celui du modele livre + 0,02",
+      "DSO5 : RMSE maximal a 25 % des points d'entree (0-1 km, dso_hauteur_sol.py mesure --keep 0.25, cle rmse_max_uv) de la v4 <= 1,01 x celui du modele livre",
       "DSO2 (masse, w par continuite) et DSO4 (temps) restent conformes"
     ]
   },
@@ -26,8 +26,8 @@
     "aeroports": "12 aeroports METAR, chacun retire de l'entree quand il est juge (scripts/valider_grand_tunis_reel.py --jeu test), memes instants pour les deux modeles ; RMSE vectoriel moyen ; ecart v4 - livre et IC 95 % par bootstrap sur les instants (5000 tirages, graine 2030)",
     "radiosondages": "Tunis-Carthage, RMSE vectoriel 0-1 km, v4 et livre sur les memes sondages",
     "la_v4_ne_degrade_pas_les_mesures_si": [
-      "aeroports : RMSE de la v4 <= celui du modele livre (borne basse de l'IC rapportee)",
-      "radiosondages : RMSE 0-1 km de la v4 <= 1,03 x celui du modele livre"
+      "aeroports : moyenne sur les stations du RMSE vectoriel par station (definition du DSO7 de verdict-national) de la v4 <= celle du modele livre ; IC 95 % de l'ecart rapporte",
+      "radiosondages : RMSE vectoriel sur toutes les paires 0-1 km de la v4 <= 1,03 x celui du modele livre"
     ]
   },
   "la_v4_remplace_le_modele_livre_si": "les quatre conditions de la comparaison sur la meme verite ET les deux conditions des mesures reelles sont remplies",
