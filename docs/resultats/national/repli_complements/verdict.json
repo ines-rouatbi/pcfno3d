@@ -1,0 +1,115 @@
+{
+  "regle": "configs/national/regle_repli_complements.json",
+  "sha256_regle": "78a1c44eee1141df7c92b100871250a7696010ef5d66e7a0712216b4510aef2d",
+  "controle_linearite_ok": true,
+  "controle": [
+    {
+      "jeu": "calibration",
+      "beta": 0.25,
+      "publie": 2.6871513142694425,
+      "recalcule": 2.6871513142694425,
+      "ecart": 0.0
+    },
+    {
+      "jeu": "calibration",
+      "beta": 0.5,
+      "publie": 2.684942704429002,
+      "recalcule": 2.684942704429002,
+      "ecart": 0.0
+    },
+    {
+      "jeu": "calibration",
+      "beta": 0.75,
+      "publie": 2.696331703694355,
+      "recalcule": 2.696331703694355,
+      "ecart": 0.0
+    },
+    {
+      "jeu": "acceptation",
+      "beta": 0.5,
+      "publie": 2.9245565752019465,
+      "recalcule": 2.9245565752019465,
+      "ecart": 0.0
+    }
+  ],
+  "par_beta_acceptation": [
+    {
+      "verite": "v3 beta 0.25",
+      "jeu": "acceptation",
+      "paires": 226,
+      "instants": 20,
+      "rmse_verite": 2.929038345629055,
+      "rmse_era5": 2.9399265551569136,
+      "ecart": -0.010888209527858628,
+      "ic95_bas": -0.030796628396142466,
+      "ic95_haut": 0.008947279588968926,
+      "verdict": "equivalente a ERA5"
+    },
+    {
+      "verite": "v3 beta 0.5",
+      "jeu": "acceptation",
+      "paires": 226,
+      "instants": 20,
+      "rmse_verite": 2.924556575201946,
+      "rmse_era5": 2.9399265551569136,
+      "ecart": -0.015369979954967583,
+      "ic95_bas": -0.05791289330448947,
+      "ic95_haut": 0.026627552013949722,
+      "verdict": "equivalente a ERA5"
+    },
+    {
+      "verite": "v3 beta 0.75",
+      "jeu": "acceptation",
+      "paires": 226,
+      "instants": 20,
+      "rmse_verite": 2.9308720617569013,
+      "rmse_era5": 2.9399265551569136,
+      "ecart": -0.009054493400012298,
+      "ic95_bas": -0.07589003149804824,
+      "ic95_haut": 0.05762233397520205,
+      "verdict": "equivalente a ERA5"
+    },
+    {
+      "verite": "v2",
+      "jeu": "acceptation",
+      "paires": 226,
+      "instants": 20,
+      "rmse_verite": 3.114181179416417,
+      "rmse_era5": 2.9399265551569136,
+      "ecart": 0.17425462425950355,
+      "ic95_bas": 0.07472040975476718,
+      "ic95_haut": 0.2730655725890864,
+      "verdict": "moins bonne qu'ERA5"
+    }
+  ],
+  "validation_croisee": {
+    "calibration_8_stations": [
+      {
+        "beta": 0.25,
+        "rmse": 2.554978855698186
+      },
+      {
+        "beta": 0.5,
+        "rmse": 2.558264481416554
+      },
+      {
+        "beta": 0.75,
+        "rmse": 2.577767022642912
+      }
+    ],
+    "beta_choisi": 0.5,
+    "jugement_4_stations_acceptation": {
+      "beta": 0.5,
+      "choisi": true,
+      "paires": 75,
+      "instants": 20,
+      "rmse_verite": 2.9857002438362783,
+      "rmse_era5": 2.98747976853576,
+      "ecart": -0.001779524699481616,
+      "ic95_bas": -0.046708194314294994,
+      "ic95_haut": 0.04285823753585731,
+      "verdict": "equivalente a ERA5"
+    },
+    "generalise": true
+  }
+}
