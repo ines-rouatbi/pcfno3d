@@ -406,15 +406,25 @@ import shlex
 from google.colab import runtime
 import traceback
 GRAINE = @GRAINE@
-RUN = NAT / "runs" / f"national_1km_v4_C_s{GRAINE}"
+CANDIDAT = "@CANDIDAT@"                     # Cp ou D (regle_v4_national.json)
+RUN = NAT / "runs" / f"national_1km_v4_{CANDIDAT}_s{GRAINE}"
+RUN.mkdir(parents=True, exist_ok=True)
+EXTRA = "--set loss.lambda_rough=1.0"
+if CANDIDAT == "D":
+    # parametres de la degradation d'ERA5 ecrits AVANT l'entrainement (jours d'entrainement seulement)
+    DEG = RUN / "degradation_era5.json"
+    if not DEG.exists():
+        lancer(f"degradation_era5_s{GRAINE}", f"python -u scripts/degradation_era5.py --donnees {G} "
+                                              f"--calendrier {NAT / 'calendrier.json'} --sortie {DEG}")
+    EXTRA += f" --set mask.aneo_degradation={shlex.quote(str(DEG))} --set mask.aneo_p_zone=0.5"
 INIT = shlex.quote(str(choisir_poids(NAT / "runs" / "national_1km_v2")))
 print("depart :", INIT, "| run :", RUN)
 try:
     SEL = shlex.quote('train.select_criteres=["dso1_rmse","dso2_masse","dso3_rugosite"]')
-    lancer(f"entrainer_v4_s{GRAINE}",
-           f"python -u -m pcfno3d -c national_1km_colab {OPTS} --set {SEL} --set train.sync_last=@SYNC_LAST@ "
+    lancer(f"entrainer_v4_{CANDIDAT}_s{GRAINE}",
+           f"python -u -m pcfno3d -c national_1km_colab {OPTS} {EXTRA} --set {SEL} --set train.sync_last=@SYNC_LAST@ "
            f"--set train.init_from={INIT} --set train.lr=1e-4 --set train.seed={GRAINE} "
-           f"--set paths.run_dir={shlex.quote(str(RUN))} --set paths.local_dir=/content/run_local_v4_s{GRAINE} train")
+           f"--set paths.run_dir={shlex.quote(str(RUN))} --set paths.local_dir=/content/run_local_v4_{CANDIDAT}_s{GRAINE} train")
     # AUCUNE lecture du test ici (regle_v4_national.json) : seul le carnet de test lit le test, une fois
     print((RUN / "history.json").read_text()[-3000:])
 except Exception:
@@ -429,16 +439,21 @@ from google.colab import runtime
 import traceback
 regle = json.loads((CODE / "configs" / "national" / "regle_v4_national.json").read_text(encoding="utf-8"))
 scores = {}
-for g in regle["candidat"]["graines"]:
-    h = NAT / "runs" / f"national_1km_v4_C_s{g}" / "history.json"
-    if not h.exists():
-        raise FileNotFoundError(f"graine {g} pas entrainee ({h})")
-    scores[g] = min(float(e["val_score"]) for e in json.loads(h.read_text()) if "val_score" in e)
+for cand in ("Cp", "D"):
+    for g in regle["candidats"]["commun"]["graines"]:
+        h = NAT / "runs" / f"national_1km_v4_{cand}_s{g}" / "history.json"
+        if not h.exists():
+            raise FileNotFoundError(f"{cand} graine {g} pas entraine ({h})")
+        scores[f"{cand}_s{g}"] = min(float(e["val_score"]) for e in json.loads(h.read_text()) if "val_score" in e)
 print("scores de selection (validation) :", scores)
-GRAINE = min(scores, key=scores.get)
-RUN = NAT / "runs" / f"national_1km_v4_C_s{GRAINE}"
-choix = {"regle_sha256": "@SHA_V4@", "scores_validation": scores, "graine_choisie": GRAINE}
-(NAT / "runs" / "choix_graine_v4.json").write_text(json.dumps(choix, indent=2))
+GRAINE = min(scores, key=scores.get)          # ex. "Cp_s43" : l'entrainement choisi
+RUN = NAT / "runs" / f"national_1km_v4_{GRAINE}"
+import statistics
+par_cand = {c: [v for k, v in scores.items() if k.startswith(c + "_")] for c in ("Cp", "D")}
+choix = {"regle_sha256": "@SHA_V4@", "scores_validation": scores, "entrainement_choisi": GRAINE,
+         "par_candidat": {c: {"moyenne": statistics.mean(v), "ecart_type": statistics.pstdev(v)}
+                          for c, v in par_cand.items()}}
+(NAT / "runs" / "choix_v4.json").write_text(json.dumps(choix, indent=2))
 import yaml
 c = yaml.safe_load(open(CODE / "configs" / "national_1km_colab.yaml"))
 c["name"] = "national_v4_eval"
@@ -528,23 +543,26 @@ def v4_carnets(commit: str, sync_last: str = "false") -> dict[str, dict]:
     tete = (f"Règle `configs/national/regle_v4_national.json` (sha256 `{sha[:12]}…`), vérifiée par le carnet. "
             "**Uniquement avec l'accord écrit d'Ines.** Vérité d'entraînement v3 (`cache_v3_partie_*`).")
     out = {}
-    for g in regle["candidat"]["graines"]:
-        out[f"pcfno3d_national_v4_s{g}_colab.ipynb"] = carnet([
-            md(f"# PC-FNO3D NATIONAL v4 (ablation C) — entraînement, graine {g} (Colab, A100)\n\n{tete}\n\n"
-               "Aucune lecture du test dans ce carnet."),
-            md("## 1. Drive, code et données"), code(COMMUN + git),
-            md("## 2. Cache v3 et contrôle de la vérité"), code(_ent_v3()),
-            md("## 3. Mémoire du GPU"), code(MEM),
-            md("## 4. Entraînement (validation seulement), fin de la session"),
-            code(CHOIX_POIDS + TRAIN_V4.replace("@GRAINE@", str(g)).replace("@SYNC_LAST@", sync_last))], gpu=True)
+    noms = {"Cp": "C' (v2 + vérité v3 + rugosité)", "D": "D (C' + entrée ANEO à l'entraînement)"}
+    for cand in ("Cp", "D"):
+        for g in regle["candidats"]["commun"]["graines"]:
+            out[f"pcfno3d_national_v4_{cand}_s{g}_colab.ipynb"] = carnet([
+                md(f"# PC-FNO3D NATIONAL v4, candidat {noms[cand]} — entraînement, graine {g} (Colab, A100)\n\n"
+                   f"{tete}\n\nAucune lecture du test dans ce carnet."),
+                md("## 1. Drive, code et données"), code(COMMUN + git),
+                md("## 2. Cache v3 et contrôle de la vérité"), code(_ent_v3()),
+                md("## 3. Mémoire du GPU"), code(MEM),
+                md("## 4. Entraînement (validation seulement), fin de la session"),
+                code(CHOIX_POIDS + TRAIN_V4.replace("@GRAINE@", str(g)).replace("@SYNC_LAST@", sync_last)
+                     .replace("@CANDIDAT@", cand))], gpu=True)
     out["pcfno3d_national_v4_test_colab.ipynb"] = carnet([
         md(f"# PC-FNO3D NATIONAL v4 — lecture UNIQUE du test 2022 (Colab, A100)\n\n{tete}\n\n"
-           "La graine est choisie sur le score de validation des trois entraînements ; le test n'est lu "
-           "que pour elle, une fois."),
+           "L'entraînement est choisi sur le score de validation des six (C' et D, 3 graines chacun) ; le test "
+           "n'est lu que pour lui, une fois, et pour le modèle livré sur la même vérité."),
         md("## 1. Drive, code et données"), code(COMMUN + git),
         md("## 2. Cache v3"), code(_ent_v3()),
         md("## 3. Mémoire du GPU"), code(MEM),
-        md("## 4. Choix de la graine, test, DSO, mesures réelles"),
+        md("## 4. Choix de l'entraînement, test, DSO, mesures réelles, décision"),
         code(CHOIX_POIDS + TEST_V4.replace("@SHA_V4@", sha))], gpu=True)
     return out
 
