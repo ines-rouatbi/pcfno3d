@@ -23,7 +23,7 @@ import numpy as np
 TTL_DIRECT_S = 1800.0
 TTL_ENSEMBLE_S = 6 * 3600.0
 _VERROU = threading.Lock()
-_CACHES: dict = {"direct": {}, "ensemble": {}, "source": {}, "grille": {}, "valeur": {}}
+_CACHES: dict = {"direct": {}, "ensemble": {}, "source": {}, "grille": {}, "valeur": {}, "georef": {}}
 
 # lieux de l'application (maquette ATOM Wind, PLACES) : le nom suffit a l'assistant
 LIEUX = {
@@ -39,26 +39,45 @@ def _cle(wf, nom: str) -> tuple:
     return (id(wf), nom)
 
 
+# domaine national (des centaines de mailles GFS) : Open-Meteo compte chaque maille comme un appel (x3,7 pour
+# 37 variables) ; ~580 mailles = ~2 100 appels par telechargement, pour 10 000 par jour sans abonnement. Les
+# champs GFS d'aujourd'hui a apres-demain y sont donc pris en UNE fois et gardes 6 h (une echeance GFS toutes les
+# 6 h), les mesures des stations toujours toutes les 30 min. Le Grand Tunis (16 mailles) garde 30 min pour tout.
+TTL_GFS_NATIONAL_S = 6 * 3600.0
+
+
 def source(wf):
     from pcfno3d import temps_reel
     k = id(wf)
     s = _CACHES["source"].get(k)
     if s is None:
-        s = _CACHES["source"][k] = temps_reel.SourceDirect(wf.geom, ttl_s=TTL_DIRECT_S)
+        nat = temps_reel.n_mailles(wf.geom) > temps_reel.PAQUET_MAILLES
+        ttl_gfs = float(os.environ.get("PCFNO3D_TTL_GFS_S") or (TTL_GFS_NATIONAL_S if nat else TTL_DIRECT_S))
+        s = _CACHES["source"][k] = temps_reel.SourceDirect(wf.geom, ttl_s=TTL_DIRECT_S, ttl_gfs_s=ttl_gfs,
+                                                           fenetre_commune=nat)
     return s
+
+
+def georef(wf):
+    """Projection du domaine servi (celle du relief : realdata.georef_grille), None sans ancrage."""
+    from pcfno3d.realdata import georef_grille
+    k = id(wf)
+    if k not in _CACHES["georef"]:
+        _CACHES["georef"][k] = georef_grille(wf.cfg, wf.geom)
+    return _CACHES["georef"][k]
+
+
+def nom_domaine(wf) -> str:
+    """« Grand Tunis » ou « Tunisie » selon l'etendue du domaine servi (messages)."""
+    return "Tunisie" if max(wf.geom.nx * wf.geom.dx, wf.geom.ny * wf.geom.dy) > 300_000 else "Grand Tunis"
 
 
 def grille(wf) -> dict:
     from pcfno3d import atom_wind
-    from pcfno3d.realdata import GeoRef
     k = id(wf)
     g = _CACHES["grille"].get(k)
     if g is None:
-        try:
-            geo = GeoRef.from_cfg(wf.cfg)
-        except ValueError:
-            geo = None
-        g = atom_wind.grille(wf.geom, geo, wf.cfg)
+        g = atom_wind.grille(wf.geom, georef(wf), wf.cfg)
         g["modele"] = wf.checkpoint_path.name
         g["configuration"] = wf.cfg.name
         _CACHES["grille"][k] = g
@@ -186,23 +205,32 @@ def _tableau(payload: dict, cle: str, forme_cle: str = "forme") -> np.ndarray:
 
 
 def position(wf, lat: float | None = None, lon: float | None = None, lieu: str | None = None) -> tuple[float, float, str]:
-    """(x_km, y_km, nom) depuis lat/lon ou un nom de lieu de l'application."""
-    from pcfno3d.realdata import GeoRef
+    """(x_km, y_km, nom) depuis lat/lon ou un nom de lieu de l'application (lieux du Grand Tunis, puis
+    stations du domaine servi : les 12 aeroports sur le domaine national)."""
+    g = grille(wf)
     if lieu:
+        lieux = dict(LIEUX)
+        for st in g["stations"]:
+            if st.get("lat") is not None:
+                lieux.setdefault(str(st["nom"]).lower(), (st["lat"], st["lon"]))
+                if st.get("code"):
+                    lieux.setdefault(str(st["code"]).lower(), (st["lat"], st["lon"]))
         n = lieu.strip().lower()
-        trouve = next((k for k in LIEUX if k in n or n in k), None)
+        trouve = next((k for k in lieux if k in n or n in k), None)
         if trouve is None:
-            raise ValueError(f"lieu inconnu : {lieu} (lieux connus : {', '.join(sorted(LIEUX))})")
-        lat, lon = LIEUX[trouve]
+            raise ValueError(f"lieu inconnu : {lieu} (lieux connus : {', '.join(sorted(lieux))})")
+        lat, lon = lieux[trouve]
         nom = trouve
     else:
         if lat is None or lon is None:
             raise ValueError("donner lat et lon, ou un lieu")
         nom = f"{lat:.4f} N, {lon:.4f} E"
-    x, y = GeoRef.from_cfg(wf.cfg).to_xy(lat, lon)
-    g = grille(wf)
+    geo = georef(wf)
+    if geo is None:
+        raise ValueError("domaine non georeference : real.origin_lat / origin_lon")
+    x, y = geo.to_xy(lat, lon)
     if not (0 <= x <= g["largeur_km"] * 1000 and 0 <= y <= g["hauteur_km"] * 1000):
-        raise ValueError(f"{nom} est hors du domaine du Grand Tunis")
+        raise ValueError(f"{nom} est hors du domaine ({nom_domaine(wf)})")
     return float(x) / 1000.0, float(y) / 1000.0, nom
 
 
@@ -524,12 +552,34 @@ STATIONS_CADENCE = {"DTTA": ("Tunis-Carthage", 1), "INM60729": ("Zaghouan", 3), 
 STATIONS_POSITION = {"DTTA": (36.8504, 10.2156), "INM60729": (36.4333, 10.0833), "INM60728": (36.45, 10.7333)}
 
 
+def stations_cadence(wf) -> dict[str, tuple[str, int]]:
+    """{code: (nom, cadence en h)} des stations du domaine servi : METAR toutes les heures, SYNOP toutes les
+    3 h. Les trois du Grand Tunis gardent leurs valeurs ; le domaine national donne ses 12 aeroports."""
+    try:
+        from pcfno3d.stations_reelles import cellules_codes, noms_stations
+        codes, noms = cellules_codes(wf.geom), noms_stations(wf.geom)
+    except (FileNotFoundError, OSError):
+        return dict(STATIONS_CADENCE)
+    out = {k: STATIONS_CADENCE.get(k, (noms.get(k, k), 3 if k.startswith("INM") else 1)) for k in codes}
+    return out or dict(STATIONS_CADENCE)
+
+
+def _position_station(wf, code: str) -> tuple[float, float] | None:
+    if code in STATIONS_POSITION:
+        return STATIONS_POSITION[code]
+    st = next((s for s in grille(wf)["stations"] if s.get("code") == code and s.get("lat") is not None), None)
+    return None if st is None else (st["lat"], st["lon"])
+
+
 def station_virtuelle(wf, code: str) -> dict | None:
     """Vent du modele a la place d'une station (BF37), a 10 m et a l'heure locale courante, avec l'erreur
     type de la validation croisee (station exclue, REEL1) si le run servi l'a ecrite."""
     from pcfno3d import atom_wind
-    nom = STATIONS_CADENCE[code][0]
-    la, lo = STATIONS_POSITION[code]
+    nom = stations_cadence(wf).get(code, (code, 1))[0]
+    pos = _position_station(wf, code)
+    if pos is None:
+        return None
+    la, lo = pos
     h = float((time.gmtime(time.time() + 3600)).tm_hour)
     try:
         v = lire_point(wf, 0, 10.0, h, lat=la, lon=lo)
@@ -557,7 +607,7 @@ def alertes_service(wf) -> list[dict]:
     out = []
     p = jour(wf, 0)
     I = [x for x in p["instants"] if x.get("source") == "temps reel" and isinstance(x.get("stations"), list)]
-    for code, (nom, cad) in STATIONS_CADENCE.items():
+    for code, (nom, cad) in stations_cadence(wf).items():
         if not I:
             break
         n = 0
@@ -595,8 +645,8 @@ def alertes_service(wf) -> list[dict]:
 def scenario_panne(wf, heure: float, stations: list[str]) -> dict:
     """Scenario de panne d'aujourd'hui (BF88) : codes ou noms de stations a retirer."""
     from pcfno3d import atom_wind
-    from pcfno3d.stations_reelles import CODES
-    noms = {v.lower(): k for k, v in CODES.items()}
+    from pcfno3d.stations_reelles import noms_stations
+    noms = {v.lower(): k for k, v in noms_stations(wf.geom).items()}
     codes = [noms.get(x.strip().lower(), x.strip().upper()) for x in stations if x.strip()]
     return atom_wind.scenario_panne(wf, source(wf), atom_wind.date_locale_aujourdhui(0), float(heure), codes)
 
@@ -654,19 +704,17 @@ def _vitesse_hauteur(wf, payload: dict, z: float) -> np.ndarray:
 
 
 def _latlon(wf, x_km, y_km):
-    from pcfno3d.realdata import GeoRef
-    la, lo = GeoRef.from_cfg(wf.cfg).to_latlon(np.asarray(x_km) * 1000.0, np.asarray(y_km) * 1000.0)
+    la, lo = georef(wf).to_latlon(np.asarray(x_km) * 1000.0, np.asarray(y_km) * 1000.0)
     return np.round(la, 5), np.round(lo, 5)
 
 
 def _plan_aneo_km(wf) -> list[dict]:
     """Capteurs du plan OS6 (s'il est calcule), en km dans la grille."""
     from pcfno3d import atom_wind
-    from pcfno3d.realdata import GeoRef
     f = atom_wind.plan_aneo(Path(wf.cfg.paths.run_dir))
     if f is None:
         return []
-    geo = GeoRef.from_cfg(wf.cfg)
+    geo = georef(wf)
     out = []
     for ft in json.loads(f.read_text(encoding="utf-8")).get("features", []):
         if (ft.get("geometry") or {}).get("type") != "Point":
@@ -878,3 +926,23 @@ def plan_haies(wf, hauteur_haie_m: float = 3.0, longueur_m: float = 200.0, seuil
             "limite": (f"{len(jours)} journee(s) de vent seulement : le choix d'une plantation se fait sur au moins une "
                        "saison (historique du service ou atlas) ; distances d'abri = ordres de grandeur pour une haie de "
                        "porosite moyenne (40-50 %)")}
+
+
+# ---------------------------------------------------------------------- reseau ANEO (onglet d'administration)
+def reseau_aneo(wf) -> dict:
+    """Vue de l'onglet « Reseau ANEO » (pcfno3d.atom_wind.reseau_aneo) pour le modele servi : sorties OS6 du
+    run_dir (ou plan d'exemple signale), statut installe, cout unitaire, commande --installes."""
+    from pcfno3d import atom_wind
+    return atom_wind.reseau_aneo(Path(wf.cfg.paths.run_dir), wf.cfg, wf.geom, georef(wf),
+                                 checkpoint=wf.checkpoint_path, config=os.environ.get("PCFNO3D_CONFIG") or None)
+
+
+def marquer_installes(wf, ids: list[str]) -> dict:
+    """Ecrit os6_installes.csv (run_dir servi) avec les emplacements du plan marques installes, et renvoie la
+    commande qui relance le plan a partir d'eux. Aucun calcul n'est lance ici."""
+    from pcfno3d import atom_wind
+    plan = reseau_aneo(wf)
+    f = atom_wind.ecrire_installes(Path(wf.cfg.paths.run_dir), plan, ids)
+    apres = reseau_aneo(wf)
+    return {"fichier": str(f), "installes": sum(c["statut"] == "installé" for c in apres["capteurs"]),
+            "hors_plan": len(apres["installes"]["hors_plan"]), "relance": apres["relance"]}

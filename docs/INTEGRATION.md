@@ -350,13 +350,21 @@ atomicité et exports NetCDF / CSV des nœuds virtuels : `docs/PUBLICATION.md`.
 
 ## Application ATOM Wind (cahier v12) : routes `/api/atom-wind/*` et suivantes
 
-Servies par le modèle réel du Grand Tunis (`docs/MODEL_CARD_GRAND_TUNIS.md`) ; clé de lecture sauf
-mention « admin ». Grille de 500 m, heures locales de Tunis (UTC+1), vent en int16 cm/s codé en base64
-(`-32768` = sans valeur), réponses gzip.
+Servies par le modèle réel du Grand Tunis (`docs/MODEL_CARD_GRAND_TUNIS.md`) ou par le modèle national
+(phase 8 de `docs/feuille_de_route_nationale.md`), selon la configuration servie ; clé de lecture sauf
+mention « admin ». Heures locales de Tunis (UTC+1), vent en int16 cm/s codé en base64 (`-32768` = sans
+valeur), réponses gzip. Grille de blocs selon le domaine (`pcfno3d.atom_wind.facteur`) : Grand Tunis
+500 m (136 × 112 blocs, ~0,67 Mo par instant avant gzip), national 4 km (97 × 207 blocs, ~0,88 Mo par
+instant, ~21 Mo pour les 24 heures du temps réel) ; `PCFNO3D_ATOM_PAS_M` impose un autre pas. Les
+lat / lon des stations, des lieux et du plan OS6 suivent la projection du relief (plan local à la latitude
+centrale, `realdata.PlanGrille`), décrite dans `projection` de `/atom-wind/grille`. Temps réel national :
+les ~580 mailles GFS sont demandées à Open-Meteo par paquets de 100 (pause sous la limite gratuite par
+minute ; aucune avec `PCFNO3D_OPEN_METEO_CLE`), gardées 6 h (`PCFNO3D_TTL_GFS_S`), les METAR des 12
+aéroports toutes les 30 min.
 
 | Route | Rôle |
 |---|---|
-| `GET /atom-wind/grille` | relief, eau, rugosité, stations sur la grille de 500 m |
+| `GET /atom-wind/grille` | relief, eau, rugosité, stations (avec leur code), emprise, projection et étendue du domaine sur la grille de blocs |
 | `GET /atom-wind/jours`, `/jour?date=` | journées de test (instants du cache) |
 | `GET /atom-wind/direct?j=0\|1\|2` | aujourd'hui en temps réel (GFS + anémomètres), demain et après-demain en prévision ; t2m, hr2m (GFS), physique de chaque instant (`residu_masse_rms`) ; sigma si `PCFNO3D_SIGMA_DIRECT=1` |
 | `GET /atom-wind/ensemble?j=` | prévision probabiliste GEFS (probabilité de pouvoir traiter, quantiles) |
@@ -367,6 +375,10 @@ mention « admin ». Grille de 500 m, heures locales de Tunis (UTC+1), vent en i
 | `GET /atom-wind/historique`, `/historique/{nom}` | journées déjà calculées (temps réel et prévisions avec leur date d'émission) |
 | `GET /atom-wind/qualite` | verdicts DSO1 à DSO6 du modèle servi, vraies stations, décision de livraison |
 | `GET /atom-wind/atlas`, `/atlas/{fichier}` | atlas éolien annuel, couches GeoTIFF |
+| `GET /atom-wind/reseau-aneo` | plan OS6 en GeoJSON (couche ANEO de la page) ; 404 tant qu'il n'est pas calculé |
+| `GET /atom-wind/reseau-aneo?detail=true` (admin) | onglet « Réseau ANEO » : plan ordonné (lat, lon, mât, gain, phase, statut prévu / installé), courbe de dimensionnement optimisé / grille / aléatoire avec le seuil DSO1, phases (paliers de la courbe), coût unitaire de `os6_parametres.json` (sinon « à renseigner »), commande `--installes` ; plan d'exemple (`demonstration: true`, sans chiffre) tant que les sorties OS6 manquent |
+| `POST /atom-wind/reseau-aneo/installes` (admin) | `{"installes": ["ANEO-001", …]}` : écrit `os6_installes.csv` dans le run_dir servi et renvoie la commande `scripts/os6_reseau_aneo.py --installes …` (jamais lancée par le service) |
+| `GET /atom-wind/reseau-aneo/fichier/{nom}` (admin) | sorties OS6 telles qu'écrites (`plan_aneo.csv`, `.geojson`, `courbe_test.csv`, `os6.json`, figures) |
 | `GET /atom-wind/rapport.pdf?type=parcelle\|site\|parc` | rapport PDF |
 | `GET /exports/{instant}.nc\|.csv` | export NetCDF ou CSV des nœuds d'un instant du cache |
 | `POST /assistant` | assistant conversationnel (Claude, outils ATOM Wind ; 503 sans `ANTHROPIC_API_KEY`) |

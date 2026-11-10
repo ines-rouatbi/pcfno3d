@@ -23,7 +23,7 @@ const navigation = [
     { id: 'carte3d', name: 'Atmosphère 3D', icon: Box },
     { id: 'fiabilite', name: 'Données & fiabilité', icon: ShieldCheck },
   ] },
-  { label: 'Gestion', items: [{ id: 'admin', name: 'Administration', icon: Users }] },
+  { label: 'Gestion', items: [{ id: 'admin', name: 'Administration', icon: Users }, { id: 'reseau', name: 'Réseau ANEO', icon: Layers3 }] },
 ];
 
 export function Navigation({ open, close, national = false }: { open: boolean; close: () => void; national?: boolean }) {
@@ -71,6 +71,7 @@ const pageInfo: Record<string, { eyebrow: string; title: string; description: st
   fiabilite: { eyebrow: '', title: 'Ce que l’on sait du vent', description: 'Les stations, la couverture et les écarts aux mesures.' },
   alertes: { eyebrow: '', title: 'Les alertes à suivre', description: 'Où, quand et quelles précautions prendre.' },
   admin: { eyebrow: '', title: 'Administration', description: 'Les comptes et les accès de votre organisation.' },
+  reseau: { eyebrow: 'Administration', title: 'Réseau ANEO', description: 'Plan de déploiement des capteurs, phases et statut installé.' },
 };
 
 export function PageHeading({ state }: { state: WorkspaceState }) {

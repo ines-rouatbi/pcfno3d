@@ -1,4 +1,4 @@
-"""OS6 — plan de deploiement du reseau ANEO sur le Grand Tunis (OSSE, `pcfno3d.os6`).
+"""OS6 — plan de deploiement du reseau ANEO, Grand Tunis ou national (OSSE, `pcfno3d.os6`).
 
     python scripts/os6_reseau_aneo.py -c grand_tunis_v2_service_colab \
         --sortie /content/drive/MyDrive/pcfno3d_grand_tunis/runs/os6_reseau_aneo
@@ -31,7 +31,7 @@ def main() -> int:
     from pcfno3d import os6
     from pcfno3d.config import Config
     from pcfno3d.inference import WindFieldModel
-    from pcfno3d.realdata import GeoRef
+    from pcfno3d.realdata import georef_grille
 
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("-c", "--config", required=True)
@@ -60,10 +60,9 @@ def main() -> int:
 
     wf = WindFieldModel(cfg, checkpoint=args.checkpoint, device=args.device, verbose=False)
     g = wf.geom
-    try:
-        georef = GeoRef.from_cfg(cfg)
-    except ValueError:
-        georef = None
+    # projection du relief (plan a la latitude centrale) : sur le domaine national, celle du coin sud-ouest
+    # (GeoRef) deplacerait l'est du plan d'environ 15 km ; Grand Tunis : moins de 0,15 km d'ecart
+    georef = georef_grille(cfg, g)
     c = os6.Contraintes.charger(args.contraintes)
     if args.n_max:
         c.n_max = args.n_max

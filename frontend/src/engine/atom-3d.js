@@ -348,7 +348,7 @@ A.vue3d = ctx => {
   hint.textContent="Vecteurs horizontaux · animation accélérée · relief × 5";host.append(hint);
   perspectives.querySelectorAll("[data-camera]").forEach(button=>button.onclick=()=>{
     const views={perspective:[-20,68,82],top:[0,105,.01],profile:[88,34,15]};
-    cam.position.set(...views[button.dataset.camera]).multiplyScalar(Math.max(1,.95/cam.aspect));ctl.target.set(0,2,0);ctl.update();
+    cam.position.set(...views[button.dataset.camera]).multiplyScalar(Math.max(1,.95/cam.aspect)*(ctx.echelle||1));ctl.target.set(0,2,0);ctl.update();
     perspectives.querySelectorAll("[data-camera]").forEach(b=>b.setAttribute("aria-pressed",b===button));
     A.invalidateScene?.();
   });

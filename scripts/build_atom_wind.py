@@ -137,6 +137,19 @@ ACCROCHES = [
      'const su=ATOM.utilisateurLocal(c.compte,USERS); su.place=+g("r-place").value; store.set("aw-users",USERS); '
      'login(su, su.requested ? `Compte créé. Votre accès « ${ROLES[role].n} » sera validé par l\'équipe ; en attendant, vous avez l\'accès Grand public.` : "Compte créé. Bienvenue sur ATOM Wind !"); return; }\n'),
     ('function logout(){ me=null; ', 'function logout(){ if(window.ATOM && ATOM.deconnexionServeur) ATOM.deconnexionServeur(); me=null; '),
+    # 21. onglet d'administration « Reseau ANEO » (feuille de route nationale, phase 8) : point de montage
+    #     #aneo-reseau rempli par reseau-aneo.js (frontend/src/engine/), habillage PROVISOIRE isole dans ce
+    #     fichier et styles/reseau-aneo.css en attendant la maquette reseau_aneo.html ; admin seulement
+    ('<a href="#admin" data-v="admin">Administration</a>',
+     '<a href="#admin" data-v="admin">Administration</a>\n      <a href="#reseau" data-v="reseau">Réseau ANEO</a>'),
+    ('\n\n<!-- FIABILITE -->',
+     '\n\n<!-- RESEAU ANEO (accroche 21) -->\n<section class="view" id="v-reseau"><div id="aneo-reseau"></div></section>'
+     '\n\n<!-- FIABILITE -->'),
+    ('admin:["admin"] };', 'admin:["admin"], reseau:["admin"] };'),
+    ('admin:"Administration" };', 'admin:"Administration", reseau:"Réseau ANEO" };'),
+    ('if(v==="admin") renderAdmin();',
+     'if(v==="admin") renderAdmin(); if(v==="reseau" && window.ATOM && ATOM.reseauAneo) ATOM.reseauAneo.afficher();'),
+    ('<script src="atom-3d.js"></script>', '<script src="atom-3d.js"></script>\n<script type="module" src="reseau-aneo.js"></script>'),
 ]
 
 

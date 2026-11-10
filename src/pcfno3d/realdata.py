@@ -85,6 +85,57 @@ class GeoRef:
         return lat, lon
 
 
+@dataclass
+class PlanGrille:
+    """Projection des grilles REELLES (scripts/grille_reelle.py, forcage.InterpERA5) : plan local a pas
+    metrique constant, pris a la latitude CENTRALE de la grille fine (lat = lat0 + y / m_lat,
+    lon = lon0 + x / m_lon). Meme interface que GeoRef (to_xy, to_latlon, lat0, lon0, rotation_deg).
+
+    Sur le Grand Tunis, l'ecart a GeoRef (pas pris au coin sud-ouest, sphere) reste sous 0,15 km ; sur la
+    Tunisie entiere (828 x 388 km), GeoRef deplacerait l'est du domaine d'environ 15 km : les couches du
+    front-end ATOM Wind (stations, lieux, plan ANEO) utilisent donc ce plan, celui du relief et du modele."""
+
+    lat0: float
+    lon0: float
+    m_lon: float
+    m_lat: float
+    lat_centrale: float
+    rotation_deg: float = 0.0
+
+    @classmethod
+    def from_geom(cls, cfg: Config, geom) -> "PlanGrille":
+        from .forcage import metres_par_degre
+        r = cfg.real
+        if r.origin_lat is None or r.origin_lon is None:
+            raise ValueError("domaine non georeference : real.origin_lat / origin_lon")
+        if abs(float(r.rotation_deg or 0.0)) > 1e-9:
+            raise ValueError("PlanGrille : grille tournee non prise en charge")
+        lat0, lon0 = float(r.origin_lat), float(r.origin_lon)
+        lat_c = lat0 + geom.ny_s * geom.dy_s / 2 / metres_par_degre(lat0)[1]
+        m_lon, m_lat = metres_par_degre(lat_c)
+        return cls(lat0, lon0, float(m_lon), float(m_lat), float(lat_c))
+
+    def to_xy(self, lat, lon) -> tuple[np.ndarray, np.ndarray]:
+        lat, lon = np.asarray(lat, float), np.asarray(lon, float)
+        return (lon - self.lon0) * self.m_lon, (lat - self.lat0) * self.m_lat
+
+    def to_latlon(self, x, y) -> tuple[np.ndarray, np.ndarray]:
+        x, y = np.asarray(x, float), np.asarray(y, float)
+        return self.lat0 + y / self.m_lat, self.lon0 + x / self.m_lon
+
+
+def georef_grille(cfg: Config, geom) -> "PlanGrille | GeoRef | None":
+    """La projection du domaine servi : PlanGrille (celle du relief) si la grille est georeferencee et
+    non tournee, GeoRef si elle est tournee, None sans ancrage geographique."""
+    try:
+        return PlanGrille.from_geom(cfg, geom)
+    except ValueError:
+        try:
+            return GeoRef.from_cfg(cfg)
+        except ValueError:
+            return None
+
+
 # ---------------------------------------------------------------------- physique
 def saturation_vapour_pressure(t_c):
     """Magnus (Pa), T en degres C."""

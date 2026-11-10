@@ -1,19 +1,27 @@
 """Donnees du front-end ATOM Wind (webapp/atom-wind/) : le champ du modele, compact.
 
 Le front-end raisonne en hauteur AU-DESSUS DU SOL (une grue a 40 m, un drone a 100 m...) sur une
-grille de 500 m (68 x 56 km pour le Grand Tunis). Un volume complet (12 x 560 x 680, 100 m) pese
-~55 Mo : on envoie a la place, pour chaque instant d'une journee, u et v a quelques hauteurs AGL,
-moyennes par blocs de 500 m, en centimetres par seconde (int16) — ~0,6 Mo par instant avant gzip.
+grille de blocs. Un volume complet (12 x 560 x 680, 100 m, Grand Tunis) pese ~55 Mo : on envoie a la
+place, pour chaque instant d'une journee, u et v a quelques hauteurs AGL, moyennes par blocs, en
+centimetres par seconde (int16). La taille des blocs suit le domaine SERVI (`facteur`) :
+    Grand Tunis  68 x 56 km, noeuds 100 m  -> blocs de 500 m, 136 x 112 = 15 232 blocs,
+                 ~0,67 Mo par instant (11 hauteurs x u, v x int16) avant base64 et gzip ;
+    national     388 x 828 km, noeuds 1 km  -> blocs de 4 km, 97 x 207 = 20 079 blocs,
+                 ~0,88 Mo par instant, ~21 Mo pour les 24 heures du temps reel avant gzip.
+La regle : le plus petit multiple du pas des noeuds, au moins 500 m, qui garde au plus MAX_BLOCS
+blocs ; PCFNO3D_ATOM_PAS_M impose un pas (m) a la place.
 
-    grille(...)  relief, eau, z0, stations, georeferencement (une fois)
+    grille(...)  relief, eau, z0, stations, georeferencement et emprise du domaine (une fois)
     jours(...)   les journees servies (heure locale de Tunis, UTC+1, sans heure d'ete)
     jour(...)    les champs d'une journee
+    reseau_aneo(...)  plan OS6 du reseau ANEO pour l'onglet d'administration « Reseau ANEO »
 """
 from __future__ import annotations
 
 import base64
 import json
 import math
+import os
 from pathlib import Path
 
 import numpy as np
@@ -78,11 +86,38 @@ class _sans_alerte:
         self._w.__exit__(*exc)
 
 
+MAX_BLOCS = 25_000                   # ordre de la grille de 500 m du Grand Tunis (15 232 blocs)
+
+
 def facteur(geom) -> int:
-    return max(int(round(PAS_M / geom.dx)), 1)
+    """Noeuds par bloc (b x b) : 500 m au moins, au plus MAX_BLOCS blocs (domaine national : 4 km).
+    PCFNO3D_ATOM_PAS_M (m) impose le pas, sans la limite du nombre de blocs."""
+    impose = os.environ.get("PCFNO3D_ATOM_PAS_M")
+    b = max(int(round((float(impose) if impose else PAS_M) / geom.dx)), 1)
+    if not impose:
+        while math.ceil(geom.nx / b) * math.ceil(geom.ny / b) > MAX_BLOCS:
+            b += 1
+    return b
+
+
+def projection(georef) -> dict | None:
+    """Ce que le navigateur doit savoir pour placer un lat/lon dans la grille (meme plan que le serveur)."""
+    if georef is None:
+        return None
+    from .realdata import R_EARTH, PlanGrille
+    if isinstance(georef, PlanGrille):
+        return {"type": "plan local a pas constant (latitude centrale, scripts/grille_reelle.py)",
+                "lat0": georef.lat0, "lon0": georef.lon0, "lat_centrale": round(georef.lat_centrale, 6),
+                "km_par_deg_lon": georef.m_lon / 1000.0, "km_par_deg_lat": georef.m_lat / 1000.0}
+    k = R_EARTH * math.pi / 180.0 / 1000.0
+    return {"type": "plan tangent au coin sud-ouest (GeoRef)", "lat0": georef.lat0, "lon0": georef.lon0,
+            "lat_centrale": georef.lat0, "rotation_deg": georef.rotation_deg,
+            "km_par_deg_lon": k * math.cos(math.radians(georef.lat0)), "km_par_deg_lat": k}
 
 
 def grille(geom, georef, cfg) -> dict:
+    """Relief, eau, z0 et stations sur la grille de blocs du domaine servi. `georef` : la projection
+    du domaine (realdata.georef_grille : celle du relief), ou None (domaine synthetique)."""
     b = facteur(geom)
     terrain = blocs(geom.zt, b)
     eau = blocs((geom.z0 < 0.001).astype(float), b) > 0.5
@@ -90,19 +125,33 @@ def grille(geom, georef, cfg) -> dict:
     stations = []
     f = cfg.paths.data_dir / "stations.json"
     if f.exists():
+        from .stations_reelles import noms_stations
+        noms = noms_stations(geom)
         for s in json.loads(f.read_text(encoding="utf-8")):
             x, y = s["ix"] * geom.dx, s["iy"] * geom.dy
             lat, lon = georef.to_latlon(x, y) if georef is not None else (None, None)
-            stations.append({"nom": s.get("nom", "station"), "x_km": x / 1000, "y_km": y / 1000,
+            code = s.get("code")
+            stations.append({"nom": noms.get(code, s.get("nom", "station")) if code else s.get("nom", "station"),
+                             "code": code, "x_km": x / 1000, "y_km": y / 1000,
                              "lat": None if lat is None else round(float(lat), 5),
                              "lon": None if lon is None else round(float(lon), 5)})
+    largeur, hauteur = geom.nx * geom.dx / 1000, geom.ny * geom.dy / 1000
+    emprise = None
+    if georef is not None:
+        la, lo = georef.to_latlon(np.array([0.0, largeur, 0.0, largeur]) * 1000,
+                                  np.array([0.0, 0.0, hauteur, hauteur]) * 1000)
+        emprise = {"lat_min": round(float(np.min(la)), 5), "lat_max": round(float(np.max(la)), 5),
+                   "lon_min": round(float(np.min(lo)), 5), "lon_max": round(float(np.max(lo)), 5)}
     return {
         "format": "atom-wind/1", "nx": int(terrain.shape[1]), "ny": int(terrain.shape[0]),
-        "pas_km": geom.dx * b / 1000, "largeur_km": geom.nx * geom.dx / 1000,
-        "hauteur_km": geom.ny * geom.dy / 1000,
+        "pas_km": geom.dx * b / 1000, "largeur_km": largeur, "hauteur_km": hauteur,
+        "pas_noeuds_m": float(geom.dx), "noeuds_par_bloc": b,
         "lat0": None if georef is None else georef.lat0,
         "lon0": None if georef is None else georef.lon0,
-        "rotation_deg": None if georef is None else georef.rotation_deg,
+        "rotation_deg": None if georef is None else getattr(georef, "rotation_deg", 0.0),
+        "projection": projection(georef), "emprise": emprise,
+        "domaine": {"nom": cfg.name, "etendue": "national" if max(largeur, hauteur) > 300 else "local",
+                    "niveaux_asl_m": [float(z) for z in geom.z_levels]},
         "hauteurs_agl_m": list(HAUTEURS_AGL),
         "terrain_m": np.round(np.nan_to_num(terrain), 1).tolist(),
         "eau": eau.astype(int).tolist(),
@@ -137,7 +186,7 @@ def encoder(champs: np.ndarray) -> str:
 
 
 def instant(volume, geom) -> np.ndarray:
-    """(n_hauteurs, 2, ny, nx) : u, v aux hauteurs AGL, moyennes par blocs de 500 m."""
+    """(n_hauteurs, 2, ny, nx) : u, v aux hauteurs AGL, moyennes par blocs (`facteur`)."""
     b = facteur(geom)
     out = []
     for h in HAUTEURS_AGL:
@@ -268,7 +317,7 @@ def jour_direct(wf, source, date_locale: str, maintenant: pd.Timestamp | None = 
             "t2m": encoder(np.stack(blocs_t)), "hr2m": encoder(np.stack(blocs_hr)),
             "unite_t2m_hr2m": "t2m en deg C, hr2m en % ; meme codage int16 x100 que le vent ; source GFS (pas ATOM Wind)",
             "grande_echelle": "GFS 0,25 deg (NOAA, via Open-Meteo), formules du forcage ERA5",
-            "stations_sources": "METAR DTTA (aviationweather.gov), SYNOP 60729 / 60728 (OGIMET)",
+            "stations_sources": tr.description_stations(geom),
             "mis_a_jour_utc": maintenant.strftime("%Y-%m-%dT%H:%M:%SZ"),
             "modele": wf.checkpoint_path.name}
 
@@ -294,9 +343,10 @@ def valeur_stations(wf, source, date_locale: str, maintenant: pd.Timestamp | Non
         blocs de 500 m ; aire ou il depasse SEUIL_INFLUENCE_M_S.
     Un instant sans mesure ne compte pas ; une station sans mesure du jour n'apparait pas."""
     from . import temps_reel as tr
-    from .stations_reelles import CODES, H_STATION, cellules_codes
+    from .stations_reelles import H_STATION, cellules_codes, noms_stations
 
     geom = wf.geom
+    CODES = noms_stations(geom)                  # noqa: N806  (Grand Tunis : les 3 ; national : les aeroports)
     e = source.journee(date_locale)
     f, c, obs = e["forcage"], e["champs"], e["obs"]
     maintenant = maintenant if maintenant is not None else         pd.Timestamp.now(tz="UTC").tz_localize(None)
@@ -362,11 +412,13 @@ def valeur_stations(wf, source, date_locale: str, maintenant: pd.Timestamp | Non
 def scenario_panne(wf, source, date_locale: str, heure_locale: float, retirees: list[str],
                    maintenant: pd.Timestamp | None = None) -> dict:
     """Le champ d'une heure deja mesuree recalcule SANS les stations `retirees` (codes DTTA, INM60729,
-    INM60728) : ecart a 10 m et 100 m sur le domaine et a chaque station, contre le champ servi."""
+    INM60728 ; aeroports METAR sur le domaine national) : ecart a 10 m et 100 m sur le domaine et a chaque
+    station, contre le champ servi."""
     from . import temps_reel as tr
-    from .stations_reelles import CODES, H_STATION, cellules_codes
+    from .stations_reelles import H_STATION, cellules_codes, noms_stations
 
     geom = wf.geom
+    CODES = noms_stations(geom)                  # noqa: N806
     e = source.journee(date_locale)
     f, c, obs = e["forcage"], e["champs"], e["obs"]
     maintenant = maintenant if maintenant is not None else pd.Timestamp.now(tz="UTC").tz_localize(None)
@@ -549,3 +601,328 @@ def qualite(run_dir: Path, dso, w_continuite: bool = False) -> dict:
             "mae_direction_deg": s.get("mae_direction_deg"), "w_continuite": w_continuite,
             "dso": lignes, "stations": stations, "decision": decision,
             "jeu": "test (jours jamais vus a l'entrainement)"}
+
+
+# ---------------------------------------------------------------------- reseau ANEO (OS6) : onglet admin
+# L'onglet d'administration « Reseau ANEO » (feuille de route nationale, phase 8) lit les sorties de
+# scripts/os6_reseau_aneo.py (pcfno3d.os6) dans le run_dir SERVI ou son parent, Grand Tunis comme national :
+#   plan_aneo.csv / plan_aneo.geojson   ordre, lat, lon, altitude, hauteur de mat, gain de chaque capteur
+#   courbe_test.csv                     erreur selon le nombre de capteurs : optimise / grille / hasard
+#   os6.json                            nombre recommande, seuil DSO1, reseau actuel, contraintes, limites
+# et, a cote (run_dir, son parent ou le dossier du projet) :
+#   os6_installes.csv                   capteurs deja poses (lat, lon [, id, installe_le]) : --installes (BF78)
+#   os6_parametres.json                 parametres de Tukhnanutha : {"cout_unitaire": ..., "devise": "TND"}
+# Sans sorties OS6 : un plan d'EXEMPLE (36 emplacements eloignes des stations, sans aucun chiffre d'erreur,
+# de gain ni de cout), signale par le bandeau « Demonstration : plan d'exemple ».
+#
+# Phases de deploiement : les paliers de la courbe de dimensionnement (nombres de capteurs ou l'erreur a ete
+# MESUREE sur le test, strategie optimisee). La phase k pose les capteurs d'ordre n_(k-1) + 1 a n_k ; son
+# erreur attendue est celle de la courbe a n_k, son gain l'ecart a la phase precedente (au reseau actuel pour
+# la premiere). Rien n'est interpole entre deux paliers.
+NOM_OS6 = "os6_reseau_aneo"
+FICHIERS_OS6 = ("plan_aneo.csv", "plan_aneo.geojson", "courbe_test.csv", "courbe_test_par_niveau.csv",
+                "os6.json", "candidats.csv", "ordre_validation.csv", "courbe.png", "carte.png")
+INSTALLES = "os6_installes.csv"
+PARAMETRES = "os6_parametres.json"
+N_EXEMPLE = 36
+RAYON_INSTALLE_KM = 1.0                  # un capteur pose a moins de 1 km d'un emplacement prevu : le meme
+
+
+def dossier_os6(run_dir: Path) -> Path | None:
+    """Le dossier des sorties OS6 du modele servi (run_dir/os6_reseau_aneo, sinon a cote du run_dir)."""
+    run_dir = Path(run_dir)
+    for d in (run_dir / NOM_OS6, run_dir.parent / NOM_OS6):
+        if (d / "plan_aneo.csv").exists() or (d / "plan_aneo.geojson").exists():
+            return d
+    return None
+
+
+def _a_cote(run_dir: Path, nom: str) -> Path | None:
+    """Fichier depose par l'exploitant : run_dir, puis son parent (runs/), puis le dossier du projet (Drive)."""
+    run_dir = Path(run_dir)
+    for d in (run_dir, run_dir.parent, run_dir.parent.parent):
+        if (d / nom).exists():
+            return d / nom
+    return None
+
+
+def lire_installes(run_dir: Path) -> tuple[Path | None, list[dict]]:
+    f = _a_cote(run_dir, INSTALLES)
+    if f is None:
+        return None, []
+    t = pd.read_csv(f, dtype={"id": str, "installe_le": str})
+    if not {"lat", "lon"} <= set(t.columns):
+        raise ValueError(f"{f} : colonnes lat et lon attendues")
+    out = []
+    for _, r in t.iterrows():
+        out.append({"id": str(r["id"]) if "id" in t.columns and pd.notna(r["id"]) and str(r["id"]) else None,
+                    "lat": float(r["lat"]), "lon": float(r["lon"]),
+                    "installe_le": str(r["installe_le"]) if "installe_le" in t.columns
+                    and pd.notna(r["installe_le"]) else None})
+    return f, out
+
+
+def lire_parametres(run_dir: Path) -> dict:
+    """Cout unitaire d'un capteur (et sa devise) : parametre attendu de Tukhnanutha, jamais invente."""
+    f = _a_cote(run_dir, PARAMETRES)
+    out = {"unitaire": None, "devise": None, "source": None,
+           "note": f"coût unitaire à renseigner ({PARAMETRES} : cout_unitaire, devise)"}
+    if f is None:
+        return out
+    d = json.loads(f.read_text(encoding="utf-8"))
+    c = d.get("cout_unitaire")
+    if isinstance(c, (int, float)) and not isinstance(c, bool) and c > 0:
+        out.update({"unitaire": float(c), "devise": d.get("devise") or "", "source": str(f),
+                    "note": d.get("note") or "coût unitaire fourni par l'exploitant"})
+    return out
+
+
+def _courbe(d: Path, os6j: dict) -> dict | None:
+    f = d / "courbe_test.csv"
+    if f.exists():
+        t = pd.read_csv(f)
+    elif os6j.get("courbe"):
+        t = pd.DataFrame(os6j["courbe"])
+    else:
+        return None
+    strat = {}
+    for s, g in t.groupby("strategie"):
+        strat[str(s)] = [{"n": int(r["n_capteurs"]), "rmse_vect_m_s": round(float(r["rmse_vect"]), 4),
+                          "pire_rmse_niveau_m_s": round(float(r["pire_rmse_niveau"]), 4),
+                          "seuil_respecte": bool(r["seuil_respecte"]) if "seuil_respecte" in g.columns else None}
+                         for _, r in g.sort_values("n_capteurs").iterrows()]
+    actuel = strat.pop("actuel", [None])[0]
+    return {"strategies": strat, "actuel": actuel,
+            "tailles": sorted({p["n"] for v in strat.values() for p in v}),
+            "jeu": "test (calculé une fois par scripts/os6_reseau_aneo.py)"}
+
+
+def _nombre(v) -> float | None:
+    if v is None or (isinstance(v, float) and math.isnan(v)):
+        return None
+    return float(v)
+
+
+def _plan_os6(d: Path, geom, georef) -> list[dict]:
+    """Capteurs du plan, dans l'ordre d'installation (CSV, sinon GeoJSON)."""
+    if (d / "plan_aneo.csv").exists():
+        lignes = pd.read_csv(d / "plan_aneo.csv").to_dict(orient="records")
+    else:
+        g = json.loads((d / "plan_aneo.geojson").read_text(encoding="utf-8"))
+        lignes = []
+        for ft in g.get("features", []):
+            p = dict(ft.get("properties") or {})
+            if p.get("type") not in (None, "capteur ANEO propose") or (ft.get("geometry") or {}).get("type") != "Point":
+                continue
+            lo, la = ft["geometry"]["coordinates"][:2]
+            lignes.append({**p, "lat": la, "lon": lo})
+    out = []
+    for k, r in enumerate(sorted(lignes, key=lambda r: _nombre(r.get("ordre")) or 0)):
+        x_km = y_km = None
+        if _nombre(r.get("ix")) is not None and _nombre(r.get("iy")) is not None:
+            x_km, y_km = float(r["ix"]) * geom.dx / 1000, float(r["iy"]) * geom.dy / 1000
+        elif georef is not None and _nombre(r.get("lat")) is not None:
+            x, y = georef.to_xy(r["lat"], r["lon"])
+            x_km, y_km = float(x) / 1000, float(y) / 1000
+        etape = _nombre(r.get("etape"))
+        out.append({"id": str(r.get("id") or f"ANEO-{k + 1:03d}"), "ordre": int(_nombre(r.get("ordre")) or k + 1),
+                    "etape": None if etape is None else int(etape),
+                    "lat": _nombre(r.get("lat")), "lon": _nombre(r.get("lon")), "x_km": x_km, "y_km": y_km,
+                    "altitude_sol_m": _nombre(r.get("altitude_sol_m")), "hauteur_mat_m": _nombre(r.get("hauteur_mat_m")),
+                    "gain_m_s": _nombre(r.get("gain_rmse_validation_m_s")),
+                    "gain_cumule_m_s": _nombre(r.get("gain_cumule_m_s")),
+                    "rmse_validation_apres_m_s": _nombre(r.get("rmse_validation_apres_m_s"))})
+    return out
+
+
+def plan_exemple(geom, georef, n: int = N_EXEMPLE) -> list[dict]:
+    """Plan d'EXEMPLE (aucun calcul OS6) : n emplacements candidats (contraintes OS6 par defaut), chacun le
+    plus loin possible des stations et des precedents. Aucune erreur, aucun gain : ce n'est pas un resultat."""
+    from .dataset import cellules_stations
+    from .os6 import Contraintes, candidats
+    etendue = max(geom.nx * geom.dx, geom.ny * geom.dy)
+    c = Contraintes(pas_candidats_m=max(500.0, etendue / 60.0))
+    cand = candidats(geom, c, None)
+    if not len(cand):
+        return []
+    xy = np.stack([cand[:, 1] * geom.dx, cand[:, 0] * geom.dy], 1)
+    st = cellules_stations(geom)
+    pris = [np.array([b * geom.dx, a * geom.dy], float) for a, b in st] or [xy.mean(0)]
+    d = np.min([np.hypot(*(xy - p).T) for p in pris], axis=0)
+    out = []
+    for k in range(min(n, len(cand))):
+        i = int(np.argmax(d))
+        jy, ix = (int(v) for v in cand[i])
+        lat = lon = None
+        if georef is not None:
+            la, lo = georef.to_latlon(ix * geom.dx, jy * geom.dy)
+            lat, lon = round(float(la), 6), round(float(lo), 6)
+        out.append({"id": f"EXEMPLE-{k + 1:03d}", "ordre": k + 1, "etape": None, "lat": lat, "lon": lon,
+                    "x_km": ix * geom.dx / 1000, "y_km": jy * geom.dy / 1000,
+                    "altitude_sol_m": round(float(geom.zt[jy, ix]), 1),
+                    "hauteur_mat_m": round(float(geom.zrel_sensor[jy, ix]), 1),
+                    "gain_m_s": None, "gain_cumule_m_s": None, "rmse_validation_apres_m_s": None})
+        d = np.minimum(d, np.hypot(*(xy - xy[i]).T))
+    return out
+
+
+def phases(tailles, n_plan: int) -> list[tuple[int, int]]:
+    """[(premier ordre, dernier ordre)] : paliers de la courbe (bornes au plan), puis le reste du plan."""
+    bornes = sorted({int(t) for t in tailles if 0 < int(t) <= n_plan})
+    if n_plan > 0 and (not bornes or bornes[-1] < n_plan):
+        bornes.append(n_plan)
+    out, prec = [], 0
+    for b in bornes:
+        out.append((prec + 1, b))
+        prec = b
+    return out
+
+
+def _associer_installes(capteurs: list[dict], installes: list[dict], georef) -> list[dict]:
+    """Statut « installe » des emplacements prevus (par identifiant, sinon le plus proche a moins de
+    RAYON_INSTALLE_KM) ; renvoie les capteurs poses hors du plan."""
+    par_id = {c["id"]: c for c in capteurs}
+    hors = []
+    for p in installes:
+        c = par_id.get(p["id"]) if p["id"] else None
+        if c is None and georef is not None:
+            x, y = georef.to_xy(p["lat"], p["lon"])
+            best, dmin = None, RAYON_INSTALLE_KM
+            for q in capteurs:
+                if q["x_km"] is None or q["statut"] == "installé":
+                    continue
+                dd = math.hypot(float(x) / 1000 - q["x_km"], float(y) / 1000 - q["y_km"])
+                if dd <= dmin:
+                    best, dmin = q, dd
+            c = best
+        if c is None:
+            hors.append(p)
+        else:
+            c["statut"], c["installe_le"] = "installé", p["installe_le"]
+    return hors
+
+
+def commande_installes(cfg, checkpoint, d_os6: Path | None, run_dir: Path, installes: Path | None,
+                       tailles=None, config: str | None = None) -> dict:
+    """La commande qui relance le plan a partir des capteurs poses (BF78). Elle n'est JAMAIS lancee par le
+    service (calcul GPU, carnet Colab) ; nouvelle sortie datee : le plan servi n'est pas ecrase."""
+    import shlex
+    base = d_os6.parent if d_os6 is not None else Path(run_dir).parent
+    sortie = base / f"{NOM_OS6}_installes_{pd.Timestamp.now(tz='UTC'):%Y%m%d}"
+    morceaux = ["python", "-u", "scripts/os6_reseau_aneo.py", "-c", config or cfg.name,
+                "--checkpoint", str(checkpoint),
+                "--set", f"inference.w_continuite={'true' if cfg.inference.w_continuite else 'false'}"]
+    if installes is not None:
+        morceaux += ["--installes", str(installes)]
+    if tailles:
+        morceaux += ["--tailles", ",".join(str(int(t)) for t in tailles)]
+    morceaux += ["--sortie", str(sortie)]
+    return {"commande": " ".join(shlex.quote(m) for m in morceaux), "sortie": str(sortie),
+            "avec_installes": installes is not None, "lancee_par_le_service": False,
+            "note": ("À lancer dans le carnet OS6 (GPU), jamais par le service. Le placement repart des capteurs "
+                     "installés ; la courbe de dimensionnement est recalculée sur le test (deuxième lecture du "
+                     "test : décision d'Ines). Une fois vérifié, renommer le dossier en "
+                     f"{NOM_OS6} (l'ancien renommé, jamais effacé) pour que le service le serve.")}
+
+
+def reseau_aneo(run_dir: Path, cfg, geom, georef, checkpoint="best.pt", config: str | None = None) -> dict:
+    """Tout ce qu'affiche l'onglet « Reseau ANEO » : plan, phases, courbe, statut prevu / installe, cout,
+    commande --installes. Les chiffres viennent des fichiers OS6 ; rien n'est recalcule ni invente."""
+    from .os6 import TAILLES
+    run_dir = Path(run_dir)
+    d = dossier_os6(run_dir)
+    os6j = json.loads((d / "os6.json").read_text(encoding="utf-8")) \
+        if d is not None and (d / "os6.json").exists() else {}
+    demo = d is None
+    capteurs = plan_exemple(geom, georef) if demo else _plan_os6(d, geom, georef)
+    courbe = None if demo else _courbe(d, os6j)
+    for c in capteurs:
+        c["statut"], c["installe_le"], c["phase"] = "prévu", None, None
+    f_inst, inst = lire_installes(run_dir)
+    hors = inst if demo else _associer_installes(capteurs, inst, georef)
+    cout = lire_parametres(run_dir)
+    seuil = float(os6j.get("seuil_rmse_m_s", cfg.dso.rmse))
+    opt = {p["n"]: p for p in (courbe or {}).get("strategies", {}).get("optimise", [])}
+    actuel = (courbe or {}).get("actuel")
+    if actuel is None and os6j.get("reseau_actuel"):
+        a = os6j["reseau_actuel"]
+        actuel = {"n": 0, "rmse_vect_m_s": a.get("rmse_vect"), "pire_rmse_niveau_m_s": a.get("pire_rmse_niveau")}
+    tailles = (courbe or {}).get("tailles") or list(TAILLES)
+    lignes, prec = [], actuel
+    for k, (a, b) in enumerate(phases(tailles, len(capteurs)), start=1):
+        sel = [c for c in capteurs if a <= c["ordre"] <= b]
+        for c in sel:
+            c["phase"] = k
+        mes = opt.get(b)
+        gain = None
+        if mes is not None and prec is not None and prec.get("pire_rmse_niveau_m_s") is not None:
+            gain = round(prec["pire_rmse_niveau_m_s"] - mes["pire_rmse_niveau_m_s"], 4)
+        lignes.append({"phase": k, "de": a, "a": b, "capteurs": len(sel), "cumul": b,
+                       "pire_rmse_niveau_m_s": None if mes is None else mes["pire_rmse_niveau_m_s"],
+                       "rmse_vect_m_s": None if mes is None else mes["rmse_vect_m_s"],
+                       "gain_pire_niveau_m_s": gain,
+                       "seuil_dso1_respecte": None if mes is None else bool(mes["pire_rmse_niveau_m_s"] <= seuil),
+                       "installes": sum(c["statut"] == "installé" for c in sel),
+                       "cout": None if cout["unitaire"] is None else round(cout["unitaire"] * len(sel), 2),
+                       "cout_cumule": None if cout["unitaire"] is None else round(cout["unitaire"] * b, 2)})
+        if mes is not None:
+            prec = mes
+    stations = []
+    f = cfg.paths.data_dir / "stations.json"
+    if f.exists():
+        from .stations_reelles import noms_stations
+        noms = noms_stations(geom)
+        for s in json.loads(f.read_text(encoding="utf-8")):
+            lat = lon = None
+            if georef is not None:
+                la, lo = georef.to_latlon(s["ix"] * geom.dx, s["iy"] * geom.dy)
+                lat, lon = round(float(la), 5), round(float(lo), 5)
+            code = s.get("code")
+            stations.append({"nom": noms.get(code, s.get("nom")) if code else s.get("nom", "station"),
+                             "code": code, "lat": lat, "lon": lon,
+                             "x_km": s["ix"] * geom.dx / 1000, "y_km": s["iy"] * geom.dy / 1000})
+    return {
+        "format": "atom-wind/reseau-aneo/1", "demonstration": demo,
+        "bandeau": ("Démonstration : plan d'exemple" if demo else
+                    f"Plan OS6 calculé ({os6j.get('modele') or 'modèle servi'}, configuration "
+                    f"{os6j.get('configuration') or cfg.name})"),
+        "domaine": {"nom": cfg.name, "largeur_km": geom.nx * geom.dx / 1000, "hauteur_km": geom.ny * geom.dy / 1000},
+        "dossier": None if d is None else str(d),
+        "fichiers": [] if d is None else [n for n in FICHIERS_OS6 if (d / n).exists()],
+        "seuil_dso1_m_s": seuil, "nombre_recommande": os6j.get("nombre_recommande"),
+        "reseau_actuel": actuel, "courbe": courbe, "capteurs": capteurs, "phases": lignes,
+        "regle_phases": ("paliers de la courbe de dimensionnement (erreur mesurée sur le test, stratégie "
+                         "optimisée) ; sans courbe, paliers par défaut de pcfno3d.os6.TAILLES, sans chiffre"),
+        "stations": stations, "cout": cout,
+        "installes": {"fichier": None if f_inst is None else str(f_inst), "n": len(inst), "hors_plan": hors},
+        "relance": commande_installes(cfg, checkpoint, d, run_dir, f_inst, (courbe or {}).get("tailles"), config),
+        "contraintes": os6j.get("contraintes"), "candidats": os6j.get("candidats"),
+        "limites": os6j.get("limites") or ("Plan d'exemple : emplacements éloignés des stations, sans calcul OS6 "
+                                           "(ni erreur, ni gain, ni coût)." if demo else None),
+    }
+
+
+def ecrire_installes(run_dir: Path, plan: dict, ids: list[str]) -> Path:
+    """Ecrit run_dir/os6_installes.csv (atomique) : les emplacements du plan marques installes (`ids`), plus les
+    capteurs deja poses hors du plan (gardes tels quels). La date d'installation d'un capteur deja connu est
+    conservee, celle d'un nouveau est la date du jour (UTC)."""
+    if plan["demonstration"]:
+        raise ValueError("plan d'exemple : aucun capteur à installer (calculer d'abord le plan OS6)")
+    connus = {c["id"]: c for c in plan["capteurs"]}
+    inconnus = [i for i in ids if i not in connus]
+    if inconnus:
+        raise KeyError(f"capteurs absents du plan : {', '.join(inconnus[:5])}")
+    auj = pd.Timestamp.now(tz="UTC").strftime("%Y-%m-%d")
+    lignes = []
+    for i in dict.fromkeys(ids):
+        c = connus[i]
+        if c["lat"] is None or c["lon"] is None:
+            raise ValueError(f"{i} : coordonnées absentes du plan")
+        lignes.append({"id": i, "lat": c["lat"], "lon": c["lon"], "installe_le": c.get("installe_le") or auj})
+    for p in plan["installes"]["hors_plan"]:
+        lignes.append({"id": p["id"] or "", "lat": p["lat"], "lon": p["lon"], "installe_le": p["installe_le"] or ""})
+    f = Path(run_dir) / INSTALLES
+    tmp = f.with_name(f.name + ".tmp")
+    pd.DataFrame(lignes, columns=["id", "lat", "lon", "installe_le"]).to_csv(tmp, index=False)
+    tmp.replace(f)
+    return f

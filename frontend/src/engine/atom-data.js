@@ -69,6 +69,29 @@ window.ATOM = A;
 A.pret = () => !!(A.grille && A.jour && A.jour._vent);
 A.aSigma = () => !!(A.pret() && A.jour._sigma);
 
+// ------------------------------------------------------------------ domaine servi (phase 8 nationale)
+// La page garde la géographie de la maquette (Grand Tunis, 68 × 56 km, blocs de 500 m) quand le modèle
+// servi est celui du Grand Tunis. Sinon (domaine national : 388 × 828 km, blocs de 4 km), elle prend
+// l'emprise, la projection et les stations de /atom-wind/grille : ATOM.domaine() est lu au démarrage de
+// atom-runtime.js, avant tout calcul de la page.
+const GT = { nx: 136, ny: 112, pas: .5, lat0: 36.395, lon0: 10.04 };
+A.estGrandTunis = g => !!g && g.nx === GT.nx && g.ny === GT.ny && Math.abs(g.pas_km - GT.pas) < 1e-9
+  && (g.lat0 === null || g.lat0 === undefined || (Math.abs(g.lat0 - GT.lat0) < .01 && Math.abs(g.lon0 - GT.lon0) < .01));
+A.domaine = () => {
+  const g = A.grille;
+  if(!g || A.estGrandTunis(g) || !g.projection) return null;
+  const p = g.projection, national = !!(g.domaine && g.domaine.etendue === "national");
+  return { lat0: p.lat0, lon0: p.lon0, kx: p.km_par_deg_lon, ky: p.km_par_deg_lat, latc: p.lat_centrale,
+           w: g.largeur_km, h: g.hauteur_km, g: 1 / g.pas_km, nx: g.nx, ny: g.ny, national,
+           nom: national ? "Tunisie" : ((g.domaine && g.domaine.nom) || "domaine du modèle"),
+           stations: (g.stations || []).filter(s => s.lat !== null && s.lat !== undefined) };
+};
+A.nomDomaine = () => { const d = A.domaine(); return d ? d.nom : "Grand Tunis"; };
+A.nomStation = c => {
+  const s = A.grille && (A.grille.stations || []).find(x => x.code === c);
+  return (s && s.nom) || NOMS_STATIONS[c] || c;
+};
+
 // ------------------------------------------------------------------ échantillonnage
 // Une journée J = la réponse de /atom-wind/jour ou /atom-wind/direct, avec ses tableaux décodés
 // (J._vent, J._sigma, J._t, J._hr). A.jour est la journée affichée ; A.trois[0..2] les journées
@@ -200,14 +223,14 @@ function banniere(){
     } else if(A.jour.temps_reel){
       const maj = new Date(A.jour.mis_a_jour_utc), hm = maj.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", timeZone: "Africa/Tunis" });
       const passees = I.filter(x => x.source === "temps reel"), st = new Set(passees.flatMap(x => x.stations));
-      const noms = { DTTA: "Tunis-Carthage", INM60729: "Zaghouan", INM60728: "Nabeul" };
       src.innerHTML = horsLigne + `<b>Temps réel</b> : vent d'aujourd'hui (${fmtDate(A.jour.date)}) calculé par <b>PC-FNO3D</b> (${modele}) `
-        + `à partir de la grande échelle GFS et des anémomètres ${[...st].map(c => noms[c] || c).join(", ") || "(aucune mesure reçue)"}. `
+        + `à partir de la grande échelle GFS et des anémomètres ${[...st].map(c => A.nomStation(c)).join(", ") || "(aucune mesure reçue)"}. `
         + `Heures passées : temps réel ; heures à venir : prévision. Mis à jour à ${hm}.`
         + (A.jour.avertissement ? ` <span class="muted">(${A.jour.avertissement})</span>` : "");
       if(fr) fr.textContent = `Temps réel · ${hm}`;
     } else {
-      src.innerHTML = horsLigne + `Vent calculé par le modèle <b>PC-FNO3D</b> (${modele}) sur le Grand Tunis, `
+      const zone = A.domaine() ? (A.domaine().national ? "la Tunisie" : A.domaine().nom) : "le Grand Tunis";
+      src.innerHTML = horsLigne + `Vent calculé par le modèle <b>PC-FNO3D</b> (${modele}) sur ${zone}, `
         + `journée du <b>${fmtDate(A.jour.date)}</b> (jeu de test, jamais vu à l'entraînement). `
         + `Sorties du modèle à ${hh} (heure de Tunis), interpolées heure par heure. Ce ne sont pas des mesures en direct.`;
       if(fr) fr.textContent = `Modèle : ${modele}`;
@@ -241,7 +264,8 @@ A.banniere = () => { banniere(); if(A.sourceEolien) A.sourceEolien(); };
 const RELATIF = { direct: 0, prev1: 1, prev2: 2 };
 async function telechargerJour(date){
   const j = RELATIF[date];
-  const d = j !== undefined ? await get(`/atom-wind/direct?j=${j}`, 240000)
+  // domaine national : premier calcul plus long (GFS par paquets de mailles, 24 passes sur 388 × 828 km)
+  const d = j !== undefined ? await get(`/atom-wind/direct?j=${j}`, (A.domaine() && A.domaine().national) ? 600000 : 240000)
           : date.startsWith("hist:") ? await get(`/atom-wind/historique/${encodeURIComponent(date.slice(5))}`, 60000)
           : await get(`/atom-wind/jour?date=${encodeURIComponent(date)}`, 180000);
   d.cle = date;
@@ -591,6 +615,8 @@ async function postJSON(chemin, corps){
   const d = await r.json().catch(() => ({}));
   return r.ok ? d : { erreur: typeof d.detail === "string" ? d.detail : `erreur ${r.status}` };
 }
+// accès à l'API pour les onglets chargés à part (reseau-aneo.js) : même adresse, même clé ou session
+A.api = { get: (chemin, ms) => get(chemin, ms), post: postJSON, blob };
 const MESSAGES_COMPTE = {
   "adresse ou mot de passe incorrect, ou compte desactive": "E-mail ou mot de passe incorrect, ou compte désactivé.",
   "trop d'essais : reessayer dans 15 minutes": "Trop d'essais : réessayez dans 15 minutes.",
@@ -677,13 +703,19 @@ A.rendreSerieMoyeu = rendreSerieMoyeu;
 // horaire, SYNOP toutes les 3 h), et les heures dont le champ conserve mal la masse.
 const POS_STATIONS = { DTTA: [36.8504, 10.2156], INM60729: [36.4333, 10.0833], INM60728: [36.45, 10.7333] };
 const CADENCE_H = { DTTA: 1, INM60729: 3, INM60728: 3 };
+// [code, [lat, lon], cadence en h] : les trois du Grand Tunis, ou les stations du domaine servi (aéroports)
+function stationsSuivies(){
+  const d = A.domaine();
+  if(!d) return Object.entries(POS_STATIONS).map(([c, p]) => [c, p, CADENCE_H[c]]);
+  return d.stations.filter(s => s.code).map(s => [s.code, [s.lat, s.lon], s.code.startsWith("INM") ? 3 : 1]);
+}
 A.alertesService = xy => {
   if(!A.pret() || !A.jour.temps_reel || A.jour.archive) return [];
   const out = [], I = A.jour.instants.filter(x => x.source === "temps reel" && Array.isArray(x.stations));
-  for(const [code, [la, lo]] of Object.entries(POS_STATIONS)){
+  for(const [code, [la, lo], c] of stationsSuivies()){
     if(!I.length) break;
     let n = 0; for(let k = I.length - 1; k >= 0 && !I[k].stations.includes(code); k--) n++;
-    const c = CADENCE_H[code], nom = NOMS_STATIONS[code];
+    const nom = A.nomStation(code);
     if(n < 3 * c) continue;
     // station virtuelle (BF37) : le vent du modele a sa place, et l'erreur mesuree sans elle (REEL1)
     const h = heureLocale(), [pu, pv] = A.vent(...xy(la, lo), 10, h);
@@ -697,8 +729,9 @@ A.alertesService = xy => {
   }
   const mauvais = A.jour.instants.filter(x => x.residu_masse_ok === false);
   if(mauvais.length)
-    out.push({ cls: "warn", p: xy(36.65, 10.42), r: 6, at: mauvais[0].heure_locale, t: "Physique : résidu de masse au-dessus du seuil",
-               where: "Grand Tunis", when: `${mauvais.length} heure(s), dès ${mauvais[0].heure_locale} h`,
+    out.push({ cls: "warn", p: A.domaine() ? [A.domaine().w / 2, A.domaine().h / 2] : xy(36.65, 10.42), r: 6,
+               at: mauvais[0].heure_locale, t: "Physique : résidu de masse au-dessus du seuil",
+               where: A.nomDomaine(), when: `${mauvais.length} heure(s), dès ${mauvais[0].heure_locale} h`,
                what: "Le champ calculé conserve mal la masse à ces heures : valeurs moins sûres.",
                todo: "Consulter la vue Fiabilité ; signaler à l'équipe si cela se répète." });
   return out;
@@ -713,7 +746,8 @@ A.kpisReels = h => {
     const x = I.reduce((b, y) => Math.abs(y.heure_locale - h) < Math.abs(b.heure_locale - h) ? y : b, I[0]);
     if(Array.isArray(x.stations)){
       const n = x.stations.length;
-      out.push(["Stations actives", `${n} / 3`, n ? x.stations.map(c => NOMS_STATIONS[c] || c).join(", ")
+      const total = A.domaine() ? A.domaine().stations.length : 3;
+      out.push(["Stations actives", `${n} / ${total}`, n ? x.stations.map(c => A.nomStation(c)).join(", ")
         : (x.source === "prevision" ? "prévision : pas encore de mesure" : "aucune mesure reçue")]);
     }
     if(typeof x.inference_s === "number")
@@ -872,8 +906,10 @@ async function demarrer(){
   chargement("Connexion au modèle PC-FNO3D…");
   try {
     A.grille = await get("/atom-wind/grille", 20000);
-    if(A.grille.nx !== 136 || A.grille.ny !== 112 || A.grille.pas_km !== .5){
-      throw new Error("la grille disponible ne couvre pas le Grand Tunis à 500 m ; ouvrez le laboratoire pour inspecter ce jeu de données");
+    // Grand Tunis à 500 m (géographie de la maquette) ou domaine géoréférencé (national) ; un mini-jeu
+    // synthétique sans ancrage géographique reste servi au laboratoire seulement
+    if(!A.estGrandTunis(A.grille) && !A.domaine()){
+      throw new Error("la grille disponible n'est ni le Grand Tunis à 500 m ni un domaine géoréférencé ; ouvrez le laboratoire pour inspecter ce jeu de données");
     }
     A.z0 = Float32Array.from(A.grille.z0_m.flat());
     const J = await get("/atom-wind/jours", 20000);
