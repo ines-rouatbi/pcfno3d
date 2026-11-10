@@ -12,6 +12,8 @@ Aucune generation complete, aucun instant du test 2022. Les lignes sont ecrites 
 (reprise possible : une variante deja dans le CSV n'est pas recalculee).
 
     python scripts/calibrer_verite_v3.py [--sortie artifacts/national/verite_v3] [--instants 20]
+    python scripts/calibrer_verite_v3.py --reference   (diagnostic 7 : generateur de la v2 sur les memes
+        instants de calibration et d'acceptation, regle_phase1_complements.json ; ne rend aucun verdict)
 """
 from __future__ import annotations
 
@@ -30,6 +32,7 @@ sys.path[:0] = [str(REPO / "scripts"), str(REPO / "src")]
 NAT = REPO / "artifacts" / "national"
 REGLE = REPO / "configs" / "national" / "regle_verite_v3.json"
 REGLE_REPLI = REPO / "configs" / "national" / "regle_verite_v3_repli.json"
+REGLE_COMPLEMENTS = REPO / "configs" / "national" / "regle_phase1_complements.json"
 VAL = (("2021-01-01", "2021-02-28"), ("2021-07-01", "2021-07-31"))
 HEURES = (3, 9, 15, 21)
 
@@ -97,8 +100,12 @@ def main() -> int:
     ap.add_argument("--sortie", default=str(NAT / "verite_v3"))
     ap.add_argument("--instants", type=int, default=20)
     ap.add_argument("--repli", action="store_true", help="option de repli (regle_verite_v3_repli.json)")
+    ap.add_argument("--reference", action="store_true",
+                    help="generateur de la v2 sur les instants de calibration et d'acceptation (diagnostic 7)")
     a = ap.parse_args()
     regle, h_regle = charger_regle()
+    if a.reference:
+        charger_regle(REGLE_COMPLEMENTS)
     if a.repli:
         v3 = json.loads((Path(a.sortie) / "verdict.json").read_text(encoding="utf-8"))
         if v3.get("acceptee"):
@@ -170,6 +177,16 @@ def main() -> int:
                 "rmse_aeroports_era5": float(np.sqrt(((e.ue - e.uo) ** 2 + (e.ve - e.vo) ** 2).mean())),
                 "stations_verite_meilleure": int((par.eg <= par.ee).sum()), "stations": int(len(par)),
                 **{f"ecart_{key}": float(np.sqrt(s[0] / s[1])) for key, s in dev.items()}}
+
+    if a.reference:
+        v_ref = {"passe_haut": False, "perturb": 0.4, "brise": 1.0, "relief": 1.0, "beta": 1.0}
+        i_cal = instants(a.instants, 2026)
+        i_acc = instants(a.instants, 2027, exclure={j for j, _ in i_cal})
+        f_ref = out / "reference_v2.csv"
+        lignes = [mesurer(v_ref, i_cal, "calibration"), mesurer(v_ref, i_acc, "acceptation")]
+        pd.DataFrame(lignes).to_csv(f_ref, index=False)
+        print(pd.DataFrame(lignes).round(3).to_string(index=False))
+        return 0
 
     suffixe = "_repli" if a.repli else ""
     f_cal = out / f"calibration{suffixe}.csv"
