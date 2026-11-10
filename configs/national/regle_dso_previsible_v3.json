@@ -1,0 +1,16 @@
+{
+  "fixee_le": "2026-11-10 10 h, avant le calcul ; aucun entrainement, aucune generation complete, aucun instant du test",
+  "but": "DSO previsibles de la verite v3 (beta 0,5) AVANT tout entrainement : la base du modele national est u, v = ERA5 au noeud + correction apprise ; on mesure ce que vaut ERA5 seule contre la verite d'entrainement v3, et contre la verite v2 a instants egaux",
+  "instants": "les 20 instants d'acceptation de scripts/calibrer_verite_v3.py (VALIDATION 2021, graine 2027, jours disjoints de la calibration)",
+  "verites": {
+    "v2": "generateur du jeu v2 : passe-haut non, perturbations 0,4, brise 1, relief 1, beta 1",
+    "v3": "verite acceptee (regle_verite_v3_repli.json) : passe-haut oui, perturbations 0, brise 0,5, relief 1, beta 0,5"
+  },
+  "predicteur": "ERA5 aux noeuds a la meme hauteur au-dessus du sol (generate_aneo_3d._era5_au_sol, identique a l'entree du modele : diagnostic 5)",
+  "mesures": "par tranche au-dessus du sol 0-100, 100-300, 300-600, 600-1000 m (et > 1000 m en information), comme pcfno3d.dso_tranches : RMSE u, v, R2 u, v, rugosite ERA5 / verite (gradients entre noeuds voisins tous deux dans la tranche, moyenne sur les instants)",
+  "lecture": "rapport seulement : aucune decision n'en depend ; la v4 n'est jugee que par regle_v4_national.json sur le test",
+  "interdits": [
+    "aucun entrainement, aucune generation complete, aucun instant du test 2022",
+    "ERA5 et la verite generee sont appelees verite d'entrainement, jamais mesures"
+  ]
+}
