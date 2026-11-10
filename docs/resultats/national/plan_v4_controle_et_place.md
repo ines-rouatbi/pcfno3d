@@ -34,7 +34,7 @@ Le protocole est fixé avant que le jeu existe. Il tourne sur Colab CPU, sur les
 
 Le résultat te sera envoyé avant toute demande d'accord pour la v4.
 
-## 2. Règle v4 corrigée : `configs/national/regle_v4_national.json` (sha256 `eed8fd49…` ; une première version `81cf4b45…` est remplacée : les critères y sont reliés aux clés exactes que mesurent les scripts, la rugosité étant celle du domaine 0–1 km)
+## 2. Règle v4 corrigée : `configs/national/regle_v4_national.json` (sha256 `6e344f0d44867ad8f7b76b235f3d8bd8886f25029222c0c43c7bcabe809d84b8`, 10/11 16 h 30 ; remplace `eed8fd49…` et `81cf4b45…` à ta demande : deux candidats C' et D, 3 graines chacun, référence ERA5 seule, place pour 6 entraînements)
 
 Elle remplace la proposition du 09/11 (sha256 `ebeb761d…`).
 - **Même vérité.**
@@ -51,12 +51,15 @@ Elle remplace la proposition du 09/11 (sha256 `ebeb761d…`).
   - **Aéroports :** les 12, chacun retiré de l'entrée quand il est jugé. On publie l'écart v4 − livré avec son IC
     95 % (bootstrap sur les instants). Il faut v4 ≤ livré.
   - **Radiosondages de Tunis-Carthage, 0–1 km :** il faut v4 ≤ 1,03 × livré.
-- **Décision :** la v4 remplace le modèle livré seulement si les **six conditions** sont remplies. Sinon la v2 reste
+- **Mieux que l'ERA5 seule sur la même vérité** (prédicteur `era5` de `dso_hauteur_sol.py`) : RMSE max u, v 0–1 km
+  < celui de l'ERA5 et |rugosité − 1| < celui de l'ERA5. La ligne ERA5 seule est publiée à côté de chaque DSO.
+- **Choix :** parmi les 6 entraînements (C' et D × graines 42, 43, 44), le plus petit `val_score` de validation.
+- **Décision :** le candidat remplace le modèle livré seulement si les **huit conditions** sont remplies. Sinon la v2 reste
   livrée et la v4 est publiée comme essai.
 - **Conformité :** les DSO sont rapportés avec les seuils inchangés pour **les deux modèles sur la vérité v3**. Les
   chiffres de la v2 sur la vérité v2 restent publiés à part, sans mélange.
 
-## 3. Place sur le Drive pour les 3 graines
+## 3. Place sur le Drive pour les 6 entraînements (C' et D, 3 graines chacun)
 
 **Mesures du 10/11, 15 h** : 327,9 Go utilisés sur 400 Go, soit 72,1 Go libres avant la v3.
 
@@ -68,6 +71,11 @@ Elle remplace la proposition du 09/11 (sha256 `ebeb761d…`).
 | `last.pt` d'une graine (modèle, EMA, état d'Adam, pour la reprise après coupure) | 6,75 Go |
 | Copie des poids du modèle livré pour l'évaluer sur la v3 (`runs/national_1km_v2_sur_verite_v3/best.pt`) | 1,69 Go |
 | Sorties d'évaluation, DSO, journaux (par modèle évalué) | < 0,5 Go |
+
+**Mise à jour pour la règle 6e344f0 (6 entraînements) :** mesure Colab du 10/11, 17 h 07, après la v3 : **25 Go
+libres**. Option A : 6 × 1,69 + 1,69 (modèle livré sur la v3) + ≈ 1 (évaluations, `degradation_era5.json`) ≈
+**12,8 Go**, d'où **≈ 12 Go libres à la fin**. Les 6 entraînements tiennent **sans rien supprimer**. L'option B
+(6 × 6,75 Go de `last.pt` en plus) n'est plus possible sans libérer de la place.
 
 **Option A, proposée : rien à supprimer.**
 - Les 3 graines s'entraînent avec `train.sync_last: false`. `last.pt` reste sur le disque local de Colab, et seul

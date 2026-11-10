@@ -390,11 +390,18 @@ Générateur corrigé selon la phase 2 (`configs/national/regle_verite_v3.json`,
 CODE_GIT = '''
 # code du depot public au commit fige (remplace l'archive du Drive, plus ancienne)
 COMMIT = "@COMMIT@"
+os.chdir("/content")    # le noyau etait dans /content/PFE : le supprimer laisserait pip dans un dossier efface
 subprocess.run(f"rm -rf /content/PFE && git init -q /content/PFE && cd /content/PFE && git remote add origin "
                f"https://github.com/ines-rouatbi/pcfno3d.git && git fetch -q --depth 1 origin {COMMIT} "
                f"&& git checkout -q FETCH_HEAD", shell=True, check=True)
-subprocess.run([sys.executable, "-m", "pip", "install", "-q", "--no-deps", "-e", "/content/PFE"], check=True)
 os.chdir("/content/PFE")
+r = subprocess.run([sys.executable, "-m", "pip", "install", "-q", "--no-deps", "-e", "/content/PFE"],
+                   capture_output=True, text=True)
+if r.returncode:
+    print(r.stdout[-3000:], r.stderr[-3000:])
+    raise SystemExit("pip install -e /content/PFE a echoue (sortie ci-dessus)")
+import importlib
+importlib.invalidate_caches()
 import hashlib
 for f, h in (("regle_v4_national.json", "@SHA_V4@"),):
     assert hashlib.sha256((CODE / "configs" / "national" / f).read_bytes()).hexdigest() == h, f
