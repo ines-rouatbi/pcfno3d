@@ -1,0 +1,5 @@
+tranche,entrainement_rmse_u,entrainement_rmse_v,test_rmse_u,test_rmse_v,entrainement_v_sur_u,test_v_sur_u
+0-100 m,0.477,0.602,0.463,0.603,1.261,1.302
+100-300 m,0.522,0.726,0.519,0.726,1.39,1.4
+300-600 m,0.641,0.851,0.608,0.853,1.327,1.402
+600-1000 m,0.625,0.85,0.585,0.878,1.36,1.502

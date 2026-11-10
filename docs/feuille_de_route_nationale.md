@@ -25,18 +25,50 @@ Discipline, à chaque phase :
 
 ## 1. Phase 1 : diagnostics nationaux (sans entraînement)
 
-**État des 5 diagnostics (09/11/2026)**
+**État des 5 diagnostics (10/11/2026) : la phase 1 est terminée.**
 
 | # | Diagnostic | État |
 |---|---|---|
 | 1 | Modes de Fourier, grille, plus petite longueur d'onde | **fait** (ci-dessous) |
-| 2 | Spectres de l'erreur à 300 / 800 m au-dessus du sol, 180 instants de test | prêt (`scripts/diagnostic_v_phase1.py`, commit 1d3236a), à exécuter sur Colab |
-| 3 | RMSE u, v par tranche, 60 instants d'entraînement contre test | prêt (même script), à exécuter sur Colab |
+| 2 | Spectres de l'erreur à 300 / 800 m au-dessus du sol, 180 instants de test | **fait** (10/11, Colab L4, ci-dessous) |
+| 3 | RMSE u, v par tranche, 60 instants d'entraînement contre test | **fait** (10/11, Colab L4, ci-dessous) |
 | 4 | Mécanismes du générateur coupés un par un, 12 instants de validation 2021 | **fait** (09/11, en local, ci-dessous) |
 | 5 | Biais aux aéroports | **fait** (ci-dessous) |
 
-Les diagnostics 2 à 4 ont besoin du point de contrôle v2 et du cache, qui sont sur le Drive. Le
-carnet Colab est prêt (cellule 4). Il reste à le lancer et à valider la connexion au Drive.
+**Diagnostics 2 et 3** (`scripts/diagnostic_v_phase1.py`, commit 1d3236a, carnet Colab cellule 4, L4, 10/11/2026
+08:38). Sorties : `MyDrive/pcfno3d_national/runs/national_1km_v2/diagnostic_v_phase1/`. Verdicts de
+`scripts/juger_phase1.py` (règle sha256 2982322…0bd1da, vérifiée) dans
+`docs/resultats/national/phase1_diag23/verdict_phase1_diag234.md`. Les CSV de ce dossier sont recopiés du rapport
+du Drive, arrondis à 3 décimales ; l'arrondi ne déplace aucun verdict, les écarts aux seuils étant d'au moins 0,03.
+
+Part de l'énergie de l'erreur du modèle le long de y (nord-sud), test 2022 :
+
+| Hauteur au-dessus du sol | u, bande 13–26 km | v, bande 13–26 km | v, > 50 km |
+|---|---|---|---|
+| 300 m | 0,176 | 0,051 | **0,872** |
+| 800 m | 0,087 | 0,027 | **0,929** |
+
+- **Ablation des modes [6, 64, 32] : non proposée.** L'erreur sur v n'est pas dans la bande 13–26 km
+  (5 % et 3 %, seuil 25 %). La coupure spectrale nord-sud n'est donc pas la cause.
+- **L'erreur sur v est dominée par la grande échelle** (87 % et 93 % au-delà de 50 km) : **priorité à la
+  phase 2**, c'est-à-dire à la vérité d'entraînement. C'est cohérent avec le diagnostic 4.
+
+RMSE (m/s) par tranche au-dessus du sol, 60 instants d'entraînement contre 60 instants de test :
+
+| Tranche | Entraînement u | Entraînement v | Test u | Test v | v/u entraînement | v/u test |
+|---|---|---|---|---|---|---|
+| 0–100 m | 0,477 | 0,602 | 0,463 | 0,603 | 1,26 | 1,30 |
+| 100–300 m | 0,522 | 0,726 | 0,519 | 0,726 | 1,39 | 1,40 |
+| 300–600 m | 0,641 | 0,851 | 0,608 | 0,853 | 1,33 | 1,40 |
+| 600–1000 m | 0,625 | 0,850 | 0,585 | 0,878 | 1,36 | 1,50 |
+
+- **Pas de sur-apprentissage** : le rapport test / entraînement est d'au plus 1,03, sous le seuil de 1,15.
+- **L'écart entre v et u existe déjà à l'entraînement** (rapport v/u de 1,33 à 1,39 au-dessus de 100 m). Il vient
+  donc de la vérité d'entraînement ou de l'architecture, pas d'une mauvaise généralisation.
+
+**Conclusion de la phase 1.** Les diagnostics 2 à 4 désignent la même cause : la vérité d'entraînement
+(amortissement de w dans le générateur), et pas les modes de Fourier ni le sur-apprentissage. La phase 3 garde
+donc l'ablation C (même architecture, nouvelle vérité) et n'a pas besoin de l'ablation des modes.
 
 **Diagnostic 1 : modes de Fourier du national v2** (`configs/national_1km_colab.yaml`)
 
@@ -79,9 +111,8 @@ Le même nombre de modes sur un axe deux fois plus long fait que la partie spect
 fois plus grossière du nord au sud que d'est en ouest**. Entre 2 et 27 km dans la direction
 nord-sud, seule la convolution locale reconstruit le champ.
 
-C'est une cause possible de l'écart entre v et u. Le diagnostic 2 la confirmera ou l'écartera :
-si l'erreur sur v se concentre dans la bande 13–26 km le long de y, il faudra augmenter les modes
-en y (par exemple [6, 64, 32]) dans les ablations de la phase 3.
+C'était une cause possible de l'écart entre v et u. **Le diagnostic 2 l'écarte (10/11)** : seulement 3 à 5 %
+de l'erreur sur v se trouve dans la bande 13–26 km le long de y.
 
 **Forçage.** Les 7 scalaires (`scripts/forcage_era5.py`) sont des **moyennes sur tout le
 domaine** (828 × 388 km plus une marge de 0,15°) :
