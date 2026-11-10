@@ -32,7 +32,7 @@ def hacher(chemin: str | Path) -> str:
     h = empreinte(chemin)
     if f.exists() and f.read_text(encoding="ascii").split()[0] != h:
         raise SystemExit(f"{f} existe avec une autre empreinte : une regle hachee ne se reecrit pas")
-    f.write_text(f"{h}  {chemin.name}\n", encoding="ascii")
+    f.write_bytes(f"{h}  {chemin.name}\n".encode("ascii"))          # LF, comme le depot (.gitattributes)
     return h
 
 
