@@ -1,0 +1,37 @@
+{
+  "fixee_le": "2026-11-10 09 h, avant tout calcul des diagnostics 5, 6 et du complement du 7 (demande d'Ines du 10/11) ; aucun entrainement, aucune generation complete",
+  "diagnostic_5_coherence_era5": {
+    "but": "le vent ERA5 que recoit le modele (geom.interp_era5.dense des cellules du forcage de l'instant, comme le chargeur) contre le vent ERA5 du recalage du generateur (generate_aneo_3d._era5_au_sol(champ_cible(t)) aux lat / lon des noeuds de la grille et a h = max(z - relief des noeuds, MIN_ZREL_NODE)), meme noeud, meme hauteur au-dessus du sol",
+    "instants": "20 instants de VALIDATION 2021 (10 jours tires avec la graine 2028, 2 heures par jour parmi 3, 9, 15, 21 UTC, comme scripts/calibrer_verite_v3.py)",
+    "mesures": "RMSE et biais (modele - generateur) de u et v, par niveau des 16 niveaux sur les noeuds valides, et a 300 / 800 m au-dessus du sol",
+    "controles": [
+      "ordre des latitudes : lat du forcage croissantes ; valeur du npz a 10 m comparee au fichier ERA5 brut (u10, v10) sur 3 mailles x 3 instants",
+      "instant UTC : temps du npz contre valid_time du fichier brut ; horodatage du cache contre l'instant du generateur (jour + heure)",
+      "interpolation verticale : les deux cotes en hauteur au-dessus du sol (meme tableau h, ecart max des h, ecart max des reliefs des noeuds)",
+      "signe de v : signe de v du npz a 10 m = signe de v10 brut",
+      "position des noeuds : ecart max lat / lon entre la projection du modele (InterpERA5) et la grille du generateur"
+    ],
+    "verdict": "COHERENT si, a chaque niveau, RMSE <= 0,01 m/s et |biais| <= 0,005 m/s pour u et v et si tous les controles passent ; sinon BUG, signale avant tout autre resultat avec sa cause localisee"
+  },
+  "diagnostic_6_forme_erreur_v": {
+    "but": "l'erreur v (modele national v2 - verite d'entrainement) a 300 et 800 m au-dessus du sol est-elle une correction de grande echelle par instant",
+    "instants": "les 180 instants synoptiques du TEST 2022, comme le diagnostic 2 (modele v2 deja livre, aucun reglage choisi)",
+    "ajustement": "par instant et par hauteur, moindres carres sur les colonnes valides : e = a + b y + c x (y, x en km depuis le centre de la grille) ; meme calcul pour u, en comparaison",
+    "mesures": [
+      "part de l'energie de l'erreur expliquee par le plan = 1 - somme (e - plan)^2 / somme e^2, sur tous les instants ensemble, et sa mediane par instant ; idem pour la moyenne seule (a)",
+      "correlation de Spearman, sur les instants, de a (et de b, c) avec : l'heure UTC, le mois, la vitesse du vent geostrophique ERA5 (era5_ug, era5_vg de index.csv), le sinus et le cosinus de sa direction"
+    ],
+    "verdict": "erreur = correction de grande echelle par instant si la part expliquee par le plan (tous instants ensemble) est >= 0,5 aux deux hauteurs ; une correlation est signalee si |rho| >= 0,3 (n = 180, p < 1e-4)"
+  },
+  "diagnostic_7_complement": {
+    "but": "comparer a instants egaux le generateur de la v2 et les corrections de la phase 2 (l'ecart 1,46 du diagnostic 4 et 0,86 de l'acceptation viennent de deux jeux d'instants differents)",
+    "reference": "generateur du jeu v2 : passe-haut non, perturbations 0,4, brise 1, relief 1, beta 1",
+    "instants": "les 20 instants de calibration (graine 2026) et les 20 d'acceptation (graine 2027) de scripts/calibrer_verite_v3.py",
+    "mesures": "memes colonnes que verite_v3_calibration.csv (aeroports, ecarts u, v a 300 / 800 m) ; rapporte seulement, ne change aucun verdict deja rendu"
+  },
+  "interdits": [
+    "aucun entrainement, aucune generation complete",
+    "aucun bruit ajoute aux predictions",
+    "ERA5 et la verite generee sont appelees verite d'entrainement, jamais mesures"
+  ]
+}
