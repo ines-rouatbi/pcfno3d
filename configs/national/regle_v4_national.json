@@ -1,23 +1,28 @@
 {
-  "fixee_le": "2026-11-10 16 h 30, avant tout entrainement de la v4 nationale et avant toute lecture du test de la verite v3 ; remplace eed8fd49... (09-10/11 : ebeb761d..., 81cf4b45..., eed8fd49...), modifiee a la demande d'Ines : deux candidats C' et D, reference ERA5 seule, place sur le Drive. PROPOSITION soumise a l'accord ecrit d'Ines (une version modifiee aurait une nouvelle empreinte)",
+  "fixee_le": "2026-11-10 23 h 38, avant tout entrainement de la v4 nationale et avant toute lecture du test de la verite v3 ; remplace 6e344f0d... (09-10/11 : ebeb761d..., 81cf4b45..., eed8fd49..., 6e344f0d...) ; seuls changements depuis 6e344f0d, a la demande d'Ines (10/11) : capteurs ANEO simules a l'entrainement de D ; D garde pour la phase 5 ; evaluation d'information C'/D sur la validation avec ERA5 degradee et 50 capteurs simules. Accord ecrit d'Ines pour les 6 entrainements (C' et D, graines 42, 43, 44) sur Colab A100 si rien d'autre ne change ; le carnet de test attend un accord separe",
   "verite": "verite d'entrainement nationale v3 : generateur passe-haut, perturbations 0, brise 0,5, relief 1, beta 0,5 (configs/national/regle_verite_v3_repli.json ; regeneree le 10/11 avec l'accord ecrit d'Ines, cache_v3_partie_<k>.zip)",
   "candidats": {
     "commun": {
       "depart": "poids de la v2 nationale (runs/national_1km_v2/best.pt)",
       "entrainement": "30 epoques, lr 1e-4, loss.lambda_rough 1,0 (terme de rugosite, comme l'affinage v3 national), choix de l'epoque sur la VALIDATION de la verite v3 (dso1_rmse, dso2_masse, dso3_rugosite), comme la v2",
-      "graines": [42, 43, 44]
+      "graines": [
+        42,
+        43,
+        44
+      ]
     },
     "C_prime": {
       "nom": "national_1km_v4_Cp : architecture et entrees de la v2 (ERA5 10 m tous les 2 km + 12 aeroports, profil ERA5 aux noeuds), verite v3, terme de rugosite",
       "run_dir": "runs/national_1km_v4_Cp_s<graine>"
     },
     "D": {
-      "nom": "national_1km_v4_D : C' + entree ANEO pendant l'ENTRAINEMENT seulement",
+      "nom": "national_1km_v4_D : C' + entree ANEO pendant l'ENTRAINEMENT seulement (ERA5 degradee, masquage par zones, capteurs ANEO simules)",
       "degradation_era5": "a chaque instant d'entrainement, un champ aleatoire gaussien (u, v independants) est ajoute aux mailles ERA5 de l'instant (profil a toutes les hauteurs : entree dense ET base du residuel) et, au meme point, au vent ERA5 a 10 m du treillis d'entree ; ecart-type par composante = RMS de (ERA5 10 m - METAR) aux 12 aeroports sur les JOURS D'ENTRAINEMENT seulement (METAR a 30 min au plus) ; correlation spatiale exponentielle de longueur L ajustee sur la correlation des ecarts entre paires d'aeroports en fonction de la distance (bornee a [50 ; 400] km) ; meme perturbation a toutes les hauteurs ; parametres ecrits dans run_dir/degradation_era5.json AVANT l'entrainement",
       "masquage_par_zones": "a chaque instant d'entrainement, avec une probabilite 0,5, un disque de rayon tire uniformement entre 50 et 150 km (centre tire sur la terre) ou les points ERA5 a 10 m du treillis d'entree sont retires et ou le profil ERA5 (entree dense et base du residuel) est remplace par le profil ERA5 moyen du domaine a l'instant ; les cellules des aeroports restent en entree",
-      "validation_et_test": "sans degradation ni masquage (memes entrees que C' et que la production), pour que le score de selection soit le meme",
+      "validation_et_test": "sans degradation, sans masquage et sans capteurs simules (memes entrees que C' et que la production), pour que le score de selection soit le meme",
       "run_dir": "runs/national_1km_v4_D_s<graine>",
-      "usage": "D sert de toute facon a la phase 5 (reseau ANEO), sous sa propre regle, meme s'il n'est pas retenu ici"
+      "usage": "D est GARDE pour la phase 5 (reseau ANEO), qu'il soit choisi ou non pour la reconstruction : les best.pt de ses 3 graines restent dans leur run_dir ; la phase 5 aura sa propre regle",
+      "capteurs_simules": "a chaque exemple d'entrainement, n tire uniformement entre 20 et 200 (bornes comprises) mailles terrestres distinctes, tirees au hasard parmi les candidats de l'OS6 (pcfno3d.os6.candidats, contraintes par defaut : pente <= 20 deg, 1 km du bord du domaine et des aeroports, terre z0 >= 0,005 m, altitude <= 650 m) ; valeur = verite d'entrainement a 25 m au-dessus du sol dans la colonne (couche de surface du cache a 10 m et noeuds valides plus hauts, interpolation lineaire en ln h), plus un bruit de mesure gaussien par composante d'ecart-type 0,1 m/s + 2 % de la vitesse (anemometre de mat) ; entree comme une station (cellule du treillis, prioritaire sur le pseudo-capteur ERA5, gardee dans une zone masquee) ; config mask.aneo_capteurs [20, 200], mask.aneo_hauteur_capteur_m 25"
     }
   },
   "choix_du_candidat": "parmi les 6 entrainements (C' et D, 3 graines chacun), celui dont le score de selection de la VALIDATION (history.json, minimum de val_score, meme score pour tous) est le meilleur ; les 5 autres sont rapportes (moyenne et ecart des scores par candidat) ; le test n'est jamais lu pour choisir",
@@ -56,5 +61,6 @@
     "aucun reglage choisi sur le test",
     "aucun bruit ajoute aux predictions (la degradation de D ne touche que les ENTREES d'entrainement)",
     "ERA5 et la verite generee sont appelees verite d'entrainement, jamais mesures ; les METAR et radiosondages sont les mesures"
-  ]
+  ],
+  "information_sans_effet_sur_le_choix": "apres chaque entrainement, sur la VALIDATION de la verite v3 (memes instants que le score, entree complete), scripts/info_capteurs_v4.py evalue l'entrainement et l'ERA5 seule dans trois conditions : propre, ERA5 degradee (champ correle de D, sans zones), ERA5 degradee + 50 capteurs simules (memes regles que ci-dessus) ; memes tirages pour tous les entrainements (graine 1000 + instant) ; RMSE u, v par tranche 0-1 km et rmse_max_uv ; gain des capteurs = rmse_max_uv (degradee) - rmse_max_uv (degradee + 50 capteurs) ; publie pour C' et D, SANS EFFET sur le choix ; parametres de degradation : scripts/degradation_era5.py (jours d'entrainement), runs/degradation_era5_v4.json, recopie dans le run_dir de D avant son entrainement"
 }

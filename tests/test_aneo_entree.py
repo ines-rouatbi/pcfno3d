@@ -58,3 +58,30 @@ def test_sans_degradation_rien_ne_change(tmp_path):
     cel = np.random.default_rng(3).normal(size=int(np.prod(g.forcage.forme_cellules))).astype(np.float32)
     c, dn, zone = e.appliquer(cel, np.random.default_rng(0))
     assert np.allclose(c, cel) and not dn.any() and zone is None
+
+
+def test_capteurs_simules_a_25_m(tmp_path):
+    g, _ = _geom(tmp_path)
+    ny, nx = g.zt.shape
+    g.nz, g.z_levels = 3, np.array([25.0, 150.0, 400.0])
+    g.zrel_sensor = np.full((ny, nx), 10.0)
+    g.valid = np.ones((3, ny, nx), bool)
+    g.valid[0] = False                                 # 25 m ASL sous un relief de 100 m
+    e = EntreeANEO(g, None, p_zone=0.0, rayon_km=(50.0, 150.0), n_capteurs=(20, 200))
+    S = np.zeros((8, ny, nx), np.float32)
+    S[0], S[1] = 5.0, -2.0                             # couche de surface a 10 m
+    Y = np.zeros((4, 3, ny, nx), np.float32)
+    Y[0, 1], Y[1, 1] = 10.0, -4.0                      # noeud a 150 m ASL = 50 m au-dessus du sol
+    u, v = e.valeur_a_hauteur(S, Y, 10, 10)
+    t = (np.log(25.0) - np.log(10.0)) / (np.log(50.0) - np.log(10.0))
+    assert abs(u - (5 + 5 * t)) < 1e-5 and abs(v - (-2 - 2 * t)) < 1e-5
+    e._cand = np.argwhere(g.zt > 1.0)                  # candidats de l'OS6 remplaces (geometrie factice)
+    for k in range(20):
+        cel, cu, cv = e.capteurs(S, Y, np.random.default_rng(k))
+        assert 20 <= len(cel) <= 200 and len(np.unique(cel, axis=0)) == len(cel)
+        assert (g.zt[cel[:, 0], cel[:, 1]] > 1.0).all()
+    cel, cu, cv = e.capteurs(S, Y, np.random.default_rng(0), n=2000)
+    sd = 0.1 + 0.02 * np.hypot(5 + 5 * t, 2 + 2 * t)
+    assert abs((cu - (5 + 5 * t)).std() - sd) < 0.03 and abs(cu.mean() - (5 + 5 * t)) < 0.03
+    assert e.capteurs(S, Y, np.random.default_rng(0), n=0) is None
+    assert EntreeANEO(g, None, 0.0, (50.0, 150.0)).capteurs(S, Y, np.random.default_rng(0)) is None

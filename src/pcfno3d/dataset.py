@@ -26,7 +26,7 @@ class ANEO3D(Dataset):
     def __init__(self, stems, hours, doys, geom: Geometry, train: bool,
                  n_samples: int | None = None, seed: int = 0,
                  keep_eval: float | None = None, spacing_m: float | None = None,
-                 reseau: np.ndarray | None = None) -> None:
+                 reseau: np.ndarray | None = None, aneo_eval=None) -> None:
         self.stems = list(stems)
         self.hours = list(hours)
         self.doys = list(doys)
@@ -44,6 +44,9 @@ class ANEO3D(Dataset):
         # evaluation seulement (lot M8, E2) : reseau FIXE dans l'espace (ny, nx), le meme a
         # chaque instant, au lieu d'un tirage par instant
         self.reseau = None if reseau is None else np.asarray(reseau, dtype=bool)
+        # evaluation d'information de la regle v4 seulement : une EntreeANEO appliquee aussi hors
+        # entrainement (ERA5 degradee, n capteurs simules fixes), memes tirages a chaque evaluation
+        self.aneo_eval = aneo_eval
 
     def __len__(self) -> int:
         return self.n_samples if self.n_samples else len(self.stems)
@@ -66,17 +69,22 @@ class ANEO3D(Dataset):
         cible = None
         # forcage ERA5 de l'instant : 7 scalaires + cellules u, v (pcfno3d.forcage) ; candidat D
         # national : cellules degradees / masquees par zones a l'ENTRAINEMENT seulement (aneo_entree)
-        vec = delta_e = zone = None
+        vec = delta_e = zone = capt = None
+        aneo = None
+        if self.train:
+            from .aneo_entree import entree_aneo
+            aneo = entree_aneo(self.geom)
+        elif self.aneo_eval is not None:
+            aneo = self.aneo_eval
         if self.geom.forcage is not None:
             from .forcage import horodatage
             vec = self.geom.forcage.vecteur(horodatage(self.geom, stem))
-            if self.train:
-                from .aneo_entree import entree_aneo
-                aneo = entree_aneo(self.geom)
-                if aneo is not None:
-                    n_sc = len(vec) - self.geom.forcage.n_cellules
-                    cel, delta_e, zone = aneo.appliquer(vec[n_sc:], rng)
-                    vec = np.concatenate([vec[:n_sc], cel]).astype(np.float32)
+            if aneo is not None:
+                n_sc = len(vec) - self.geom.forcage.n_cellules
+                cel, delta_e, zone = aneo.appliquer(vec[n_sc:], rng)
+                vec = np.concatenate([vec[:n_sc], cel]).astype(np.float32)
+        if aneo is not None:
+            capt = aneo.capteurs(S, Y, rng)
         if self.geom.cfg.mask.entree == "era5_stations" and self.train and affinage_stations(self.geom.cfg):
             # affinage sur les stations : vraies mesures en entree, une station en cible
             from .stations_reelles import entree_affinage
@@ -84,7 +92,8 @@ class ANEO3D(Dataset):
                                                rng, stem)
         elif self.geom.cfg.mask.entree == "era5_stations":
             S, sensor = entree_era5_stations(S, self.cache_dir / f"{stem}_E.npy", self.geom,
-                                             rng, self.train, keep=keep, delta_e=delta_e, zone=zone)
+                                             rng, self.train, keep=keep, delta_e=delta_e, zone=zone,
+                                             capteurs=capt)
         elif not self.train and self.reseau is not None:
             sensor = (S[7] > 0.5) & self.reseau
         elif not self.train and self.spacing_m:
@@ -122,7 +131,7 @@ def cellules_stations(geom: Geometry) -> np.ndarray:
 
 def entree_era5_stations(S: np.ndarray, chemin_e, geom: Geometry, rng: np.random.Generator,
                          train: bool, keep: float = 1.0, delta_e: np.ndarray | None = None,
-                         zone: np.ndarray | None = None) -> tuple[np.ndarray, np.ndarray]:
+                         zone: np.ndarray | None = None, capteurs=None) -> tuple[np.ndarray, np.ndarray]:
     """Entree de production du modele reel : vent ERA5 a 10 m sur un reseau regulier (tous
     les `mask.pas_era5_m`) + les stations reelles (valeur du cache = verite generee au point).
 
@@ -150,8 +159,13 @@ def entree_era5_stations(S: np.ndarray, chemin_e, geom: Geometry, rng: np.random
     if not train and keep < 1.0:
         reseau &= rng.random(reseau.shape) < keep
         st &= rng.random(st.shape) < keep
-    era5 = reseau & ~st                         # une station prime sur le pseudo-capteur
     S = S.copy()
+    if capteurs is not None:                    # candidat D : capteurs ANEO simules (aneo_entree)
+        cel, cu, cv = capteurs
+        st[cel[:, 0], cel[:, 1]] = True
+        S[0, cel[:, 0], cel[:, 1]] = cu
+        S[1, cel[:, 0], cel[:, 1]] = cv
+    era5 = reseau & ~st                         # une station prime sur le pseudo-capteur
     S[0] = np.where(era5, E[0], S[0])
     S[1] = np.where(era5, E[1], S[1])
     S[2] = 0.0

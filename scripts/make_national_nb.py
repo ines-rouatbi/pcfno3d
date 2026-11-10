@@ -417,13 +417,18 @@ CANDIDAT = "@CANDIDAT@"                     # Cp ou D (regle_v4_national.json)
 RUN = NAT / "runs" / f"national_1km_v4_{CANDIDAT}_s{GRAINE}"
 RUN.mkdir(parents=True, exist_ok=True)
 EXTRA = "--set loss.lambda_rough=1.0"
+# parametres de la degradation d'ERA5 (jours d'entrainement seulement), ecrits AVANT tout entrainement ;
+# communs a D (entrainement) et a l'evaluation d'information de C' et D (validation)
+DEGV4 = NAT / "runs" / "degradation_era5_v4.json"
+if not DEGV4.exists():
+    lancer("degradation_era5_v4", f"python -u scripts/degradation_era5.py --donnees {G} "
+                                  f"--calendrier {NAT / 'calendrier.json'} --sortie {DEGV4}")
 if CANDIDAT == "D":
-    # parametres de la degradation d'ERA5 ecrits AVANT l'entrainement (jours d'entrainement seulement)
     DEG = RUN / "degradation_era5.json"
     if not DEG.exists():
-        lancer(f"degradation_era5_s{GRAINE}", f"python -u scripts/degradation_era5.py --donnees {G} "
-                                              f"--calendrier {NAT / 'calendrier.json'} --sortie {DEG}")
-    EXTRA += f" --set mask.aneo_degradation={shlex.quote(str(DEG))} --set mask.aneo_p_zone=0.5"
+        shutil.copy2(DEGV4, DEG)
+    EXTRA += (f" --set mask.aneo_degradation={shlex.quote(str(DEG))} --set mask.aneo_p_zone=0.5"
+              f" --set {shlex.quote('mask.aneo_capteurs=[20,200]')} --set mask.aneo_hauteur_capteur_m=25")
 INIT = shlex.quote(str(choisir_poids(NAT / "runs" / "national_1km_v2")))
 print("depart :", INIT, "| run :", RUN)
 try:
@@ -434,6 +439,11 @@ try:
            f"--set paths.run_dir={shlex.quote(str(RUN))} --set paths.local_dir=/content/run_local_v4_{CANDIDAT}_s{GRAINE} train")
     # AUCUNE lecture du test ici (regle_v4_national.json) : seul le carnet de test lit le test, une fois
     print((RUN / "history.json").read_text()[-3000:])
+    # information, sans effet sur le choix : validation propre / ERA5 degradee / + 50 capteurs simules
+    if not (RUN / "info_capteurs_validation.json").exists():
+        lancer(f"info_capteurs_v4_{CANDIDAT}_s{GRAINE}",
+               f"python -u scripts/info_capteurs_v4.py -c national_1km_colab {OPTS} --run {shlex.quote(str(RUN))} "
+               f"--degradation {shlex.quote(str(DEGV4))}")
 except Exception:
     traceback.print_exc()
 finally:

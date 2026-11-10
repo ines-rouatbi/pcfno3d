@@ -427,3 +427,69 @@ def test_diagnostic_v_phase1(cfg_era5, index, tmp_path):
     import json as _json
     r = _json.loads((d / "resume.json").read_text(encoding="utf-8"))
     assert r["modes"]["lambda_min_y_km"] > 0 and (d / "tranches.csv").exists()
+
+
+def test_capteurs_aneo_simules_en_entree(cfg_era5, index, tmp_path):
+    """Candidat D national : capteurs ANEO simules en entree comme des stations (entrainement, et
+    evaluation d'information seulement quand on passe aneo_eval) ; un entrainement court tourne."""
+    from pcfno3d.aneo_entree import EntreeANEO, entree_aneo
+
+    c, _ = _jeu_reel(cfg_era5, index, tmp_path)
+    c.apply_overrides({"mask.aneo_capteurs": [2, 4], "mask.aneo_p_zone": 0.5})
+    g = Geometry(c, device="cpu")
+    e = entree_aneo(g)
+    assert e is not None and e.n_capteurs == (2, 4)
+    try:
+        e.candidats()
+    except ValueError:                            # mini-grille : contraintes de l'OS6 trop strictes
+        e._cand = np.argwhere(g.valid.any(axis=0))
+    val = index[index["split"] == "val"]
+    args = (val["stem"].values, val["hour"].values, val["doy"].values, g)
+    base = ANEO3D(*args, train=False, seed=1000, keep_eval=1.0)[0]
+    ev = EntreeANEO(g, None, 0.0, (50.0, 150.0))
+    ev._cand = e._cand
+    ev.n_capteurs = (3, 3)
+    avec = ANEO3D(*args, train=False, seed=1000, keep_eval=1.0, aneo_eval=ev)[0]
+    nouveaux = (avec[1] > 0.5) & ~(base[1] > 0.5)
+    assert 0 < int(nouveaux.sum()) <= 3
+    assert torch.equal(ANEO3D(*args, train=False, seed=1000, keep_eval=1.0, aneo_eval=ev)[0][0], avec[0])   # reproductible
+    item = ANEO3D(*args[:3], g, train=True, n_samples=2)[0]
+    assert torch.isfinite(item[0]).all()
+
+
+def test_info_capteurs_v4_de_bout_en_bout(cfg_era5, index, tmp_path, monkeypatch):
+    """scripts/info_capteurs_v4.py sur le mini-jeu : trois conditions, gain des capteurs ecrit."""
+    import importlib.util
+    import json
+    import sys
+    from pathlib import Path
+
+    import pcfno3d.aneo_entree as AE
+
+    repo = Path(__file__).resolve().parents[1]
+    c, _ = _jeu_reel(cfg_era5, index, tmp_path)
+    Trainer(c, device="cpu", verbose=False).fit()
+    deg = tmp_path / "deg.json"
+    deg.write_text(json.dumps({"sigma_u": 1.0, "sigma_v": 1.0, "L_km": 100.0}))
+    cfgf = tmp_path / "c.yaml"
+    c.save(cfgf) if hasattr(c, "save") else pytest.skip("Config sans save")
+    orig = AE.EntreeANEO.candidats
+
+    def cand(self):                                   # mini-grille : contraintes de l'OS6 trop strictes
+        try:
+            return orig(self)
+        except ValueError:
+            self._cand = np.argwhere(self.geom.valid.any(axis=0))
+            return self._cand
+    monkeypatch.setattr(AE.EntreeANEO, "candidats", cand)
+    spec = importlib.util.spec_from_file_location("info", repo / "scripts" / "info_capteurs_v4.py")
+    M = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(M)
+    monkeypatch.setattr(sys, "argv", ["info", "-c", str(cfgf), "--run", str(c.paths.run_dir),
+                                      "--degradation", str(deg), "--n-capteurs", "3"])
+    assert M.main() == 0
+    out = json.loads((Path(c.paths.run_dir) / "info_capteurs_validation.json").read_text(encoding="utf-8"))
+    assert set(out["conditions"]) == {"propre", "era5_degradee", "era5_degradee_3_capteurs"}
+    assert np.isfinite(out["gain_des_capteurs_rmse_max_uv"])
+    cp = out["conditions"]
+    assert cp["era5_degradee"]["era5"]["rmse_max_uv"] != cp["propre"]["era5"]["rmse_max_uv"]

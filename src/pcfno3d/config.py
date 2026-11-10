@@ -285,9 +285,17 @@ class MaskCfg:
     aneo_degradation: str | None = None
     aneo_p_zone: float = 0.0
     aneo_rayon_km: tuple[float, float] = (50.0, 150.0)
+    # Candidat D : capteurs ANEO simules a l'entrainement (n tire dans [min, max] par exemple, mats a
+    # aneo_hauteur_capteur_m, aneo_entree.EntreeANEO.capteurs). (0, 0) = desactive.
+    aneo_capteurs: tuple[int, int] = (0, 0)
+    aneo_hauteur_capteur_m: float = 25.0
 
     def __post_init__(self) -> None:
         self.aneo_rayon_km = tuple(float(r) for r in self.aneo_rayon_km)   # type: ignore[assignment]
+        self.aneo_capteurs = tuple(int(n) for n in self.aneo_capteurs)    # type: ignore[assignment]
+        if len(self.aneo_capteurs) != 2 or not 0 <= self.aneo_capteurs[0] <= self.aneo_capteurs[1]:
+            raise ValueError(f"mask.aneo_capteurs : (min, max) avec 0 <= min <= max, recu {self.aneo_capteurs}")
+        self.aneo_hauteur_capteur_m = float(self.aneo_hauteur_capteur_m)
         if not 0.0 <= float(self.aneo_p_zone) <= 1.0:
             raise ValueError(f"mask.aneo_p_zone doit etre dans [0, 1], recu {self.aneo_p_zone}")
         self.aneo_p_zone = float(self.aneo_p_zone)
