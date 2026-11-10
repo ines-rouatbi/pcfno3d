@@ -1,0 +1,72 @@
+{
+  "regle": "configs/national/regle_phase1_complements.json",
+  "sha256_regle": "752e16ca6d05b3e399c20e4ba1806ab4128b2758673bc17ef865f20a65a8a105",
+  "instants": [
+    "2021-01-20 09:00:00",
+    "2021-01-20 21:00:00",
+    "2021-01-30 09:00:00",
+    "2021-01-30 21:00:00",
+    "2021-02-01 09:00:00",
+    "2021-02-01 21:00:00",
+    "2021-02-15 09:00:00",
+    "2021-02-15 21:00:00",
+    "2021-02-19 09:00:00",
+    "2021-02-19 21:00:00",
+    "2021-07-05 09:00:00",
+    "2021-07-05 21:00:00",
+    "2021-07-17 09:00:00",
+    "2021-07-17 21:00:00",
+    "2021-07-27 09:00:00",
+    "2021-07-27 21:00:00",
+    "2021-07-28 03:00:00",
+    "2021-07-28 15:00:00",
+    "2021-07-29 09:00:00",
+    "2021-07-29 21:00:00"
+  ],
+  "rmse_max": 1.4274333812773041e-06,
+  "biais_max_abs": 7.11534177026674e-09,
+  "controles": {
+    "noeuds_meme_forme": true,
+    "ecart_max_lat_deg": 4.997481113377944e-07,
+    "ecart_max_lon_deg": 4.998661484734157e-07,
+    "ecart_max_position_m": 0.07219015177951238,
+    "ecart_max_relief_m": 0.0,
+    "ecart_max_hauteur_sol_m": 0.0,
+    "min_zrel_modele_generateur": [
+      5.0,
+      5.0
+    ],
+    "lat_forcage_croissantes": true,
+    "meme_npz_modele_generateur": true,
+    "fichier_brut": "era5_sl_2021_m01-06.nc",
+    "lat_brut_decroissantes": true,
+    "instants_npz_egaux_brut": true,
+    "ecart_max_u10_npz_brut": 0.0,
+    "ecart_max_v10_npz_brut": 0.0,
+    "signe_v_identique": true,
+    "horodatage_cache_contre_generateur": [
+      {
+        "stem": "0731_000000",
+        "timestamp_index": "2023-01-01 00:00:00",
+        "instant_generateur": "2023-01-01 00:00:00"
+      },
+      {
+        "stem": "0731_060000",
+        "timestamp_index": "2023-01-01 06:00:00",
+        "instant_generateur": "2023-01-01 06:00:00"
+      },
+      {
+        "stem": "0731_120000",
+        "timestamp_index": "2023-01-01 12:00:00",
+        "instant_generateur": "2023-01-01 12:00:00"
+      },
+      {
+        "stem": "0731_180000",
+        "timestamp_index": "2023-01-01 18:00:00",
+        "instant_generateur": "2023-01-01 18:00:00"
+      }
+    ],
+    "horodatage_cache_coherent": true
+  },
+  "verdict": "COHERENT"
+}

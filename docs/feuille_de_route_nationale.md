@@ -66,6 +66,17 @@ RMSE (m/s) par tranche au-dessus du sol, 60 instants d'entraînement contre 60 i
 - **L'écart entre v et u existe déjà à l'entraînement** (rapport v/u de 1,33 à 1,39 au-dessus de 100 m). Il vient
   donc de la vérité d'entraînement ou de l'architecture, pas d'une mauvaise généralisation.
 
+**Diagnostics complémentaires 5, 6, 7 (demande d'Ines du 10/11, règle 752e16c)** :
+`docs/resultats/national/rapport_diagnostics_5_6_7.md`.
+- **5. Cohérence de l'ERA5 :** cohérent, aucun bug. Le modèle et le générateur voient le même ERA5 à
+  1,4·10⁻⁶ m/s près ; latitudes, instant UTC, interpolation au-dessus du sol et signe de v sont vérifiés.
+- **6. Forme de l'erreur sur v :** un plan par instant n'explique que 31 à 32 % de son énergie (8 % pour u) et la
+  moyenne seule 2 à 3 %. Ce n'est donc pas une correction uniforme par instant. Une seule corrélation est
+  signalée : la moyenne à 300 m avec la direction géostrophique, ρ = −0,32.
+- **7. Correction de la phase 2 :** à instants égaux (acceptation), l'écart sur v à 300 m passe de 2,24 (générateur
+  v2) à 0,86 (passe-haut) puis à 0,43 (β = 0,5). Aux aéroports, la vérité passe de 3,114 à 2,925 m/s, contre 2,940
+  pour ERA5.
+
 **Conclusion de la phase 1.** Les diagnostics 2 à 4 désignent la même cause : la vérité d'entraînement
 (amortissement de w dans le générateur), et pas les modes de Fourier ni le sur-apprentissage. La phase 3 garde
 donc l'ablation C (même architecture, nouvelle vérité) et n'a pas besoin de l'ablation des modes.

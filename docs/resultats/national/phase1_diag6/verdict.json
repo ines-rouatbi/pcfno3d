@@ -1,0 +1,10 @@
+{
+  "regle": "configs/national/regle_phase1_complements.json",
+  "sha256_regle": "752e16ca6d05b3e399c20e4ba1806ab4128b2758673bc17ef865f20a65a8a105",
+  "instants": 180,
+  "erreur_v_correction_grande_echelle_par_instant": false,
+  "correlations_signalees": [
+    {"hauteur_sol_m": 300, "composante": "v", "coefficient": "a", "variable": "vg_dir_cos", "rho": -0.323, "p": 0.0, "signalee": true}
+  ],
+  "source": "MyDrive/pcfno3d_national/runs/national_1km_v2/diagnostic_forme_erreur_v/ (Colab L4, 10/11/2026 09:21), recopie"
+}
