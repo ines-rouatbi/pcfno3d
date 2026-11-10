@@ -277,6 +277,29 @@ seulement**. L'entraînement de la v4 demandera un accord distinct.
   - `scripts/evaluer_prevision.py` et `verifier_decisions.py`, passés aux 12 aéroports.
 - **Durée** : affinage d'environ 12 époques (1 h) et évaluation PREV1 à PREV3 (1 h).
 
+**État de la phase 4 (11/11/2026) : préparée, rien n'est lancé.** Règle
+`configs/national/regle_os7_national.json` (sha256 `4360860…`), **PROPOSITION soumise à l'accord écrit
+d'Ines**, écrite avant tout téléchargement, affinage ou lecture du test.
+- **Forçage GFS national** : `python -m pcfno3d.gfs --config national_1km_colab --national`. Les mailles
+  0,25° du forçage ERA5 national sont des nœuds de la boîte nationale : le forçage GFS y est découpé
+  (`gfs.indices_boite`, `gfs.construire_national`), aux mêmes 17 hauteurs au-dessus du sol, avec les mêmes
+  formules (`temps_reel.forcage_gfs`). Les échéances déjà téléchargées par l'OS7 du Grand Tunis
+  (`*_tn.npz`) sont relues sans y écrire (`--lecture`) ; les autres ne demandent que la boîte nationale.
+  Le test `tests/test_os7_national.py` vérifie, sur une même atmosphère synthétique, que le forçage GFS
+  national redonne exactement le forçage de `scripts/forcage_era5.py` (scalaires et cellules, comblement
+  au-dessus de 700 hPa compris).
+- **Configuration** : `configs/national_v5_gfs_colab.yaml` (v4 choisi par `runs/choix_v4.json`, 12 époques à
+  lr 5e-5, entrée GFS f24, aucune station en entrée, vérité v3, époque choisie sur la validation,
+  `runs/national_1km_v5_gfs`).
+- **Évaluation** : `scripts/evaluer_prevision.py` lit désormais les stations de `stations.json` (les
+  12 aéroports au national, les 3 stations au Grand Tunis, inchangé) et donne en option un IC 95 % par
+  bootstrap des instants ; PREV3 par `scripts/verifier_decisions.py` (inchangé) ; verdicts par
+  `scripts/juger_os7_national.py`, qui vérifie l'empreinte de la règle.
+- **Carnet** : `notebooks/current/pcfno3d_national_os7_colab.ipynb` (`scripts/make_national_os7_nb.py`), un
+  seul carnet : partie A en Colab CPU (GFS), partie B en A100 (référence sans affinage, affinage v5, PREV1 à
+  PREV3, champ 3D, verdicts). Code au commit figé, empreintes des règles v4 et OS7 vérifiées ; il refuse de
+  tourner tant que `ACCORD_ECRIT_INES` est vide.
+
 ### Phase 5 : OS6 national, réseau ANEO (dépend de la phase 3)
 - **Fichiers** :
   - `scripts/os6_reseau.py`, étendu au national : candidats sur terre, pente ≤ 20°, 1 km des

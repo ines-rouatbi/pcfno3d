@@ -1,0 +1,53 @@
+{
+  "fixee_le": "2026-11-11, avant tout telechargement GFS national, tout affinage du modele national v5 et toute lecture du test 2022 par lui ou par la reference sans affinage",
+  "statut": "PROPOSITION soumise a l'accord ecrit d'Ines : aucun telechargement, aucun affinage, aucune lecture du test sans cet accord ; si un point change, la regle est reecrite, rehachee et redatee avant tout calcul",
+  "objet": "OS7 national (phase 4 de docs/feuille_de_route_nationale.md, cahier v12 section 18.10) : prevision du vent 3D a +24 h et +48 h sur toute la Tunisie, le modele national nourri par la prevision GFS au lieu d'ERA5",
+  "donnees_gfs": {
+    "source": "archive NOAA sur AWS (noaa-gfs-bdp-pds), pgrb2.0p25, lecture par plages d'octets via les fichiers .idx (Herbie) ; 9 niveaux de pression 1000-700 hPa (UGRD, VGRD, HGT), vent a 10 et 100 m, T et HR a 2 m, pression de surface et au niveau de la mer, relief et masque terre-mer GFS, rayonnement",
+    "run": "pour un instant de validite t et une echeance L (24 ou 48 h) : dernier cycle GFS (00, 06, 12, 18 UTC) tel que t - run >= L (echeance effective L a L + 5 h, notee dans run_utc et echeance_h) ; pcfno3d.gfs.run_pour",
+    "instants": "tous les instants du cache de la verite v3 nationale (train, val, test), echeances f24 et f48",
+    "mailles": "exactement les mailles 0,25 deg du forcage ERA5 national (forcage_era5.npz : lat, lon), decoupees dans la boite nationale 30-38 N, 7-12 E (pcfno3d.gfs.indices_boite refuse une maille hors des noeuds de la boite)",
+    "hauteurs": "exactement les hauteurs au-dessus du sol du forcage ERA5 national (hauteurs_sol de forcage_era5.npz) ; au-dessus de 700 hPa, valeur valide la plus proche de la colonne, comme forcage_era5.py",
+    "formules": "pcfno3d.temps_reel.forcage_gfs : celles de scripts/forcage_era5.py (scalaires = moyennes sur les mailles : ug, vg a 850 hPa, cisaillement 850-700 hPa, rotation 10 m - 850 hPa, stabilite, contraste terre-mer t2m terre - t2m mer selon le masque GFS) ; relief des mailles = orographie GFS",
+    "reutilisation": "les echeances nationales deja telechargees par l'OS7 du Grand Tunis (MyDrive/pcfno3d_grand_tunis/os7/gfs_f<L>_instants/*_tn.npz) sont lues sans y rien ecrire ; les autres sont telechargees (boite nationale seule) dans MyDrive/pcfno3d_national/os7/gfs_f<L>_tn/",
+    "controle": "le forcage GFS national a la meme forme de cellules et les memes hauteurs que le forcage ERA5 national, sinon arret ; au plus 2 % d'echeances absentes de l'archive apres 3 passes (instants ecartes par load_index, liste dans forcage_gfs_f<L>.erreurs.json), sinon arret sans affinage"
+  },
+  "modele_v5": {
+    "nom": "national_1km_v5_gfs",
+    "run_dir": "runs/national_1km_v5_gfs (dossier neuf, rien n'est ecrase)",
+    "configuration": "configs/national_v5_gfs_colab.yaml",
+    "depart": "l'entrainement v4 choisi par runs/choix_v4.json (cle entrainement_choisi ; son regle_sha256 doit etre celui de configs/national/regle_v4_national.json), poids choisis par choisir_poids (epoque de son test evalue) ; ses poids et son run_dir ne sont pas modifies",
+    "entrainement": "affinage de 12 epoques, lr 5e-5 (comme le Grand Tunis v5), reglages de perte de la v4 (dont lambda_rough 1,0) ; entree = forcage GFS f24 (profil aux noeuds et reseau a 10 m tous les 2 km, mask.e_source forcage), AUCUNE station en entree (mask.stations_entree false), aucune entree ANEO simulee ; sortie = la verite d'entrainement v3 inchangee, decoupage inchange (entrainement 2023-2025, validation 2021, test 2022)",
+    "choix_de_l_epoque": "sur la VALIDATION 2021 seulement (train.select_by dso, criteres dso1_rmse, dso2_masse, dso3_rugosite, comme la v2 et la v4 nationales)",
+    "plus_48h": "le meme modele (affine sur f24 seulement), evalue avec le forcage f48"
+  },
+  "reference_sans_affinage": "le v4 choisi, poids et statistiques de normalisation inchanges (son run_dir lu seulement), nourri par le meme forcage GFS f24 puis f48, memes instants et memes stations ; rapportee a cote du v5",
+  "stations": "les 12 aeroports METAR de configs/national/stations_metar.csv (MESURES, vent a 10 m), aucun en entree ; mois en panne ecartes par stations_reelles.lire_observations ; vent du modele a 10 m au-dessus du sol par stations_reelles.vent_a_hauteur (comme scripts/valider_grand_tunis_reel.py) ; GFS brut = vent GFS a 10 m de la meme echeance a la cellule de la station ; persistance = mesure de la station L heures plus tot, a 30 min pres",
+  "test": "test 2022, instants synoptiques ayant une echeance GFS (meme liste pour toutes les sources) ; lu UNE fois pour le v5 et UNE fois pour la reference, par echeance (scripts/evaluer_prevision.py ; une etape dont la sortie existe est sautee) ; le champ 3D du v5 a +24 h contre la verite d'entrainement v3 (evaluate, scripts/dso_hauteur_sol.py mesure) est lu une fois et publie a titre d'information",
+  "criteres": {
+    "PREV1": "+24 h : RMSE vectoriel a 10 m sur toutes les paires (aeroport, instant) du v5 < celui de GFS brut ET < celui de la persistance (scripts/evaluer_prevision.py --echeance 24, cle verdicts.toutes) ; conforme si les deux",
+    "PREV2": "+48 h : meme definition avec le forcage f48 et la persistance a 48 h (scripts/evaluer_prevision.py --echeance 48)",
+    "PREV3": {
+      "definition": "decision de traitement de la veille (regle figee de scripts/verifier_decisions.py, vent a 10 m en km/h : < 3 attention, <= 15 oui, <= 19 attention, > 19 non) tiree du v5 a +24 h contre la decision tiree de la mesure de l'aeroport, toutes stations, toutes heures ; meme calcul a +48 h, rapporte",
+      "mesurable_si": "au moins 100 paires (aeroport, instant) avec mesure et au moins 6 aeroports distincts dans prevision_paires.csv a +24 h ; sinon PREV3 national est declare non mesurable",
+      "conforme_si": "accord du v5 > accord de GFS brut ET > accord de la persistance, ET faux oui du v5 (le v5 dit oui, la mesure dit non) <= 5 % (seuil AGRI2 du cahier v12, a valider)",
+      "remarque": "proposition : au Grand Tunis, PREV3 a seulement ete rapporte face a GFS ; ici un seuil est propose, a confirmer par Ines. Limite : un aeroport n'est pas une parcelle agricole"
+    }
+  },
+  "rapporte_sans_effet_sur_les_verdicts": [
+    "par aeroport : RMSE vectoriel, biais de vitesse, erreur de direction des trois sources, et le nombre d'aeroports ou le v5 bat GFS brut et la persistance",
+    "intervalle a 95 % de l'ecart de RMSE vectoriel v5 - GFS brut et v5 - persistance, bootstrap des instants (5000 tirages, graine 2030)",
+    "la reference sans affinage (v4 choisi + GFS) avec les memes criteres",
+    "le champ 3D du v5 a +24 h contre la verite d'entrainement v3 (DSO par niveau et de 0 a 1 km au-dessus du sol) : une prevision n'est pas jugee sur les DSO de la reconstruction",
+    "kappa de Cohen et matrice des decisions, heures de jour 6-19 h (heure de Tunis)"
+  ],
+  "verdicts": "rendus par scripts/juger_os7_national.py a partir des fichiers ecrits, apres verification de l'empreinte de cette regle ; rien n'est recalcule ni ajuste",
+  "sinon": "un critere non conforme est publie tel quel avec tous ses chiffres ; aucun reglage n'est change pour le rattraper sans une nouvelle regle datee, hachee et acceptee par Ines",
+  "place_drive": "plan A : last.pt ne quitte pas le disque local de Colab (train.sync_last false), seul best.pt va dans run_dir ; echeances nationales ~0,1 Mo chacune ; rien n'est supprime sur le Drive",
+  "interdits": [
+    "aucun reglage choisi sur le test",
+    "aucun bruit ajoute aux predictions",
+    "ERA5, GFS et la verite generee sont appeles verite d'entrainement ou prevision, jamais mesures ; les METAR sont les mesures",
+    "aucune ecriture dans les dossiers du Grand Tunis (fige) ni dans les run_dir des modeles nationaux existants"
+  ]
+}

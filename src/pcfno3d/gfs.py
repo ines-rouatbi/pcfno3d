@@ -19,7 +19,17 @@ mailles a 0,25 deg, ~90 Ko par echeance) dans `<instant>_f<L>_tn.npz` : l'archiv
 ensuite au modele national sans retelecharger les GRIB (`--sans-national` pour s'en passer).
 `--assembler-national` empile ces fichiers en un cube `gfs_tunisie_f<L>.npz` (temps, lat, lon).
 
+Modele NATIONAL (feuille de route, phase 4) : `--national` avec la configuration nationale. Les
+mailles du forcage ERA5 national (0,25 deg, avec la marge de scripts/forcage_era5.py) sont des
+noeuds de la boite nationale : le forcage GFS national est DECOUPE dans les fichiers `*_tn.npz`
+(memes mailles, memes hauteurs au-dessus du sol que forcage_era5.npz, memes formules :
+`temps_reel.forcage_gfs`). Un instant deja telecharge (dans --reprise, ou dans un dossier
+`--lecture`, par exemple l'archive OS7 du Grand Tunis, lue sans y rien ecrire) n'est pas
+retelecharge ; les autres ne demandent que la boite nationale.
+
     python -m pcfno3d.gfs --config grand_tunis_v2_long_colab --echeance 24 --sortie forcage_gfs_f24.csv
+    python -m pcfno3d.gfs --config national_1km_colab --national --echeance 24 \
+        --sortie national/forcage_gfs_f24.csv --reprise <nat>/gfs_f24_tn --lecture <gt>/os7/gfs_f24_instants
 """
 from __future__ import annotations
 
@@ -223,7 +233,6 @@ def construire(instants: list[pd.Timestamp], echeance_h: int, lat, lon, hauteurs
     if verbose:
         print(f"GFS +{echeance_h} h : {len(a_faire)} echeances a telecharger, {len(faits)} deja faites"
               + (" (mailles + boite nationale)" if national else ""), flush=True)
-    t0, erreurs = time.time(), []
 
     def tache(t, run, l_eff, f):
         zones = {"mailles": (lat, lon)}
@@ -238,15 +247,7 @@ def construire(instants: list[pd.Timestamp], echeance_h: int, lat, lon, hauteurs
             np.savez_compressed(f, **{k: v for k, v in c["mailles"].items() if k != "source"})
         return t
 
-    with ThreadPoolExecutor(max_workers=travailleurs) as ex:
-        futs = {ex.submit(tache, *x): x for x in a_faire}
-        for n, fu in enumerate(as_completed(futs), 1):
-            try:
-                fu.result()
-            except Exception as exc:                                  # noqa: BLE001
-                erreurs.append((futs[fu][0], str(exc)[:200]))
-            if verbose and (n % 25 == 0 or n == len(futs)):
-                print(f"  {n}/{len(futs)} ({time.time() - t0:.0f} s, {len(erreurs)} erreurs)", flush=True)
+    erreurs = _en_parallele(tache, a_faire, travailleurs, verbose)
     instants_ok = []
     for t in sorted(set(pd.Timestamp(x) for x in instants)):
         f = reprise / f"{t:%Y%m%dT%H%M}_f{echeance_h}.npz"
@@ -257,11 +258,129 @@ def construire(instants: list[pd.Timestamp], echeance_h: int, lat, lon, hauteurs
         raise RuntimeError(f"aucune echeance GFS disponible ; erreurs : {erreurs[:3]}")
     c = assembler(instants_ok)
     df = ecrire_forcage(c, hauteurs, lat, lon, chemin_csv, echeances)
+    _ecrire_erreurs(chemin_csv, erreurs)
+    if verbose:
+        print(f"-> {chemin_csv} : {len(df)} instants ({len(erreurs)} manquants)", flush=True)
+    return df
+
+
+def _en_parallele(tache, a_faire: list, travailleurs: int, verbose: bool) -> list[tuple]:
+    """Execute tache(*x) pour chaque x de `a_faire` (le premier element est l'instant) ; renvoie
+    les erreurs [(instant, message)] sans s'arreter : une echeance absente de l'archive n'empeche
+    pas les autres."""
+    t0, erreurs = time.time(), []
+    with ThreadPoolExecutor(max_workers=travailleurs) as ex:
+        futs = {ex.submit(tache, *x): x for x in a_faire}
+        for n, fu in enumerate(as_completed(futs), 1):
+            try:
+                fu.result()
+            except Exception as exc:                                  # noqa: BLE001
+                erreurs.append((futs[fu][0], str(exc)[:200]))
+            if verbose and (n % 25 == 0 or n == len(futs)):
+                print(f"  {n}/{len(futs)} ({time.time() - t0:.0f} s, {len(erreurs)} erreurs)", flush=True)
+    return erreurs
+
+
+def _ecrire_erreurs(chemin_csv: Path, erreurs: list[tuple]) -> None:
     if erreurs:
         (Path(chemin_csv).with_suffix(".erreurs.json")).write_text(
             json.dumps([{"instant": str(t), "erreur": e} for t, e in erreurs], indent=1), encoding="utf-8")
+
+
+# ---------------------------------------------------------------------- modele national (phase 4)
+def indices_boite(lat, lon, tol: float = 1e-4) -> tuple[np.ndarray, np.ndarray]:
+    """(iy, ix) des mailles (lat, lon) du forcage dans la boite nationale (`grille_tunisie`).
+    Chaque maille doit etre un NOEUD de la boite (grille 0,25 deg commune a GFS et a ERA5) : sinon
+    le forcage GFS ne serait plus sur les memes mailles que le forcage ERA5, et c'est refuse."""
+    lat_tn, lon_tn = grille_tunisie()
+    out = []
+    for nom, val, ref in (("latitude", lat, lat_tn), ("longitude", lon, lon_tn)):
+        val = np.asarray(val, float)
+        i = np.abs(val[:, None] - ref[None, :]).argmin(1)
+        ecart = np.abs(ref[i] - val)
+        if (ecart > tol).any():
+            raise ValueError(f"{nom} {val[ecart > tol][:3]} hors des noeuds de la boite nationale "
+                             f"({ref[0]}-{ref[-1]}, pas {BOITE_TUNISIE['pas']} deg) : forcage sur une autre grille")
+        out.append(i)
+    return out[0], out[1]
+
+
+def decouper(champs: dict, iy: np.ndarray, ix: np.ndarray) -> dict:
+    """Champs d'une echeance de la boite nationale (relief et terre (lat, lon), le reste (1, lat,
+    lon)) -> les memes champs aux mailles (iy, ix) du forcage."""
+    out = {}
+    for k, v in champs.items():
+        if k in ("lat", "lon", "run_utc", "echeance_h", "source"):
+            continue
+        out[k] = np.asarray(v)[..., iy, :][..., ix]
+    return out
+
+
+def trouver_national(t: pd.Timestamp, echeance_h: int, dossiers) -> Path | None:
+    """Le fichier de la boite nationale de l'instant t, dans le premier dossier qui l'a."""
+    for d in dossiers:
+        f = fichier_national(Path(d), t, echeance_h)
+        if f.exists():
+            return f
+    return None
+
+
+def construire_national(instants: list[pd.Timestamp], echeance_h: int, lat, lon, hauteurs,
+                        chemin_csv: Path, reprise: Path, lecture=(), travailleurs: int = 6,
+                        verbose: bool = True) -> pd.DataFrame:
+    """Forcage GFS du modele NATIONAL aux mailles (lat, lon) du forcage ERA5 national et a ses
+    hauteurs au-dessus du sol, decoupe dans les fichiers de la boite nationale. Les instants absents
+    de `reprise` et des dossiers `lecture` (lus seulement : rien n'y est ecrit) sont telecharges,
+    boite nationale seule, dans `reprise`. Memes sorties que `construire` (CSV des scalaires bruts
+    + .npz des cellules, lisibles par ForcageERA5 ; .erreurs.json des echeances manquantes)."""
+    reprise = Path(reprise)
+    reprise.mkdir(parents=True, exist_ok=True)
+    dossiers = [reprise] + [Path(d) for d in lecture]
+    iy, ix = indices_boite(lat, lon)
+    lat_tn, lon_tn = grille_tunisie()
+    tous = sorted(set(pd.Timestamp(x) for x in instants))
+    a_faire = []
+    for t in tous:
+        if trouver_national(t, echeance_h, dossiers) is None:
+            run, l_eff = run_pour(t, echeance_h)
+            a_faire.append((t, run, l_eff))
     if verbose:
-        print(f"-> {chemin_csv} : {len(df)} instants ({len(erreurs)} manquants)", flush=True)
+        print(f"GFS national +{echeance_h} h : {len(a_faire)} echeances a telecharger (boite nationale), "
+              f"{len(tous) - len(a_faire)} deja faites", flush=True)
+
+    def tache(t, run, l_eff):
+        # GRIB partiel (~34 Mo) sur le disque local (et non dans `reprise`, souvent sur le Drive), efface aussitot
+        with tempfile.TemporaryDirectory(prefix="gfs_") as tmp:
+            c = telecharger_zones(run, l_eff, {"tunisie": (lat_tn, lon_tn)}, Path(tmp))
+        _ecrire_national(fichier_national(reprise, t, echeance_h), c["tunisie"], lat_tn, lon_tn, run, l_eff)
+        return t
+
+    erreurs = _en_parallele(tache, a_faire, travailleurs, verbose)
+    instants_ok, echeances = [], {}
+    for t in tous:
+        f = trouver_national(t, echeance_h, dossiers)
+        if f is None:
+            continue
+        with np.load(f) as d:
+            if d["lat"].shape != lat_tn.shape or d["lon"].shape != lon_tn.shape \
+                    or not (np.allclose(d["lat"], lat_tn) and np.allclose(d["lon"], lon_tn)):
+                raise ValueError(f"{f} : grille differente de la boite nationale")
+            c = {k: d[k] for k in d.files}
+        echeances[int(t.value // 10 ** 9)] = (str(c["run_utc"]), int(c["echeance_h"]))
+        instants_ok.append((t, decouper(c, iy, ix)))
+    if not instants_ok:
+        raise RuntimeError(f"aucune echeance GFS nationale disponible ; erreurs : {erreurs[:3]}")
+    # champs presents a tous les instants (un fichier d'une autre archive peut en avoir un de plus)
+    communs = set.intersection(*(set(c) for _, c in instants_ok))
+    manque = [k for k in REQUIS if k not in communs]
+    if manque:
+        raise ValueError(f"champs GFS absents de certains instants : {manque}")
+    c = assembler([(t, {k: v for k, v in x.items() if k in communs}) for t, x in instants_ok])
+    df = ecrire_forcage(c, hauteurs, lat, lon, chemin_csv, echeances)
+    _ecrire_erreurs(chemin_csv, erreurs)
+    if verbose:
+        print(f"-> {chemin_csv} : {len(df)} instants, {len(lat)} x {len(lon)} mailles, "
+              f"{len(hauteurs)} hauteurs ({len(erreurs)} manquants)", flush=True)
     return df
 
 
@@ -325,6 +444,12 @@ def main() -> int:
                     help="ne pas garder la boite nationale (Tunisie) du meme telechargement")
     ap.add_argument("--assembler-national", metavar="NPZ",
                     help="empile les echeances nationales deja telechargees dans NPZ puis s'arrete")
+    ap.add_argument("--national", action="store_true",
+                    help="modele national : forcage decoupe dans la boite nationale (mailles et hauteurs "
+                         "du forcage ERA5 de --config), seule la boite est telechargee")
+    ap.add_argument("--lecture", action="append", default=[],
+                    help="avec --national : dossier d'echeances deja telechargees, lu sans y ecrire "
+                         "(archive OS7 du Grand Tunis) ; repetable")
     args = ap.parse_args()
     sortie = Path(args.sortie)
     reprise = Path(args.reprise) if args.reprise else sortie.parent / f"gfs_f{args.echeance}_instants"
@@ -343,12 +468,22 @@ def main() -> int:
     erreurs = sortie.with_suffix(".erreurs.json")
     for passe in range(3):
         erreurs.unlink(missing_ok=True)
-        construire(instants, args.echeance, ref.lat, ref.lon, ref.hauteurs, sortie, reprise,
-                   travailleurs=args.travailleurs if passe == 0 else 2, national=not args.sans_national)
+        if args.national:
+            construire_national(instants, args.echeance, ref.lat, ref.lon, ref.hauteurs, sortie, reprise,
+                                lecture=args.lecture, travailleurs=args.travailleurs if passe == 0 else 2)
+        else:
+            construire(instants, args.echeance, ref.lat, ref.lon, ref.hauteurs, sortie, reprise,
+                       travailleurs=args.travailleurs if passe == 0 else 2, national=not args.sans_national)
         if not erreurs.exists():
             break
         print(f"passe {passe + 1} : echeances manquantes, nouvelle tentative", flush=True)
-    if not args.sans_national:
+    if args.national:
+        # le forcage GFS national doit avoir EXACTEMENT la forme du forcage ERA5 (memes mailles, memes
+        # hauteurs) : sinon le modele recevrait une entree d'une autre taille
+        gfs = ForcageERA5(sortie)
+        if gfs.forme_cellules != ref.forme_cellules or not np.allclose(gfs.hauteurs, ref.hauteurs):
+            raise SystemExit(f"forcage GFS {gfs.forme_cellules} != forcage ERA5 {ref.forme_cellules}")
+    elif not args.sans_national:
         assembler_national(reprise, args.echeance, sortie.parent / f"gfs_tunisie_f{args.echeance}.npz")
     if not erreurs.exists():
         return 0

@@ -1,0 +1,94 @@
+# PC-FNO3D reel NATIONAL v5 : PREVISION a +24 h (OS7 national, phase 4 de docs/feuille_de_route_nationale.md).
+# Le modele national v4 CHOISI (runs/choix_v4.json, regle configs/national/regle_v4_national.json), nourri par
+# la prevision GFS (NOAA, archive AWS, pcfno3d.gfs --national) au lieu d'ERA5 : forcage et reseau a 10 m tires
+# de forcage_gfs_f24.csv/.npz (memes mailles 0,25 deg, memes 17 hauteurs au-dessus du sol, memes formules que
+# forcage_era5.csv/.npz), AUCUNE station en entree (leurs mesures de demain n'existent pas), comme le Grand
+# Tunis v5 (configs/grand_tunis_v5_gfs_colab.yaml).
+# Sortie : la MEME verite d'entrainement que la v4 (verite v3, cache_v3_partie_*), meme decoupage (test 2022,
+# validation 2021). Depart : le v4 choisi, passe par --set train.init_from=... dans le carnet. A +48 h : le
+# meme modele, evalue avec --set paths.forcage_era5=.../forcage_gfs_f48.csv.
+# Regle : configs/national/regle_os7_national.json (PROPOSITION soumise a l'accord ecrit d'Ines).
+name: national_1km_v5_gfs
+
+paths:
+  data_dir: /content/national/jeu
+  cache_dir: /content/national/cache
+  run_dir: /content/drive/MyDrive/pcfno3d_national/runs/national_1km_v5_gfs
+  # prevision GFS a +24 h (pcfno3d.gfs --national), meme format que le forcage ERA5 national
+  forcage_era5: /content/donnees/national/forcage_gfs_f24.csv
+  cache_mirror: null
+  local_dir: /content/run_local_national_1km_v5_gfs
+  web_dir: /content/national/web
+
+model:                      # architecture du national v4 (= v2 = Grand Tunis v4)
+  width: 48
+  modes: [6, 32, 32]
+  n_layers: 4
+  pad: [4, 8, 8]
+  proj_hidden: 128
+  local_conv: true
+  pool_surface: true
+  recalcul_activations: false   # le carnet passe a true si la memoire du GPU ne suffit pas
+  residuel_era5: true       # u, v = GFS au noeud + correction apprise
+
+train:
+  epochs: 12                # comme le Grand Tunis v5
+  steps_per_epoch: 200
+  val_samples: 64
+  batch_size: 1
+  accum_steps: 2
+  lr: 5.0e-5                # affinage : nouvelle entree, meme sortie (comme le Grand Tunis v5)
+  weight_decay: 1.0e-4
+  warmup_phys_epochs: 3
+  num_workers: 4
+  ema_decay: 0.999
+  grad_clip: 1.0
+  save_every: 5
+  seed: 42
+  init_from: /content/drive/MyDrive/pcfno3d_national/runs/national_1km_v4_choisi/best.pt   # remplace par le carnet (choix_v4.json)
+  select_by: dso            # epoque choisie sur la VALIDATION (verite v3), comme la v2 et la v4 nationales
+  select_criteres: [dso1_rmse, dso2_masse, dso3_rugosite]
+  sync_last: false          # plan A : last.pt reste sur le disque local de Colab
+
+loss:                       # reglages de la v4 nationale (dont le terme de rugosite)
+  lambda_mass: 5.0
+  mass_ref: 5.0e-7
+  lambda_bc: 0.1
+  lambda_smooth: 0.0
+  lambda_grad: 0.5
+  lambda_rough: 1.0
+  w_weight: 2.0
+  w_level_max: 25.0
+
+mask:
+  entree: era5_stations     # reseau regulier a 10 m tous les 2 km...
+  pas_era5_m: 2000.0
+  p_station: 0.0
+  e_source: forcage         # ... tire de la prevision GFS de l'instant
+  stations_entree: false    # pas de station : prevision
+  keep_train: [0.2, 1.0]
+  keep_eval: 1.0
+
+dso:
+  rmse: 0.5
+  r2: 0.95
+  r2_all: 0.95
+  mass_rms: 1.0e-4
+  roughness_range: [0.9, 1.1]
+  time_s: 1.0
+  rmse_25pct: 0.7
+  min_level_cover: 0.05
+
+inference:
+  tta: 1
+  tta_keep: 0.7
+  w_continuite: true        # w recalcule par continuite, comme les modeles nationaux
+
+terrain_smooth_m: 300.0
+f_coriolis: 8.131e-5
+
+real:
+  origin_lat: 30.15
+  origin_lon: 7.45
+  rotation_deg: 0.0
+  origin_assumed: false
