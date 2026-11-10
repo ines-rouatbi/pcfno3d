@@ -1,0 +1,49 @@
+{
+  "statut": "PROPOSITION : criteres ecrits avant tout calcul de la phase 6, a valider par Ines (et l'encadrant pour AGRI1) ; ils ne seront jamais ajustes au resultat",
+  "fixee_le": "2026-11-11, avant toute execution de scripts/agri_national.py sur des donnees reelles ; aucune sortie de la phase 6 n'existe a cette date",
+  "objet": "phase 6 de la feuille de route nationale (docs/feuille_de_route_nationale.md) : agriculture nationale, vent de 2 a 10 m au-dessus du sol, fenetres de traitement et d'aspersion J0 a J+2, besoin en eau FAO-56, AGRI1 et AGRI2 aux aeroports 2022",
+  "modele": "le modele national livre : runs/decision_v4_national.json (cle modele_livre_national, et runs/choix_v4.json pour l'entrainement choisi) ; a defaut national_1km_v2 ; parametrable dans le carnet (MODELE) ; le run_dir retenu est ecrit dans chaque sortie. Aucun entrainement, aucun reglage",
+  "vent_pres_du_sol": "les niveaux du modele sont au-dessus de la MER : vent a 2 m et 10 m au-dessus du sol par pcfno3d.atom_wind.champ_agl (interpolation entre noeuds valides, profil logarithmique depuis le noeud valide le plus bas avec le z0 de la maille), comme le front-end et scripts/dso_hauteur_sol.py ; w par continuite (inference.w_continuite)",
+  "regle_de_decision": {
+    "texte": "traitement : <3 attention, <=15 oui, <=19 attention, >19 non (km/h, 10 m) ; aspersion : <=15 oui, <=25 attention, >25 non",
+    "source": "maquette ATOM Wind (ACTS.spray, ACTS.irr), figee pour le Grand Tunis (scripts/verifier_decisions.py, service/atom_outils.decision_agricole) ; la meme au national, sans changement",
+    "hauteur_m": 10,
+    "vitesse": "vitesse du vent horizontal a 10 m au-dessus du sol, en km/h arrondie a 1e-6 (15 km/h reste 15)",
+    "controle": "tests/test_agri_eolien_national.py : pcfno3d.agriculture rend exactement les decisions de scripts/verifier_decisions.py, de service/atom_outils.decision_agricole et de atom_wind.traitement_possible"
+  },
+  "fenetres_J0_J2": {
+    "definition": "pour un jour de base D (heure locale de Tunis, UTC+1), J0 = D, J+1 = D+1, J+2 = D+2 ; par maille de 1 km, decision horaire de 0 h a 23 h, vent interpole lineairement en temps entre les sorties du modele de la journee (comme la page ATOM Wind), sans extrapolation hors de la premiere et de la derniere sortie ; creneau = plage d'heures consecutives a « oui »",
+    "jours_de_base": "les 3 jours de la VALIDATION 2021 du cache dont le plus de jours D, D+1, D+2 sont dans le cache (a egalite, le plus ancien) ; un jour absent du cache est dit absent, jamais invente",
+    "source_du_vent": "rejeu : le modele national sur les instants du cache (entree de production : ERA5 10 m tous les 2 km + 12 aeroports avec leurs METAR reels si le dossier obs existe), c'est-a-dire une ANALYSE, pas une prevision. La prevision J+1 / J+2 (modele nourri par GFS) depend de la phase 4 ; le meme script la produira avec la configuration GFS (mask.e_source forcage, forcage GFS) sans changer de regle",
+    "sorties": "par jour de base : agri_<D>.npz (decisions codees 0 oui / 1 attention / 2 non / -1 sans valeur, vent a 2 et 10 m), GeoTIFF des heures « oui » et de l'ET0, PNG, CSV aux 12 aeroports (creneaux, ET0)"
+  },
+  "fao56": {
+    "methode": "Penman-Monteith FAO-56, pas journalier : portage exact de et0Day de la page (pcfno3d.agriculture.et0_journalier), Rs / Rso borne a 1 (FAO-56 eq. 39)",
+    "vent": "u2 = 0,748 x vent moyen journalier a 10 m du modele (FAO-56 eq. 47), comme la page",
+    "temperature_humidite_rayonnement": "GFS comme au Grand Tunis : cube national pcfno3d.gfs (gfs_tunisie_f<L>.npz, temperature_2m, relative_humidity_2m, shortwave_radiation), bilineaire sur la grille, temperature ramenee au relief (0,0065 K/m) ; Tmax, Tmin, HR moyenne et rayonnement moyen sur les instants de la journee",
+    "repli_signale": "instant absent du cube GFS : temperature et humidite de la couche de surface du cache (verite d'entrainement issue d'ERA5, jamais appelee mesure) et rayonnement Rs = 0,72 Ra (repli de la page) ; la source est ecrite pour chaque jour",
+    "verdict": "aucun : le cahier v12 ne fixe pas de critere sur l'ET0 ; publie a titre de produit"
+  },
+  "agri1_agri2": {
+    "donnees": "<run_dir du modele>/validation_reelle/test/stations_paires.csv : les 12 aeroports METAR, test 2022 (instants synoptiques), chaque station RETIREE de l'entree quand elle est jugee (scripts/valider_grand_tunis_reel.py), vent a 10 m au-dessus du sol",
+    "lecture_du_test": "ces paires sont ecrites UNE fois par le carnet de test v4 ; AGRI1 et AGRI2 n'en sont qu'un post-traitement (aucune nouvelle passe du modele) ; si le fichier manque pour le modele retenu, il est calcule une fois par le meme script, puis jamais recalcule",
+    "sources": ["modele", "era5", "generateur"],
+    "agri1": {
+      "mesure": "accord (oui / attention / non) et kappa de Cohen entre la decision tiree de la source et celle tiree du METAR, regle de traitement, toutes heures, toutes stations (scripts/verifier_decisions.py, fonction evaluer)",
+      "conforme_si": "accord du modele >= accord de l'ERA5 10 m sur les memes paires (station, instant)",
+      "rapporte_sans_verdict": "accord par station, heures de jour (6-19 h locales), regle d'aspersion, nombre de stations ou le modele fait au moins aussi bien qu'ERA5, valeur du Grand Tunis (62,7 %) pour reference"
+    },
+    "agri2": {
+      "mesure": "faux oui : part des paires ou la source dit « oui » et le METAR « non » (traitement, toutes heures, toutes stations)",
+      "conforme_si": "faux oui du modele <= 0,05 (seuil du cahier v12, comme le Grand Tunis)",
+      "rapporte_sans_verdict": "faux oui parmi les « non » du METAR, par station, ERA5 et verite d'entrainement"
+    },
+    "hors_perimetre": "les 14 stations INM de la feuille de route (Kelibia ... El Borma) demandent un telechargement (NOAA ISD) qui n'est pas fait : elles s'ajouteront plus tard comme points de VALIDATION seuls (jamais en entree), avec leur propre regle"
+  },
+  "interdits": [
+    "aucun reglage choisi sur le test ; la regle de decision ne change pas",
+    "aucun bruit ajoute aux predictions",
+    "ERA5 et la verite generee sont la verite d'entrainement, jamais des mesures ; les METAR sont les mesures",
+    "aucun dossier de sortie existant n'est ecrase (les scripts refusent)"
+  ]
+}

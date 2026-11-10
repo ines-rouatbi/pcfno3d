@@ -1,0 +1,50 @@
+{
+  "statut": "PROPOSITION : criteres ecrits avant tout calcul de la phase 7, a valider par Ines (et l'encadrant pour EOL2) ; ils ne seront jamais ajustes au resultat",
+  "fixee_le": "2026-11-11, avant toute execution de scripts/atlas_eolien_national.py et scripts/eol2_national.py sur des donnees reelles ; aucune sortie de la phase 7 n'existe a cette date",
+  "objet": "phase 7 de la feuille de route nationale : carte du potentiel eolien de 50 a 150 m au-dessus du sol, meilleures zones, zoom Grand Tunis a 100 m, EOL2 contre les radiosondages",
+  "modele": "le modele national livre : runs/decision_v4_national.json (cle modele_livre_national, et runs/choix_v4.json pour l'entrainement choisi) ; a defaut national_1km_v2 ; parametrable dans le carnet (MODELE) ; le run_dir retenu est ecrit dans chaque sortie. Aucun entrainement, aucun reglage",
+  "atlas_national": {
+    "hauteurs_agl_m": [50, 100, 150],
+    "instants_principaux": "tous les instants de la VALIDATION 2021 et du TEST 2022 du cache v3 (environ 300)",
+    "pourquoi": "ces instants n'ont jamais servi a l'entrainement : la carte montre le modele sur des entrees qu'il n'a pas apprises, comme en production ; sur les instants d'entrainement, la sortie est tiree vers la verite d'entrainement apprise. La carte ne regle rien (aucun seuil, aucun choix de modele) : le test n'est utilise que comme echantillon de situations meteorologiques, apres sa lecture unique pour les DSO",
+    "limite_dite_dans_les_sorties": "les blocs de validation et de test ne couvrent que l'hiver et l'ete (janvier-mars, juillet-aout) : ce n'est pas une moyenne annuelle ; heures 0, 3, 6 ... 21 UTC du calendrier du jeu",
+    "information": "la meme carte sur les 1 000 instants (quatre saisons, instants d'entrainement compris), publiee a part avec l'ecart de vitesse moyenne a la carte principale, sans effet sur les zones",
+    "entree": "production : ERA5 10 m tous les 2 km + 12 aeroports avec leurs METAR reels (paths.stations_obs, si le dossier obs existe ; sinon la valeur du cache a leur cellule, et c'est ecrit) ; w par continuite",
+    "reference": "ERA5 seule (profil ERA5 aux noeuds, base du modele residuel), memes instants, memes mailles, memes formules ; publiee a cote",
+    "couches": "vitesse moyenne, ecart type, densite de puissance 0,5 rho <v^3>, Weibull k et c (methode des moments, Justus 1978, comme l'atlas du Grand Tunis), facteur de charge et production annuelle de l'eolienne generique",
+    "eolienne": "generique-2MW de configs/eolien/parc_demo.yaml (table de demonstration du contrat ATOM rev. 2, 2 MW, rotor 90 m) ; vitesse normalisee en densite (IEC 61400-12-1) avec la densite ISA de la maille a z_terrain + h ; sans sillage ni pertes",
+    "meilleures_zones": {
+      "nombre": 10,
+      "hauteur_m": 100,
+      "critere": "facteur de charge de la carte principale",
+      "terre": "z0 >= 0,005 m (comme les candidats OS6) et une colonne au-dessus du relief",
+      "pente_max_deg": 15,
+      "distance_min_m": 20000,
+      "territoire": "le domaine deborde sur l'Algerie, la Libye et la mer : un polygone du territoire tunisien (lat, lon) peut etre fourni (--territoire) ; aucun n'est invente ; sans lui, chaque zone porte « territoire non verifie »"
+    },
+    "sorties": "GeoTIFF WGS 84 de chaque couche a chaque hauteur (modele, carte principale), PNG (vitesse et facteur de charge a 50, 100, 150 m, zones ; ecart modele - ERA5), CSV (zones, resume par hauteur et par source, couches par blocs de 5 km), atlas_national.npz (toutes les couches, modele et ERA5, principal et information), atlas_national.json",
+    "verdict": "aucun : produit d'aide a la decision, a confirmer par une campagne de mesure"
+  },
+  "zoom_grand_tunis_100m": {
+    "source": "l'atlas du Grand Tunis deja calcule par le carnet OS6 (MyDrive/pcfno3d_grand_tunis/runs/atlas_eolien : modele livre selon runs/decision_v4.json, grand_tunis_v4_dso, maille 100 m, moyeu 100 m) ; aucune nouvelle passe ; s'il manque ou si le moyeu n'est pas 100 m, le zoom est dit absent",
+    "comparaison": "carte nationale a 100 m (1 km) decoupee sur la boite du Grand Tunis ; carte du Grand Tunis (100 m) agregee aux mailles de 1 km ; ecart moyen, ecart rms et correlation sur les mailles communes ; sans verdict",
+    "limite": "les deux cartes n'ont pas les memes instants (Grand Tunis : son cache, toutes saisons ; national : validation et test) ; c'est ecrit"
+  },
+  "eol2": {
+    "sites": "les radiosondages IGRA du dossier obs (radiosondages_TSM*.csv) dont le site est dans le domaine : Tunis-Carthage (TSM00060715) et Tozeur (TSM00060760) s'ils sont fournis",
+    "instants": "test 2022, instants synoptiques de 00 et 12 UTC ayant un radiosondage a l'heure nominale",
+    "entree": "production : ERA5 10 m tous les 2 km + les 12 aeroports avec leurs METAR reels, aucun retire (un radiosondage n'est jamais une entree)",
+    "colonnes": "modele (w par continuite), ERA5 (profil aux noeuds) et verite d'entrainement de la maille du site, interpolees lineairement aux hauteurs du ballon au-dessus du sol (pcfno3d.radiosondages.colonne_aux_hauteurs), sans extrapolation",
+    "tranche_m": [0, 250],
+    "conforme_si": "RMSE vectoriel du modele <= RMSE vectoriel d'ERA5 sur toutes les paires 0-250 m des sites (comme le Grand Tunis, scripts/bilan_conformite.py)",
+    "minimum": "au moins 10 radiosondages dans la tranche, tous sites confondus ; sinon « a mesurer »",
+    "rapporte_sans_verdict": "chaque site a part, tranches 250-500, 500-750, 750-1000 m, biais de vitesse, verite d'entrainement ; ERA5 assimile les radiosondages : critere non totalement independant (dit dans les sorties)",
+    "lecture_du_test": "une seule passe par instant de radiosondage ; aucun choix ni reglage ; refus de recalculer si les sorties existent"
+  },
+  "interdits": [
+    "aucun reglage choisi sur le test",
+    "aucun bruit ajoute aux predictions",
+    "ERA5 et la verite generee sont la verite d'entrainement, jamais des mesures ; les METAR et les radiosondages sont les mesures",
+    "aucun dossier de sortie existant n'est ecrase (les scripts refusent)"
+  ]
+}

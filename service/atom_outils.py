@@ -299,15 +299,17 @@ def profil(wf, j: int, h: float, lat=None, lon=None, lieu=None) -> dict:
 def decision_agricole(wf, j: int, lat=None, lon=None, lieu=None) -> dict:
     """Creneaux de traitement et d'aspersion de la journee (regles de l'application, vent a 10 m),
     avec la probabilite GEFS de pouvoir traiter si l'ensemble est deja calcule."""
+    from pcfno3d.agriculture import decision_aspersion, decision_traitement
     x, y, nom = position(wf, lat, lon, lieu)
     p = jour(wf, j)
     heures = []
     for h in range(24):
         u, v = vent(wf, p, x, y, 10.0, float(h))
-        k = math.hypot(u, v) * 3.6
-        trait = "attention" if k < 3 else "oui" if k <= 15 else "attention" if k <= 19 else "non"
-        asp = "oui" if k <= 15 else "attention" if k <= 25 else "non"
-        heures.append({"heure": h, "vent_10m_km_h": round(k, 1), "traitement": trait, "aspersion": asp})
+        s = math.hypot(u, v)
+        # la regle figee (pcfno3d.agriculture, = scripts/verifier_decisions.py) : km/h arrondis a 1e-6,
+        # 15 km/h reste « oui » (avant le 11/11/2026, 15/3,6 x 3,6 = 15,000000000000002 donnait « attention »)
+        trait, asp = str(decision_traitement(s)), str(decision_aspersion(s))
+        heures.append({"heure": h, "vent_10m_km_h": round(s * 3.6, 1), "traitement": trait, "aspersion": asp})
     creneaux = []
     debut = None
     for r in heures + [{"heure": 24, "traitement": "fin"}]:

@@ -333,6 +333,41 @@ d'Ines**, écrite avant tout téléchargement, affinage ou lecture du test.
 - **Durée** : environ 1 jour de développement et 3 h de calcul (atlas sur l'ensemble des
   instants).
 
+### Phases 6 et 7 : code écrit le 11/11/2026, rien n'est encore calculé
+
+Deux règles **PROPOSITION**, écrites et hachées avant tout calcul (à valider par Ines) :
+`configs/national/regle_agri_national.json` et `configs/national/regle_eolien_national.json` (+ `.sha256`,
+vérifiées par chaque script et par le carnet). Carnet : `notebooks/current/pcfno3d_national_agri_eolien_colab.ipynb`
+(`scripts/make_national_agri_eol_nb.py`, code figé au commit, **uniquement avec l'accord écrit d'Ines**, sans
+entraînement). Modèle : celui que désigne `runs/decision_v4_national.json`, sinon la v2 (paramètre `MODELE`).
+Sorties dans `MyDrive/pcfno3d_national/phase6_7/<run>/` ; chaque script refuse de recalculer une sortie existante.
+
+- **Phase 6** (`src/pcfno3d/agriculture.py`, `scripts/agri_national.py`) :
+  - vent à 2 et 10 m au-dessus du sol par `atom_wind.champ_agl` (niveaux du modèle au-dessus de la mer) ;
+  - règle de traitement et d'aspersion **identique** à celle du Grand Tunis (un test le vérifie contre
+    `verifier_decisions.py`, `atom_outils.decision_agricole` et `atom_wind.traitement_possible`) ; au passage,
+    `atom_outils.decision_agricole` donnait « attention » à exactement 15 km/h (arrondi flottant), corrigé ;
+  - AGRI1 / AGRI2 : post-traitement des paires « station retirée » des 12 aéroports (test 2022) déjà écrites
+    par le carnet de test v4, sans nouvelle passe ; critères proposés : accord du modèle ≥ accord d'ERA5 10 m
+    (AGRI1), faux oui ≤ 5 % (AGRI2) ;
+  - fenêtres J0–J+2 et FAO-56 (portage exact de `et0Day` de la page, u2 = 0,748 × vent à 10 m) sur la grille
+    de 1 km, T, HR et rayonnement du cube GFS national (`gfs_tunisie_f24.npz`) ; sans GFS pour l'instant, repli
+    signalé. C'est un **rejeu sur analyse ERA5** (4 sorties par jour du cache, interpolées) : la vraie
+    prévision J+1 / J+2 attend la phase 4 ;
+  - les 14 stations INM ne sont pas téléchargées (pas d'accord) : elles s'ajouteront comme points de validation.
+- **Phase 7** (`src/pcfno3d/atlas.py` étendu, `scripts/atlas_eolien_national.py`, `scripts/eol2_national.py`) :
+  - carte 50, 100, 150 m (vitesse, densité de puissance, Weibull, facteur de charge et production de
+    l'éolienne générique de 2 MW avec la densité de chaque maille) ; GeoTIFF, PNG, CSV ; ERA5 seule à côté ;
+  - instants : **validation + test** (jamais vus à l'entraînement ; la carte ne règle rien) ; limite : hiver et
+    été seulement ; carte d'information sur les 1 000 instants publiée à part ;
+  - 10 meilleures zones à 100 m (terre, pente ≤ 15°, 20 km d'écart) ; pas de polygone du territoire dans le
+    dépôt : sans lui, une zone peut tomber en Algérie ou en Libye, et c'est écrit ;
+  - zoom Grand Tunis : l'atlas 100 m du modèle livré v4 (carnet OS6) comparé à la carte nationale sur la même
+    boîte, sans nouvelle passe ;
+  - EOL2 : radiosondages 0–250 m de Tunis-Carthage et Tozeur (fichiers IGRA du dossier `obs`) contre ERA5.
+- **Correction** (`inference._entree_production`) : avec `paths.stations_obs`, seuls les METAR des 3 codes du
+  Grand Tunis étaient lus ; les 12 aéroports nationaux le sont maintenant.
+
 ### Phase 8 : ATOM Wind national (dépend des phases 5 à 7)
 - **Fichiers** :
   - `webapp/atom-wind/` : carte nationale, vue 3D, onglets Agriculture et Éolien, zoom

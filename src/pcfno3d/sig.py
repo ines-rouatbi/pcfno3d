@@ -73,3 +73,32 @@ def ecrire_geotiff(chemin: str | Path, sud_nord: np.ndarray, lon0: float, lat0: 
     chemin.parent.mkdir(parents=True, exist_ok=True)
     chemin.write_bytes(b"II*\0" + struct.pack("<I", 8) + ifd + ext + donnees)
     return chemin
+
+
+def lire_geotiff(chemin: str | Path) -> tuple[np.ndarray, dict]:
+    """Relit un GeoTIFF ecrit par `ecrire_geotiff` (petit-boutiste, une bande float32, une seule
+    bande de donnees) : (tableau SUD-NORD avec NaN a la place de nodata, {lon0, lat0, dlon, dlat}
+    au centre de la maille (0, 0) comme `grille_geo`). Pas un lecteur GeoTIFF general."""
+    b = Path(chemin).read_bytes()
+    if b[:4] != b"II*\0":
+        raise ValueError(f"{chemin} : TIFF petit-boutiste attendu")
+    (debut,) = struct.unpack_from("<I", b, 4)
+    (n,) = struct.unpack_from("<H", b, debut)
+    tags = {}
+    for i in range(n):
+        tag, typ, cnt, val = struct.unpack_from("<HHII", b, debut + 2 + 12 * i)
+        taille = {2: 1, 3: 2, 4: 4, 12: 8}[typ] * cnt
+        brut = b[val:val + taille] if taille > 4 else struct.pack("<I", val)[:taille]
+        fmt = {2: f"{cnt}s", 3: f"<{cnt}H", 4: f"<{cnt}I", 12: f"<{cnt}d"}[typ]
+        tags[tag] = struct.unpack(fmt, brut)
+    nx, ny = tags[256][0], tags[257][0]
+    if tags[258][0] != 32 or tags.get(339, (3,))[0] != 3:
+        raise ValueError(f"{chemin} : float32 attendu")
+    off, long = tags[273][0], tags[279][0]
+    a = np.frombuffer(b[off:off + long], dtype="<f4").reshape(ny, nx).astype(np.float32)
+    nodata = float(tags[42113][0].rstrip(b"\0").decode("ascii")) if 42113 in tags else NODATA
+    a = np.where(a == np.float32(nodata), np.nan, a)[::-1]                      # sud en ligne 0
+    dlon, dlat = tags[33550][0], tags[33550][1]
+    lon_coin, lat_haut = tags[33922][3], tags[33922][4]
+    return np.ascontiguousarray(a), {"lon0": lon_coin + dlon / 2, "lat0": lat_haut - dlat / 2 - (ny - 1) * dlat,
+                                     "dlon": dlon, "dlat": dlat}
