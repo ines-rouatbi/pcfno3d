@@ -331,6 +331,22 @@ assert "ANEO_GEN_DETAIL" in open("/content/PFE/scripts/generate_aneo_3d.py").rea
 '''
 
 
+ENCHAINER_V3 = r'''
+try:
+    while True:
+        faites = [k for k in PARTIES if (NAT / f"cache_v3_partie_{k}.zip").exists()]
+        PARTIE = next((k for k in PARTIES if k not in faites), None)
+        print("parties deja sur le Drive :", faites, "| a faire maintenant :", PARTIE, flush=True)
+        if PARTIE is None:
+            print("les 3 parties de la verite v3 sont sur le Drive")
+            break
+        faire_partie(PARTIE)
+        shutil.rmtree(LOC / f"cache_p{PARTIE}", ignore_errors=True)
+finally:
+    runtime.unassign()
+'''
+
+
 def generation_v3(verdict: Path | None = None) -> dict:
     """Carnet de la verite v3 : memes parties que la v2, fichiers distincts (cache_v3_partie_*, jeu_v3.zip ;
     rien n'est ecrase), reglages lus dans le verdict de configs/national/regle_verite_v3.json. Refuse de se
@@ -347,6 +363,11 @@ def generation_v3(verdict: Path | None = None) -> dict:
     gen = (GEN + env).replace("cache_v2_partie", "cache_v3_partie")
     run = (GEN_RUN.replace("cache_v2_partie", "cache_v3_partie").replace("jeu_v2.zip", "jeu_v3.zip")
            .replace("--perturbations 0.4", f"--perturbations {r['perturb']:g}"))
+    # v3 (accord d'Ines du 10/11) : les parties restantes s'enchainent dans la meme session, point de reprise
+    # sur le Drive apres chacune (une coupure ne perd que la partie en cours), cache local efface une fois
+    # zippe, machine liberee a la fin
+    corps = run.split("else:\n", 1)[1]
+    run = "from google.colab import runtime\n\ndef faire_partie(PARTIE):\n" + corps + ENCHAINER_V3
     titre = f"""
 # PC-FNO3D réel NATIONAL — génération de la vérité d'entraînement **v3** (Colab, CPU)
 
@@ -361,7 +382,8 @@ Générateur corrigé selon la phase 2 (`configs/national/regle_verite_v3.json`,
 """
     return carnet([md(titre), md("## 1. Drive, code et données"), code(COMMUN),
                    md("## 2. Calendrier, partie à faire, réglages v3"), code(gen),
-                   md("## 3. Génération de la partie, puis point de reprise sur le Drive"), code(run)],
+                   md("## 3. Génération des parties restantes (point de reprise sur le Drive après chacune), "
+                      "puis fin de la session"), code(run)],
                   gpu=False)
 
 

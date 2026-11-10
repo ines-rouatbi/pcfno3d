@@ -234,7 +234,14 @@ L'écart vérité − ERA5 sur v à 300 m tombe de 1,46 (v2) à 0,43 m/s.
 Réglages de la vérité v3 : passe-haut, perturbations 0, brise 0,5, relief 1, β = 0,5. Carnet de
 régénération : `notebooks/current/pcfno3d_national_generation_v3_colab.ipynb`
 (`scripts/make_national_nb.py --verite-v3`), fichiers `cache_v3_partie_*` distincts de la v2.
-**Régénération complète : en attente de l'accord écrit d'Ines.**
+**Régénération complète : accord écrit d'Ines le 10/11/2026**, après lecture des 4 points demandés
+(`docs/resultats/national/reponse_ines_avant_regeneration.md`). L'accord porte sur la **régénération de la vérité v3
+seulement**. L'entraînement de la v4 demandera un accord distinct.
+- **Carnet :** `notebooks/current/pcfno3d_national_generation_v3_colab.ipynb`. Le générateur vient du commit
+  `effc49c`, inchangé depuis la phase 2.
+- **Déroulement :** les 3 parties s'enchaînent dans une seule session Colab CPU, avec un point de reprise sur le
+  Drive après chacune ; la session se libère à la fin.
+- **Sorties :** `cache_v3_partie_<k>.zip` et `jeu_v3.zip`. Rien de la v2 n'est écrasé.
 
 ### Phase 3 : modèle national v4 (dépend de la phase 2)
 - **Fichiers** :
