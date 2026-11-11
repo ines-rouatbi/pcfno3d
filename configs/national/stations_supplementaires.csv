@@ -1,0 +1,17 @@
+code,nom,lat,lon,elevation_m,wmo,isd,retenue,abri_probable,source
+INM60720,Kelibia,36.85,11.08306,29.0,60720,60720099999,1,1,SYNOP INM via NOAA ISD (scripts/stations_supplementaires.py) ; coordonnees OGIMET (WIGOS)
+INM60723,Beja,36.73556,9.22583,158.0,60723,60723099999,1,1,SYNOP INM via NOAA ISD (scripts/stations_supplementaires.py) ; coordonnees OGIMET (WIGOS)
+INM60725,Jendouba,36.48778,8.79083,143.0,60725,60725099999,1,0,SYNOP INM via NOAA ISD (scripts/stations_supplementaires.py) ; coordonnees OGIMET (WIGOS)
+INM60728,Nabeul,36.45,10.7333,1.0,60728,60728099999,1,0,"SYNOP INM via NOAA ISD (scripts/stations_supplementaires.py) ; coordonnees catalogue INM (grille_reelle.STATIONS) : 9 m pour 1 m officiel ; OGIMET et ISD (36,467 N 10,700 E) donnent 45 a 55 m, douteux"
+INM60729,Zaghouan,36.43306,10.08306,156.0,60729,60729099999,1,0,SYNOP INM via NOAA ISD (scripts/stations_supplementaires.py) ; coordonnees OGIMET (WIGOS)
+INM60732,El Kef,36.12278,8.72389,518.0,60732,60732099999,1,0,SYNOP INM via NOAA ISD (scripts/stations_supplementaires.py) ; coordonnees OGIMET (WIGOS)
+INM60734,Siliana,36.05389,9.40389,443.0,60734,60734099999,1,0,SYNOP INM via NOAA ISD (scripts/stations_supplementaires.py) ; coordonnees OGIMET (WIGOS)
+INM60738,Thala,35.56083,8.68778,1091.0,60738,60738099999,1,0,SYNOP INM via NOAA ISD (scripts/stations_supplementaires.py) ; coordonnees OGIMET (WIGOS)
+INM60739,Kasserine,35.16806,8.79139,707.0,60739,60739099999,1,0,SYNOP INM via NOAA ISD (scripts/stations_supplementaires.py) ; coordonnees OGIMET (WIGOS)
+INM60742,Mahdia,35.5,11.06667,12.0,60742,60742099999,1,0,SYNOP INM via NOAA ISD (scripts/stations_supplementaires.py) ; coordonnees OGIMET (WIGOS)
+INM60748,Sidi Bouzid,35.01194,9.48556,354.0,60748,60748099999,1,0,SYNOP INM via NOAA ISD (scripts/stations_supplementaires.py) ; coordonnees OGIMET (WIGOS)
+INM60764,Kebili,33.7,8.96667,44.0,60764,60764099999,1,0,SYNOP INM via NOAA ISD (scripts/stations_supplementaires.py) ; coordonnees OGIMET (WIGOS)
+INM60767,Gabes Airport,33.73917,9.91639,120.0,60767,60767099999,1,0,SYNOP INM via NOAA ISD (scripts/stations_supplementaires.py) ; coordonnees OGIMET (WIGOS)
+INM60770,Medenine,33.32944,10.48806,116.0,60770,60770099999,1,1,SYNOP INM via NOAA ISD (scripts/stations_supplementaires.py) ; coordonnees OGIMET (WIGOS)
+INM60772,Tataouine,32.9575,10.46694,215.0,60772,60772099999,1,0,SYNOP INM via NOAA ISD (scripts/stations_supplementaires.py) ; coordonnees OGIMET (WIGOS)
+INM60780,El Borma,31.68306,9.3,258.0,60780,60780099999,1,0,SYNOP INM via NOAA ISD (scripts/stations_supplementaires.py) ; coordonnees OGIMET (WIGOS)

@@ -6,6 +6,9 @@ MyDrive/pcfno3d_national/ (lue par scripts/make_national_nb.py).
 
 Contenu (dossier `national/` de l'archive) : aneo_grid_points_surface.csv et grille_reelle.json
 (scripts/grille_reelle.py), forcage_era5.csv et .npz (scripts/forcage_era5.py --niveaux ...).
+Option --obs-supp : synop_*.csv des stations de validation SUPPLEMENTAIRES (scripts/stations_supplementaires.py)
+-> national/obs_supp/ (+ la liste configs/national/stations_supplementaires.csv) ; jamais en entree du modele,
+lues seulement par scripts/valider_grand_tunis_reel.py --stations-supp.
 Refuse une grille et un forcage dont les niveaux ne correspondent pas.
 """
 from __future__ import annotations
@@ -26,6 +29,8 @@ def main() -> int:
     ap.add_argument("--sortie", required=True)
     ap.add_argument("--obs", default=None,
                     help="dossier des mesures reelles (metar_*.csv, radiosondages_*.csv) -> national/obs/")
+    ap.add_argument("--obs-supp", default=None,
+                    help="dossier des synop_*.csv des stations supplementaires -> national/obs_supp/")
     ap.add_argument("--niveaux", default="25,50,75,100,150,200,300,400,500,650,800,1000,1250,1500,2000,2500")
     args = ap.parse_args()
     g, f = Path(args.grille), Path(args.forcage)
@@ -49,6 +54,9 @@ def main() -> int:
         obs = sorted(Path(args.obs).glob("metar_*.csv")) + sorted(Path(args.obs).glob("radiosondages_*.csv"))
     if args.obs and not obs:
         raise SystemExit(f"aucun metar_*.csv / radiosondages_*.csv dans {args.obs}")
+    supp = sorted(Path(args.obs_supp).glob("synop_*.csv")) if args.obs_supp else []
+    if args.obs_supp and not supp:
+        raise SystemExit(f"aucun synop_*.csv dans {args.obs_supp}")
     sortie = Path(args.sortie)
     tmp = sortie.with_suffix(".zip.part")
     with zipfile.ZipFile(tmp, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6) as zf:
@@ -56,6 +64,11 @@ def main() -> int:
             zf.write(p, f"national/{nom}")
         for p in obs:
             zf.write(p, f"national/obs/{p.name}")
+        for p in supp:
+            zf.write(p, f"national/obs_supp/{p.name}")
+        if supp:
+            zf.write(Path(__file__).resolve().parents[1] / "configs" / "national" / "stations_supplementaires.csv",
+                     "national/obs_supp/stations_supplementaires.csv")
     tmp.replace(sortie)
     print(f"-> {sortie} ({sortie.stat().st_size / 1e6:.0f} Mo), a deposer dans MyDrive/pcfno3d_national/")
     return 0
