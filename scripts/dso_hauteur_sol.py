@@ -96,20 +96,38 @@ def masques_tranches(geom):
     return {k: torch.from_numpy(m).to(geom.device) for k, m in tranches.items()}, h
 
 
-def mesurer(ev, cfg, keep: float | None, max_instants: int | None) -> tuple[pd.DataFrame, dict]:
+def mesurer(ev, cfg, keep: float | None, max_instants: int | None, jeu: str = "test",
+            predicteurs: dict | None = None) -> tuple[pd.DataFrame, dict]:
+    """jeu : "test" (instants synoptiques, graine 2000, comme DSO1) ou "validation" (selection
+    synoptique de l'entrainement, splits.val_selection, graine 1000 : memes entrees que le score
+    de selection). predicteurs : {nom: f(s_raw, sensor, tfeat, y, j, stem) -> (u, v, w)} ; defaut
+    {"modele": ev.predire}. Le predicteur « era5 » s'ajoute pour un modele avec forcage ERA5.
+    ev : tout objet portant geom et splits (et predire sans `predicteurs`)."""
     import torch
+    from torch.utils.data import DataLoader
 
-    from pcfno3d.dataset import eval_loader, is_synoptic
+    from pcfno3d.dataset import ANEO3D, eval_loader, is_synoptic
     from pcfno3d.forcage import N_SCAL
     from pcfno3d.geometry import N_TFEAT
 
     geom, splits = ev.geom, ev.splits
-    te_s = splits.test[0]
-    syn = np.array([is_synoptic(splits.stamp_of[s]) for s in te_s])
-    idx = np.nonzero(syn)[0] if syn.any() else np.arange(len(te_s))
-    if max_instants:
-        idx = idx[:max_instants]
-    loader, stems = eval_loader(cfg, geom, splits, idx, 2000, keep=keep)
+    if jeu == "test":
+        te_s = splits.test[0]
+        syn = np.array([is_synoptic(splits.stamp_of[s]) for s in te_s])
+        idx = np.nonzero(syn)[0] if syn.any() else np.arange(len(te_s))
+        if max_instants:
+            idx = idx[:max_instants]
+        loader, stems = eval_loader(cfg, geom, splits, idx, 2000, keep=keep)
+    elif jeu == "validation":
+        va_s, va_h, va_d = splits.val
+        idx = np.asarray(splits.val_selection)
+        if max_instants:
+            idx = idx[:max_instants]
+        loader = DataLoader(ANEO3D(va_s[idx], va_h[idx], va_d[idx], geom, train=False, seed=1000,
+                                   keep_eval=keep), batch_size=1)
+        stems = va_s[idx]
+    else:
+        raise ValueError(f"jeu inconnu : {jeu!r} (test ou validation)")
     stems = [str(s) for s in stems]
 
     tranches, _ = masques_tranches(geom)
@@ -129,7 +147,7 @@ def mesurer(ev, cfg, keep: float | None, max_instants: int | None) -> tuple[pd.D
         u, v = uv[:, 0] * geom.valid_t, uv[:, 1] * geom.valid_t
         return [u, v, geom.w_continuite(u, v)]
 
-    preds = {"modele": ev.predire}
+    preds = dict(predicteurs) if predicteurs is not None else {"modele": ev.predire}
     if geom.interp_era5 is not None:
         preds["era5"] = pred_era5
 
@@ -184,7 +202,10 @@ def mesurer(ev, cfg, keep: float | None, max_instants: int | None) -> tuple[pd.D
     glob = {p: {"dso2_rms_moyen": float(np.mean(masse[p])),
                 "dso3_rugosite": float(np.mean(rug_l[p])) if rug_l[p] else float("nan"),
                 "mae_direction_deg": float(np.mean(dirs[p]))} for p in preds}
-    return tab, {"instants": len(stems), "keep": keep, "global": glob}
+    info = {"instants": len(stems), "keep": keep, "global": glob}
+    if jeu != "test":                       # bilan du test : cles inchangees
+        info["jeu"] = jeu
+    return tab, info
 
 
 def verdicts(tab: pd.DataFrame, glob: dict, cfg, keep: float | None) -> dict:

@@ -42,6 +42,10 @@ from scipy.ndimage import gaussian_filter
 from .geometry import Geometry
 
 METHOD = "ensemble-masquage-v1"
+# dispersion entre entrainements (graines) autour de leur moyenne servie (pcfno3d.moyenne) : memes
+# formules de calibration, autre ensemble ; jamais appliquee a la fiabilite servie (WindFieldModel)
+METHOD_GRAINES = "ensemble-graines-v1"
+METHODES = (METHOD, METHOD_GRAINES)
 Z80 = 1.2815515655446004                 # quantile 90 % de la loi normale : intervalle a 80 %
 COMPOSANTES = ("u", "v", "w", "speed")
 STATUT_ESTIME, STATUT_MESURE, NODATA_U8 = 0, 1, 255
@@ -303,7 +307,7 @@ class Calibration:
             if data.get("jeu") != "validation":
                 raise ValueError("JSON de calibration de fiabilite : « jeu » doit valoir "
                                  f"« validation », recu {data.get('jeu')!r}")
-            if data.get("method") != METHOD:
+            if data.get("method") not in METHODES:
                 raise ValueError(f"methode inconnue : {data.get('method')!r}")
 
     @classmethod
@@ -316,6 +320,11 @@ class Calibration:
     @property
     def calibrated(self) -> bool:
         return self.data is not None
+
+    @property
+    def method(self) -> str:
+        """Ensemble sur lequel les k ont ete ajustes (« non_calibre » : celui de la fiabilite)."""
+        return self.data["method"] if self.data is not None else METHOD
 
     def factor(self, comp: str, level: int) -> float:
         if self.data is None:
@@ -336,7 +345,7 @@ class Calibration:
     def uncertainty_method(self, members: int) -> dict:
         """Bloc `uncertainty_method` du contrat (common.schema.json), cles exactes."""
         d = self.data
-        return {"method": METHOD, "members": int(members), "calibrated": self.calibrated,
+        return {"method": self.method, "members": int(members), "calibrated": self.calibrated,
                 "scale_factor": float(d["scale_factor"]) if d else None,
                 "coverage_80_validation": float(d["coverage_80_validation"]) if d else None}
 

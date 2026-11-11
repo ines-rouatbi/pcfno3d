@@ -1,0 +1,71 @@
+{
+  "statut": "PROPOSITION du 11/11/2026 soumise a l'accord ecrit d'Ines : aucun calcul de la moyenne des graines avant cet accord. Si Ines modifie un point avant l'accord, la regle est reecrite et son empreinte recalculee ; apres le premier calcul, elle ne change plus (le script et le carnet verifient l'empreinte ; un dossier de sortie ne sert qu'a une regle)",
+  "fixee_le": "2026-11-11, avant toute passe de la moyenne des graines : aucune metrique de la moyenne, aucune dispersion entre graines, aucun temps de calcul de la moyenne n'a ete mesure ; aucune lecture du test",
+  "objet": "evaluer la MOYENNE des 3 entrainements du candidat C' de la v4 nationale (graines 42, 43, 44) comme modele servi : sortie moyenne, w par continuite, temps de calcul (DSO4) et dispersion entre graines comme incertitude (DSO6)",
+  "relation_regle_v4": "configs/national/regle_v4_national.json (sha256 60671e843ee648ee2422168a7659a53dfe8aa414be7b1c7c6f54eeec622a43f8) choisit UN entrainement parmi six sur la validation et lit le test une fois pour lui ; un ensemble de graines n'y est pas prevu. Cette regle s'y AJOUTE sans la modifier : le choix de la regle v4 et sa lecture du test restent tels quels ; la moyenne n'y entre pas",
+  "modele": {
+    "membres": "runs/national_1km_v4_Cp_s42, _s43, _s44 : best.pt de chaque run_dir (choisir_poids des carnets : l'epoque du test evalue s'il existe, sinon le plus recent) et norm_stats.json du meme run_dir ; rien n'est ecrit dans ces run_dir",
+    "sortie": "u = moyenne simple des u servis des 3 membres, v de meme (m/s, apres denormalisation par les statistiques de CHAQUE membre) ; w = w par continuite des (u, v) moyens (Geometry.w_continuite, comme le modele servi ; lineaire, il egale la moyenne des w par continuite des membres) ; aucune ponderation, aucun poids appris",
+    "passe_servie": "pcfno3d.moyenne.ModeleMoyen.predict : les 3 passes avant l'une apres l'autre sur le meme GPU, seules les sommes de u et v sont gardees ; meme entree de production que chaque membre (ERA5 10 m tous les 2 km + 12 aeroports METAR)",
+    "chaque_graine": "chaque membre seul, sa passe servie, w par continuite (memes sorties que celles qui entrent dans la moyenne)"
+  },
+  "verite": "verite d'entrainement nationale v3 (cache_v3_partie_<k>.zip) : generee, appelee verite d'entrainement, jamais mesures",
+  "jeu": "VALIDATION de la verite v3 seulement : les 64 instants synoptiques de la selection d'entrainement (splits.val_selection, train.val_samples 64, ceux du score de selection), graine 1000 (celle du loader de validation), entree complete (mask.keep_eval 1,0) ; DSO5 : memes instants avec 25 % des points d'entree. Le test n'est JAMAIS lu par cette regle",
+  "predicteurs": {
+    "moyenne": "la moyenne des 3 graines (ci-dessus)",
+    "s42, s43, s44": "chaque graine seule",
+    "meilleure_graine": "la graine de plus petit minimum de val_score (history.json, VALIDATION, le score de la regle v4 ; pcfno3d.os6.meilleure_graine), fixee AVANT ce calcul et ecrite dans membres.json ; jamais choisie sur les chiffres de cette evaluation",
+    "era5": "le predicteur era5 de scripts/dso_hauteur_sol.py (ERA5 aux noeuds, w par continuite), memes instants, entrees et noeuds"
+  },
+  "metriques": "scripts/dso_hauteur_sol.py, fonction mesurer (memes formules que le bilan du test), sur la validation : RMSE et R2 de u, v, w par tranche 0-100, 100-300, 300-600, 600-1000 m au-dessus du sol ; rmse_max_uv = maximum de RMSE u, v sur ces tranches (tranches de moins de 1 % des noeuds du domaine exclues) ; domaine 0-1 km ; DSO2 (residu de masse sur 0-1 km), DSO3 (rugosite 0-1 km), MAE de direction ; tous les predicteurs vus sur EXACTEMENT les memes instants, entrees et noeuds (une seule lecture du loader)",
+  "criteres_moyenne_proposee_pour_le_test": [
+    "DSO1 : rmse_max_uv(moyenne) <= 0,99 x rmse_max_uv(meilleure_graine) (gain d'au moins 1 % sur la validation)",
+    "DSO3 : |dso3_rugosite(moyenne) - 1| <= |dso3_rugosite(meilleure_graine) - 1| + 0,02 (une moyenne lisse le champ : elle ne doit pas perdre la rugosite)",
+    "DSO5 : rmse_max_uv(moyenne, 25 % des points d'entree) <= 1,01 x celui de meilleure_graine",
+    "DSO2 : residu de masse de la moyenne (w par continuite) conforme, dso2_rms_moyen <= dso.mass_rms",
+    "DSO4 : temps moyen de la passe servie de la moyenne (3 passes, moyenne, w par continuite, copie vers le CPU, synchronisation CUDA) < dso.time_s = 1 s sur le GPU du carnet (A100), mesure comme le DSO4 existant (WindFieldModel.benchmark : 3 appels de chauffe puis 20 appels mesures, sur un instant de la validation ; aucune entree du test)",
+    "face a l'ERA5 seule : rmse_max_uv(moyenne) < rmse_max_uv(era5) ET |dso3_rugosite(moyenne) - 1| < |dso3_rugosite(era5) - 1|"
+  ],
+  "dso6_dispersion_entre_graines": {
+    "sigma": "par noeud et par composante (u, v, w, vitesse), dispersion des 3 graines autour de la moyenne servie : sigma = sqrt((1/3) somme_g (x_g - x_moyenne)^2) (reliability.ensemble_sigma, la moyenne servie a la place de la passe servie) ; sigma plancher reliability.sigma_floor_m_s (0,01 m/s)",
+    "calibration": "facteurs k par composante et par niveau sur la VALIDATION (memes 64 instants), regle auto existante de la fiabilite (reliability.choose_q : 2 plis de jours de validation, rang pair / impair ; grille q 0,80 a 0,90 ; plus petit q dont la couverture hors pli minimale sur u, v, w atteint 0,80) ; ecrite dans calibration_graines_validation.json, methode ensemble-graines-v1 (jamais appliquee a la fiabilite servie par masquage)",
+    "mesures": "couverture de l'intervalle a 80 % HORS PLI (k ajustes sur un pli, comptes sur l'autre, deux sens) et sur toute la validation, Spearman(|erreur|, sigma calibre) par composante et par niveau (DSO6Accumulator, comme le DSO6 existant)",
+    "nature": "ESTIMATIONS de validation, pas un verdict DSO6 : le verdict DSO6 se lit sur le test",
+    "critere_d_information": "dispersion jugee utile comme incertitude si la couverture hors pli minimale sur u, v, w >= 0,80 ET Spearman u, v, w > 0 ; publiee a cote, sans effet sur les six criteres ci-dessus et sans remplacer la fiabilite servie (ensemble par masquage, lot M2)"
+  },
+  "test": "NON lu par cette regle. Une lecture du test de la moyenne (180 instants synoptiques 2022 ; memes scripts que la regle v4 : evaluation, scripts/dso_hauteur_sol.py mesure et mesure --keep 0.25, verdict-national, DSO6 avec la calibration de validation ci-dessus) demande un accord ecrit SEPARE d'Ines, donne apres lecture des resultats de validation ; ce serait une lecture unique",
+  "decision": "si les six criteres sont remplis sur la validation, la moyenne est PROPOSEE a Ines pour la lecture du test ; sinon elle est publiee comme essai de validation, avec tous ses chiffres. Cette regle ne remplace jamais le modele livre ni le choix de la regle v4",
+  "sorties": "runs/national_1km_v4_Cp_ens/ (dossier neuf ; le script refuse s'il contient deja bilan_validation.json, ou une copie d'une autre regle) : regle_ensemble_cp.json (copie), membres.json, tranches_validation.csv, tranches_validation_keep25.csv, dso4_moyenne.json, calibration_graines_validation.json, dso6_graines_validation.json, bilan_validation.json, bilan_validation.md",
+  "ressources_estimees": "Colab A100 40 Go, sans entrainement ; estimations NON mesurees (pas de GPU en local ; le script ecrit la memoire et les temps mesures) : 453,3 M parametres reels par membre (226,8 M tenseurs, 1,81 Go en fp32), 5,44 Go pour les 3 membres ; une passe a 16 x 388 x 828 en bf16, FFT et tete en fp32 : environ 5 a 7 Go (estimation de l'OS6 national : 5 a 6 Go par disposition) ; sorties gardees pour l'evaluation (3 membres x u, v, w) environ 0,2 Go ; total environ 12 a 14 Go sur 40. Temps : une passe servie nationale 0,248 s (v2, test 2022, A100) -> environ 0,75 s pour les 3 passes plus la moyenne et w (marge d'environ 25 % sous 1 s) ; validation environ 4 x 64 instants x 3 passes, environ 20 a 30 min au total",
+  "interdits": [
+    "aucun entrainement, aucune lecture du test, aucun reglage choisi sur le test",
+    "aucun reglage choisi sur les chiffres de cette evaluation : meilleure graine fixee par history.json, criteres et seuils fixes ici avant le calcul",
+    "aucun bruit ajoute aux predictions ; moyenne simple, sans ponderation",
+    "la verite generee et ERA5 sont appelees verite d'entrainement, jamais mesures",
+    "aucun run_dir ecrase : sortie dans un dossier neuf, les run_dir des graines ne sont que lus"
+  ],
+  "a_trancher_par_ines": [
+    "gain minimal de 1 % sur rmse_max_uv face a la meilleure graine (et non un simple <=) : une moyenne coute 3 fois le calcul",
+    "tolerance de 0,02 sur |rugosite - 1| : celle de la regle v4 face au modele livre",
+    "DSO4 mesure sur l'A100 du carnet (le seuil de 1 s ne dit rien d'un L4 ou d'un CPU)",
+    "meilleure graine = minimum de val_score (score de la regle v4), et non la meilleure sur les tranches 0-1 km"
+  ],
+  "parametres": {
+    "prefixe": "national_1km_v4_Cp",
+    "graines": [
+      42,
+      43,
+      44
+    ],
+    "sortie": "national_1km_v4_Cp_ens",
+    "n_val": 64,
+    "keep_dso5": 0.25,
+    "gain_min_dso1": 0.01,
+    "tol_rugosite": 0.02,
+    "tol_dso5": 0.01,
+    "dso4_n": 20,
+    "dso4_chauffe": 3,
+    "calibration_q": "auto",
+    "couverture_cible": 0.8
+  }
+}

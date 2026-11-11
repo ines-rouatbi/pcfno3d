@@ -25,7 +25,7 @@ from .features import time_geo_features
 from .geometry import N_SURF, N_TFEAT, SURF_VARS, Geometry
 from .model import build_model, model_cfg_from_checkpoint
 from .normalize import Normalizer
-from .reliability import (CLASSES, NODATA_U8, STATUT_MESURE, Calibration, Reliability,
+from .reliability import (CLASSES, METHOD, NODATA_U8, STATUT_MESURE, Calibration, Reliability,
                           assess, speed_interval)
 from .windfarm import FarmContext, load_farm, round_direction
 
@@ -381,10 +381,15 @@ class WindFieldModel:
     """Modele pret a l'emploi : geometrie + statistiques + poids, charges une seule fois."""
 
     def __init__(self, cfg: Config, checkpoint: str | Path | None = None,
-                 device: str | None = None, verbose: bool = True) -> None:
+                 device: str | None = None, verbose: bool = True,
+                 geom: Geometry | None = None) -> None:
         self.cfg = cfg
         self.device = pick_device(device)
-        self.geom = Geometry(cfg, device=self.device)
+        # geom : geometrie deja chargee, partagee par plusieurs modeles du meme domaine (moyenne
+        # des graines, pcfno3d.moyenne) ; sans elle, rien ne change
+        if geom is not None and geom.device != self.device:
+            raise ValueError(f"geometrie sur {geom.device}, modele sur {self.device}")
+        self.geom = geom if geom is not None else Geometry(cfg, device=self.device)
 
         self.checkpoint_path = Path(checkpoint) if checkpoint \
             else cfg.paths.checkpoint_for_inference()
@@ -428,6 +433,11 @@ class WindFieldModel:
         # fiabilite par noeud (lot M2) : strictement opt-in, None = rien ne change
         src = cfg.inference.reliability
         self.reliability = Calibration.load(src) if src is not None else None
+        if self.reliability is not None and self.reliability.method != METHOD:
+            # facteurs k ajustes sur une autre dispersion (ex. entre graines) : ils ne valent pas
+            # pour l'ensemble par masquage de la fiabilite servie
+            raise ValueError(f"calibration {self.reliability.method!r} : la fiabilite servie "
+                             f"attend {METHOD!r}")
         # parc eolien (lot M5) : strictement opt-in, None = rien ne change
         parc = cfg.wind_farm.turbines
         self.farm = load_farm(parc, self.geom, cfg) if parc is not None else None

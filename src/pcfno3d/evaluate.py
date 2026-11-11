@@ -200,18 +200,7 @@ class Evaluator:
             members = wf._members(s_np, member_masks(m_np, rc.members, rc.keep, rc.seed),
                                   hour, doy, extra=extra)
             sig = ensemble_sigma(served, members)
-            y_np = y.numpy()
-            truth = {"u": y_np[0], "v": y_np[1], "w": y_np[2],
-                     "speed": np.hypot(y_np[0], y_np[1])}
-            pred = {"u": served[0], "v": served[1], "w": served[2],
-                    "speed": np.hypot(served[0], served[1])}
-            for c in COMPOSANTES:
-                known = geom.valid & np.isfinite(truth[c])
-                for k in levels:
-                    m = known[k]
-                    if m.any():
-                        on_instant(k, c, np.abs(pred[c][k][m] - truth[c][k][m]), sig[c][k][m],
-                                   stem)
+            couples_fiabilite(geom, levels, served, sig, y.numpy(), stem, on_instant)
             if self.verbose and (n + 1) % 10 == 0:
                 print(f"  fiabilite ({jeu}) : {n + 1}/{len(ds)} instants", flush=True)
         return len(ds)
@@ -267,24 +256,8 @@ class Evaluator:
         return {**data, "fichier": str(out)}
 
     def _plis_jours(self, ds: ANEO3D) -> tuple[dict[str, int], dict]:
-        """Deux plis deterministes de la selection de validation, par JOURS : jours de rang
-        pair (pli a) et impair (pli b), dans l'ordre croissant des jours presents.
-
-        Un seul jour de validation (mini-jeu de test) : repli sur les instants de rang pair
-        / impair, SIGNALE dans le JSON (`plis`) ; jamais le cas sur le jeu reel."""
-        stems = [str(s) for s in ds.stems]
-        jours = sorted({int(self._day_of[s]) for s in stems})
-        if len(jours) >= 2:
-            rang = {d: i % 2 for i, d in enumerate(jours)}
-            pli = {s: rang[int(self._day_of[s])] for s in stems}
-            info = {"plis": "jours", "jours_a": jours[0::2], "jours_b": jours[1::2]}
-        else:
-            pli = {s: i % 2 for i, s in enumerate(stems)}
-            info = {"plis": "instants (repli : un seul jour de validation)",
-                    "jours_a": jours, "jours_b": jours}
-        info["instants_a"] = sum(1 for s in stems if pli[s] == 0)
-        info["instants_b"] = sum(1 for s in stems if pli[s] == 1)
-        return pli, info
+        """Deux plis de jours de la selection de validation (voir `plis_jours`)."""
+        return plis_jours(ds.stems, self._day_of)
 
     def dso6(self, calibration: str | Path | None = None, n_instants: int | None = None,
              keep: float | None = None, out: str | Path | None = None,
@@ -384,6 +357,44 @@ class Evaluator:
             "mae_direction_deg": float(res_all["mae_dir_deg"].mean()),
             "robustesse": robust.to_dict(orient="records"),
         }
+
+
+def plis_jours(stems, day_of: dict) -> tuple[dict[str, int], dict]:
+    """Deux plis deterministes de la selection de validation, par JOURS : jours de rang
+    pair (pli a) et impair (pli b), dans l'ordre croissant des jours presents.
+
+    Un seul jour de validation (mini-jeu de test) : repli sur les instants de rang pair
+    / impair, SIGNALE dans le JSON (`plis`) ; jamais le cas sur le jeu reel."""
+    stems = [str(s) for s in stems]
+    jours = sorted({int(day_of[s]) for s in stems})
+    if len(jours) >= 2:
+        rang = {d: i % 2 for i, d in enumerate(jours)}
+        pli = {s: rang[int(day_of[s])] for s in stems}
+        info = {"plis": "jours", "jours_a": jours[0::2], "jours_b": jours[1::2]}
+    else:
+        pli = {s: i % 2 for i, s in enumerate(stems)}
+        info = {"plis": "instants (repli : un seul jour de validation)",
+                "jours_a": jours, "jours_b": jours}
+    info["instants_a"] = sum(1 for s in stems if pli[s] == 0)
+    info["instants_b"] = sum(1 for s in stems if pli[s] == 1)
+    return pli, info
+
+
+def couples_fiabilite(geom, levels, served: tuple, sig: dict, y_np: np.ndarray, stem: str,
+                      on_instant) -> None:
+    """Couples (|erreur|, sigma brut) d'un instant, par niveau evalue et par composante (u, v,
+    w, vitesse), aux noeuds valides ET connus : `on_instant(k, comp, err_abs, sigma, stem)`.
+    Partage par la fiabilite (ensemble par masquage) et la dispersion entre graines
+    (scripts/ensemble_graines.py)."""
+    truth = {"u": y_np[0], "v": y_np[1], "w": y_np[2], "speed": np.hypot(y_np[0], y_np[1])}
+    pred = {"u": served[0], "v": served[1], "w": served[2],
+            "speed": np.hypot(served[0], served[1])}
+    for c in COMPOSANTES:
+        known = geom.valid & np.isfinite(truth[c])
+        for k in levels:
+            m = known[k]
+            if m.any():
+                on_instant(k, c, np.abs(pred[c][k][m] - truth[c][k][m]), sig[c][k][m], stem)
 
 
 def verdicts_dso1(levels: pd.DataFrame, cfg: Config) -> tuple[pd.DataFrame, dict]:

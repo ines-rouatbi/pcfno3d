@@ -241,7 +241,15 @@ dated, hashed rule written first (`configs/national/regle_*.json` + `.sha256`, v
 tuning on validation only; test 2022 read once per model; NO training or full generation without her written
 approval, phase by phase; no noise added to predictions; each new model its own run_dir. Grand Tunis is frozen (v4,
 no more training). The Colab notebook `pcfno3d_national_colab.ipynb` no longer trains (section 4 = phase-1
-diagnostics). History of the start:
+diagnostics). **Seed mean of C' (v4, PROPOSED rule `configs/national/regle_ensemble_cp.json`, not run):**
+`pcfno3d.moyenne.ModeleMoyen` loads N run_dirs (each its own best.pt + norm_stats, one shared `Geometry` via
+`WindFieldModel(geom=)`), serves mean u, v with w by continuity of the mean (`predict`, sequential passes keeping
+only sums; `benchmark` = DSO4 like `WindFieldModel.benchmark`); `predicteurs()` plugs the mean and each seed
+(cached passes) into `metriques_loader` / `dso_hauteur_sol.mesurer(..., jeu="validation", predicteurs=)`.
+`scripts/ensemble_graines.py` (validation only: bands 0–1 km, DSO5, DSO4, inter-seed spread calibrated on
+validation with method `ensemble-graines-v1` — `WindFieldModel` refuses it for served reliability) →
+`runs/national_1km_v4_Cp_ens/`; notebook `scripts/make_ensemble_nb.py`. Test of the mean: separate approval.
+History of the start:
 **National model (started 2026-11-06, Ines's request).** The Grand Tunis v4 method over
 all of Tunisia: `configs/national_1km_colab.yaml`, domain 30.15–37.615 N × 7.45–11.644 E (828 × 388 km),
 surface 500 m (1656 × 776), nodes 1 km, 16 ASL levels 25…2500 m (`generate_aneo_3d.py --dx 500 --niveaux …`,
