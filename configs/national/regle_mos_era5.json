@@ -1,0 +1,95 @@
+{
+  "statut": "REGLE FIXEE sous l'accord d'Ines du 11/11/2026 au soir (accord ecrit transmis par le coordinateur : inventaire, telechargement, controle et MOS de bout en bout sous cette regle) ; choix par defaut de l'agent, justifies ci-dessous, ecrits et haches AVANT tout calcul et jamais ajustes au resultat",
+  "fixee_le": "2026-11-11, avant tout ajustement ou toute evaluation : aucune sortie de scripts/mos_era5.py n'existe ; aucune serie ERA5 2015-2020 n'est encore telechargee",
+  "objet": "MOS (model output statistics) de l'ERA5 10 m : un modele leger predit l'erreur de l'ERA5 a 10 m au-dessus du sol (u, v) a une station a partir des descripteurs du site, de l'heure, du mois, du vent ERA5 et de la stabilite. But : battre l'ERA5 seule contre de VRAIES mesures sur des stations JAMAIS VUES par l'ajustement",
+  "code": "scripts/mos_era5.py (etapes era5, preparer, choisir, tester) ; il verifie l'empreinte de cette regle et lit ses valeurs (grille, annees, graine, criteres)",
+  "stations": {
+    "inventaire": "docs/resultats/national/stations_supplementaires.csv (scripts/stations_supplementaires.py) : stations tunisiennes NOAA ISD + OGIMET 2015-2022, aeroports METAR compris",
+    "admises": "dans le domaine national, descripteurs du site connus ; les indicateurs « abri probable » et « calmes suspects » ne retirent aucune station (rapportes a part)",
+    "sites": "deux stations a moins de 10 km l'une de l'autre forment un SITE (ex. Monastir : INM 60740 et l'enregistrement ISD 607403 de DTMB) ; un site est juge par sa station la plus complete sur l'annee jugee (part de creneaux valides apres controle, puis code le plus petit) ; quand un site est juge, TOUTES ses stations sont retirees de l'ajustement. Justification : deux enregistrements d'un meme anemometre feraient fuir la mesure jugee dans l'ajustement",
+    "jugees": "sites dont la station jugee a au moins 50 % des creneaux de 3 h de l'annee jugee (2021 pour le choix, 2022 pour le test) valides apres controle (meme seuil que la liste de validation supplementaire)"
+  },
+  "donnees": {
+    "observations": "fichiers annuels NOAA ISD (scripts/isd_synop.convertir), controle pcfno3d.stations_reelles.controle_qualite (exclusions manuelles, mois en panne, plages, valeurs figees) ; vent a 10 m au-dessus du sol ; ramenees au creneau de 3 h le plus proche (00, 03, ..., 21 UTC) a 30 min au plus",
+    "era5": "ERA5 SERVIE PAR OPEN-METEO (archive-api.open-meteo.com/v1/archive, models=era5, sans cle) : series horaires au point de la station, cell_selection=nearest, c'est-a-dire la valeur de la maille ERA5 0,25 degre la plus proche (AUCUNE interpolation spatiale, aucune correction d'altitude pour le vent), wind_speed_unit=ms, timezone=GMT ; variables wind_speed_10m, wind_direction_10m, wind_speed_100m, wind_direction_100m, temperature_2m, boundary_layer_height, shortwave_radiation, cloud_cover ; valeur de l'heure du creneau. La meme source pour toutes les annees 2015-2022 (pas de melange avec les fichiers CDS locaux). Mer : temperature_2m aux points marins fixes de « points_mer » (cell_selection=sea)",
+    "points_mer": [[37.5, 9.5], [37.0, 11.25], [36.0, 11.25], [35.0, 11.5], [34.0, 10.75], [33.75, 11.5]],
+    "relief_era5": "altitude du relief ERA5 de la maille retournee par Open-Meteo : geopotentiel z / 9,80665 du fichier ERA5 CDS local era5_sl_2021_m01-06.nc (champ constant), maille la plus proche de la latitude et de la longitude retournees",
+    "paire": "une paire = (station, creneau) avec mesure et ERA5 ; une paire incomplete est ecartee (jamais imputee)",
+    "justification": "Open-Meteo plutot que le CDS : demande d'Ines (pas de requete CDS sans elle) ; l'ERA5 2015-2020 n'est pas sur le disque. Les scalaires de forcage nationaux (scripts/forcage_era5.py) exigent les niveaux de pression 2015-2020, absents : la stabilite est decrite par des grandeurs de surface de l'ERA5 au point (rapport V100/V10, couche limite, rayonnement, nebulosite, contraste terre-mer)"
+  },
+  "decoupage": {
+    "entrainement": [2015, 2016, 2017, 2018, 2019, 2020],
+    "validation": [2021],
+    "test": [2022],
+    "lecture_du_test": "une seule fois, pour la configuration choisie sur la validation, et seulement si elle satisfait sur la VALIDATION 2021 les trois conditions du critere « bat ERA5 » (sinon le test n'est pas lu et l'ERA5 reste la reference)"
+  },
+  "cibles": {
+    "du": "u_mesure - u_era5 (m/s)",
+    "dv": "v_mesure - v_era5 (m/s)",
+    "correction": "u_corrige = u_era5 + du_predit, v_corrige = v_era5 + dv_predit",
+    "dvitesse": "|V_mesure| - |V_era5| : ajustee seulement pour la configuration choisie, vitesse_corrigee = |V_era5| + dvitesse_predit, rapportee hors verdict"
+  },
+  "variables": [
+    "z_maille_500m_m", "pente_maille_deg", "log10_z0_maille", "tpi_5km_m", "tpi_20km_m", "log1p_distance_cote_km",
+    "dz_maille_moins_era5_m",
+    "sin_heure", "cos_heure", "sin_jour", "cos_jour",
+    "u10_era5", "v10_era5", "vitesse10_era5", "sin_dir10_era5", "cos_dir10_era5",
+    "u100_era5", "v100_era5", "rapport_v100_v10_era5",
+    "blh_era5_m", "rayonnement_era5_w_m2", "nebulosite_era5_pct", "dt_terre_mer_k"
+  ],
+  "definitions_variables": {
+    "sites": "pcfno3d.sites_stations : maille de 500 m de la grille nationale recalculee autour de la station (altitude et pente GLO-30 lisse, z0 WorldCover), TPI GLO-90 a 5 et 20 km, distance au trait de cote Natural Earth",
+    "log10_z0_maille": "log10(z0 de la maille de 500 m)",
+    "log1p_distance_cote_km": "ln(1 + distance au trait de cote en km)",
+    "dz_maille_moins_era5_m": "altitude de la maille de 500 m - altitude du relief ERA5 de la maille Open-Meteo (relief_era5)",
+    "heure": "heure UTC du creneau, angle 2 pi h / 24",
+    "jour": "jour de l'annee j, angle 2 pi (j - 1) / 365,25",
+    "dir10_era5": "direction meteorologique (d'ou vient le vent) du vent ERA5 a 10 m ; u, v = -V sin(dir), -V cos(dir)",
+    "rapport_v100_v10_era5": "|V100| / max(|V10|, 0,5 m/s) (indicateur local de stabilite)",
+    "dt_terre_mer_k": "temperature_2m ERA5 a la station - temperature_2m ERA5 au point marin le plus proche (points_mer)"
+  },
+  "modeles": {
+    "graine": 2030,
+    "ridge": {"normalisation": "moyenne et ecart-type des variables sur les paires d'ajustement", "alpha": [0.1, 1.0, 10.0, 100.0, 1000.0]},
+    "gradient_boosting": {
+      "implementation": "sklearn.ensemble.HistGradientBoostingRegressor, perte quadratique, early_stopping=False, random_state=graine",
+      "learning_rate": [0.1],
+      "max_depth": [3, 6],
+      "max_iter": [200, 500],
+      "min_samples_leaf": 100,
+      "l2_regularization": 1.0
+    },
+    "par_cible": "un modele par cible (du, dv), memes hyper-parametres pour les deux",
+    "justification": "un modele lineaire regularise (reference interpretable) et un modele d'arbres a faible profondeur (interactions direction x relief, heure x stabilite) ; grille courte (5 + 4 configurations) pour tenir en quelques heures de CPU avec la validation croisee par site"
+  },
+  "choix_sur_la_validation": {
+    "procedure": "validation croisee PAR SITE sur la validation 2021 : pour chaque configuration de la grille et chaque site juge, ajustement sur les annees d'entrainement de toutes les stations HORS de ce site, prediction de 2021 a la station jugee du site",
+    "score": "moyenne sur les sites juges du RMSE vectoriel corrige par site, sqrt(moyenne((u_corrige - u_mesure)^2 + (v_corrige - v_mesure)^2))",
+    "choix": "configuration de score minimal ; a egalite (1e-4 m/s) la plus simple : ridge avant gradient boosting, puis alpha le plus grand, puis max_iter, max_depth les plus petits",
+    "garde_fou": "le critere « bat ERA5 » (trois conditions, IC bootstrap compris) est applique a la configuration choisie sur la validation 2021 ; s'il n'est pas satisfait, le test n'est pas lu (MOS refuse, l'ERA5 reste la reference)"
+  },
+  "jugement_test": {
+    "procedure": "test 2022, meme validation croisee par site : chaque site juge par le modele de la configuration choisie ajuste sur 2015-2020 SANS ce site (memes ajustements que l'etape de choix, aucun reajustement, aucun usage de 2021 dans l'ajustement)",
+    "reference": "l'ERA5 seule (u10, v10 de la maille la plus proche) sur les memes paires",
+    "mesure": "par site : RMSE vectoriel corrige et RMSE vectoriel ERA5 ; resume : moyenne sur les sites de chacun et ecart (corrige - ERA5)",
+    "bootstrap": {"unite": "jour UTC (toutes les paires d'un jour ensemble, pour l'autocorrelation)", "tirages": 5000, "graine": 2030, "intervalle": "percentiles 2,5 et 97,5 de l'ecart moyen sur les sites"},
+    "rapporte_sans_verdict": "aeroports METAR seuls, stations non aeroports seules, stations sans « abri probable », biais et RMSE de vitesse, erreur absolue moyenne de direction (vents mesures >= 1 m/s), tableau par site"
+  },
+  "critere_bat_era5_sur_les_stations_jamais_vues": {
+    "texte": "Le MOS BAT ERA5 sur les stations jamais vues si, sur l'annee jugee en validation croisee par site, (1) la moyenne sur les sites du RMSE vectoriel corrige est inferieure a celle de l'ERA5 seule ET la borne haute de l'IC 95 % bootstrap de l'ecart (corrige - ERA5) est strictement negative ; (2) le RMSE vectoriel corrige est inferieur a celui de l'ERA5 a au moins 2 sites juges sur 3 ; (3) aucun site n'est degrade de plus de 5 % de son RMSE vectoriel ERA5. Les trois conditions sont necessaires ; sinon « ne bat pas ERA5 » et l'ERA5 reste la reference",
+    "part_minimale_sites_ameliores": 0.6667,
+    "degradation_max_par_site": 0.05,
+    "justification": "(1) un gain moyen distinguable du bruit d'echantillonnage ; (2) un gain partage, pas porte par quelques sites ; (3) pas de site sacrifie (le Grand Tunis tolerait 3 % sur un modele livre ; 5 % ici car une correction statistique peut degrader un site atypique sans qu'on le detecte avant)"
+  },
+  "anomalies": {
+    "arret": "une etape s'arrete et l'anomalie est ecrite si : RMSE vectoriel corrige < 0,3 x celui de l'ERA5 a un site (trop beau), RMSE corrige > 3 x ERA5 (divergence), predictions identiques pour toutes les configurations, ou NaN dans les predictions",
+    "echec": "une etape qui echoue deux fois est arretee, l'erreur ecrite"
+  },
+  "interdits": [
+    "aucune valeur de la grille, aucune variable et aucun critere choisi ou ajuste sur le test 2022",
+    "le test est lu une seule fois ; une sortie existante n'est jamais ecrasee (dossier date, les etapes refusent)",
+    "aucune station jugee n'entre dans l'ajustement qui la juge (validation croisee par site)",
+    "aucun bruit ajoute ; aucune paire imputee",
+    "la verite d'entrainement du modele national et ses entrees ne changent pas sans une nouvelle decision ecrite d'Ines"
+  ]
+}
