@@ -113,9 +113,19 @@ class Trainer:
                 raise ValueError(f"train.init_from : {cle} {tuple(w_old.shape)} incompatible "
                                  f"avec {tuple(w_new.shape)}")
             neuf = torch.zeros_like(w_new)
-            neuf[:, :w_old.shape[1]] = w_old.to(neuf)
+            c_old, c_new = w_old.shape[1], w_new.shape[1]
+            from .innovation import N_OI
+            avant_oi = (ck.get("config") or {}).get("INNOVATION")
+            if self.cfg.innovation.actif and not avant_oi and c_old == c_new - N_OI                     and self.cfg.paths.forcage_era5 is not None:
+                # candidat D2 depuis un modele a forcage ERA5 (C', D, v2) : les 3 canaux d'innovation
+                # sont INSERES avant les 2 canaux ERA5, qui restent les derniers (sortie residuelle)
+                neuf[:, :c_old - 2] = w_old[:, :c_old - 2].to(neuf)
+                neuf[:, -2:] = w_old[:, -2:].to(neuf)
+                notes.append(f"entree {c_old} -> {c_new} canaux (innovation inseree avant ERA5, a 0)")
+            else:
+                neuf[:, :c_old] = w_old.to(neuf)
+                notes.append(f"entree {c_old} -> {c_new} canaux (nouveaux a 0)")
             sd[cle] = neuf
-            notes.append(f"entree {w_old.shape[1]} -> {w_new.shape[1]} canaux (nouveaux a 0)")
         # sortie residuelle depuis un modele qui ne l'etait pas : la derniere couche de u, v
         # repart de 0, donc u, v = ERA5 au depart ; w garde ce qu'il a appris
         avant = bool((ck.get("config") or {}).get("RESIDUEL_ERA5", False))
@@ -273,13 +283,10 @@ class Trainer:
 
     # ------------------------------------------------------------------ boucle
     def _save_best(self, epoch: int, score: float, extra: dict | None = None) -> None:
-        m = self.cfg.model
+        from .model import config_architecture
         payload = {
             "model": self.ema_model.state_dict(), "epoch": epoch, "val_score": score,
-            "config": {"WIDTH": m.width, "MODES": list(m.modes), "N_LAYERS": m.n_layers,
-                       "PAD": list(m.pad), "PROJ_HIDDEN": m.proj_hidden, "C_IN": self.geom.c_in,
-                       "LOCAL_CONV": m.local_conv, "POOL_SURFACE": m.pool_surface,
-                       "RESIDUEL_ERA5": m.residuel_era5},
+            "config": config_architecture(self.cfg, self.geom.c_in),
         }
         payload.update(extra or {})
         self._save_atomic(self._best_work, payload)

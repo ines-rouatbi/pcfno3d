@@ -69,7 +69,8 @@ def main() -> int:
     tranches, _ = masques_tranches(geom)
 
     def pred_era5(s_raw, sensor, tfeat, y, j, stem):
-        uv = geom.interp_era5.dense(tfeat[:, N_TFEAT + N_SCAL:])
+        nc = geom.forcage.n_cellules            # avant une eventuelle queue d'innovation (D2)
+        uv = geom.interp_era5.dense(tfeat[:, N_TFEAT + N_SCAL:N_TFEAT + N_SCAL + nc])
         return [uv[:, 0] * geom.valid_t, uv[:, 1] * geom.valid_t]
 
     preds = {"modele": lambda *x: ev.predire(*x)[:2], "era5": pred_era5}

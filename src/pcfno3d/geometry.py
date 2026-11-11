@@ -103,6 +103,19 @@ class Geometry:
             from .forcage import ForcageERA5, InterpERA5
             self.forcage = ForcageERA5(cfg.paths.forcage_era5)
             self.interp_era5 = InterpERA5(self.forcage, self)
+        # candidat D2 national : canal d'innovation (pcfno3d.innovation) ; None = rien ne change
+        self.oi = None
+        self.configurer_innovation(cfg.innovation)
+
+    def configurer_innovation(self, icfg) -> None:
+        """(Re)construit l'operateur d'innovation pour `icfg` (InnovationCfg) ; inactif = None."""
+        self.cfg.innovation = icfg
+        self.oi = None
+        if icfg.actif:
+            if self.cfg.mask.entree != "era5_stations":
+                raise ValueError("innovation.actif demande mask.entree: era5_stations (points de mesure)")
+            from .innovation import InnovationOI
+            self.oi = InnovationOI(self, icfg)
 
     # ------------------------------------------------------------------ construction
     def _build_from_csv(self) -> dict[str, np.ndarray]:
@@ -251,11 +264,15 @@ class Geometry:
     @property
     def c_in(self) -> int:
         """7 mesures + 1 disponibilite + 6 relief + 3 geometrie + 8 temps = 25 canaux ;
-        + 7 scalaires de forcage + u, v ERA5 aux noeuds = 34 avec paths.forcage_era5."""
+        + 7 scalaires de forcage + u, v ERA5 aux noeuds = 34 avec paths.forcage_era5 ;
+        + 3 canaux d'innovation (D2, innovation.actif) = 37."""
         n = N_SURF + 1 + self.static_2d.shape[0] + self.static_3d.shape[0] + N_TFEAT
         if self.forcage is not None:
             from .forcage import N_DENSE, N_SCAL
             n += N_SCAL + N_DENSE
+        if getattr(self, "oi", None) is not None:
+            from .innovation import N_OI
+            n += N_OI                       # du, dv, confiance (avant les 2 canaux ERA5)
         return n
 
     @property

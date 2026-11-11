@@ -242,6 +242,23 @@ tuning on validation only; test 2022 read once per model; NO training or full ge
 approval, phase by phase; no noise added to predictions; each new model its own run_dir. Grand Tunis is frozen (v4,
 no more training). The Colab notebook `pcfno3d_national_colab.ipynb` no longer trains (section 4 = phase-1
 diagnostics). History of the start:
+**National D2 = D + innovation channel (2026-11-11, rule `configs/national/regle_d2_national.json`, sha
+c7c98a20…, fixed under Ines's approval of 11/11 evening with the agent's default choices listed in it).** Why: the
+sensor control showed +15 m/s at sensors moves C'/D output by ~1e-4 m/s (ERA5 dense input + residual drown point
+measurements). `pcfno3d.innovation` + `InnovationCfg` (section `innovation`, `actif: false` by default = nothing
+changes): innovation = measured 10 m wind − ERA5 10 m at the point (from the instant's — degraded in training —
+ERA5 cells), spread by OI (Gaussian ρ, L and σo/σb fitted on TRAINING days by `scripts/statistiques_innovation_d2.py`,
+L ∈ [20, 50] km; Cressman option), vertical decay exp(−(h−10)/H) with H ∈ {200, 500, 1000} chosen on validation by
+the OI-only reference (`scripts/info_capteurs_d2.py reglage`); 3 tensors (du, dv ×f/σ, distance to nearest point /100 km)
+INSERTED before the 2 ERA5 channels (37 channels); `init_from` a 34-channel model inserts them at 0 (starts identical).
+The 2D fields ride at the END of `tfeat` after the ERA5 cells (`innovation.decouper_tfeat`; slice cells with
+`n_cellules`, never `tfeat[N_TFEAT+N_SCAL:]`). Checkpoints store `config.INNOVATION`; `WindFieldModel` restores it.
+OI-only reference `predicteur_oi` (`era5_oi`) is in dso_hauteur_sol, verdict-national, valider_grand_tunis_reel (airport
+left out of the innovations too), info_capteurs_d2, decision_d2_national. Simulated sensors for D2 report truth at
+10 m (`mask.aneo_hauteur_capteur_m=10`). Option `innovation.base_residuel: era5_oi` coded, not trained. Notebooks
+`scripts/make_national_d2_nb.py` (runs `runs/national_1km_v4_D2_s<g>`, seed 42 writes the shared JSONs). OI cost on
+CPU at national size: ~15 ms (12 airports) to ~180 ms (220 points) per instant.
+
 **National model (started 2026-11-06, Ines's request).** The Grand Tunis v4 method over
 all of Tunisia: `configs/national_1km_colab.yaml`, domain 30.15–37.615 N × 7.45–11.644 E (828 × 388 km),
 surface 500 m (1656 × 776), nodes 1 km, 16 ASL levels 25…2500 m (`generate_aneo_3d.py --dx 500 --niveaux …`,

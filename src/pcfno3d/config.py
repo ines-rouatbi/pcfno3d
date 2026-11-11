@@ -311,6 +311,51 @@ class MaskCfg:
 
 
 @dataclass
+class InnovationCfg:
+    """Candidat D2 national (configs/national/regle_d2_national.json, PROPOSITION) : canal d'innovation.
+
+    A chaque point de mesure (aeroport, capteur ANEO), innovation = vent mesure a 10 m - vent ERA5 a 10 m
+    interpole au meme point ; etalement (interpolation optimale ou Cressman) sur toutes les colonnes,
+    decroissance verticale avec la hauteur au-dessus du sol -> canaux d'entree : champ d'innovation u, v et
+    distance au point de mesure le plus proche, AVANT les 2 canaux ERA5 (pcfno3d.innovation).
+    actif False = rien ne change (tous les modeles d'avant)."""
+
+    actif: bool = False
+    methode: str = "oi"                   # « oi » (krigeage simple) ou « cressman » (version simple)
+    # longueur de correlation (scripts/statistiques_innovation_d2.py : jours d'entrainement, bornee a [20 ; 50] km)
+    L_km: float = 30.0
+    correlation: str = "gaussienne"       # rho(d) = exp(-d^2 / 2 L^2) ; « exponentielle » : exp(-d / L)
+    # sigma_o / sigma_b (erreur de mesure / erreur d'ERA5), memes jours ; capteurs ANEO : None = le meme
+    rapport_o_b: float = 0.5
+    rapport_o_b_capteur: float | None = None
+    H_m: float = 500.0                    # decroissance exp(-(h - 10 m) / H) ; grille de validation 200 / 500 / 1000
+    # innovation des capteurs ANEO a 10 m : « verite_10m » (mask.aneo_hauteur_capteur_m = 10) ou « loi_log »
+    # (valeur a mask.aneo_hauteur_capteur_m ramenee a 10 m par ln(10 / z0) / ln(h / z0))
+    capteurs_10m: str = "verite_10m"
+    # base de la sortie residuelle : « era5 » (D2) ou « era5_oi » (ERA5 + innovation etalee, option a evaluer)
+    base_residuel: str = "era5"
+    # rejet des innovations de module > seuil (controle grossier) ; None = aucun rejet
+    rejet_innovation_m_s: float | None = None
+
+    def __post_init__(self) -> None:
+        self.actif = bool(self.actif)
+        for nom, permis in (("methode", ("oi", "cressman")), ("correlation", ("gaussienne", "exponentielle")),
+                            ("capteurs_10m", ("verite_10m", "loi_log")), ("base_residuel", ("era5", "era5_oi"))):
+            if getattr(self, nom) not in permis:
+                raise ValueError(f"innovation.{nom} : parmi {permis}, recu {getattr(self, nom)!r}")
+        for nom in ("L_km", "rapport_o_b", "H_m"):
+            setattr(self, nom, float(getattr(self, nom)))
+            if getattr(self, nom) <= 0:
+                raise ValueError(f"innovation.{nom} doit etre > 0")
+        if self.rapport_o_b_capteur is not None:
+            self.rapport_o_b_capteur = float(self.rapport_o_b_capteur)
+            if self.rapport_o_b_capteur <= 0:
+                raise ValueError("innovation.rapport_o_b_capteur doit etre > 0")
+        if self.rejet_innovation_m_s is not None:
+            self.rejet_innovation_m_s = float(self.rejet_innovation_m_s)
+
+
+@dataclass
 class InferenceCfg:
     """Reconstruction en production (API, MCP, reconstruct).
 
@@ -593,7 +638,7 @@ class RealCfg:
 SECTIONS: dict[str, type] = {
     "paths": Paths, "model": ModelCfg, "train": TrainCfg,
     "loss": LossCfg, "mask": MaskCfg, "dso": DSOCfg, "dso_national": DSONationalCfg,
-    "inference": InferenceCfg,
+    "inference": InferenceCfg, "innovation": InnovationCfg,
     "real": RealCfg, "reliability": ReliabilityCfg, "alerts": AlertsCfg,
     "wind_farm": WindFarmCfg,
 }
@@ -613,6 +658,7 @@ class Config:
     dso: DSOCfg = field(default_factory=DSOCfg)
     dso_national: DSONationalCfg = field(default_factory=DSONationalCfg)
     inference: InferenceCfg = field(default_factory=InferenceCfg)
+    innovation: InnovationCfg = field(default_factory=InnovationCfg)
     real: RealCfg = field(default_factory=RealCfg)
     reliability: ReliabilityCfg = field(default_factory=ReliabilityCfg)
     alerts: AlertsCfg = field(default_factory=AlertsCfg)

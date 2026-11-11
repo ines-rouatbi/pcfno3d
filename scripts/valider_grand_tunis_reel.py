@@ -136,6 +136,22 @@ def valider(cfg, dossier_obs: Path, jeu: str = "test", checkpoint=None,
         u, v, _ = (np.where(valid, a[0].float().cpu().numpy(), np.nan) for a in norm.denorm(pred.float()))
         return u, v
 
+    oi = getattr(geom, "oi", None)
+
+    def avec_oi(S_in, capteur, mesures, extra, exclue=None):
+        """Candidat D2 : forcage + innovations des stations en entree (la station jugee exclue) ; sans canal
+        d'innovation, le forcage tel quel et pas de champ."""
+        if oi is None:
+            return extra, None
+        from pcfno3d.forcage import N_SCAL
+        nc = geom.forcage.n_cellules
+        st = np.zeros(capteur.shape, bool)
+        for c, (iy, ix) in cellules.items():
+            if c != exclue and c in mesures:
+                st[iy, ix] = True
+        q = oi.queue(S_in, extra[N_SCAL:N_SCAL + nc], st & capteur)
+        return np.concatenate([extra[:N_SCAL + nc], q]).astype(np.float32), q.reshape(3, geom.ny, geom.nx)
+
     paires, p_sondes = [], []
     t0 = time.time()
     for n, stem in enumerate(stems):
@@ -153,24 +169,35 @@ def valider(cfg, dossier_obs: Path, jeu: str = "test", checkpoint=None,
         for code, (uo, vo) in mesures.items():
             iy, ix = cellules[code]
             S_in, cap = entree_reelle(S, E, geom, cellules, mesures, exclue=code)
-            u, v = passe(S_in, cap, hour, doy, extra)
+            ex, q = avec_oi(S_in, cap, mesures, extra, exclue=code)
+            u, v = passe(S_in, cap, hour, doy, ex)
             um, vm = vent_a_hauteur(u[:, iy, ix], v[:, iy, ix], h_noeuds[:, iy, ix], geom.z0[iy, ix])
-            paires.append({"station": noms.get(code, code), "stem": stem, "temps": t, "u_obs": uo, "v_obs": vo,
-                           "u_modele": um, "v_modele": vm,
-                           "u_era5": float(E[0, iy, ix]), "v_era5": float(E[1, iy, ix]),
-                           "u_generateur": float(S[0, iy, ix]), "v_generateur": float(S[1, iy, ix])})
+            paire = {"station": noms.get(code, code), "stem": stem, "temps": t, "u_obs": uo, "v_obs": vo,
+                     "u_modele": um, "v_modele": vm,
+                     "u_era5": float(E[0, iy, ix]), "v_era5": float(E[1, iy, ix]),
+                     "u_generateur": float(S[0, iy, ix]), "v_generateur": float(S[1, iy, ix])}
+            if q is not None:
+                # reference « OI seule » a 10 m : ERA5 10 m + innovation des AUTRES stations etalee a la cellule
+                paire["u_era5_oi"] = float(E[0, iy, ix] + q[0, iy, ix])
+                paire["v_era5_oi"] = float(E[1, iy, ix] + q[1, iy, ix])
+            paires.append(paire)
         if a_sonder:
             iy, ix = cellules["DTTA"]
             S_in, cap = entree_reelle(S, E, geom, cellules, mesures)
-            u, v = passe(S_in, cap, hour, doy, extra)
+            ex, q = avec_oi(S_in, cap, mesures, extra)
+            u, v = passe(S_in, cap, hour, doy, ex)
             Y = np.load(cache / f"{stem}_Y.npy").astype(np.float32)
-            dense = geom.interp_era5.dense_np(extra[geom.forcage.n_extra - geom.forcage.n_cellules:])
+            dense = geom.interp_era5.dense_np(extra[geom.forcage.n_extra - geom.forcage.n_cellules:
+                                                    geom.forcage.n_extra])
             g = sondes[sondes["t"] == t]
             h_obs = g["h_agl_m"].to_numpy(float)
             hn = h_noeuds[:, iy, ix]
             col = {"modele": (u[:, iy, ix], v[:, iy, ix]),
                    "era5": (dense[0][:, iy, ix], dense[1][:, iy, ix]),
                    "generateur": tuple(np.where(valid[:, iy, ix], Y[c][:, iy, ix], np.nan) for c in (0, 1))}
+            if q is not None:                    # OI seule : ERA5 + innovation etalee x f(h) dans la colonne
+                fz = oi.f3d[:, iy, ix]
+                col["era5_oi"] = (dense[0][:, iy, ix] + q[0, iy, ix] * fz, dense[1][:, iy, ix] + q[1, iy, ix] * fz)
             d = {"site": "Tunis-Carthage", "temps": t, "h_agl_m": h_obs,
                  "u_obs": g["u"].to_numpy(float), "v_obs": g["v"].to_numpy(float)}
             for src, (cu, cv) in col.items():
@@ -181,7 +208,7 @@ def valider(cfg, dossier_obs: Path, jeu: str = "test", checkpoint=None,
 
     sortie = cfg.paths.run_dir / "validation_reelle" / jeu
     sortie.mkdir(parents=True, exist_ok=True)
-    sources = ("modele", "era5", "generateur")
+    sources = ("modele", "era5", "generateur") + (("era5_oi",) if oi is not None else ())
     resume = {"jeu": jeu, "instants": len(stems), "checkpoint": str(wf.checkpoint_path.name)}
     if paires:
         p = pd.DataFrame(paires)

@@ -85,15 +85,21 @@ class ANEO3D(Dataset):
                 vec = np.concatenate([vec[:n_sc], cel]).astype(np.float32)
         if aneo is not None:
             capt = aneo.capteurs(S, Y, rng)
+        oi = getattr(self.geom, "oi", None)
+        points = None
         if self.geom.cfg.mask.entree == "era5_stations" and self.train and affinage_stations(self.geom.cfg):
+            if oi is not None:
+                raise ValueError("innovation.actif : l'affinage sur les stations n'est pas pris en charge")
             # affinage sur les stations : vraies mesures en entree, une station en cible
             from .stations_reelles import entree_affinage
             S, sensor, cible = entree_affinage(S, self.cache_dir / f"{stem}_E.npy", self.geom,
                                                rng, stem)
         elif self.geom.cfg.mask.entree == "era5_stations":
-            S, sensor = entree_era5_stations(S, self.cache_dir / f"{stem}_E.npy", self.geom,
-                                             rng, self.train, keep=keep, delta_e=delta_e, zone=zone,
-                                             capteurs=capt)
+            r = entree_era5_stations(S, self.cache_dir / f"{stem}_E.npy", self.geom,
+                                     rng, self.train, keep=keep, delta_e=delta_e, zone=zone,
+                                     capteurs=capt, avec_points=oi is not None)
+            S, sensor = r[0], r[1]
+            points = r[2] if oi is not None else None
         elif not self.train and self.reseau is not None:
             sensor = (S[7] > 0.5) & self.reseau
         elif not self.train and self.spacing_m:
@@ -103,6 +109,12 @@ class ANEO3D(Dataset):
         tfeat = time_geo_features(S, sensor, self.hours[j], self.doys[j], self.geom)
         if vec is not None:
             tfeat = np.concatenate([tfeat, vec])
+        if oi is not None:
+            # candidat D2 : innovations aux points de mesure (aeroports en entree + capteurs ANEO) contre
+            # les cellules ERA5 de l'instant telles que le reseau les recoit (degradees a l'entrainement)
+            n_sc = len(vec) - self.geom.forcage.n_cellules
+            tfeat = np.concatenate([tfeat, oi.queue(S, vec[n_sc:], points["stations"],
+                                                    points["capteurs"])]).astype(np.float32)
         out = (torch.from_numpy(S[:N_SURF]), torch.from_numpy(sensor.astype(np.float32)),
                torch.from_numpy(tfeat), torch.from_numpy(Y), j)
         # 6e element seulement a l'entrainement avec affinage (Trainer._epochs le lit)
@@ -131,7 +143,8 @@ def cellules_stations(geom: Geometry) -> np.ndarray:
 
 def entree_era5_stations(S: np.ndarray, chemin_e, geom: Geometry, rng: np.random.Generator,
                          train: bool, keep: float = 1.0, delta_e: np.ndarray | None = None,
-                         zone: np.ndarray | None = None, capteurs=None) -> tuple[np.ndarray, np.ndarray]:
+                         zone: np.ndarray | None = None, capteurs=None,
+                         avec_points: bool = False) -> tuple:
     """Entree de production du modele reel : vent ERA5 a 10 m sur un reseau regulier (tous
     les `mask.pas_era5_m`) + les stations reelles (valeur du cache = verite generee au point).
 
@@ -140,7 +153,10 @@ def entree_era5_stations(S: np.ndarray, chemin_e, geom: Geometry, rng: np.random
 
     keep (evaluation seulement, robustesse DSO5) : part des points d'entree gardes, chaque
     pseudo-capteur ERA5 et chaque station tire independamment. 1 = entree complete (DSO1) ;
-    sans effet a l'entrainement, ou l'entree est tiree comme ci-dessus."""
+    sans effet a l'entrainement, ou l'entree est tiree comme ci-dessus.
+
+    avec_points (candidat D2) : renvoie aussi {"stations": masque (ny, nx) des stations EN ENTREE,
+    "capteurs": cellules (n, 2) des capteurs ANEO ou None}, les points de mesure de l'innovation."""
     m = geom.cfg.mask
     from .forcage import charger_e
     E = charger_e(geom, chemin_e)
@@ -160,6 +176,7 @@ def entree_era5_stations(S: np.ndarray, chemin_e, geom: Geometry, rng: np.random
         reseau &= rng.random(reseau.shape) < keep
         st &= rng.random(st.shape) < keep
     S = S.copy()
+    st_stations = st.copy()                     # stations seules (avant les capteurs ANEO)
     if capteurs is not None:                    # candidat D : capteurs ANEO simules (aneo_entree)
         cel, cu, cv = capteurs
         st[cel[:, 0], cel[:, 1]] = True
@@ -169,7 +186,11 @@ def entree_era5_stations(S: np.ndarray, chemin_e, geom: Geometry, rng: np.random
     S[0] = np.where(era5, E[0], S[0])
     S[1] = np.where(era5, E[1], S[1])
     S[2] = 0.0
-    return S, (reseau | st) & np.isfinite(S[:7]).all(axis=0)
+    sensor = (reseau | st) & np.isfinite(S[:7]).all(axis=0)
+    if not avec_points:
+        return S, sensor
+    return S, sensor, {"stations": st_stations & sensor,
+                       "capteurs": None if capteurs is None else capteurs[0]}
 
 
 def lattice_mask(shape: tuple[int, int], spacing_m: float, dx_m: float,
@@ -195,6 +216,9 @@ def assemble_input(s_raw: torch.Tensor, sensor: torch.Tensor, tfeat: torch.Tenso
     les nz niveaux ; + 3 canaux de geometrie par niveau ; + 8 canaux temps / physique.
     Avec le forcage ERA5 (paths.forcage_era5) : + 7 scalaires de forcage, puis u, v ERA5 a
     chaque noeud normalises comme la cible, en DERNIER (la sortie residuelle les lit la).
+    Candidat D2 (innovation.actif) : + champ d'innovation etale u, v et distance au point de mesure
+    le plus proche (pcfno3d.innovation), juste AVANT les 2 canaux ERA5 ; avec
+    innovation.base_residuel = era5_oi, ces 2 derniers canaux sont ERA5 + innovation etalee.
     """
     B = s_raw.shape[0]
     nz, ny, nx = geom.shape
@@ -206,11 +230,20 @@ def assemble_input(s_raw: torch.Tensor, sensor: torch.Tensor, tfeat: torch.Tenso
         xt = tfeat[:, :, None, None, None].expand(-1, -1, nz, ny, nx)
         return torch.cat([x2d, x3d, xt], dim=1)
     from .forcage import N_SCAL
+    from .innovation import decouper_tfeat
     n = N_TFEAT + N_SCAL
     xt = tfeat[:, :n, None, None, None].expand(-1, -1, nz, ny, nx)
-    era5 = geom.interp_era5.dense(tfeat[:, n:])
+    cel, q = decouper_tfeat(tfeat, geom)
+    era5 = geom.interp_era5.dense(cel)
+    if q is not None and geom.cfg.innovation.base_residuel == "era5_oi":
+        era5 = era5 + geom.oi.increments_3d(q)          # option D2 : base residuelle ERA5 + innovation
     era5 = (era5 - norm.y_mu[None, :2, None, None, None])         / norm.y_sd[None, :2, None, None, None] * geom.valid_t
-    return torch.cat([x2d, x3d, xt, era5.to(x2d.dtype)], dim=1)
+    if q is None:
+        return torch.cat([x2d, x3d, xt, era5.to(x2d.dtype)], dim=1)
+    # candidat D2 : champ d'innovation u, v et distance au point le plus proche, AVANT les 2 canaux ERA5
+    # (la sortie residuelle lit les deux derniers)
+    oi = geom.oi.canaux(q, norm.y_sd, nz)
+    return torch.cat([x2d, x3d, xt, oi.to(x2d.dtype), era5.to(x2d.dtype)], dim=1)
 
 
 @dataclass
