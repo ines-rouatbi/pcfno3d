@@ -167,6 +167,9 @@ def test_mos_bat_era5_puis_test_lu_une_fois(tmp_path):
     assert (t["rmse_vect_mos"] < t["rmse_vect_era5"]).all() and "rmse_vitesse_mos_dvitesse" in t
     with pytest.raises(SystemExit):
         M.etape_tester(tmp_path, sortie, r, "h" * 64, log=lambda *a: None)      # le test ne se relit pas
+    M.etape_rapport(sortie, tmp_path / "r.md")
+    md = (tmp_path / "r.md").read_text(encoding="utf-8")
+    assert "ERA5 seule" in md and "Test 2022" in md and "bat ERA5" in md
 
 
 def test_sans_signal_le_test_n_est_pas_lu(tmp_path):

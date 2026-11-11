@@ -527,6 +527,49 @@ def etape_tester(paires_dir: Path, sortie: Path, r: dict, h: str, log=print) -> 
     return res
 
 
+def etape_rapport(sortie: Path, fichier_md: Path) -> None:
+    """Resume en markdown (chaque nombre a cote de l'ERA5 seule) depuis choix.json et test.json."""
+    choix = json.loads((sortie / "choix.json").read_text(encoding="utf-8"))
+    g = pd.read_csv(sortie / "grille_validation.csv")
+    v = choix["validation"]
+
+    def bloc(titre, v, t):
+        L = [f"### {titre}", "",
+             f"- moyenne sur {v['sites']} sites du RMSE vectoriel : **MOS {v['moyenne_rmse_vect_mos']:.3f}** contre "
+             f"ERA5 seule {v['moyenne_rmse_vect_era5']:.3f} m/s ; écart {v['ecart']:+.3f} m/s, IC 95 % "
+             f"[{v['ic95_ecart'][0]:+.3f}, {v['ic95_ecart'][1]:+.3f}] ;",
+             f"- sites améliorés : {v['part_sites_ameliores']:.0%} ; pire dégradation relative "
+             f"{v['pire_degradation_relative']:+.1%} ({v['pire_site']}) ;",
+             f"- conditions (1) moyenne et IC : {v['condition_1_moyenne_et_ic']}, (2) 2 sites sur 3 : "
+             f"{v['condition_2_sites_ameliores']}, (3) aucun site > 5 % : {v['condition_3_aucune_degradation']} "
+             f"→ **{'bat ERA5' if v['bat_era5'] else 'ne bat pas ERA5'}**.", ""]
+        for nom, s in v.get("sous_ensembles", {}).items():
+            L.append(f"- {nom} ({s['sites']} sites) : MOS {s['moyenne_rmse_vect_mos']:.3f} contre ERA5 seule "
+                     f"{s['moyenne_rmse_vect_era5']:.3f} m/s, {s['sites_ameliores']} sites améliorés")
+        L += ["", "| Station | n | RMSE vect. MOS | RMSE vect. ERA5 seule | écart relatif | biais vitesse MOS | "
+              "biais vitesse ERA5 | MAE dir. MOS | MAE dir. ERA5 |", "|---|---|---|---|---|---|---|---|---|"]
+        for r in t.itertuples():
+            L.append(f"| {r.code} | {r.n} | {r.rmse_vect_mos:.3f} | {r.rmse_vect_era5:.3f} | {r.ecart_relatif:+.1%} | "
+                     f"{r.biais_vitesse_mos:+.2f} | {r.biais_vitesse_era5:+.2f} | {r.mae_dir_mos_deg:.0f} | "
+                     f"{r.mae_dir_era5_deg:.0f} |")
+        return L + [""]
+    L = ["# MOS de l'ERA5 10 m aux stations tunisiennes : résultats", "",
+         f"Règle `configs/national/{choix['regle']}` (sha256 `{choix['sha256_regle']}`), `scripts/mos_era5.py`. "
+         "Validation croisée par site : chaque site retiré de l'ajustement (2015–2020), puis jugé. ERA5 servie par "
+         "Open-Meteo (`models=era5`, maille la plus proche).", "",
+         "## Grille (validation 2021)", "", "| Configuration | MOS | ERA5 seule | durée (s) |", "|---|---|---|---|"]
+    L += [f"| {r.config} | {r.score_validation:.4f} | {r.era5_seule:.4f} | {r.duree_s:.0f} |" for r in g.itertuples()]
+    L += ["", f"Configuration choisie : **{choix['config_choisie']}** ; anomalies : {choix['anomalies'] or 'aucune'} ; "
+          f"test autorisé : **{choix['test_autorise']}**.", ""]
+    L += bloc("Validation 2021", v, pd.read_csv(sortie / "validation_sites.csv"))
+    if (sortie / "test.json").exists():
+        te = json.loads((sortie / "test.json").read_text(encoding="utf-8"))
+        L += bloc(f"Test {te['annee_test']} (lu une fois, le {te['lu_le']})", te["test"], pd.read_csv(sortie / "test_sites.csv"))
+    else:
+        L += ["### Test 2022", "", "Non lu (la validation ne bat pas ERA5 selon la règle, ou anomalie).", ""]
+    fichier_md.write_text("\n".join(L), encoding="utf-8")
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = ap.add_subparsers(dest="etape", required=True)
@@ -543,7 +586,13 @@ def main(argv=None) -> int:
         c = sub.add_parser(nom)
         c.add_argument("--paires", required=True)
         c.add_argument("--sortie", required=True)
+    e = sub.add_parser("rapport")
+    e.add_argument("--sortie", required=True)
+    e.add_argument("--md", default=str(REPO / "docs" / "resultats" / "national" / "mos_era5_resultats.md"))
     args = ap.parse_args(argv)
+    if args.etape == "rapport":
+        etape_rapport(Path(args.sortie), Path(args.md))
+        return 0
     r, h = regle()
     d = r["decoupage"]
     annees = d["entrainement"] + d["validation"] + d["test"]

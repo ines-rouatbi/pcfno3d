@@ -413,6 +413,33 @@ Sorties dans `MyDrive/pcfno3d_national/phase6_7/<run>/` ; chaque script refuse d
     automatique sur le modèle 100 m du Grand Tunis, la construction `npm run build` et les tests de
     navigateur (Playwright) sur un service national.
 
+### Stations supplémentaires et MOS de l'ERA5 (11/11/2026, demandes d'Ines)
+- **Stations** : `scripts/stations_supplementaires.py`, résultats `docs/resultats/national/stations_supplementaires.md`
+  (29 stations ISD 2015–2022, 28 indicatifs OGIMET, part de créneaux valides par année, contrôle, sites). Les 16
+  stations qui ne sont pas des aéroports (`configs/national/stations_supplementaires.csv`) sont des stations de
+  **validation seulement** : `valider_grand_tunis_reel.py --stations-supp … --obs-supp …` les juge à leur maille,
+  les 12 aéroports en entrée, jamais elles ; bilan à part (`stations_supp_*`, `bilan_supp.json`), hors DSO7 et hors
+  règle v4. Les entrées de C' et D ne changent pas. Sur un run déjà validé : `--supp-seul`.
+- **MOS de l'ERA5 10 m** : règle `configs/national/regle_mos_era5.json` (fixée et hachée avant tout calcul sous
+  l'accord d'Ines du 11/11 au soir, choix par défaut de l'agent), `scripts/mos_era5.py`, résultats
+  `docs/resultats/national/mos_era5_resultats.md`.
+- **Intégration au modèle national si le MOS bat ERA5 (proposition, rien n'est fait)** :
+  1. *base résiduelle* : le modèle national apprend aujourd'hui u, v = ERA5 au nœud + correction
+     (`model.residuel_era5`). On remplacerait l'ERA5 10 m de la base (et des pseudo-capteurs ERA5 de l'entrée,
+     tous les 2 km) par l'ERA5 **corrigée par le MOS** à 10 m au-dessus du sol, puis la correction décroîtrait avec
+     la hauteur (par exemple en exp(−h / h_CL), h_CL = couche limite ERA5) pour rejoindre l'ERA5 brute vers 1 000 m,
+     là où le MOS n'a aucune mesure. Le MOS ne dépend que du site, de l'heure et de l'ERA5 : il se calcule partout
+     sur la grille de 1 km (descripteurs de `pcfno3d.sites_stations` sur toutes les mailles).
+  2. *vérité d'entraînement* : le générateur recale sa grande échelle sur l'ERA5 maille par maille ; on recalerait
+     sa couche de surface (10–25 m) sur l'ERA5 corrigée, avec la même décroissance verticale, ce qui rapproche la
+     vérité des mesures sans y mettre aucune station (règle d'Ines respectée : le MOS est ajusté sur des stations,
+     mais la vérité ne contient qu'une fonction lisse du site et de l'ERA5, pas les mesures).
+  3. *jugement* : nouveau run_dir, vérité régénérée seulement après accord ; DSO7 des 12 aéroports (chacun retiré
+     de l'entrée) **et** stations supplémentaires, contre l'ERA5 brute ET l'ERA5 corrigée ; le MOS des aéroports
+     jugés doit être ré-ajusté sans eux (validation croisée par site, comme ici), sinon le gain serait une fuite.
+  4. *risque* : le MOS corrige surtout un biais de vitesse moyen par site ; s'il est porté par des stations abritées
+     (« abri probable »), la vérité serait ralentie à tort : les ajuster avec et sans ces stations et comparer.
+
 ### Phase 9 : documents
 Fiche du modèle national, historique des versions des DSO, DSO1 par niveau et par tranche
 au-dessus du sol, résultats des ablations. Environ une demi-journée.
@@ -422,7 +449,8 @@ au-dessus du sol, résultats des ablations. Environ une demi-journée.
 | Donnée | Source | Volume ou durée | Phase |
 |---|---|---|---|
 | GFS f24/f48, boîte nationale, instants du jeu national | NOAA AWS `noaa-gfs-bdp-pds`, lecture par plages d'octets via `.idx` | environ 6 à 8 h | 4 |
-| SYNOP INM, 14 stations, 2021–2025 | NOAA NCEI ISD (`scripts/isd_synop.py`) | environ 30 min, quelques Mo | 6 |
+| SYNOP INM + aéroports, 29 stations ISD, 2015–2022 | NOAA NCEI ISD (`scripts/stations_supplementaires.py`) | fait le 11/11 : 647 Mo | 6, MOS |
+| ERA5 aux stations, 2015–2022 | Open-Meteo `models=era5` (`scripts/mos_era5.py era5`) | fait le 11/11 : environ 2 h (limite de débit) | MOS |
 | Zones exclues, coût, hauteur de mât | Tukhnanutha | — | 5 |
 | Maquette `reseau_aneo.html` | Tukhnanutha / Ines | — | 8 |
 
