@@ -173,36 +173,50 @@ lancer("controle", "python -u -m pcfno3d -c national_1km_colab check")
 '''
 
 MEM = r'''
-import torch
+# Essai de memoire dans un PROCESSUS SEPARE : le noyau du carnet ne touche jamais au GPU (le 11/11, l'essai fait
+# dans le noyau y gardait 3,3 Go et l'entrainement sur L4 22 Go a manque de memoire). Allocateur a segments
+# extensibles (moins de fragmentation), herite par les commandes lancees ensuite. Aucun effet sur les calculs.
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+ESSAI = r"""
+import json, sys, torch
 from pcfno3d.config import Config
 from pcfno3d.geometry import Geometry
 from pcfno3d.model import build_model
-
-def essai(recalcul: bool) -> float:
-    cfg = Config.load("configs/national_1km_colab.yaml")
-    cfg.model.recalcul_activations = recalcul
-    geom = Geometry(cfg, device="cuda")
-    m = build_model(cfg, geom.c_in).cuda().train()
-    x = torch.randn(cfg.train.batch_size, geom.c_in, *geom.shape, device="cuda")
-    torch.cuda.reset_peak_memory_stats()
+recalcul = sys.argv[1] == "1"
+cfg = Config.load("configs/national_1km_colab.yaml")
+cfg.model.recalcul_activations = recalcul
+geom = Geometry(cfg, device="cuda")
+m = build_model(cfg, geom.c_in).cuda().train()
+x = torch.randn(cfg.train.batch_size, geom.c_in, *geom.shape, device="cuda")
+torch.cuda.reset_peak_memory_stats()
+try:
     with torch.autocast("cuda", dtype=torch.bfloat16):
         m(x).float().pow(2).mean().backward()
     pic = torch.cuda.max_memory_allocated() / 1e9
-    del m, x
-    torch.cuda.empty_cache()
-    return pic
-
-total = torch.cuda.get_device_properties(0).total_memory / 1e9
-print(torch.cuda.get_device_name(0), f"{total:.0f} Go")
-try:
-    pic = essai(False)
-    RECALCUL = pic > 0.85 * total
 except torch.cuda.OutOfMemoryError:
-    torch.cuda.empty_cache()
-    pic, RECALCUL = float("nan"), True
+    pic = None
+p = torch.cuda.get_device_properties(0)
+print("ESSAI", json.dumps({"gpu": p.name, "total": p.total_memory / 1e9, "pic": pic}))
+"""
+Path("/content/essai_memoire.py").write_text(ESSAI)
+def essai(recalcul: bool) -> dict:
+    r = subprocess.run([sys.executable, "/content/essai_memoire.py", "1" if recalcul else "0"], cwd="/content/PFE",
+                       capture_output=True, text=True)
+    ligne = next((l for l in r.stdout.splitlines() if l.startswith("ESSAI ")), None)
+    if ligne is None:
+        print(r.stdout[-2000:], r.stderr[-2000:])
+        return {"gpu": "?", "total": float("nan"), "pic": None}
+    return json.loads(ligne[6:])
+e = essai(False)
+total = e["total"]
+RECALCUL = e["pic"] is None or e["pic"] > 0.85 * total
 if RECALCUL:
-    pic = essai(True)
-print(f"pic {pic:.1f} Go sur {total:.0f} | recalcul des activations : {RECALCUL}")
+    e = essai(True)
+print(e["gpu"], f"{total:.0f} Go | pic de l'essai {e['pic'] if e['pic'] is None else round(e['pic'], 1)} Go "
+      f"| recalcul des activations : {RECALCUL}")
+if total < 30:
+    print("ATTENTION : GPU de moins de 30 Go (L4 ?). Le national a manque de memoire sur L4 le 11/11 avec l'ancien "
+          "carnet ; cet essai ne compte ni l'optimiseur ni l'EMA. Preferer une A100.")
 OPTS = f"--set model.recalcul_activations={str(RECALCUL).lower()}"
 '''
 
