@@ -571,6 +571,24 @@ def _ent_v3() -> str:
     return ENT.replace("cache_v2_partie", "cache_v3_partie").replace("jeu_v2.zip", "jeu_v3.zip")
 
 
+GARDE_GPU = r'''
+# Le national (453 M parametres, grille 16 x 828 x 388) ne tient pas sur une L4 de 22 Go, meme avec le
+# recalcul des activations (3 echecs le 11/11, dont un avec le carnet corrige : 20,8 Go + 2,45 Go demandes).
+# Si Colab n'attribue pas un GPU d'au moins 30 Go (A100), la session est liberee AVANT le montage du Drive.
+import subprocess as _sp
+_g = _sp.run(["nvidia-smi", "--query-gpu=name,memory.total", "--format=csv,noheader,nounits"],
+             capture_output=True, text=True)
+_nom, _mo = ([s.strip() for s in _g.stdout.strip().splitlines()[0].split(",")] if _g.returncode == 0
+             and _g.stdout.strip() else ("aucun GPU", "0"))
+print("GPU attribue :", _nom, f"{float(_mo) / 1024:.0f} Go")
+if float(_mo) < 30 * 1024:
+    from google.colab import runtime
+    print("GPU trop petit pour le national : session liberee, rien n'a ete lance. Relancer plus tard (A100).")
+    runtime.unassign()
+    raise SystemExit("GPU de moins de 30 Go")
+'''
+
+
 def v4_carnets(commit: str, sync_last: str = "false") -> dict[str, dict]:
     """Phase 3 (regle_v4_national.json) : un carnet d'entrainement par graine (aucune lecture du test) et
     un carnet de test (graine choisie sur la validation, test lu une fois). Verite v3 (cache_v3_partie_*)."""
@@ -586,6 +604,7 @@ def v4_carnets(commit: str, sync_last: str = "false") -> dict[str, dict]:
             out[f"pcfno3d_national_v4_{cand}_s{g}_colab.ipynb"] = carnet([
                 md(f"# PC-FNO3D NATIONAL v4, candidat {noms[cand]} — entraînement, graine {g} (Colab, A100)\n\n"
                    f"{tete}\n\nAucune lecture du test dans ce carnet."),
+                md("## 0. GPU (A100 obligatoire)"), code(GARDE_GPU),
                 md("## 1. Drive, code et données"), code(COMMUN + git),
                 md("## 2. Cache v3 et contrôle de la vérité"), code(_ent_v3()),
                 md("## 3. Mémoire du GPU"), code(MEM),
@@ -596,6 +615,7 @@ def v4_carnets(commit: str, sync_last: str = "false") -> dict[str, dict]:
         md(f"# PC-FNO3D NATIONAL v4 — lecture UNIQUE du test 2022 (Colab, A100)\n\n{tete}\n\n"
            "L'entraînement est choisi sur le score de validation des six (C' et D, 3 graines chacun) ; le test "
            "n'est lu que pour lui, une fois, et pour le modèle livré sur la même vérité."),
+        md("## 0. GPU (A100 obligatoire)"), code(GARDE_GPU),
         md("## 1. Drive, code et données"), code(COMMUN + git),
         md("## 2. Cache v3"), code(_ent_v3()),
         md("## 3. Mémoire du GPU"), code(MEM),
