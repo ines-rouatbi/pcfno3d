@@ -493,3 +493,44 @@ def test_info_capteurs_v4_de_bout_en_bout(cfg_era5, index, tmp_path, monkeypatch
     assert np.isfinite(out["gain_des_capteurs_rmse_max_uv"])
     cp = out["conditions"]
     assert cp["era5_degradee"]["era5"]["rmse_max_uv"] != cp["propre"]["era5"]["rmse_max_uv"]
+
+
+def test_capteurs_arrivent_au_reseau(cfg_era5, index, tmp_path, monkeypatch):
+    """Demande d'Ines (11/11) : une entree modifiee aux capteurs (simules ou aeroports) doit changer la sortie
+    pres des capteurs, par le chemin de l'evaluation ET par celui de l'OS6 ; scripts/controle_capteurs.py."""
+    import importlib.util
+    import json
+    import sys
+    from pathlib import Path
+
+    import pcfno3d.aneo_entree as AE
+
+    repo = Path(__file__).resolve().parents[1]
+    c, _ = _jeu_reel(cfg_era5, index, tmp_path)
+    Trainer(c, device="cpu", verbose=False).fit()
+    cfgf = tmp_path / "c.yaml"
+    c.save(cfgf)
+    orig = AE.EntreeANEO.candidats
+
+    def cand(self):                                   # mini-grille : contraintes de l'OS6 trop strictes
+        try:
+            return orig(self)
+        except ValueError:
+            self._cand = np.argwhere(self.geom.valid.any(axis=0))
+            return self._cand
+    monkeypatch.setattr(AE.EntreeANEO, "candidats", cand)
+    spec = importlib.util.spec_from_file_location("ctrl", repo / "scripts" / "controle_capteurs.py")
+    M = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(M)
+    monkeypatch.setattr(sys, "argv", ["ctrl", "-c", str(cfgf), "--run", str(c.paths.run_dir), "--instants", "1",
+                                      "--n-capteurs", "3", "--rayon-km", "3"])
+    assert M.main() == 0
+    out = json.loads((Path(c.paths.run_dir) / "controle_capteurs.json").read_text(encoding="utf-8"))
+    r = out["controles"][0]
+    assert r["capteurs_dans_le_masque"] == r["capteurs_tires"] == 3
+    assert r["ecart_max_valeur_ecrite_S_u"] < 1e-5
+    assert r["entree_reseau_masque_aux_capteurs_min"] > 0.5
+    assert r["entree_reseau_u_aux_capteurs_ecart_max"] < 1e-3
+    for cle in ("absurde_capteurs_evaluation", "absurde_capteurs_chemin_os6", "absurde_aeroports_evaluation"):
+        # sortie IDENTIQUE (0) = capteurs non branches ; la sensibilite elle-meme depend du modele entraine
+        assert r[cle]["max_u_proche"] > 1e-6, (cle, r[cle])
