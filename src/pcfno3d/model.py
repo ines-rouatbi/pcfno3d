@@ -128,6 +128,32 @@ def model_cfg_from_checkpoint(ckpt: dict) -> ModelCfg | None:
                     residuel_era5=bool(saved.get("RESIDUEL_ERA5", False)))
 
 
+def innovation_cfg_from_checkpoint(ck: dict):
+    """Parametres du canal d'innovation (D2) enregistres dans le checkpoint ; inactif sans la cle
+    (tous les modeles d'avant)."""
+    from dataclasses import fields
+
+    from .config import InnovationCfg
+    saved = (ck.get("config") or {}).get("INNOVATION")
+    if not saved:
+        return InnovationCfg()
+    noms = {f.name for f in fields(InnovationCfg)}
+    return InnovationCfg(**{k: v for k, v in saved.items() if k in noms})
+
+
+def config_architecture(cfg: Config, c_in: int) -> dict:
+    """Le dictionnaire `config` des checkpoints (architecture ; parametres D2 si le canal est actif)."""
+    from dataclasses import asdict
+    m = cfg.model
+    out = {"WIDTH": m.width, "MODES": list(m.modes), "N_LAYERS": m.n_layers,
+           "PAD": list(m.pad), "PROJ_HIDDEN": m.proj_hidden, "C_IN": c_in,
+           "LOCAL_CONV": m.local_conv, "POOL_SURFACE": m.pool_surface,
+           "RESIDUEL_ERA5": m.residuel_era5}
+    if cfg.innovation.actif:
+        out["INNOVATION"] = asdict(cfg.innovation)
+    return out
+
+
 def load_checkpoint(path: str | Path, device: torch.device | str = "cpu") -> dict:
     return torch.load(Path(path), map_location=device, weights_only=False)
 
@@ -135,14 +161,7 @@ def load_checkpoint(path: str | Path, device: torch.device | str = "cpu") -> dic
 def save_inference_checkpoint(path: str | Path, model: nn.Module, cfg: Config,
                               c_in: int, extra: dict | None = None) -> Path:
     """Checkpoint auto-suffisant pour le service : poids + architecture."""
-    m = cfg.model
-    payload = {
-        "model": model.state_dict(),
-        "config": {"WIDTH": m.width, "MODES": list(m.modes), "N_LAYERS": m.n_layers,
-                   "PAD": list(m.pad), "PROJ_HIDDEN": m.proj_hidden, "C_IN": c_in,
-                   "LOCAL_CONV": m.local_conv, "POOL_SURFACE": m.pool_surface,
-                   "RESIDUEL_ERA5": m.residuel_era5},
-    }
+    payload = {"model": model.state_dict(), "config": config_architecture(cfg, c_in)}
     payload.update(extra or {})
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)

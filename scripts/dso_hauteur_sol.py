@@ -12,7 +12,9 @@ Pour chaque tranche et pour deux predicteurs vus sur EXACTEMENT les memes instan
 noeuds (une seule lecture du loader) :
   - « modele » : la passe servie (w par continuite si la config le dit) ;
   - « era5 »   : le vent ERA5 aux noeuds, l'entree du modele residuel (w par continuite) —
-                 la reference a battre (seulement pour un modele avec paths.forcage_era5).
+                 la reference a battre (seulement pour un modele avec paths.forcage_era5) ;
+  - « era5_oi » : ERA5 + interpolation optimale des innovations aux points de mesure (candidat D2,
+                 innovation.actif seulement : pcfno3d.innovation.predicteur_oi), w par continuite.
 on publie RMSE et R2 de u, v, w, la vitesse moyenne, le seuil OMM max(0,5 ; 10 % de la vitesse)
 (OMM CIMO n° 8 §5.1.3), la rugosite (DSO3) et le residu de masse (DSO2) restreints au domaine
 0-1 km, la MAE de direction. La tranche « au-dessus de 1 km » est publiee A TITRE D'INFORMATION.
@@ -142,14 +144,20 @@ def mesurer(ev, cfg, keep: float | None, max_instants: int | None, jeu: str = "t
                 + (a[0, :, 1:, :] - a[0, :, :-1, :]).abs()[gy].mean())
 
     def pred_era5(s_raw, sensor, tfeat, y, j, stem):
-        # cellules ERA5 apres les N_SCAL scalaires du forcage (correction du 09/11/2026)
-        uv = geom.interp_era5.dense(tfeat[:, N_TFEAT + N_SCAL:])
+        # cellules ERA5 apres les N_SCAL scalaires du forcage (correction du 09/11/2026), et avant
+        # la queue d'innovation du candidat D2 s'il y en a une
+        nc = geom.forcage.n_cellules
+        uv = geom.interp_era5.dense(tfeat[:, N_TFEAT + N_SCAL:N_TFEAT + N_SCAL + nc])
         u, v = uv[:, 0] * geom.valid_t, uv[:, 1] * geom.valid_t
         return [u, v, geom.w_continuite(u, v)]
 
     preds = dict(predicteurs) if predicteurs is not None else {"modele": ev.predire}
     if geom.interp_era5 is not None:
         preds["era5"] = pred_era5
+    if getattr(geom, "oi", None) is not None:
+        # candidat D2 (regle_d2_national.json) : reference « interpolation optimale seule »
+        from pcfno3d.innovation import predicteur_oi
+        preds["era5_oi"] = predicteur_oi(geom)
 
     acc = {p: {t: np.zeros((3, 4)) for t in tranches} for p in preds}   # c x (n, sse, s1, s2)
     spd = {t: np.zeros(2) for t in tranches}

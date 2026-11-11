@@ -408,6 +408,11 @@ class WindFieldModel:
             # l'architecture du checkpoint fait foi : un YAML modifie ne doit pas la casser
             cfg.model = saved
             self.geom.pool_surface_enabled = saved.pool_surface
+            # canal d'innovation (D2) : ses parametres font partie du modele, comme l'architecture
+            from .model import innovation_cfg_from_checkpoint
+            inn = innovation_cfg_from_checkpoint(ck)
+            if inn != cfg.innovation:
+                self.geom.configurer_innovation(inn)
         if mapped:
             with torch.device("meta"):
                 self.model = build_model(cfg, self.geom.c_in)
@@ -537,7 +542,8 @@ class WindFieldModel:
                 keep: float = 1.0, seed: int = 0, mask_nan: bool = True,
                 tta: int | None = None, tta_keep: float | None = None,
                 reliability: bool | None = None, real_sensors: bool = False,
-                defer: bool = False, forcage: np.ndarray | None = None) -> Volume:
+                defer: bool = False, forcage: np.ndarray | None = None,
+                capteurs_oi: np.ndarray | None = None) -> Volume:
         """Reconstruit le volume a partir de la surface agregee S (8, ny, nx).
 
         tta / tta_keep : moyenne de plusieurs passes (voir `ensemble_forward`). Par defaut,
@@ -552,6 +558,8 @@ class WindFieldModel:
         `assess_reliability_async(volume)`, `assess_reliability(volume)` ou au premier
         `volume.wait_reliability()`. Dans tous les cas, `inference_s` est le temps de la
         VALEUR seule (DSO4) et `reliability_s` le delai de la fiabilite.
+        capteurs_oi (candidat D2, innovation.actif) : cellules (n, 2) de capteurs ANEO dont S porte la
+        mesure, points de mesure de l'innovation en plus des stations visibles (data_dir/stations.json).
         """
         geom = self.geom
         actif = (self.reliability is not None) if reliability is None else bool(reliability)
@@ -564,6 +572,8 @@ class WindFieldModel:
         sensor = (S[7] > 0.5) & (rng.random(S[7].shape) < keep)
         # forcage : vecteur deja calcule (temps reel, pcfno3d.temps_reel), sinon celui du fichier
         extra = forcage if forcage is not None else self._forcage(timestamp)
+        if geom.oi is not None:
+            extra = self._avec_innovation(S, sensor, extra, capteurs_oi)
         tfeat = caracteristiques(S, sensor, hour, doy, geom, extra)
 
         s_t = torch.from_numpy(np.ascontiguousarray(S[:N_SURF]))[None].to(self.device)
@@ -603,6 +613,25 @@ class WindFieldModel:
                 if vol._rel_exc is not None:
                     raise vol._rel_exc
         return vol
+
+    def _avec_innovation(self, S: np.ndarray, sensor: np.ndarray, extra: np.ndarray,
+                         capteurs_oi: np.ndarray | None) -> np.ndarray:
+        """Candidat D2 : forcage de l'instant + champs d'innovation (pcfno3d.innovation) calcules sur les
+        stations visibles et les capteurs ANEO donnes, contre les cellules ERA5 de ce forcage."""
+        from .dataset import cellules_stations
+        from .forcage import N_SCAL
+        geom = self.geom
+        extra = np.asarray(extra, np.float32)[:N_SCAL + geom.forcage.n_cellules]
+        st = np.zeros(sensor.shape, bool)
+        cel = cellules_stations(geom)
+        if len(cel):
+            st[cel[:, 0], cel[:, 1]] = True
+        st &= sensor
+        if capteurs_oi is not None and len(capteurs_oi):
+            c = np.asarray(capteurs_oi, np.int64).reshape(-1, 2)
+            capteurs_oi = c[sensor[c[:, 0], c[:, 1]]]
+        q = geom.oi.queue(S, extra[N_SCAL:], st, capteurs_oi)
+        return np.concatenate([extra, q]).astype(np.float32)
 
     def _forcage(self, timestamp) -> np.ndarray | None:
         """Forcage ERA5 de l'instant (paths.forcage_era5), None pour un modele sans."""

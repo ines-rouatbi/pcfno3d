@@ -46,9 +46,15 @@ def predicteur_era5(geom, norm):
 
     @torch.no_grad()
     def predire(s_raw, sensor, tfeat, y, j, stem):
-        x = assemble_input(s_raw, sensor, tfeat, geom, norm)
-        u = x[:, -2] * norm.y_sd[0] + norm.y_mu[0]
-        v = x[:, -1] * norm.y_sd[1] + norm.y_mu[1]
+        if getattr(geom, "oi", None) is not None and geom.cfg.innovation.base_residuel != "era5":
+            # candidat D2, base residuelle ERA5 + innovation : ERA5 seule depuis les cellules
+            from .innovation import decouper_tfeat
+            uv = geom.interp_era5.dense(decouper_tfeat(tfeat, geom)[0])
+            u, v = uv[:, 0], uv[:, 1]
+        else:
+            x = assemble_input(s_raw, sensor, tfeat, geom, norm)
+            u = x[:, -2] * norm.y_sd[0] + norm.y_mu[0]
+            v = x[:, -1] * norm.y_sd[1] + norm.y_mu[1]
         valid = geom.valid_t[None]
         u, v = torch.where(valid, u, 0.0), torch.where(valid, v, 0.0)
         return [u, v, geom.w_continuite(u, v)]
@@ -61,7 +67,8 @@ def rmse_vect(levels: pd.DataFrame) -> pd.Series:
 
 
 def juger(niveaux_modele: pd.DataFrame, niveaux_era5: pd.DataFrame, summary: dict,
-          dso6: dict | None, stations: pd.DataFrame | None, cfg: Config) -> dict:
+          dso6: dict | None, stations: pd.DataFrame | None, cfg: Config,
+          niveaux_oi: pd.DataFrame | None = None) -> dict:
     """Verdicts nationaux. `summary` : test_summary.json du modele (DSO2, DSO4, robustesse) ;
     `stations` : stations_bilan.csv de la validation reelle (sources modele et era5)."""
     n, cover = cfg.dso_national, cfg.dso.min_level_cover
@@ -75,6 +82,9 @@ def juger(niveaux_modele: pd.DataFrame, niveaux_era5: pd.DataFrame, summary: dic
     t["erreur_relative"] = t["rmse_vect"] / t["vitesse_moyenne"]
     t["seuil_dso1a"] = np.maximum(n.plancher, n.rel * t["vitesse_moyenne"])
     t["gain_era5"] = 1.0 - t["rmse_vect"] / t["rmse_vect_era5"]
+    if niveaux_oi is not None:                      # candidat D2 : reference OI seule, a titre de comparaison
+        t["rmse_vect_era5_oi"] = rmse_vect(niveaux_oi.set_index("z_m"))
+        t["gain_era5_oi"] = 1.0 - t["rmse_vect"] / t["rmse_vect_era5_oi"]
     t = t.reset_index()
     juges = t[(t["couverture"] >= cover) & (t["z_m"] <= n.z_max_m)]
     hauts = t[(t["couverture"] >= cover) & (t["z_m"] > n.z_max_m)]
@@ -126,6 +136,8 @@ def juger(niveaux_modele: pd.DataFrame, niveaux_era5: pd.DataFrame, summary: dic
                     "dso7_stations_meilleures_que_era5": int((s["modele"] < s["era5"]).sum()),
                     "dso7_stations": int(len(s)),
                     "dso7_conforme": bool(moy_m <= n.stations_rapport_max * moy_e)})
+        if "era5_oi" in s:                          # candidat D2 : reference OI seule, sans verdict
+            out["dso7_rmse_vect_era5_oi"] = float(s["era5_oi"].mean())
     else:
         out["dso7_conforme"] = None
     cles = [k for k in ("dso1_conforme", "dso2_conforme", "dso3_conforme", "dso4_conforme",
@@ -195,11 +207,15 @@ def verdict_national(cfg: Config, checkpoint: str | Path | None = None,
     te_s = ev.splits.test[0]
     syn = np.array([is_synoptic(ev.splits.stamp_of[s]) for s in te_s])
     idx = np.nonzero(syn)[0] if syn.any() else np.arange(len(te_s))
+    preds = {"modele": ev.predire, "era5": predicteur_era5(ev.geom, ev.norm)}
+    if getattr(ev.geom, "oi", None) is not None:
+        # candidat D2 : reference « interpolation optimale seule », publiee comme ERA5 seule
+        from .innovation import predicteur_oi
+        preds["era5_oi"] = predicteur_oi(ev.geom)
     res = metriques_loader(*eval_loader(cfg, ev.geom, ev.splits, idx, 2000), ev.geom,
-                           ev.splits.stamp_of,
-                           {"modele": ev.predire, "era5": predicteur_era5(ev.geom, ev.norm)},
-                           ev.loss_fn.roughness_ratio)
-    v = juger(res["modele"][0], res["era5"][0], summary, dso6, stations, cfg)
+                           ev.splits.stamp_of, preds, ev.loss_fn.roughness_ratio)
+    v = juger(res["modele"][0], res["era5"][0], summary, dso6, stations, cfg,
+              niveaux_oi=res["era5_oi"][0] if "era5_oi" in res else None)
     v["modele"] = ev.wf.checkpoint_path.name
     v["epoque"] = (ev.wf.epoch + 1) if ev.wf.epoch is not None else None
     (ev.out_dir / "verdict_national.json").write_text(
