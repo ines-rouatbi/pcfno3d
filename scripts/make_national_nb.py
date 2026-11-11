@@ -415,6 +415,12 @@ import traceback
 GRAINE = @GRAINE@
 CANDIDAT = "@CANDIDAT@"                     # Cp ou D (regle_v4_national.json)
 RUN = NAT / "runs" / f"national_1km_v4_{CANDIDAT}_s{GRAINE}"
+# entrainement interrompu (session Colab coupee, last.pt local perdu : plan A) : le dossier est mis de cote,
+# renomme et JAMAIS supprime ni ecrase, puis l'entrainement repart de zero sous le nom de la regle
+if (RUN / "history.json").exists() and not (RUN / "info_capteurs_validation.json").exists():
+    cote = RUN.with_name(RUN.name + "_interrompu_" + time.strftime("%Y%m%d_%H%M%S"))
+    shutil.move(str(RUN), str(cote))
+    print("entrainement interrompu mis de cote :", cote)
 RUN.mkdir(parents=True, exist_ok=True)
 EXTRA = "--set loss.lambda_rough=1.0"
 # parametres de la degradation d'ERA5 (jours d'entrainement seulement), ecrits AVANT tout entrainement ;
@@ -621,7 +627,9 @@ def main() -> int:
         print(f)
         return 0
     if "--v4" in sys.argv:
-        commit = subprocess.run(["git", "rev-parse", "HEAD"], cwd=REPO, capture_output=True, text=True,
+        # --commit X : code de l'entrainement fige a un commit donne (ex. celui des graines deja entrainees)
+        ref = sys.argv[sys.argv.index("--commit") + 1] if "--commit" in sys.argv else "HEAD"
+        commit = subprocess.run(["git", "rev-parse", ref], cwd=REPO, capture_output=True, text=True,
                                 check=True).stdout.strip()
         # option A du plan de place (last.pt reste sur Colab) sauf --sync-last (option B, place a liberer)
         for nom, nb in v4_carnets(commit, "true" if "--sync-last" in sys.argv else "false").items():
