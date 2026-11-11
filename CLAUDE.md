@@ -279,9 +279,27 @@ a WorldCover mosaic tile-by-tile; the Grand Tunis grid rebuilt with it is byte-i
 ERA5 recalibration carries the north–south differences). Notebooks `scripts/make_national_nb.py`
 (generation CPU 3 parts ≈ 50 GB on the Drive under `pcfno3d_national/`, then training A100 from the
 delivered Grand Tunis weights); data `scripts/package_national_colab.py` → `national_donnees.zip`.
-Still to write: national real validation (`stations_reelles` / `valider_grand_tunis_reel.py` are Grand
-Tunis-specific). The OS7 GFS download (`pcfno3d.gfs`) also keeps the national box (`*_tn.npz`,
+The national real validation is `valider_grand_tunis_reel.py` on the 12 airports of `stations.json`
+(DSO7, each left out when judged). The OS7 GFS download (`pcfno3d.gfs`) also keeps the national box (`*_tn.npz`,
 `gfs_tunisie_f<L>.npz`) for a later national forecast.
+**Extra stations (2026-11-11, Ines):** `scripts/stations_supplementaires.py` inventories every Tunisian NOAA ISD
+station (607xxx, country TS or TN) + OGIMET SYNOP list, 2015–2022 (29 stations, 28 WMO indices; 12 are the METAR
+airports by ICAO or < 3 km, Monastir has two records 607400/607403), downloads the ISD yearly files (≈ 650 MB,
+`artifacts/national/obs_supp/brut`, git-ignored), QC = `stations_reelles.controle_qualite` (EXCLUSIONS, outage
+months as for Nabeul, range 0–60 m/s, frozen = same speed ≥ 0.5 m/s and direction over ≥ 3 reports and ≥ 24 h;
+calm kept; flags only, never exclusions: suspicious calms, « abri probable » = < 70 % of neighbours' AND of ERA5
+2021 speed), site descriptors `pcfno3d.sites_stations` (500 m cell recomputed with `grille_reelle` code from
+GLO-30 / WorldCover read by HTTP byte ranges, TPI 5/20 km from GLO-90, distance to Natural Earth coast). Outputs
+`docs/resultats/national/stations_supplementaires.{md,csv}` + `_qc.csv`, and the VALIDATION-ONLY list
+`configs/national/stations_supplementaires.csv` (in domain, not an airport, ≥ 50 % valid 3-h slots in 2022).
+`valider_grand_tunis_reel.py --stations-supp <list> --obs-supp <synop dir> [--supp-seul]` judges them at their cell
+(`stations_reelles.cellules_latlon`, same placement as the generator) with ALL airports in the input and never
+themselves; outputs `stations_supp_{paires,bilan,qc}.csv` + `bilan_supp.json`, never mixed into `stations_bilan.csv`
+/ DSO7 / rule v4 (a test checks the airport outputs are byte-identical with and without). Inputs of C'/D unchanged.
+**MOS of ERA5 10 m:** rule `configs/national/regle_mos_era5.json` (+ `.sha256`, fixed under Ines's approval of
+11/11 evening, agent defaults), `scripts/mos_era5.py` (era5 from Open-Meteo `models=era5`, nearest cell; preparer;
+choisir = ridge/HistGB grid, cross-validation by SITE on 2021 with fit 2015–2020; tester = 2022 read once, only if
+validation beats ERA5 on the rule's 3 conditions); outputs in a dated `artifacts/national/mos/<date>/` folder.
 
 `notebooks/archive/` holds the architectures explored and then dropped (FNO2D variants, U-Net/FNO,
 GNN, DeepONet, ResNet, ViT). They are history, not alternatives to maintain — do not "fix" them.

@@ -32,33 +32,163 @@ N_CIBLE = 10                           # k_a, k_b, w_a, w_b, iy, ix, u, v, prese
 
 
 # ---------------------------------------------------------------------- observations
-def lire_observations(dossier: Path, verbose: bool = True, codes=None) -> pd.DataFrame:
-    """METAR + SYNOP des stations `codes` (defaut : les trois du Grand Tunis, CODES) ; u, v
-    recalcules s'ils manquent ; mois en panne (vent nul a plus de 90 %, au moins 20 mesures) et
-    periodes de EXCLUSIONS ecartes."""
+def _lire_fichiers(dossier: Path, codes) -> pd.DataFrame:
+    """metar_*.csv + synop_*.csv du dossier, stations `codes` ; t (UTC naif) ; u, v recalcules
+    s'ils manquent (calme : u = v = 0) ; lignes sans u, v ecartees."""
     dossier = Path(dossier)
     fichiers = sorted(dossier.glob("metar_*.csv")) + sorted(dossier.glob("synop_*.csv"))
     if not fichiers:
         raise FileNotFoundError(f"aucun metar_*.csv / synop_*.csv dans {dossier}")
     obs = pd.concat([pd.read_csv(f) for f in fichiers], ignore_index=True)
-    obs = obs[obs["station_id"].isin(list(codes or CODES))].copy()
+    return preparer_observations(obs[obs["station_id"].isin(list(codes))])
+
+
+def preparer_observations(obs: pd.DataFrame) -> pd.DataFrame:
+    """Colonnes METAR -> t (UTC naif), u, v recalcules s'ils manquent (calme : u = v = 0) ;
+    lignes sans u, v ecartees (vitesse sans direction, hors calme)."""
+    obs = obs.copy()
     obs["t"] = pd.to_datetime(obs["timestamp_utc"], utc=True).dt.tz_localize(None)
     rad = np.radians(obs["wind_dir_deg"])
     calme = obs["wind_speed_m_s"] == 0
     obs["wind_u_m_s"] = obs["wind_u_m_s"].fillna((-obs["wind_speed_m_s"] * np.sin(rad)).where(~calme, 0.0))
     obs["wind_v_m_s"] = obs["wind_v_m_s"].fillna((-obs["wind_speed_m_s"] * np.cos(rad)).where(~calme, 0.0))
-    obs = obs.dropna(subset=["wind_u_m_s", "wind_v_m_s"])
+    return obs.dropna(subset=["wind_u_m_s", "wind_v_m_s"])
+
+
+def _mois_en_panne(obs: pd.DataFrame) -> pd.Series:
+    """Mois ou l'anemometre ne mesure que des zeros : vent non nul dans moins de 10 % des
+    mesures, au moins 20 mesures (Nabeul juin, juillet et septembre 2021)."""
     mois = obs["t"].dt.to_period("M")
     part = (obs["wind_speed_m_s"] > 0).groupby([obs["station_id"], mois]).transform("mean")
     n = obs.groupby([obs["station_id"], mois])["t"].transform("size")
-    panne = (part < 0.1) & (n >= 20)
+    return (part < 0.1) & (n >= 20)
+
+
+def _periodes_exclues(obs: pd.DataFrame) -> pd.Series:
+    """Periodes ecartees a la main (EXCLUSIONS)."""
+    ex = pd.Series(False, index=obs.index)
     for code, periodes in EXCLUSIONS.items():
         for debut, fin in periodes:
-            panne |= (obs["station_id"] == code) & (obs["t"] >= pd.Timestamp(debut)) & (obs["t"] < pd.Timestamp(fin))
+            ex |= (obs["station_id"] == code) & (obs["t"] >= pd.Timestamp(debut)) & (obs["t"] < pd.Timestamp(fin))
+    return ex
+
+
+def lire_observations(dossier: Path, verbose: bool = True, codes=None) -> pd.DataFrame:
+    """METAR + SYNOP des stations `codes` (defaut : les trois du Grand Tunis, CODES) ; u, v
+    recalcules s'ils manquent ; mois en panne (vent nul a plus de 90 %, au moins 20 mesures) et
+    periodes de EXCLUSIONS ecartes."""
+    obs = _lire_fichiers(dossier, codes or CODES)
+    panne = _mois_en_panne(obs) | _periodes_exclues(obs)
     if panne.any() and verbose:
         ecart = obs[panne].groupby(["station_id", obs.loc[panne, "t"].dt.to_period("M")]).size()
         print("mois ecartes (anemometre en panne) :", ", ".join(f"{s} {m}" for s, m in ecart.index))
     return obs[~panne].sort_values("t").reset_index(drop=True)
+
+
+# ---------------------------------------------------------------------- stations supplementaires
+# Stations de validation SUPPLEMENTAIRES du modele national (SYNOP INM via NOAA ISD,
+# configs/national/stations_supplementaires.csv, scripts/stations_supplementaires.py) : JAMAIS en
+# entree, jugees seulement, rapportees a part du DSO7 des 12 aeroports. Controle qualite : les
+# regles de lire_observations (mois en panne, EXCLUSIONS) plus deux controles du contrat ANEO
+# (pcfno3d.contract) adaptes au SYNOP.
+VITESSE_MAX = 60.0                     # m/s : plage du contrat (contract.PLAGES, |u|, |v| <= 60)
+VITESSE_CALME = 0.5                    # m/s : le calme n'est pas une valeur figee (contract.VITESSE_CALME)
+# valeur figee : meme vitesse (>= VITESSE_CALME) ET meme direction sur au moins N_FIGEE messages
+# consecutifs couvrant au moins DUREE_FIGEE. Le contrat prend 3 instants et 30 min pour des donnees a
+# 10 s ; un SYNOP est quantifie (1 m/s ou 1 noeud, 10 degres) et toutes les 3 h : deux ou trois
+# messages egaux sont banals par vent etabli, une journee entiere ne l'est pas.
+N_FIGEE = 3
+DUREE_FIGEE = pd.Timedelta(hours=24)
+MOTIFS = ("exclusion manuelle", "panne (vent nul)", "hors plage", "valeur figee")
+
+
+def valeurs_figees(obs: pd.DataFrame) -> pd.Series:
+    """Vrai pour les mesures d'une serie figee (meme vitesse >= VITESSE_CALME et meme direction
+    sur >= N_FIGEE messages consecutifs couvrant >= DUREE_FIGEE), station par station."""
+    out = pd.Series(False, index=obs.index)
+    for _, g in obs.sort_values("t").groupby("station_id", sort=False):
+        cle = g["wind_speed_m_s"].round(2).astype(str) + "/" + g["wind_dir_deg"].round(0).astype(str)
+        serie = (cle != cle.shift()).cumsum()
+        for _, s in g.groupby(serie):
+            if (len(s) >= N_FIGEE and float(s["wind_speed_m_s"].iloc[0]) >= VITESSE_CALME
+                    and s["t"].iloc[-1] - s["t"].iloc[0] >= DUREE_FIGEE):
+                out[s.index] = True
+    return out
+
+
+def controle_qualite(obs: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Controle qualite des stations supplementaires sur les mesures de _lire_fichiers.
+    Motif de chaque mesure ecartee, le premier qui s'applique : exclusion manuelle (EXCLUSIONS),
+    mois en panne (meme regle que lire_observations), hors plage (vitesse hors 0-VITESSE_MAX,
+    direction hors 0-360, |u| ou |v| > VITESSE_MAX), valeur figee. Doublons (station, instant) :
+    le premier message est garde. Le calme (0 m/s, u = v = 0) est une mesure gardee.
+    Renvoie (mesures gardees triees par t, rapport par station et par mois : n_messages, n_gardes,
+    une colonne par motif, mois_ecarte, motif_mois)."""
+    obs = obs.drop_duplicates(["station_id", "t"]).copy()
+    vit, dirn = obs["wind_speed_m_s"], obs["wind_dir_deg"]
+    hors = ((vit < 0) | (vit > VITESSE_MAX) | (dirn < 0) | (dirn > 360)
+            | (obs["wind_u_m_s"].abs() > VITESSE_MAX) | (obs["wind_v_m_s"].abs() > VITESSE_MAX))
+    exclu, panne = _periodes_exclues(obs), _mois_en_panne(obs)
+    reste = ~(exclu | panne | hors)
+    figee = (valeurs_figees(obs[reste]).reindex(obs.index, fill_value=False).astype(bool) if reste.any()
+             else pd.Series(False, index=obs.index))
+    motif = pd.Series("", index=obs.index, dtype=object)
+    for m, masque in zip(MOTIFS, (exclu, panne, hors, figee)):
+        motif[(motif == "") & masque] = m
+    obs["motif_qc"] = motif
+    lignes = []
+    for (code, m), g in obs.groupby([obs["station_id"], obs["t"].dt.to_period("M").astype(str)]):
+        r = {"station_id": code, "mois": m, "n_messages": len(g), "n_gardes": int((g["motif_qc"] == "").sum())}
+        for x in MOTIFS:
+            r[x] = int((g["motif_qc"] == x).sum())
+        ecarte = r["exclusion manuelle"] + r["panne (vent nul)"] == len(g)
+        r["mois_ecarte"] = bool(ecarte)
+        r["motif_mois"] = (("exclusion manuelle" if r["exclusion manuelle"] else "panne (vent nul)")
+                           if ecarte else "")
+        lignes.append(r)
+    rapport = pd.DataFrame(lignes, columns=["station_id", "mois", "n_messages", "n_gardes", *MOTIFS,
+                                            "mois_ecarte", "motif_mois"])
+    gardees = obs[obs["motif_qc"] == ""].drop(columns="motif_qc").sort_values("t").reset_index(drop=True)
+    return gardees, rapport
+
+
+def lire_observations_qc(dossier: Path, codes) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Mesures des stations supplementaires `codes` (synop_*.csv / metar_*.csv du dossier) apres
+    controle_qualite : (mesures gardees, rapport mensuel)."""
+    return controle_qualite(_lire_fichiers(dossier, list(codes)))
+
+
+def stations_supplementaires(chemin: Path) -> pd.DataFrame:
+    """configs/national/stations_supplementaires.csv : code, nom, lat, lon (+ colonnes libres) ;
+    si la colonne `retenue` existe, seules les lignes retenues (1 / true / oui)."""
+    t = pd.read_csv(chemin, dtype={"code": str})
+    if "retenue" in t:
+        t = t[t["retenue"].astype(str).str.strip().str.lower().isin(("1", "true", "oui", "vrai"))]
+    return t.reset_index(drop=True)
+
+
+def cellules_latlon(geom, stations: pd.DataFrame) -> tuple[dict[str, tuple[int, int]], dict[str, str]]:
+    """{code: (iy, ix)} des stations (colonnes code, lat, lon) sur la grille du modele, MEME
+    placement que scripts/grille_reelle.py puis generate_aneo_3d.py (plan local de la grille
+    fine, cellule fine // stride) ; et {code: raison} des stations ecartees (hors du domaine,
+    colonne sans noeud valide)."""
+    from .realdata import PlanGrille
+
+    plan = PlanGrille.from_geom(geom.cfg, geom)
+    valid = np.asarray(geom.valid)
+    cellules, ecartees = {}, {}
+    for r in stations.itertuples():
+        x, y = plan.to_xy(float(r.lat), float(r.lon))
+        j, i = float(y) / geom.dy_s, float(x) / geom.dx_s
+        if not (0 <= j < geom.ny_s and 0 <= i < geom.nx_s):
+            ecartees[str(r.code)] = "hors du domaine"
+            continue
+        iy, ix = int(j) // geom.stride, int(i) // geom.stride
+        if iy >= geom.ny or ix >= geom.nx or not bool(valid[:, iy, ix].any()):
+            ecartees[str(r.code)] = "colonne sans noeud valide"
+            continue
+        cellules[str(r.code)] = (iy, ix)
+    return cellules, ecartees
 
 
 def noms_stations(geom) -> dict[str, str]:

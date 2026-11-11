@@ -26,6 +26,16 @@ et septembre 2021) sont ecartes.
 radiosondages_TSM00060715.csv (scripts/igra_radiosondages.py).
 Sortie : run_dir/validation_reelle/<jeu>/ (stations_paires.csv, stations_bilan.csv,
 radiosondages_paires.csv, radiosondages_bilan.csv, bilan.json).
+
+Stations de validation SUPPLEMENTAIRES (national, optionnel) : --stations-supp
+configs/national/stations_supplementaires.csv (code, nom, lat, lon ; scripts/stations_supplementaires.py)
+et --obs-supp <dossier des synop_*.csv> (defaut : --obs). Ces stations ne sont JAMAIS en entree :
+l'entree reste celle de stations.json (les 12 aeroports), toutes presentes, et chaque station
+supplementaire est jugee a sa cellule (placee depuis lat, lon comme grille_reelle.py). Controle
+qualite : stations_reelles.controle_qualite. Sorties A PART (jamais melangees au DSO7 des
+aeroports ni a la regle v4) : stations_supp_paires.csv, stations_supp_bilan.csv,
+stations_supp_qc.csv, bilan_supp.json. --supp-seul : seulement elles, sans toucher aux sorties
+des aeroports et des radiosondages (run deja valide).
 """
 from __future__ import annotations
 
@@ -42,8 +52,9 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from pcfno3d.forcage import charger_e  # noqa: E402
-from pcfno3d.stations_reelles import (CODES, H_STATION, cellules_codes, noms_stations,  # noqa: E402,F401
-                                     entree_reelle, lire_observations, obs_a, vent_a_hauteur)
+from pcfno3d.stations_reelles import (CODES, H_STATION, cellules_codes, cellules_latlon,  # noqa: E402,F401
+                                     entree_reelle, lire_observations, lire_observations_qc,
+                                     noms_stations, obs_a, stations_supplementaires, vent_a_hauteur)
 
 SITE_SONDE = "TSM00060715"             # radiosondage de Tunis-Carthage
 
@@ -83,13 +94,69 @@ def main() -> int:
     ap.add_argument("--obs", required=True, help="dossier des metar_*.csv, synop_*.csv, radiosondages")
     ap.add_argument("--jeu", choices=("test", "val"), default="test")
     ap.add_argument("--max-instants", type=int, default=None)
+    ap.add_argument("--stations-supp", default=None,
+                    help="stations de validation supplementaires (configs/national/stations_supplementaires.csv)")
+    ap.add_argument("--obs-supp", default=None, help="dossier de leurs synop_*.csv (defaut : --obs)")
+    ap.add_argument("--supp-seul", action="store_true",
+                    help="seulement les stations supplementaires (sorties des aeroports intactes)")
     args = ap.parse_args()
-    valider(Config.load(args.config), Path(args.obs), args.jeu, args.checkpoint, args.max_instants)
+    if args.supp_seul and not args.stations_supp:
+        ap.error("--supp-seul demande --stations-supp")
+    valider(Config.load(args.config), Path(args.obs), args.jeu, args.checkpoint, args.max_instants,
+            stations_supp=args.stations_supp, obs_supp=args.obs_supp, supp_seul=args.supp_seul)
     return 0
 
 
+def preparer_supp(geom, chemin, dossier, cellules: dict):
+    """Stations supplementaires : ({code: (iy, ix)}, {code: nom}, {code: raison} des ecartees,
+    mesures apres controle qualite, rapport mensuel du controle). Une station d'entree, ou une
+    station sur la cellule d'une station d'entree, est ecartee : elle n'y serait pas jugee sans
+    mesure a sa cellule."""
+    tab = stations_supplementaires(Path(chemin))
+    ecartees = {c: "station d'entree" for c in tab["code"] if c in cellules}
+    tab = tab[~tab["code"].isin(list(cellules))]
+    supp, hors = cellules_latlon(geom, tab)
+    ecartees.update(hors)
+    occupees = set(cellules.values())
+    for code in [c for c, cell in supp.items() if cell in occupees]:
+        ecartees[code] = "meme cellule qu'une station d'entree"
+        del supp[code]
+    noms = dict(zip(tab["code"], tab["nom"]))
+    if not supp:
+        return supp, noms, ecartees, pd.DataFrame(columns=["t"]), pd.DataFrame()
+    obs, qc = lire_observations_qc(Path(dossier), list(supp))
+    return supp, noms, ecartees, obs, qc
+
+
+def ecrire_supp(sortie: Path, resume: dict, paires_s: list, qc, supp: dict, noms_supp: dict,
+                ecartees: dict, sources: tuple[str, ...], chemin_liste) -> dict:
+    """Sorties des stations supplementaires, A PART des aeroports : stations_supp_paires.csv,
+    stations_supp_bilan.csv, stations_supp_qc.csv, bilan_supp.json (moyenne par source du RMSE
+    vectoriel par station : hors DSO7 et hors regle v4)."""
+    out = {"note": "stations jugees seulement, jamais en entree ; hors DSO7 des aeroports et hors regle v4",
+           "liste": str(chemin_liste), "stations": len(supp), "ecartees": ecartees, "paires": len(paires_s)}
+    if qc is not None and len(qc):
+        qc.assign(nom=qc["station_id"].map(noms_supp)).to_csv(sortie / "stations_supp_qc.csv", index=False)
+    if paires_s:
+        p = pd.DataFrame(paires_s)
+        p.to_csv(sortie / "stations_supp_paires.csv", index=False)
+        b = bilan_stations(p, sources)
+        b.to_csv(sortie / "stations_supp_bilan.csv", index=False)
+        print("\nSTATIONS SUPPLEMENTAIRES (10 m, jamais en entree ; hors DSO7) :")
+        print(b.round(3).to_string(index=False))
+        out["bilan"] = b.to_dict(orient="records")
+        out["moyenne_rmse_vect"] = {s: float(b.loc[b["source"] == s, "rmse_vect"].mean()) for s in sources}
+        m = b.pivot(index="station", columns="source", values="rmse_vect")
+        out["stations_modele_meilleur_que_era5"] = int((m["modele"] < m["era5"]).sum())
+    tete = {k: resume[k] for k in ("jeu", "instants", "checkpoint")}
+    (sortie / "bilan_supp.json").write_text(json.dumps({**tete, **out}, indent=2, ensure_ascii=False, default=str),
+                                            encoding="utf-8")
+    return out
+
+
 def valider(cfg, dossier_obs: Path, jeu: str = "test", checkpoint=None,
-            max_instants: int | None = None, device: str | None = None) -> dict:
+            max_instants: int | None = None, device: str | None = None,
+            stations_supp=None, obs_supp=None, supp_seul: bool = False) -> dict:
     import torch
 
     from pcfno3d.cache import load_index
@@ -114,8 +181,15 @@ def valider(cfg, dossier_obs: Path, jeu: str = "test", checkpoint=None,
     cellules = cellules_codes(geom)
     noms = noms_stations(geom)
     obs = lire_observations(Path(dossier_obs), codes=list(cellules))
+    supp, noms_supp, ecartees_supp, obs_s, qc_supp = {}, {}, {}, None, None
+    if stations_supp:
+        supp, noms_supp, ecartees_supp, obs_s, qc_supp = preparer_supp(
+            geom, stations_supp, obs_supp or dossier_obs, cellules)
+        print(f"stations supplementaires (jugees seulement, jamais en entree) : {len(supp)} | "
+              f"{len(obs_s)} mesures apres controle" + (f" | ecartees : {ecartees_supp}" if ecartees_supp else ""),
+              flush=True)
     f_sonde = Path(dossier_obs) / f"radiosondages_{SITE_SONDE}.csv"
-    sondes = pd.read_csv(f_sonde) if f_sonde.exists() else pd.DataFrame()
+    sondes = pd.read_csv(f_sonde) if f_sonde.exists() and not supp_seul else pd.DataFrame()
     if len(sondes):
         sondes["t"] = pd.to_datetime(sondes["temps"], utc=True).dt.tz_localize(None)
         sondes = sondes[sondes["h_agl_m"].between(0, 1000) & sondes["u"].notna() & sondes["v"].notna()]
@@ -152,21 +226,33 @@ def valider(cfg, dossier_obs: Path, jeu: str = "test", checkpoint=None,
         q = oi.queue(S_in, extra[N_SCAL:N_SCAL + nc], st & capteur)
         return np.concatenate([extra[:N_SCAL + nc], q]).astype(np.float32), q.reshape(3, geom.ny, geom.nx)
 
-    paires, p_sondes = [], []
+    paires, p_sondes, paires_s = [], [], []
     t0 = time.time()
     for n, stem in enumerate(stems):
         r = row.loc[stem]
         t = pd.Timestamp(r["timestamp"])
         hour, doy = float(r["hour"]), int(r["doy"])
         mesures = obs_a(obs, t)
+        mesures_s = obs_a(obs_s, t) if supp else {}
         a_sonder = len(sondes) and "DTTA" in cellules and t.hour in (0, 12) and (sondes["t"] == t).any()
-        if not mesures and not a_sonder:
+        if not (mesures and not supp_seul) and not a_sonder and not mesures_s:
             continue
         cache = cfg.paths.cache_dir
         S = np.load(cache / f"{stem}_S.npy")
         E = charger_e(geom, cache / f"{stem}_E.npy")      # ERA5, ou prevision GFS (OS7)
         extra = geom.forcage.vecteur(t)
-        for code, (uo, vo) in mesures.items():
+        if mesures_s:
+            # entree = toutes les stations d'entree mesurees, jamais une station supplementaire
+            S_in, cap = entree_reelle(S, E, geom, cellules, mesures)
+            u, v = passe(S_in, cap, hour, doy, extra)
+            for code, (uo, vo) in mesures_s.items():
+                iy, ix = supp[code]
+                um, vm = vent_a_hauteur(u[:, iy, ix], v[:, iy, ix], h_noeuds[:, iy, ix], geom.z0[iy, ix])
+                paires_s.append({"station": noms_supp.get(code, code), "code": code, "stem": stem, "temps": t,
+                                 "u_obs": uo, "v_obs": vo, "u_modele": um, "v_modele": vm,
+                                 "u_era5": float(E[0, iy, ix]), "v_era5": float(E[1, iy, ix]),
+                                 "u_generateur": float(S[0, iy, ix]), "v_generateur": float(S[1, iy, ix])})
+        for code, (uo, vo) in (() if supp_seul else mesures.items()):
             iy, ix = cellules[code]
             S_in, cap = entree_reelle(S, E, geom, cellules, mesures, exclue=code)
             ex, q = avec_oi(S_in, cap, mesures, extra, exclue=code)
@@ -210,6 +296,12 @@ def valider(cfg, dossier_obs: Path, jeu: str = "test", checkpoint=None,
     sortie.mkdir(parents=True, exist_ok=True)
     sources = ("modele", "era5", "generateur") + (("era5_oi",) if oi is not None else ())
     resume = {"jeu": jeu, "instants": len(stems), "checkpoint": str(wf.checkpoint_path.name)}
+    if stations_supp:
+        supp_resume = ecrire_supp(sortie, resume, paires_s, qc_supp, supp, noms_supp, ecartees_supp,
+                                  sources, stations_supp)
+        if supp_seul:
+            print(f"\nresultats (stations supplementaires seulement) -> {sortie}")
+            return {**resume, "stations_supplementaires": supp_resume}
     if paires:
         p = pd.DataFrame(paires)
         p.to_csv(sortie / "stations_paires.csv", index=False)
@@ -229,7 +321,7 @@ def valider(cfg, dossier_obs: Path, jeu: str = "test", checkpoint=None,
     (sortie / "bilan.json").write_text(json.dumps(resume, indent=2, ensure_ascii=False, default=str),
                                        encoding="utf-8")
     print(f"\nresultats -> {sortie}")
-    return resume
+    return {**resume, "stations_supplementaires": supp_resume} if stations_supp else resume
 
 
 if __name__ == "__main__":
