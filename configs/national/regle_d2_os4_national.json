@@ -1,0 +1,30 @@
+{
+  "fixee_le": "2026-11-13, a la demande d'Ines (message du 13/11, etape 6), AVANT tout entrainement D2 et toute lecture du test par D2 ; COMPLETE regle_d2_national.json (c7c98a20..., inchangee) sans la modifier ; aucun entrainement D2 n'est lance sous cette regle tant que le seuil n'est pas confirme",
+  "statut": "SEUIL EN ATTENTE : propose par Ines (10 %), a confirmer par Rayen avant tout entrainement D2 ; une confirmation ou un autre seuil = une nouvelle regle datee et hachee, publiee avec cette grille-ci",
+  "objet": "critere OS4 (apport d'un reseau de capteurs) du candidat D2 : reduction de l'erreur par rapport au cas sans reseau",
+  "reference_officielle": {
+    "definition": "ERA5 seule (predicteur era5 de scripts/dso_hauteur_sol.py, w par continuite) avec l'ERA5 DEGRADEE de la regle v4 (champ correle de D, sans zones, runs/degradation_era5_v4.json, graine 1000 + instant), avec 50 capteurs simules dans l'entree (l'ERA5 seule ne les utilise pas : meme valeur qu'ERA5 degradee sans capteurs)",
+    "mesure": "rmse_max_uv : pire tranche 0-100 / 100-300 / 300-600 / 600-1000 m au-dessus du sol, u ou v (scripts/info_capteurs_v4.py, cle rmse_max_uv)",
+    "valeur_validation_m_s": 1.8929,
+    "source": "info_capteurs_validation.json des entrainements C' s42 et s43 (identique pour les deux : meme reference, memes tirages), 64 instants de validation de la verite v3",
+    "nature": "verite d'entrainement v3 (generee), pas des mesures"
+  },
+  "critere_os4": {
+    "forme": "reduction = 1 - rmse_max_uv(D2, ERA5 degradee + 50 capteurs simules a 10 m) / rmse_max_uv(reference_officielle)",
+    "seuil_reduction_min": "EN_ATTENTE",
+    "seuil_propose_par_ines": 0.10,
+    "valeur_cible_si_10_pct_m_s": 1.7036,
+    "jeu_de_mesure": "validation pour information (info_capteurs_d2.py, sans effet sur le choix de la regle c7c98a20) ; verdict OS4 sur le test 2022 lu UNE fois pour le D2 choisi, dans la meme lecture que celle de regle_d2_national.json, memes tirages de degradation et de capteurs (graine 2000 + instant) ; la reference est remesuree sur les memes instants du test",
+    "rapport": "chaque table porte D2, ERA5 seule et OI seule (era5_oi) dans les trois conditions (propre, degradee, degradee + 50 capteurs) et la reduction de chacun"
+  },
+  "grilles": {
+    "ancienne": "regle_d2_national.json (c7c98a20...) : pas de seuil OS4 chiffre ; l'apport des capteurs est publie pour information (gain = rmse_max_uv degradee - rmse_max_uv degradee + 50 capteurs), et la decision exige DSO1 0-1 km du D2 < celui de l'OI seule",
+    "nouvelle": "la meme decision, plus le critere OS4 ci-dessus (reduction >= seuil confirme), rapporte comme verdict OS4 a part ; il ne change pas la decision de remplacement du modele livre"
+  },
+  "interdits": [
+    "aucun entrainement D2 avant la confirmation du seuil par Rayen (nouvelle regle hachee)",
+    "aucun reglage choisi sur le test",
+    "aucun bruit ajoute aux predictions (la degradation ne touche que les entrees)",
+    "ERA5 et la verite generee sont la verite d'entrainement, jamais des mesures"
+  ]
+}

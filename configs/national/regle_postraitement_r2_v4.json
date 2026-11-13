@@ -1,0 +1,34 @@
+{
+  "fixee_le": "2026-11-13, a la demande d'Ines (message du 13/11, etape 3), AVANT tout calcul du R2 par niveau ou de tout post-traitement : aucune sortie de scripts/r2_niveaux_v4.py n'existe ; regle_v4_national.json (60671e84...) inchangee",
+  "statut": "choix par defaut de l'agent (calibration lineaire par niveau, plis de jours existants) ; Ines peut les remplacer par une nouvelle regle datee et hachee avant le calcul",
+  "objet": "detail du R2 u, v, w par niveau (16 niveaux ASL) sur la VALIDATION, pour l'entrainement retenu par regle_v4_national.json, avant et apres un post-traitement deterministe ; le critere DSO1-R2 (R2 u, v, w >= 0,95 a chaque niveau evalue, dso.r2_all) n'est PAS dans le score de selection et doit etre publie a part",
+  "seuil": {
+    "r2_uvw_par_niveau": 0.95,
+    "note": "seuil INCHANGE (configs : dso.r2_all) ; niveaux evalues = geom.eval_levels() (couverture >= dso.min_level_cover), les autres niveaux sont publies et marques hors DSO"
+  },
+  "entrainement_retenu": "celui que choisit regle_v4_national.json (minimum de val_score parmi les 6 entrainements) ; tant que les 6 ne sont pas finis, le calcul est fait POUR INFORMATION sur chaque entrainement C' fini (graines 42, 43), sans effet sur le choix",
+  "jeu": "validation de la verite v3 : selection splits.val_selection (64 instants), entree complete, graine 1000 (memes entrees que le score de selection) ; le test n'est jamais lu",
+  "predicteurs": {
+    "brut": "sortie du reseau (u, v, w du reseau)",
+    "w_continuite": "u, v du reseau ; w = Geometry.w_continuite(u, v) (comme le modele servi)",
+    "calibre_w_continuite": "u, v calibres par niveau (ci-dessous) ; w = Geometry.w_continuite(u calibre, v calibre)",
+    "era5": "reference : ERA5 aux noeuds, w par continuite (predicteur era5 de scripts/dso_hauteur_sol.py), si le modele a le forcage ERA5"
+  },
+  "calibration_par_niveau": {
+    "forme": "pour chaque niveau ASL k et chaque composante c in {u, v} : c_calibre = a_ck + b_ck * c_reseau ; w n'est jamais calibre directement (w par continuite de u, v calibres)",
+    "ajustement": "moindres carres ordinaires sur les noeuds valides et connus du niveau (geom.valid & verite finie), cumules sur les instants ; niveau sans noeud ou variance nulle : a = 0, b = 1 (identite)",
+    "validation_croisee": "deux plis de jours de la selection de validation (pcfno3d.evaluate.plis_jours : jours de rang pair / impair) ; les instants du pli a sont calibres avec les coefficients ajustes sur le pli b et inversement ; le R2 et le RMSE publies du predicteur calibre sont ceux de ces predictions hors pli (jamais ajustees sur l'instant juge)",
+    "coefficients_servis": "ajustes sur les 64 instants (les deux plis) ; ecrits dans le dossier de sortie ; ce sont eux qu'appliquerait le test",
+    "aucun_bruit": "transformation deterministe, aucun bruit ajoute"
+  },
+  "post_traitement_retenu_pour_le_test": "le predicteur calibre_w_continuite est retenu pour le test SEULEMENT si, sur la validation hors pli : (1) le nombre de couples (niveau evalue, composante u/v/w) avec R2 >= 0,95 est strictement superieur a celui de w_continuite, ET (2) rmse_max u, v aux niveaux evalues <= 1,01 x celui de w_continuite ; sinon w_continuite (le modele servi actuel) reste le post-traitement",
+  "dso4": "temps de la passe servie (WindFieldModel.predict, une passe, w par continuite, copie vers le CPU, synchronisation CUDA ; champ inference_s) sur la grille nationale complete (16 x 828 x 388), un instant de validation (le premier de la selection) : 3 passes de chauffe puis 20 passes, MEDIANE publiee (moyenne, p95, max a cote) ; GPU publie (nom, memoire) ; seuil dso.time_s inchange ; le temps d'une L4 n'est pas celui d'une A100 et est publie comme tel",
+  "sorties": "<run_dir>/r2_niveaux_validation/ (dossier neuf, jamais ecrase) : r2_par_niveau.csv (niveau x predicteur), coefficients_calibration.json (par pli et servis), dso4.json, bilan.json, bilan.md",
+  "code": "scripts/r2_niveaux_v4.py (verifie l'empreinte de cette regle avant toute lecture des donnees)",
+  "interdits": [
+    "aucun reglage choisi sur le test ; le test n'est pas lu",
+    "aucun bruit ajoute aux predictions",
+    "le seuil R2 0,95 n'est pas modifie",
+    "ERA5 et la verite generee sont la verite d'entrainement, jamais des mesures"
+  ]
+}
