@@ -8,11 +8,11 @@ Départ commun (modèle livré v2 sur la validation v3) : score DSO 3,695, RMSE 
 
 | Entraînement | Époques | Meilleure époque | Score | RMSE max (niveau) |
 |---|---|---|---|---|
-| C' s42 | 30 | à lire (≥ 18) | ≤ 0,614 | ≤ 0,307 m/s (2500 m) à l'ép. 18 |
+| C' s42 | 30 | 30 | 0,582 | 0,291 m/s (2500 m) |
 | D s42 | 30 | 27 | 2,317 | 1,159 m/s (25 m) |
 | C' s43 | 30 | 30 (amélioration à chaque époque) | 0,586 | 0,293 m/s (2500 m) |
 | D s43 | coupé à 28/30 (session Colab coupée le 12/11 vers 00:13) | — | ≤ 2,281 (ép. ≤ 28, non retenu) | — |
-| C' s44 | à lancer | | | |
+| C' s44 | 30 | 30 | 0,582 (0,58164) | 0,291 m/s (2500 m) |
 | D s44 | à lancer | | | |
 
 D s42 : score 2,317 à l'ép. 27, puis 2,325 / 2,328 / 2,330 aux ép. 28–30 (plateau, légère remontée ; l'ép. 27 est
@@ -24,6 +24,8 @@ sous `national_1km_v4_Cp_s43_interrompu_20261113_133211`) : le score de validati
 ensemble jusqu'au bout. Aucun signe de sur-apprentissage (la validation ne remonte jamais) ni de sous-apprentissage
 (R² final u 0,9986, v 0,9981, w 0,966 ; critère limitant DSO1, ratio 0,586 < 1 ; masse 0,027 ; rugosité 0,110
 en ratio). Pour C' s42 et s43, le score est sous 1 sur la validation : à confirmer sur le test 2022, lu une seule fois.
+
+Table complète des graines : `v4_choix_graine_validation.md`.
 
 ## Évaluation d'information (sans effet sur le choix) — `scripts/info_capteurs_v4.py`
 
