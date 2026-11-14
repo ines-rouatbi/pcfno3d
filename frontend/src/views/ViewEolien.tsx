@@ -30,5 +30,6 @@ export default memo(function ViewEolien(){ return (
 <p className="muted" style={{"fontSize": "14px", "margin": "8px 0 0"} as CSSProperties}>{"Le gain sur ERA5 est réel mais faible, et les mesures sont rares : la validation en altitude est la limite principale de l'espace éolien. Les mâts ANEO de 30 m et un mât de mesure sur site la renforceront."}</p></div>
 </div>
 <div className="card" id="aw-atlas" hidden={true}></div>
+<div id="svc-eolien" className="sv-pile"></div>
 </section>
 ); });

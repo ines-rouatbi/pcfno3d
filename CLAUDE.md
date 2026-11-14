@@ -301,6 +301,20 @@ themselves; outputs `stations_supp_{paires,bilan,qc}.csv` + `bilan_supp.json`, n
 choisir = ridge/HistGB grid, cross-validation by SITE on 2021 with fit 2015–2020; tester = 2022 read once, only if
 validation beats ERA5 on the rule's 3 conditions); outputs in a dated `artifacts/national/mos/<date>/` folder.
 
+**React front-end additions (2026-11-14, branch `agent/ines/verif-app-mahdi` = national branch + Mahdi's
+d929c0e: 3D terrain served by the service, lab removed from the SaaS, 3D rotor view).** `atom-runtime.js` `show()`
+emits `document` event `atom:vue` ({vue, role}) and exposes `ATOM.grilleTerrain` (grid arrays, stations, ANEO plan,
+the reliability curves of the « Données & fiabilité » screen, `ventMoyen`). `engine/installation-aneo.js` + view
+`installation` (admin, « Installation ANEO »): click a zone, greedy placement of N sensors minimising the mean
+distance-based expected error of the zone, with the OS6 constraints (land, ≤ 650 m, slope ≤ 20°, not urban, 1 km from
+border/sensors) — INDICATIVE, says so on screen; the real gain is OS6's. `engine/services-atom.js` wires the
+service routes that had no screen (variations/sillage, maintenance, grue, dimensionnement, porteurs, service alerts,
+SMS subscribers with an opaque `id` = sha256(number)[:12] accepted by `DELETE /api/sms/abonnes/{numero|id}`,
+notifications, NetCDF/CSV exports, CSV upload with the contract verdict, haies, scenario, historique); without the
+service every card says « service absent » and shows no number. Both modules are scanned by
+`scripts/extraire_textes_atom_wind.py` (MODULES). The 3D terrain is git-ignored: link or import it into
+`frontend/public/terrain` (docs/TERRAIN_INTEGRATION.md) before the Playwright terrain tests.
+
 `notebooks/archive/` holds the architectures explored and then dropped (FNO2D variants, U-Net/FNO,
 GNN, DeepONet, ResNet, ViT). They are history, not alternatives to maintain — do not "fix" them.
 

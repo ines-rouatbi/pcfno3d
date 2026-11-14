@@ -60,6 +60,10 @@ export function startApplication() {
     await import('./engine/atom-3d.js');
     // onglet d'administration « Réseau ANEO » : avant atom-data.js, qui lance la page
     await import('./engine/reseau-aneo.js');
+    // fonctions du service sans écran jusque-là (sillage, maintenance, alertes du service, SMS, exports…)
+    await import('./engine/services-atom.js');
+    // installation des capteurs ANEO par zone (proposition d'emplacements dans une zone choisie sur la carte)
+    await import('./engine/installation-aneo.js');
     await import('./engine/atom-data.js');
   })();
 }

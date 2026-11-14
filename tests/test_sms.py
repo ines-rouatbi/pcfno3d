@@ -90,3 +90,12 @@ def test_routes_sms_admin(jeu, monkeypatch):  # noqa: F811
         e = c.post("/api/sms/envoyer", params={"jour": 1}, headers={"X-API-Key": admin}).json()
         assert e["fournisseur"] == "journal" and e["abonnes"] == 1 and "غدًا" in e["resultats"][0]["texte"]
         assert c.delete("/api/sms/abonnes/+21612345678", headers={"X-API-Key": admin}).status_code == 200
+        # desabonnement depuis la liste : par l'identifiant opaque, sans que le numero complet quitte le service
+        c.post("/api/sms/abonnes", json=corps, headers={"X-API-Key": admin})
+        liste = c.get("/api/sms/abonnes", headers={"X-API-Key": admin}).json()["abonnes"]
+        ident = liste[0]["id"]
+        assert len(ident) == 12 and "12345678" not in str(liste)
+        r = c.delete(f"/api/sms/abonnes/{ident}", headers={"X-API-Key": admin})
+        assert r.status_code == 200 and r.json()["retire"] == ident
+        assert c.get("/api/sms/abonnes", headers={"X-API-Key": admin}).json()["abonnes"] == []
+        assert c.delete(f"/api/sms/abonnes/{ident}", headers={"X-API-Key": admin}).status_code == 404

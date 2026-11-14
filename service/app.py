@@ -1344,7 +1344,7 @@ def sms_abonnes(_: ApiKeyRecord | None = Depends(require_admin)) -> dict:
     """Abonnes aux alertes SMS (E12), numeros masques. Portee administrateur."""
     from service import sms
     ab = sms.Abonnes(_dossier_sms()).lire()
-    return {"abonnes": [{**a, "numero": sms.masquer(a["numero"])} for a in ab]}
+    return {"abonnes": [{**a, "numero": sms.masquer(a["numero"]), "id": sms.identifiant(a["numero"])} for a in ab]}
 
 
 @router.post("/sms/abonnes", tags=["sms"])
@@ -1354,15 +1354,16 @@ def sms_abonner(a: AbonneSms, _: ApiKeyRecord | None = Depends(require_admin)) -
         r = sms.Abonnes(_dossier_sms()).ajouter(a.numero, a.langue, a.lieu, a.lat, a.lon)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
-    return {**r, "numero": sms.masquer(r["numero"])}
+    return {**r, "numero": sms.masquer(r["numero"]), "id": sms.identifiant(r["numero"])}
 
 
 @router.delete("/sms/abonnes/{numero}", tags=["sms"])
 def sms_desabonner(numero: str, _: ApiKeyRecord | None = Depends(require_admin)) -> dict:
+    """Desabonne par le numero complet ou par l'identifiant opaque donne dans la liste (`id`)."""
     from service import sms
     if not sms.Abonnes(_dossier_sms()).retirer(numero):
         raise HTTPException(404, "abonne inconnu")
-    return {"retire": sms.masquer(numero)}
+    return {"retire": sms.masquer(numero) if numero.startswith("+") else numero}
 
 
 @router.post("/sms/envoyer", tags=["sms"])

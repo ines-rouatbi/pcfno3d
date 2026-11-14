@@ -899,7 +899,8 @@ function lancerPage(){
   }, 30 * 60 * 1000);
 }
 function heureLocale(){
-  return Number(new Intl.DateTimeFormat("fr-FR", { hour: "numeric", hour12: false, timeZone: "Africa/Tunis" }).format(new Date())) % 24;
+  // parseInt : en fr-FR le format rend « 01 h », que Number() lirait NaN
+  return parseInt(new Intl.DateTimeFormat("fr-FR", { hour: "numeric", hour12: false, timeZone: "Africa/Tunis" }).format(new Date()), 10) % 24;
 }
 
 async function demarrer(){

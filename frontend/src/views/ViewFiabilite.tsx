@@ -26,5 +26,6 @@ export default memo(function ViewFiabilite(){ return (
 </div>
 </div>
 <div className="card" id="aw-valeur" hidden={true}></div>
+<div id="svc-fiabilite" className="sv-pile"></div>
 </section>
 ); });

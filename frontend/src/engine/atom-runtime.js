@@ -70,6 +70,13 @@ function sigma(x,y,mode=relMode){ let d=1e9, who=null; for(const s of STATIONS){
   if(mode==="aneo"){ for(const p of ANEO){ const dd=Math.hypot(x-p[0],y-p[1]); if(dd<d){d=dd; who="un capteur ANEO";} } return {s:.35+.75*(1-Math.exp(-d/3)), d, who}; }
   return {s:.45+1.9*(1-Math.exp(-d/11)), d, who}; }
 const relClass = s => s < .9 ? ["good","bonne"] : s < 1.5 ? ["mid","moyenne"] : ["bad","faible"];
+// grille de la page pour l'installation des capteurs ANEO par zone (engine/installation-aneo.js) : mêmes tableaux,
+// mêmes stations, même plan ANEO et même règle de fiabilité indicative que l'écran « Données & fiabilité »
+if(window.ATOM) ATOM.grilleTerrain = { NX, NY, G, W, H, ZONE, national: !!(DOM && DOM.national), elev, wat, z0,
+  stations: STATIONS, aneo: ANEO, planOS6: !!(ATOM.plan && ATOM.plan.length), xy, latlon: (x, y) => [LAT0 + y/KY, LON0 + x/KX],
+  sigmaStation: d => .45+1.9*(1-Math.exp(-d/11)), sigmaAneo: d => .35+.75*(1-Math.exp(-d/3)),
+  ventMoyen: (x, y, z) => { let s=0; for(let h=0;h<24;h++){ const [u,v]=windD(x,y,z,h,0); s+=Math.hypot(u,v); } return s/24; },
+  reel: () => !!(ATOM.pret && ATOM.pret()) };
 
 // ---------------- unités et mots simples ----------------
 let unit = "kmh";
@@ -759,8 +766,8 @@ const ROLES = {
   eolien:{n:"Exploitant éolien", auto:false, home:"eolien", d:"Production prévue, rotor, gisement"},
   admin:{n:"Administrateur", auto:false, home:"admin", d:"Comptes, rôles, clés d'API"}
 };
-const ACCESS = { monvent:"*", carte3d:"*", alertes:"*", agri:["agri","admin"], tableau:["eolien","admin"], eolien:["eolien","admin"], fiabilite:["eolien","admin"], admin:["admin"], reseau:["admin"] };
-const TABNAME = { monvent:"Mon vent", agri:"Agriculteur", tableau:"Tableau de bord", carte3d:"Carte 3D", alertes:"Alertes", eolien:"Éolien", fiabilite:"Fiabilité", admin:"Administration", reseau:"Réseau ANEO" };
+const ACCESS = { monvent:"*", carte3d:"*", alertes:"*", agri:["agri","admin"], tableau:["eolien","admin"], eolien:["eolien","admin"], fiabilite:["eolien","admin"], admin:["admin"], reseau:["admin"], installation:["admin"] };
+const TABNAME = { monvent:"Mon vent", agri:"Agriculteur", tableau:"Tableau de bord", carte3d:"Carte 3D", alertes:"Alertes", eolien:"Éolien", fiabilite:"Fiabilité", admin:"Administration", reseau:"Réseau ANEO", installation:"Installation ANEO" };
 const store = { get(k,d){ try{ const v=localStorage.getItem(k); return v?JSON.parse(v):d; }catch(e){ return d; } }, set(k,v){ try{ localStorage.setItem(k,JSON.stringify(v)); }catch(e){} } };
 let USERS = store.get("aw-users", null);
 if(!Array.isArray(USERS)){ USERS = [
@@ -880,7 +887,9 @@ function show(v){ if(!document.getElementById("v-"+v)) v="monvent";
   if(!allowed(v)){ toast(me ? `L'espace « ${TABNAME[v]} » n'est pas inclus dans votre rôle (${ROLES[me.role].n}).` : `Connectez-vous pour accéder à l'espace « ${TABNAME[v]} ».`); if(!me) openAuth("login"); v = me ? ROLES[me.role].home : "monvent"; }
   if(v==="admin") renderAdmin();if(v==="tableau")renderTB();
   // accroche « reseau-aneo » : onglet d'administration Réseau ANEO (engine/reseau-aneo.js, habillage provisoire)
-  if(v==="reseau" && window.ATOM?.reseauAneo) ATOM.reseauAneo.afficher(); document.querySelectorAll("section.view").forEach(s=>s.classList.toggle("on",s.id==="v-"+v)); document.querySelectorAll("nav.tabs a").forEach(a=>a.setAttribute("aria-current",a.dataset.v===v?"page":"false")); sheet.hidden=true; if(v==="carte3d")setSceneMode(sceneMode); currentView=v; if(window.ATOM?.workspace) publishWorkspace(); }
+  if(v==="reseau" && window.ATOM?.reseauAneo) ATOM.reseauAneo.afficher(); document.querySelectorAll("section.view").forEach(s=>s.classList.toggle("on",s.id==="v-"+v)); document.querySelectorAll("nav.tabs a").forEach(a=>a.setAttribute("aria-current",a.dataset.v===v?"page":"false")); sheet.hidden=true; if(v==="carte3d")setSceneMode(sceneMode); currentView=v; if(window.ATOM?.workspace) publishWorkspace();
+  // modules branchés sur l'ouverture d'une vue (engine/services-atom.js, engine/installation-aneo.js)
+  document.dispatchEvent(new CustomEvent("atom:vue", { detail: { vue: v, role: me ? me.role : null } })); }
 function navigate(v,replace=false){
   show(v);
   try{if(location.hash!=="#"+currentView)history[replace?"replaceState":"pushState"](null,"","#"+currentView);}catch(_){}

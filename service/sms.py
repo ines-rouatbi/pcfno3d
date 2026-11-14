@@ -12,6 +12,7 @@ abonnes.json, routes reservees a la portee administrateur, numeros masques dans 
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import os
 import re
@@ -37,6 +38,12 @@ SEUIL_FORT_KMH = 40.0
 
 def masquer(numero: str) -> str:
     return numero[:4] + "*" * max(len(numero) - 7, 0) + numero[-3:]
+
+
+def identifiant(numero: str) -> str:
+    """Identifiant opaque d'un abonne (12 caracteres hexadecimaux) : permet de le designer depuis une liste
+    de numeros masques sans jamais renvoyer le numero au navigateur."""
+    return hashlib.sha256(numero.encode("utf-8")).hexdigest()[:12]
 
 
 class Abonnes:
@@ -69,9 +76,10 @@ class Abonnes:
         return a
 
     def retirer(self, numero: str) -> bool:
+        """Retire un abonne designe par son numero complet ou par son identifiant opaque (`identifiant`)."""
         with _VERROU:
             liste = self.lire()
-            reste = [a for a in liste if a["numero"] != numero]
+            reste = [a for a in liste if a["numero"] != numero and identifiant(a["numero"]) != numero]
             self._ecrire(reste)
         return len(reste) < len(liste)
 
