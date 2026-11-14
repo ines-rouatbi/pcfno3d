@@ -83,6 +83,10 @@ inference:
   tta: 1
   tta_keep: 0.7
   w_continuite: true
+  # w servi = w_continuite + 0,75 (w_reseau - w_continuite) : choisi sur la VALIDATION par
+  # configs/national/regle_w_servi_v4.json (4e545345..., 14/11/2026), C' s44 : R2 u, v, w 48/48
+  # (min 0,966), DSO2 2,6e-5 ; avec w par continuite seul (w_beta 0) : 33/48, R2 min 0,832
+  w_beta: 0.75
 
 terrain_smooth_m: 300.0     # comme le generateur (TERRAIN_SMOOTH_M)
 f_coriolis: 8.131e-5        # latitude centrale 33,885 N (grille_reelle.json)

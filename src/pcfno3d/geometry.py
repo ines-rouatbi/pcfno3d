@@ -345,6 +345,17 @@ class Geometry:
             self._rho_std = cache
         return cache
 
+    def w_servi(self, u: torch.Tensor, v: torch.Tensor, w_reseau: torch.Tensor) -> torch.Tensor:
+        """w de la sortie servie selon cfg.inference : w du reseau (w_continuite False), sinon
+        w_continuite(u, v) + w_beta (w_reseau - w_continuite(u, v)). Le residu de masse est
+        lineaire en w : il vaut w_beta fois celui du w du reseau (regle_w_servi_v4)."""
+        inf = self.cfg.inference
+        if not inf.w_continuite:
+            return w_reseau
+        wc = self.w_continuite(u, v)
+        beta = float(getattr(inf, "w_beta", 0.0))
+        return wc if beta == 0.0 else wc + beta * (w_reseau - wc)
+
     def w_continuite(self, u: torch.Tensor, v: torch.Tensor,
                      rho: torch.Tensor | None = None) -> torch.Tensor:
         """w (B, nz, ny, nx) qui annule EXACTEMENT le residu de continuite de `mass_residual`

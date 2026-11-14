@@ -377,6 +377,10 @@ class InferenceCfg:
     # schema discret que le residu de masse (DSO2), condition cinematique au pied de chaque
     # colonne, densite de l'atmosphere standard. False = w du reseau, comme la v7.
     w_continuite: bool = False
+    # Avec w_continuite : w servi = w_continuite + w_beta x (w_reseau - w_continuite). 0 = w par
+    # continuite seul (defaut, inchange) ; 1 = w du reseau. Choisi sur la VALIDATION par
+    # configs/national/regle_w_servi_v4.json (national v4 : 0,75, R2 48/48, DSO2 2,6e-5).
+    w_beta: float = 0.0
 
     def __post_init__(self) -> None:
         self.tta = int(self.tta)
@@ -385,6 +389,9 @@ class InferenceCfg:
         if not 0.0 < float(self.tta_keep) <= 1.0:
             raise ValueError("inference.tta_keep doit etre dans ]0, 1]")
         self.tta_keep = float(self.tta_keep)
+        self.w_beta = float(self.w_beta)
+        if not 0.0 <= self.w_beta <= 1.0:
+            raise ValueError("inference.w_beta doit etre dans [0, 1]")
         if self.reliability is not None and str(self.reliability) != "non_calibre":
             self.reliability = _resolve(self.reliability)
 

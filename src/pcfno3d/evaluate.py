@@ -94,9 +94,7 @@ class Evaluator:
                                 enabled=self.wf.use_amp):
                 pred = self.wf.model(assemble_input(s_raw, sensor, tfeat, geom, norm))
         u, v, w = norm.denorm(pred.float())
-        if self.cfg.inference.w_continuite:
-            w = geom.w_continuite(u, v)
-        return [u, v, w]
+        return [u, v, geom.w_servi(u, v, w)]
 
     # ------------------------------------------------------------------ campagne
     def run(self) -> dict:

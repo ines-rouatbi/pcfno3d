@@ -79,9 +79,7 @@ class ModeleMoyen:
         u, v, w = m.norm.denorm(pred.float())
         if not avec_w:
             return u, v
-        if m.cfg.inference.w_continuite:
-            w = self.geom.w_continuite(u, v)
-        return u, v, w
+        return u, v, self.geom.w_servi(u, v, w)
 
     @torch.no_grad()
     def passes(self, s_raw, sensor, tfeat) -> list[tuple[torch.Tensor, torch.Tensor, torch.Tensor]]:

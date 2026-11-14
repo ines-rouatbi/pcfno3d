@@ -586,8 +586,7 @@ class WindFieldModel:
                                     keep=k_keep, seed=seed, amp_dtype=self.amp_dtype,
                                     use_amp=self.use_amp, tfeat=t_t)
             u_t, v_t, w_t = self.norm.denorm(pred.float())
-            if self.cfg.inference.w_continuite:
-                w_t = geom.w_continuite(u_t, v_t)
+            w_t = geom.w_servi(u_t, v_t, w_t)
             u, v, w = (a[0].float().cpu().numpy() for a in (u_t, v_t, w_t))
             if self.device.type == "cuda":
                 torch.cuda.synchronize()
@@ -770,8 +769,7 @@ class WindFieldModel:
                         pred = self.model(assemble_input(s_lot, m_t, t_t, geom,
                                                          self.norm)).float()
                     u_t, v_t, w_t = self.norm.denorm(pred.float())
-                    if self.cfg.inference.w_continuite:
-                        w_t = geom.w_continuite(u_t, v_t)    # comme la passe servie (DSO6 de w)
+                    w_t = geom.w_servi(u_t, v_t, w_t)    # comme la passe servie (DSO6 de w)
                     uvw = [a.float().cpu().numpy() for a in (u_t, v_t, w_t)]
                     del pred, u_t, v_t, w_t
             except torch.cuda.OutOfMemoryError:
