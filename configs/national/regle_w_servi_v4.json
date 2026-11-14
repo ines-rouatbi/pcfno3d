@@ -1,0 +1,32 @@
+{
+  "fixee_le": "2026-11-14, apres lecture de r2_niveaux_validation (regle_postraitement_r2_v4, c82dff46...) des trois graines de C' et AVANT tout calcul du residu de masse (DSO2) avec le w du reseau : aucune sortie de scripts/w_servi_v4.py n'existe ; les regles deja hachees (regle_v4_national 60671e84..., regle_postraitement_r2_v4 c82dff46..., regle_ensemble_cp 271ddc61...) sont inchangees",
+  "statut": "nouvelle regle datee ecrite par l'agent sous l'objectif permanent d'Ines (« do all that it takes without asking my permission ») ; choix par defaut de l'agent, justifies ci-dessous ; Ines peut la remplacer par une autre regle datee et hachee avant le test",
+  "constat_qui_motive_la_regle": "sur la validation (64 instants), pour C' s42 / s43 / s44 : la sortie brute du reseau a R2 u, v, w >= 0,95 aux 48 couples (niveau evalue, composante), R2 min 0,954 (w, 25 m) ; le w recalcule par continuite (post-traitement servi, inference.w_continuite) n'en a que 33 sur 48, R2 min 0,832 (w, 300 m) ; u et v sont identiques dans les deux cas (R2 >= 0,997). Le w par continuite avait ete choisi pour garantir le DSO2 (residu de masse) : il faut donc mesurer le DSO2 du w du reseau avant de le servir",
+  "objet": "choisir, sur la VALIDATION seulement, le w servi par le modele national v4 : un melange w_beta = w_continuite + beta x (w_reseau - w_continuite), u et v du reseau inchanges",
+  "candidats": {
+    "beta": [0.0, 0.25, 0.5, 0.75, 1.0],
+    "note": "beta = 0 : le post-traitement servi aujourd'hui (w par continuite) ; beta = 1 : le w brut du reseau. Le residu de masse est lineaire en w a u, v et rho fixes : il croit avec beta, le R2 de w varie entre les deux extremes"
+  },
+  "jeu": "validation de la verite v3 : selection splits.val_selection (64 instants), entree complete, graine 1000 (memes entrees que le score de selection et que regle_postraitement_r2_v4) ; plis de jours existants (pcfno3d.evaluate.plis_jours) ; le test n'est jamais lu",
+  "mesures": {
+    "dso1_r2": "R2 u, v, w par niveau evalue (geom.eval_levels, couverture >= dso.min_level_cover), cumule sur les instants (sommes, comme dso.measure) ; seuil dso.r2_all = 0,95 INCHANGE",
+    "dso1_rmse": "RMSE u, v par niveau evalue (identique pour tous les beta, rapporte)",
+    "dso2": "residu de masse comme dso.measure : r = geom.mass_residual(rho_verite, u, v, w_beta), RMS sur geom.mass_mask par instant, puis moyenne sur les instants ; seuil dso.mass_rms = 1e-4 INCHANGE",
+    "dso3": "inchange (ne depend que de u, v) : non recalcule"
+  },
+  "choix": {
+    "admissible": "beta admissible si, sur la validation entiere ET sur chacun des deux plis de jours : (1) les 48 couples (niveau evalue, composante u, v, w) ont R2 >= 0,95 ; (2) le DSO2 moyen est <= 1e-4",
+    "retenu": "le plus petit beta admissible (le plus proche du w par continuite, qui conserve la masse exactement)",
+    "aucun_admissible": "beta = 0 (w par continuite) reste le post-traitement servi ; le DSO1-R2 par niveau est rapporte non conforme, et la variante « R2 sur u, v seulement, w publie a part » (proposition d'Ines du 24/10) reste a faire valider par l'encadrant, sans effet sur ce choix"
+  },
+  "sorties": "<run_dir>/w_servi_validation/ (dossier neuf, jamais ecrase) : r2_par_niveau_beta.csv, bilan.json, bilan.md, copie de cette regle",
+  "code": "scripts/w_servi_v4.py (verifie l'empreinte de cette regle avant toute lecture des donnees)",
+  "entrainement_concerne": "celui que choisit regle_v4_national.json ; tant que D s43 / D s44 manquent, le calcul est fait sur chaque C' fini (42, 43, 44), POUR INFORMATION sauf pour l'entrainement finalement retenu",
+  "interdits": [
+    "aucun reglage choisi sur le test ; le test n'est pas lu",
+    "aucun bruit ajoute aux predictions",
+    "les seuils R2 0,95 et DSO2 1e-4 ne sont pas modifies",
+    "ERA5 et la verite generee sont la verite d'entrainement, jamais des mesures",
+    "aucune regle deja hachee n'est modifiee"
+  ]
+}
