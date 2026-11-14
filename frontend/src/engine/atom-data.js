@@ -615,7 +615,7 @@ async function postJSON(chemin, corps){
   const d = await r.json().catch(() => ({}));
   return r.ok ? d : { erreur: typeof d.detail === "string" ? d.detail : `erreur ${r.status}` };
 }
-// accès à l'API pour les onglets chargés à part (reseau-aneo.js) : même adresse, même clé ou session
+// accès à l'API pour les onglets chargés à part (reseau-aneo-plan.js, services-atom.js) : même adresse, même clé ou session
 A.api = { get: (chemin, ms) => get(chemin, ms), post: postJSON, blob };
 const MESSAGES_COMPTE = {
   "adresse ou mot de passe incorrect, ou compte desactive": "E-mail ou mot de passe incorrect, ou compte désactivé.",

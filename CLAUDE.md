@@ -303,11 +303,15 @@ validation beats ERA5 on the rule's 3 conditions); outputs in a dated `artifacts
 
 **React front-end additions (2026-11-14, branch `agent/ines/verif-app-mahdi` = national branch + Mahdi's
 d929c0e: 3D terrain served by the service, lab removed from the SaaS, 3D rotor view).** `atom-runtime.js` `show()`
-emits `document` event `atom:vue` ({vue, role}) and exposes `ATOM.grilleTerrain` (grid arrays, stations, ANEO plan,
-the reliability curves of the « Données & fiabilité » screen, `ventMoyen`). `engine/installation-aneo.js` + view
-`installation` (admin, « Installation ANEO »): click a zone, greedy placement of N sensors minimising the mean
-distance-based expected error of the zone, with the OS6 constraints (land, ≤ 650 m, slope ≤ 20°, not urban, 1 km from
-border/sensors) — INDICATIVE, says so on screen; the real gain is OS6's. `engine/services-atom.js` wires the
+emits `document` event `atom:vue` ({vue, role}). The admin tab « Réseau ANEO » is Tukhnanutha's mockup
+`atom_wind_reseau_aneo.html` ported as `engine/reseau-aneo-plan.js` + `styles/reseau-aneo-plan.css` (ids prefixed
+`rp-`, CSS scoped to `#aneo-plan`, local fonts, three.js from `ATOM.loadThree`, vertex colours converted sRGB→linear
+for three ≥ r152): national plan (strategies, masts, drone profiles), click a zone → potential sites, sizing curve and
+phases, site sheet, 3D zone view. Its relief, error layer, wind and curves are the mockup's EXAMPLES (flag « Données
+d'exemple »); when `GET /api/atom-wind/reseau-aneo?detail=true` answers with a real OS6 plan, the sensors, phases,
+measured curve, DSO1 threshold, installed status (`POST …/installes`), relaunch command and raw files replace them
+(flag « Plan OS6 »). Sites added from a zone stay in the browser (`localStorage` `atom-aneo-zones-v1`). The old
+provisional `reseau-aneo.js` and the interim « Installation ANEO » tab are removed. `engine/services-atom.js` wires the
 service routes that had no screen (variations/sillage, maintenance, grue, dimensionnement, porteurs, service alerts,
 SMS subscribers with an opaque `id` = sha256(number)[:12] accepted by `DELETE /api/sms/abonnes/{numero|id}`,
 notifications, NetCDF/CSV exports, CSV upload with the contract verdict, haies, scenario, historique); without the

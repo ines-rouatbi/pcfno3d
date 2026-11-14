@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ArrowDownToLine, ArrowUpRight, AudioLines, Box, ChevronDown, ChevronRight, Compass, Crosshair, Gauge, Layers3, Leaf, LifeBuoy, MapPin, Menu, Search, Settings2, ShieldCheck, Sparkles, Wind, X, Bell, Users, Activity, Command } from 'lucide-react';
+import { ArrowDownToLine, ArrowUpRight, AudioLines, Box, ChevronDown, ChevronRight, Compass, Gauge, Layers3, Leaf, LifeBuoy, MapPin, Menu, Search, Settings2, ShieldCheck, Sparkles, Wind, X, Bell, Users, Activity, Command } from 'lucide-react';
 import type { WorkspaceState } from './workspace';
 
 export function Mark({ small = false }: { small?: boolean }) {
@@ -23,7 +23,7 @@ const navigation = [
     { id: 'carte3d', name: 'Atmosphère 3D', icon: Box },
     { id: 'fiabilite', name: 'Données & fiabilité', icon: ShieldCheck },
   ] },
-  { label: 'Gestion', items: [{ id: 'admin', name: 'Administration', icon: Users }, { id: 'reseau', name: 'Réseau ANEO', icon: Layers3 }, { id: 'installation', name: 'Installation ANEO', icon: Crosshair }] },
+  { label: 'Gestion', items: [{ id: 'admin', name: 'Administration', icon: Users }, { id: 'reseau', name: 'Réseau ANEO', icon: Layers3 }] },
 ];
 
 export function Navigation({ open, close, national = false }: { open: boolean; close: () => void; national?: boolean }) {
@@ -70,8 +70,7 @@ const pageInfo: Record<string, { eyebrow: string; title: string; description: st
   fiabilite: { eyebrow: '', title: 'Ce que l’on sait du vent', description: 'Les stations, la couverture et les écarts aux mesures.' },
   alertes: { eyebrow: '', title: 'Les alertes à suivre', description: 'Où, quand et quelles précautions prendre.' },
   admin: { eyebrow: '', title: 'Administration', description: 'Les comptes et les accès de votre organisation.' },
-  reseau: { eyebrow: 'Administration', title: 'Réseau ANEO', description: 'Plan de déploiement des capteurs, phases et statut installé.' },
-  installation: { eyebrow: 'Administration', title: 'Installation ANEO', description: 'Cliquez une zone : l’application propose où y installer les capteurs.' },
+  reseau: { eyebrow: 'Administration', title: 'Réseau ANEO', description: 'Planification nationale des capteurs, et installation zone par zone : cliquez une zone de la carte.' },
 };
 
 export function PageHeading({ state }: { state: WorkspaceState }) {
