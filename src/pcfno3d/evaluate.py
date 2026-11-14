@@ -67,6 +67,8 @@ class Evaluator:
         # detruirait precisement ce qu'on cherche a verifier.
         if cfg.inference.w_continuite:
             suffix += "_wcont"                   # w par continuite : ne remplace pas l'evaluation brute
+            # avec inference.w_beta > 0 (melange avec le w du reseau), meme dossier : le w servi est
+            # ecrit dans test_summary.json (w_beta) ; le national v4 n'a pas d'evaluation best_wcont avant
         self.out_dir = (cfg.paths.run_dir / EVAL_NAMESPACE
                         / f"{self.wf.checkpoint_path.stem}{suffix}")
         self.out_dir.mkdir(parents=True, exist_ok=True)
@@ -330,6 +332,9 @@ class Evaluator:
             "capteurs_visibles": cfg.mask.keep_eval,
             "tta": self.tta,
             "tta_keep": self.tta_keep if self.tta > 1 else None,
+            # w servi : continuite seule (w_beta 0) ou melange avec le w du reseau (regle_w_servi_v4)
+            "w_continuite": bool(cfg.inference.w_continuite),
+            "w_beta": float(getattr(cfg.inference, "w_beta", 0.0)) if cfg.inference.w_continuite else None,
             "niveaux_evalues": [int(z) for z in ev["z_m"]],
             "par_niveau_synoptique": levels.to_dict(orient="records"),
             "par_niveau_episodes": levels_ep.to_dict(orient="records") if len(levels_ep) else [],
