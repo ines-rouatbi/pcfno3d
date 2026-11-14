@@ -1,0 +1,20 @@
+{
+  "environment": "Chrome headless, Windows, 1440×1050, local HTTP, synthetic demonstration",
+  "startup": {
+    "cls": 0.0709511043523915,
+    "lcp": 476,
+    "ready": 320.5
+  },
+  "updateToAnimationFrameMs": [
+    58.39999997615814,
+    12.199999988079071,
+    9.099999964237213,
+    10.699999988079071,
+    6.700000047683716,
+    7.199999988079071,
+    6.300000011920929
+  ],
+  "medianUpdateMs": 9.099999964237213,
+  "maxUpdateMs": 58.39999997615814,
+  "threeLoadedOnDashboard": false
+}

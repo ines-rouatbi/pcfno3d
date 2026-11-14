@@ -152,7 +152,8 @@ def test_route_assistant_sans_cle(jeu, monkeypatch):  # noqa: F811
     for var, val in (("PCFNO3D_DATA_DIR", jeu.paths.data_dir), ("PCFNO3D_CACHE_DIR", jeu.paths.cache_dir),
                      ("PCFNO3D_RUN_DIR", jeu.paths.run_dir), ("PCFNO3D_DEVICE", "cpu")):
         monkeypatch.setenv(var, str(val))
-    for var in ("PCFNO3D_API_KEYS", "PCFNO3D_INSECURE_OPEN", "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"):
+    for var in ("PCFNO3D_API_KEYS", "PCFNO3D_INSECURE_OPEN", "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN",
+                "OPENROUTER_API_KEY", "PCFNO3D_ASSISTANT_FOURNISSEUR"):
         monkeypatch.delenv(var, raising=False)
     import pcfno3d.config as cm
     monkeypatch.setattr(cm.Config, "load", classmethod(lambda cls, _n: jeu))
@@ -216,3 +217,147 @@ def test_espaces_perspective(wf):
         assert anneau[0] == anneau[-1] and len(anneau) == 5
     assert hz["zone_protegee_m"] == {"abri_fort": 24.0, "abri": 45.0, "au_vent": 9.0}
     assert "energie" in ao.plan_haies(wf, 3.0, 200.0, 1000.0, lat=LAT, lon=LON)["critere"]
+
+
+def test_assistant_interface_guide_et_relances(monkeypatch):
+    """Outils d'interface (page changee, point place), guide de l'application, relances et contexte.
+    Sans modele : la position et la lecture en un point sont simulees (le domaine = un carre autour de LAT, LON)."""
+    from service import assistant
+    from service import atom_outils as ao
+
+    def position(_wf, lat=None, lon=None, lieu=None):
+        if lieu or abs(lat - LAT) > 0.1 or abs(lon - LON) > 0.1:
+            raise ValueError("hors du domaine du Grand Tunis")
+        return 1.0, 1.0, "point"
+    monkeypatch.setattr(ao, "position", position)
+    monkeypatch.setattr(ao, "lire_point", lambda *a, **k: {"source": "prevision", "vitesse_m_s": 3.0})
+    wf = None
+
+    class Guide(FauxClaude):
+        def create(self, **kw):
+            self.requetes.append(kw)
+            if len(self.requetes) == 1:
+                return NS(stop_reason="tool_use", model=kw["model"], content=[
+                    NS(type="tool_use", id="g", name="guide_application", input={"sujet": "creer une alerte"}),
+                    NS(type="tool_use", id="o", name="ouvrir_vue", input={"vue": "alertes"}),
+                    NS(type="tool_use", id="m", name="montrer_lieu", input={"lieu": None, "lat": LAT, "lon": LON}),
+                    NS(type="tool_use", id="p", name="montrer_lieu", input={"lieu": "Paris", "lat": None, "lon": None}),
+                    NS(type="tool_use", id="v", name="vent_au_point", input={
+                        "lieu": None, "lat": LAT, "lon": LON, "jour": 1, "heure": 9, "hauteur_m": 10})])
+            return NS(stop_reason="end_turn", model=kw["model"], content=[NS(
+                type="text", text="1. Ouvrez « Alertes ».\n[[relances: Et demain ? | Par WhatsApp ?]]")])
+    g = Guide()
+    r = assistant.repondre(wf, "Comment etre prevenu ici ?", cl=g,
+                           contexte={"vue": "monvent", "lieu": "Mornag", "lat_utilisateur": LAT, "inconnu": "x"})
+    assert r["reponse"] == "1. Ouvrez « Alertes »." and r["relances"] == ["Et demain ?", "Par WhatsApp ?"]
+    types = [(a["type"], a.get("vue"), a["auto"]) for a in r["actions"]]
+    # la page s'ouvre d'elle-meme ; le point est place ; Paris (hors domaine) ne donne aucune action ;
+    # vent_au_point proposerait « Mon vent », deja ouverte : pas de bouton
+    assert types == [("ouvrir_vue", "alertes", True), ("montrer_lieu", None, True)]
+    assert r["actions"][1]["lat"] == round(LAT, 5)
+    premier = g.requetes[0]["messages"][0]["content"]
+    assert premier.startswith("<contexte_application>") and "inconnu" not in premier and "Mornag" in premier
+    res = {x["tool_use_id"]: x for x in g.requetes[1]["messages"][-1]["content"]}
+    assert json.loads(res["g"]["content"])["taches"][0]["etapes"][0].startswith("Ouvrez « Alertes »")
+    assert res["p"]["is_error"] is True and "lieu inconnu" in res["p"]["content"]
+    with pytest.raises(ValueError, match="vue inconnue"):
+        assistant.action_interface(wf, "ouvrir_vue", {"vue": "ailleurs"})
+
+
+def test_guide_partage_avec_le_frontend():
+    """Le guide lu par le service est celui du panneau ; chaque tache pointe vers un espace connu."""
+    from service import assistant
+    g = assistant.guide()
+    assert g["taches"] and set(g["vues"]) == set(assistant.VUES)
+    for t in g["taches"]:
+        assert t["vue"] in (None, *assistant.VUES) and t["etapes"] and t["mots_cles"]
+    assert set(assistant.VUE_DES_OUTILS.values()) <= set(assistant.VUES)
+
+
+def test_assistant_openrouter(monkeypatch):
+    """Fournisseur OpenRouter (DeepSeek par defaut) : format OpenAI des outils, boucle d'appels, actions."""
+    from service import assistant
+    from service import atom_outils as ao
+    monkeypatch.setattr(ao, "lire_point", lambda *a, **k: {"source": "prevision", "vitesse_m_s": 3.0})
+
+    class Rep:
+        def __init__(self, d):
+            self.status_code, self._d, self.text = 200, d, ""
+
+        def json(self):
+            return self._d
+
+    class FauxHttp:
+        def __init__(self):
+            self.corps = []
+
+        def post(self, url, headers=None, json=None):
+            import copy
+            assert url == assistant.URL_OPENROUTER and headers["Authorization"] == "Bearer cle-test"
+            self.corps.append(copy.deepcopy(json))
+            if len(self.corps) == 1:
+                return Rep({"model": "deepseek/deepseek-chat", "choices": [{"finish_reason": "tool_calls", "message": {
+                    "role": "assistant", "content": None, "tool_calls": [
+                        {"id": "a", "type": "function", "function": {"name": "vent_au_point", "arguments":
+                            '{"lieu": null, "lat": 36.0, "lon": 10.0, "jour": 0, "heure": 9, "hauteur_m": 10}'}},
+                        {"id": "b", "type": "function", "function": {"name": "ouvrir_vue",
+                                                                     "arguments": '{"vue": "agri"}'}}]}}]})
+            return Rep({"model": "deepseek/deepseek-chat", "choices": [{"finish_reason": "stop", "message": {
+                "role": "assistant", "content": "Vent faible.\n[[relances: Et demain ?]]"}}]})
+
+    monkeypatch.setenv("OPENROUTER_API_KEY", "cle-test")
+    monkeypatch.delenv("PCFNO3D_ASSISTANT_FOURNISSEUR", raising=False)
+    assert assistant.fournisseur() == "openrouter"
+    h = FauxHttp()
+    r = assistant.repondre_openrouter(None, "Quel vent ?", contexte={"vue": "monvent"}, http=h)
+    assert r["reponse"] == "Vent faible." and r["relances"] == ["Et demain ?"] and r["arret"] == "stop"
+    assert [a["nom"] for a in r["outils"]] == ["vent_au_point", "ouvrir_vue"]
+    assert r["actions"][0] == {"type": "ouvrir_vue", "vue": "agri", "auto": True, "libelle": "Ouvrir « Agriculture »"}
+    premier, second = h.corps
+    assert premier["model"] == assistant.MODELE_OPENROUTER and premier["messages"][0]["role"] == "system"
+    assert {t["function"]["name"] for t in premier["tools"]} == {t["name"] for t in assistant.OUTILS}
+    outils = [m for m in second["messages"] if m["role"] == "tool"]
+    assert [m["tool_call_id"] for m in outils] == ["a", "b"]
+    assert json.loads(outils[0]["content"])["vitesse_m_s"] == 3.0
+    monkeypatch.delenv("OPENROUTER_API_KEY")
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_AUTH_TOKEN", raising=False)
+    with pytest.raises(assistant.AssistantIndisponible, match="OPENROUTER_API_KEY"):
+        assistant.fournisseur()
+
+
+def test_garde_fous_chiffres_et_etapes():
+    """Aucun chiffre sans outil de donnees reussi ; une question « comment » porte les etapes du guide."""
+    from service import assistant as a
+    invente = "Vent : 12 km/h, 22 °C, humidite 65 %."
+    assert a.verifier_chiffres(invente, [], [], "") == a.SANS_DONNEES
+    assert a.verifier_chiffres(invente, [{"nom": "vent_au_point", "erreur": True}], [], "") == a.SANS_DONNEES
+    assert a.verifier_chiffres(invente, [{"nom": "vent_au_point"}], [], "") == invente
+    assert a.verifier_chiffres("En m/s : 12 km/h font 3,3 m/s.", [], [], "plus haut : 12 km/h et 3,3 m/s") \
+        == "En m/s : 12 km/h font 3,3 m/s."                         # reprise d'une valeur deja donnee
+    assert a.verifier_chiffres(invente, [], [{"type": "demander_position", "auto": False}], "") == a.DEMANDE_POSITION
+    assert a.verifier_chiffres("Ouvrez « Alertes ».", [], [], "") == "Ouvrez « Alertes »."
+    assert a.tache_comment("Comment créer une alerte ?")["id"] == "alerte"
+    assert a.tache_comment("Je veux une alerte") is None             # pas une question « comment »
+    r = a._fin("Voici.", [], [], [], "monvent", "m", "stop", a.tache_comment("Comment créer une alerte ?"))
+    assert r["etapes"]["liste"][0].startswith("Ouvrez « Alertes »")
+    assert r["actions"] == [{"type": "montrer", "tache": "alerte", "titre": "Créer une alerte de vent", "auto": True}]
+    assert assistant_demo_valide()
+
+
+
+def assistant_demo_valide():
+    """Chaque demonstration du guide : des etapes vers une page connue ou vers un element designe."""
+    from service import assistant as a
+    for t in a.guide()["taches"]:
+        for e in t.get("demo", []):
+            assert ("vue" in e and e["vue"] in a.VUES) or (e.get("cible") and e.get("texte")), (t["id"], e)
+    return True
+
+
+def test_outil_montrer_comment():
+    from service import assistant as a
+    act = a.action_interface(None, "montrer_comment", {"tache": "visite"})
+    assert act == {"type": "montrer", "tache": "visite", "titre": "Faire le tour de l'application", "auto": True}
+    with pytest.raises(ValueError, match="demonstration inconnue"):
+        a.action_interface(None, "montrer_comment", {"tache": "inconnue"})

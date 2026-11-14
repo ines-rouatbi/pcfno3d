@@ -12,7 +12,8 @@ const URB = [[...xy(36.80,10.18),6],[...xy(36.75,10.23),3],[...xy(36.87,10.31),2
 const HILLS = [[36.61,10.33,720,2.6],[36.705,10.375,520,1.9],[36.36,10.10,950,6.5],[36.76,10.64,480,5],[36.58,10.43,240,4],[36.86,10.12,230,4],[36.50,10.22,260,5]].map(([a,b,h,s]) => [...xy(a,b),h,s]);
 function inPoly(x, y, P){ let c=false; for(let i=0,j=P.length-1;i<P.length;j=i++){ const [xi,yi]=P[i],[xj,yj]=P[j]; if(((yi>y)!==(yj>y)) && x < (xj-xi)*(y-yi)/(yj-yi)+xi) c=!c; } return c; }
 function waterType(x, y){ if(inPoly(x,y,GULF)||inPoly(x,y,HAMM)) return 1; for(const [cx,cy,rx,ry] of LAKES){ const dx=(x-cx)/rx, dy=(y-cy)/ry; if(dx*dx+dy*dy<1) return 2; } return 0; }
-function elevRaw(x, y){ let h = 18 + 6*Math.sin(x*.31)*Math.cos(y*.27) + 4*Math.sin(x*.9+y*.4); for(const [cx,cy,hh,s] of HILLS){ const d2=(x-cx)**2+(y-cy)**2; h += hh*Math.exp(-d2/(2*s*s)); } return Math.max(2,h); }
+// relief : grille du modèle servie par l'API, sinon DEM Copernicus local (atom-data.js) ; jamais inventé
+function elevRaw(){ return 0; }
 function urbanAt(x,y){ for(const [cx,cy,r] of URB) if((x-cx)**2+(y-cy)**2<r*r) return true; return false; }
 
 // grille à 0,5 km
@@ -34,35 +35,31 @@ for(let j=0;j<NY;j++) for(let i=0;i<NX;i++){ const k=j*NX+i, il=Math.max(0,i-1),
   let s=0,c=0; for(let dj=-6;dj<=6;dj+=2) for(let di=-6;di<=6;di+=2){ const ii=Math.min(NX-1,Math.max(0,i+di)), jj=Math.min(NY-1,Math.max(0,j+dj)); s+=elev[jj*NX+ii]; c++; } smooth[k]=s/c; }
 const idx = (x,y) => Math.min(NY-1,Math.max(0,Math.floor(y*G)))*NX + Math.min(NX-1,Math.max(0,Math.floor(x*G)));
 
-// ---------------- modèle de vent d'exemple (journée d'été avec brise de mer) ----------------
-function synoptic(h){ const day=Math.max(0, Math.sin((h-8)/12*Math.PI)), th = (305 + 40*day) * Math.PI/180, S = 3.0 + 2.2*day; return [-S*Math.sin(th), -S*Math.cos(th)]; }
-function breeze(h){ if(h>=9 && h<=20) return 5.2*Math.sin((h-9)/11*Math.PI); if(h>=22 || h<=6) return -0.9; return 0; }
+// ---------------- vent : uniquement le champ servi par le modèle PC-FNO3D ----------------
+// Sans données (service injoignable, modèle pas encore installé), aucune valeur n'est inventée : le vent
+// vaut NaN partout, les vues ne dessinent rien et l'interface affiche l'état du service.
+const PRET = () => !!(window.ATOM && ATOM.pret());
 function wind(x, y, z, h){
-  if(window.ATOM && ATOM.pret()) return ATOM.vent(x, y, z, h);
-  const k = idx(x,y), [bu,bv] = synoptic(h), B = breeze(h), sd = sdist[k];
-  const reach = sd > 0 ? Math.exp(-sd/13) : Math.exp(sd/9);
-  const fz = Math.exp(-z/380), ret = -0.35 * smoothstep(350, 900, z);
-  const br = B * reach * (fz + ret);
-  const zz = Math.max(z, 1), zr = z0[k], low = Math.log(Math.min(zz,150)/zr)/Math.log(10/zr);
-  const sp = 1 + Math.max(-.25, Math.min(.45, .0016*(elev[k]-smooth[k]))) * Math.exp(-z/400);
-  let u = (bu*low + br*gx[k]*Math.max(.6,low*.8)) * sp, v = (bv*low + br*gy[k]*Math.max(.6,low*.8)) * sp;
-  const a = smoothstep(150, 1000, z), veer = 20*Math.PI/180*a, gu = bu*2.4, gv = bv*2.4;
-  const ru = gu*Math.cos(veer) - gv*Math.sin(veer), rv = gu*Math.sin(veer) + gv*Math.cos(veer);
-  u = (1-a)*u + a*(ru + br*gx[k]); v = (1-a)*v + a*(rv + br*gy[k]);
-  return [u, v];
+  return PRET() ? ATOM.vent(x, y, z, h) : [NaN, NaN];
 }
 function smoothstep(a,b,x){ const t=Math.min(1,Math.max(0,(x-a)/(b-a))); return t*t*(3-2*t); }
 function gustF(x,y,z){ if(window.ATOM && ATOM.facteurRafale){ const f=ATOM.facteurRafale(x,y,z,state.hour); if(f) return f; } const zr=z0[idx(x,y)], g0 = zr>.5 ? 1.65 : zr>.05 ? 1.45 : 1.22; return 1 + (g0-1)*Math.exp(-z/300); }
 
 // fiabilité
-const STATIONS = [{n:"Tunis-Carthage", p:xy(36.8504,10.2156)},{n:"Zaghouan", p:xy(36.4333,10.0833)},{n:"Nabeul", p:xy(36.45,10.7333)}];
-const ANEO = (window.ATOM && ATOM.planXY(xy)) || (() => { const pts=[]; const cand=[]; for(let j=2;j<NY;j+=4) for(let i=2;i<NX;i+=4){ const k=j*NX+i; if(!wat[k] && elev[k]<650) cand.push([(i+.5)/G,(j+.5)/G]); }
-  const all = STATIONS.map(s=>s.p); for(let n=0;n<36;n++){ let best=null, bd=-1; for(const c of cand){ let d=1e9; for(const p of all.concat(pts)) d=Math.min(d,Math.hypot(c[0]-p[0],c[1]-p[1])); if(d>bd){bd=d; best=c;} } pts.push(best); } return pts; })();
+const NOM_COURT = n => String(n).replace(/^DTTA /,"").replace(/ \(INM \d+\)$/,"");
+const STATIONS = (window.ATOM?.grille?.stations?.length ? ATOM.grille.stations.map(s=>({n:NOM_COURT(s.nom), p:xy(s.lat,s.lon)}))
+  : [{n:"Tunis-Carthage", p:xy(36.8504,10.2156)},{n:"Zaghouan", p:xy(36.4333,10.0833)},{n:"Nabeul", p:xy(36.45,10.7333)}]);
+// réseau ANEO : le plan de déploiement OS6 servi par l'API (/atom-wind/reseau-aneo), sinon aucun capteur
+const ANEO = (window.ATOM && ATOM.planXY(xy)) || [];
 let relMode = "reel";
 function sigma(x,y,mode=relMode){ let d=1e9, who=null; for(const s of STATIONS){ const dd=Math.hypot(x-s.p[0],y-s.p[1]); if(dd<d){d=dd; who=s.n;} }
-  if(mode==="reel" && window.ATOM && ATOM.aSigma()){ const sg=ATOM.sigma(x,y,ACTS[state.act].z,state.hour); if(sg!==null && isFinite(sg)) return {s:sg, d, who}; }
-  if(mode==="aneo"){ for(const p of ANEO){ const dd=Math.hypot(x-p[0],y-p[1]); if(dd<d){d=dd; who="un capteur ANEO";} } return {s:.35+.75*(1-Math.exp(-d/3)), d, who}; }
-  return {s:.45+1.9*(1-Math.exp(-d/11)), d, who}; }
+  if(mode==="reel" && window.ATOM && ATOM.aSigma()){ const sg=ATOM.sigma(x,y,ACTS[state.act].z,state.hour); if(sg!==null && isFinite(sg)) return {s:sg, d, who, calibre:true}; }
+  if(mode==="aneo" && ANEO.length){ for(const p of ANEO){ const dd=Math.hypot(x-p[0],y-p[1]); if(dd<d){d=dd; who="un capteur ANEO";} } return {s:.35+.75*(1-Math.exp(-d/3)), d, who, calibre:false}; }
+  // sans incertitude calibrée servie : classe estimée selon la distance à la station la plus proche (dit comme tel)
+  return {s:.45+1.9*(1-Math.exp(-d/11)), d, who, calibre:false}; }
+const relTexte = rel => rel.calibre
+  ? `Incertitude calibrée du modèle. La station la plus proche (${rel.who}) est à ${Math.round(rel.d)} km. Erreur probable : ± ${Math.round(kmh(rel.s))} km/h.`
+  : `Estimation selon la distance à la station la plus proche (${rel.who}, ${Math.round(rel.d)} km) : l'incertitude calibrée du modèle n'est pas servie.`;
 const relClass = s => s < .9 ? ["good","bonne"] : s < 1.5 ? ["mid","moyenne"] : ["bad","faible"];
 
 // ---------------- unités et mots simples ----------------
@@ -72,7 +69,7 @@ const fmtSpeed = ms => unit==="kmh" ? `${Math.round(kmh(ms))} km/h` : `${(ms).to
 const DIRS = ["du nord","du nord-est","de l'est","du sud-est","du sud","du sud-ouest","de l'ouest","du nord-ouest"];
 const fromDeg = (u,v) => (Math.atan2(-u,-v)*180/Math.PI + 360) % 360;
 const dirName = (u,v) => DIRS[Math.round(fromDeg(u,v)/45)%8];
-function beaufort(k){ const T=[[2,"Calme : la fumée monte tout droit."],[6,"Très léger : la fumée penche un peu."],[12,"Léger : on sent le vent sur le visage."],[20,"Petite brise : les feuilles bougent sans arrêt."],[29,"Jolie brise : la poussière s'envole, les petites branches bougent."],[39,"Bonne brise : les petits arbres se balancent."],[50,"Vent frais : les grosses branches bougent."],[62,"Grand frais : les arbres entiers bougent, marcher face au vent est pénible."],[75,"Coup de vent : des branches cassent."],[999,"Fort coup de vent : dégâts possibles."]]; return T.find(t=>k<t[0])[1]; }
+function beaufort(k){ const T=[[2,"Calme : la fumée monte tout droit."],[6,"Très léger : la fumée penche un peu."],[12,"Léger : on sent le vent sur le visage."],[20,"Petite brise : les feuilles bougent sans arrêt."],[29,"Jolie brise : la poussière s'envole, les petites branches bougent."],[39,"Bonne brise : les petits arbres se balancent."],[50,"Vent frais : les grosses branches bougent."],[62,"Grand frais : les arbres entiers bougent, marcher face au vent est pénible."],[75,"Coup de vent : des branches cassent."],[999,"Fort coup de vent : dégâts possibles."]]; return (T.find(t=>k<t[0])||T[T.length-1])[1]; }
 const COL = [[0,[191,227,242]],[8,[89,195,160]],[16,[182,216,74]],[24,[244,196,48]],[34,[240,138,44]],[46,[224,65,75]],[62,[167,58,158]]];
 function speedColor(k){ for(let i=1;i<COL.length;i++) if(k<=COL[i][0]){ const [a,ca]=COL[i-1],[b,cb]=COL[i], t=(k-a)/(b-a); return ca.map((c,j)=>Math.round(c+(cb[j]-c)*t)); } return COL[COL.length-1][1]; }
 const arrowSvg = (deg,size=26,color="currentColor") => `<svg class="windarrow" width="${size}" height="${size}" viewBox="0 0 24 24" style="transform:rotate(${deg}deg)" aria-hidden="true"><path d="M12 3l6 9h-4v9h-4v-9H6z" fill="${color}"/></svg>`;
@@ -97,11 +94,15 @@ const ACTS = {
   turbine:{n:"Produire avec une éolienne", z:80, kind:"power", rule:k => k<11 ? ["info","Production très faible : vent trop faible"] : k<90 ? ["go","Bonne production"] : ["stop","Arrêt de sécurité : vent trop fort"],
     todo:{go:"Bonne période pour produire ; reportez la maintenance.", info:"Bon moment pour la maintenance : l'éolienne produit peu.", stop:"L'éolienne se met en sécurité automatiquement."}}
 };
+// alertes : les activités de « Mon vent », plus le vent fort (rafales à 10 m)
+const ALERT_ACTS = { vent_fort:{n:"Vent fort", z:10, kind:"gust", rule:k => k>=70 ? ["stop","Danger : rafales très fortes"] : k>=50 ? ["warn","Attention : rafales fortes"] : ["go","Pas de vent fort"],
+  todo:{go:"Rien à signaler.", warn:"Arrimez ce qui peut s'envoler et reportez les travaux en hauteur.", stop:"Restez à l'abri ; fermez serres et tunnels, reportez tous les travaux en extérieur."}} };
+const ACT_SERVEUR = { traiter:"spray", arroser:"irr", eolienne:"turbine", vent_fort:"vent_fort" };
 const PLACES = [["Tunis-Carthage (aéroport)",36.8504,10.2156],["Tunis centre",36.80,10.18],["La Marsa",36.878,10.325],["Ben Arous",36.75,10.23],["Hammam-Lif",36.728,10.34],["Mornag (vignes)",36.68,10.29],["Djebel Ressas",36.61,10.33],["Soliman",36.69,10.49],["Grombalia (agrumes)",36.60,10.50],["Korbous",36.82,10.57],["Nabeul",36.455,10.715],["Zaghouan (station)",36.4333,10.0833],["Mohamedia",36.68,10.16]];
 
 const state = { hour:15, act:"spray", pin:xy(36.68,10.29), pinName:"Mornag (vignes)" };
 function evalAt(actKey, x, y, h){
-  const a = ACTS[actKey], [u,v] = wind(x,y,a.z,h), sp = Math.hypot(u,v), g = sp*gustF(x,y,a.z);
+  const a = ACTS[actKey]||ALERT_ACTS[actKey], [u,v] = wind(x,y,a.z,h), sp = Math.hypot(u,v), g = sp*gustF(x,y,a.z);
   const val = a.kind==="gust" ? kmh(g) : kmh(sp), [cls,title] = a.rule(val);
   return {u,v,sp,g,val,cls,title};
 }
@@ -152,6 +153,7 @@ function makeMap(canvasId, boxId, opts){
     frameId=0;
     if(!w||!inView||!box.offsetParent||document.hidden)return;
     if(!reduce&&now-lastFrame<1000/31){schedule();return;}
+    if(!PRET()){ ctx.clearRect(0,0,cv.width,cv.height); return; }
     const elapsed=Math.min(2,(now-lastFrame)/(1000/60));lastFrame=now;
     const tc = trail.getContext("2d"), z = opts.z();
     tc.globalCompositeOperation="destination-out"; tc.fillStyle="rgba(0,0,0,.07)"; tc.fillRect(0,0,trail.width,trail.height); tc.globalCompositeOperation="source-over"; tc.lineWidth=2.2*dpr; tc.lineCap="round";
@@ -164,7 +166,7 @@ function makeMap(canvasId, boxId, opts){
   }
   box.addEventListener("click", e => { const r=cv.getBoundingClientRect(), x=(e.clientX-r.left)/r.width*W, y=(1-(e.clientY-r.top)/r.height)*H; ripples.push({p:[x,y], t:performance.now()}); opts.onClick && opts.onClick(x,y); });
   box.addEventListener("mousemove", e => { const r=cv.getBoundingClientRect(), x=(e.clientX-r.left)/r.width*W, y=(1-(e.clientY-r.top)/r.height)*H; if(x<0||x>W||y<0||y>H) return; hover=[x,y];
-    const z=opts.z(), k=idx(x,y), [u,v]=wind(x,y,z,state.hour), sp=Math.hypot(u,v), [rc,rl]=relClass(sigma(x,y).s), deg=(fromDeg(u,v)+180)%360;
+    const z=opts.z(), k=idx(x,y), [u,v]=wind(x,y,z,state.hour), sp=Math.hypot(u,v), [rc,rl]=relClass(sigma(x,y).s), deg=(fromDeg(u,v)+180)%360; if(!isFinite(sp)) return;
     showTip(`<div style="display:flex;gap:8px;align-items:center"><b>${fmtSpeed(sp)}</b>${arrowSvg(deg,18,"currentColor")}</div>Vent ${dirName(u,v)}, à ${z} m du sol<br><span class="sub">${wat[k]===1?"En mer":wat[k]===2?"Lac ou sebkha":`Sol à ${Math.round(elev[k])} m`} · fiabilité ${rl} · près de ${nearestName([x,y])}</span>`, e.clientX, e.clientY, "map"); });
   box.addEventListener("mouseleave", () => { hover=null; hideTip("map"); });
   const observer=new ResizeObserver(()=>{size();schedule();});observer.observe(box);
@@ -194,6 +196,7 @@ const VERD_ICON = {go:'<path d="M5 12l5 5 9-10" stroke="#fff" stroke-width="3" f
 function power(ms){ if(ms<3||ms>=25) return 0; if(ms>=12) return 2; return 2*(ms**3-27)/(1728-27); }
 let whyOpen=false;
 function renderAnswer(){
+  if(!PRET()){ if(window.ATOM?.workspace) publishWorkspace(); return; }
   const a=ACTS[state.act], [x,y]=state.pin, r=evalAt(state.act,x,y,state.hour), rel=sigma(x,y), [rc,rl]=relClass(rel.s), deg=(fromDeg(r.u,r.v)+180)%360;
   const extra = a.kind==="power" ? `<div class="fact"><div class="k">Production d'une éolienne de 2 MW</div><div class="v">${(power(r.sp)*1000).toFixed(0)} kW</div></div>` : `<div class="fact"><div class="k">Rafales à ${a.z} m</div><div class="v">${fmtSpeed(r.g)}</div></div>`;
   document.getElementById("answer").innerHTML = `<div class="answer ${r.cls}" role="status" aria-live="polite">
@@ -203,7 +206,7 @@ function renderAnswer(){
       <div class="fact"><div class="k">Vent à ${a.z} m du sol</div><div class="v">${fmtSpeed(r.sp)}</div></div>
       ${extra}
       <div class="fact"><div class="k">Il vient</div><div class="v" style="font-size:17px">${arrowSvg(deg,22,css("--accent"))}${dirName(r.u,r.v)}</div></div>
-      <div class="fact"><div class="k">Fiabilité <span class="tip" tabindex="0" data-tip="Valeur calculée par ATOM Wind à partir de ${STATIONS.length} stations et de la météo de grande échelle. La station la plus proche (${rel.who}) est à ${Math.round(rel.d)} km. Erreur probable : ± ${Math.round(kmh(rel.s))} km/h.">?</span></div><div class="v" style="font-size:17px"><span class="pill ${rc}">${rl}</span></div></div>
+      <div class="fact"><div class="k">Fiabilité <span class="tip" tabindex="0" data-tip="Valeur calculée par ATOM Wind à partir de ${STATIONS.length} stations et de la météo de grande échelle. ${esc(relTexte(rel))}">?</span></div><div class="v" style="font-size:17px"><span class="pill ${rc}">${rl}</span></div></div>
     </div>
     <p class="muted" style="font-size:15px">${beaufort(kmh(r.sp))}</p>
     <button class="btn whybtn" id="whybtn" aria-expanded="${whyOpen}">Pourquoi ce vent ?</button>
@@ -227,32 +230,29 @@ function renderDay(){
 
 // ---------------- heure, lecture, unités ----------------
 const hourIn=document.getElementById("hour"), hourTxt=document.getElementById("hourtxt");
-function setHour(h){ state.hour=h; hourIn.value=h; hourTxt.textContent=`${h} h`; const sun=document.getElementById("sun"); if(sun){ sun.style.left=`${h/23*100}%`; sun.className=`sun ${h>=6&&h<=19?"day":"night"}`; } renderAnswer(); renderAlerts(); renderEol(); renderTB(); renderMyT(); renderAgri(); if(lastCut) renderCut(...lastCut); animateKpis("kpis"); animateKpis("tbkpis"); }
+function setHour(h){ h=Math.max(0,Math.min(23,Math.round(Number(h)))); if(!Number.isFinite(h)) h=12; state.hour=h; hourIn.value=h; hourTxt.textContent=`${h} h`; const sun=document.getElementById("sun"); if(sun){ sun.style.left=`${h/23*100}%`; sun.className=`sun ${h>=6&&h<=19?"day":"night"}`; } renderAnswer(); renderAlerts(); renderEol(); renderTB(); renderMyT(); renderAgri(); if(lastCut) renderCut(...lastCut); animateKpis("kpis"); animateKpis("tbkpis"); }
 hourIn.addEventListener("input", () => setHour(+hourIn.value));
 let playT=null; document.getElementById("play").onclick = e => { if(playT){ clearInterval(playT); playT=null; e.target.textContent="Rejouer la journée"; return; } e.target.textContent="Pause"; let h=0; setHour(0); playT=setInterval(()=>{ h=(h+1)%24; setHour(h); if(h===23){ clearInterval(playT); playT=null; e.target.textContent="Rejouer la journée"; } }, 700); };
 function setUnit(u){ unit=u; document.getElementById("u-kmh").setAttribute("aria-pressed",u==="kmh"); document.getElementById("u-ms").setAttribute("aria-pressed",u==="ms"); renderAnswer(); renderAlerts(); renderEol(); renderTB(); renderMyT(); }
 document.getElementById("u-kmh").onclick=()=>setUnit("kmh"); document.getElementById("u-ms").onclick=()=>setUnit("ms");
 
 // ---------------- ALERTES ----------------
+// MY : alertes SMS du compte connecté, gardées sur le serveur (/api/comptes/moi/abonnements)
 let ALERTS=[], selAlert=-1, MY=[];
-try{ MY=JSON.parse(localStorage.getItem("aw-alertes")||"[]"); if(!Array.isArray(MY)) MY=[]; }catch(e){ MY=[]; }
-const saveMy=()=>{ try{ localStorage.setItem("aw-alertes",JSON.stringify(MY)); }catch(e){} };
+async function loadMy(){ MY = me && window.ATOM?.mesAbonnements ? await ATOM.mesAbonnements() : []; renderAlerts(); }
 const LV={stop:"Danger",warn:"Attention",info:"Information",go:"Tout va bien"}, PILL={stop:"bad",warn:"mid",info:"m",go:"good"};
 function buildAlerts(){
   const L=[];
-  const mp=xy(36.68,10.29); let last=-1; for(let h=6;h<20;h++) if(evalAt("spray",...mp,h).cls==="go") last=h;
-  const sprayNow = evalAt("spray",...mp,state.hour);
-  L.push({cls: sprayNow.cls==="stop"?"warn":"info", p:mp, at:last+1, t:"Créneau de traitement des vignes", where:"Mornag", when: last>0 ? `favorable jusqu'à ${last+1} h environ` : "pas de créneau favorable aujourd'hui", what:"Au-delà, le vent dépasse 15 km/h et le produit peut dériver.", todo:"Traiter tôt le matin ; reprendre en fin de soirée si le vent retombe."});
+  if(!PRET()) return L;
   { const hub=Array.from({length:24},(_,h)=>TURB.reduce((m,t)=>Math.max(m,Math.hypot(...wind(...t.p,80,h))),0));
     const cut=hub.map((v,h)=>v>=25?h:-1).filter(h=>h>=0), calm=hub.map((v,h)=>h>=7&&h<=18&&v<4?h:-1).filter(h=>h>=0);
-    if(cut.length) L.push({cls:"stop", p:TURB[1].p, r:2, at:cut[0], t:"Arrêt de sécurité des éoliennes", where:"Parc virtuel du djebel Ressas", when:`à partir de ${cut[0]} h (vent au moyeu au-dessus de 90 km/h)`, what:"Au-delà de 25 m/s au moyeu, les éoliennes se mettent en drapeau.", todo:"Prévoir la perte de production et l'inspection après l'épisode."});
-    else if(calm.length) L.push({cls:"info", p:TURB[1].p, r:2, at:calm[0], t:"Créneau de maintenance du parc", where:"Parc virtuel du djebel Ressas", when:`de ${calm[0]} h à ${calm[calm.length-1]+1} h (vent faible au moyeu)`, what:"La production est presque nulle : c'est le moment d'intervenir sans perte.", todo:"Planifier les interventions sur ce créneau."});
-    else { const pk=hub.indexOf(Math.max(...hub)); L.push({cls:"go", p:TURB[1].p, r:2, at:pk, t:"Bonne journée de production", where:"Parc virtuel du djebel Ressas", when:`pic vers ${pk} h (${fmtSpeed(hub[pk])} au moyeu)`, what:"Le vent au moyeu reste dans la plage de production.", todo:"Reporter la maintenance à un jour plus calme."}); } }
-  L.push({cls:"info", p:STATIONS[2].p, t:"Station de Nabeul : vent mesuré plus faible que la zone", where:"Nabeul (station de l'INM)", when:"toute la journée", what:"L'anémomètre est abrité en ville ; il mesure moins que le vent réel alentour.", todo:"Aucune action : ATOM Wind tient compte de cet écart dans la fiabilité."});
-  for(const m of MY){ const pl=PLACES[m.place], p=xy(pl[1],pl[2]), a=ACTS[m.act]; let hit=null;
-    for(let k=0;k<24;k++){ const h=(state.hour+k)%24, r=evalAt(m.act,...p,h); if(r.cls==="stop"||r.cls==="warn"){ hit={h,r}; break; } }
+    if(cut.length) L.push({cls:"stop", p:TURB[1].p, r:2, at:cut[0], t:"Arrêt de sécurité des éoliennes", where:"Parc de référence du djebel Ressas", when:`à partir de ${cut[0]} h (vent au moyeu au-dessus de 90 km/h)`, what:"Au-delà de 25 m/s au moyeu, les éoliennes se mettent en drapeau.", todo:"Prévoir la perte de production et l'inspection après l'épisode."});
+    else if(calm.length) L.push({cls:"info", p:TURB[1].p, r:2, at:calm[0], t:"Créneau de maintenance du parc", where:"Parc de référence du djebel Ressas", when:`de ${calm[0]} h à ${calm[calm.length-1]+1} h (vent faible au moyeu)`, what:"La production est presque nulle : c'est le moment d'intervenir sans perte.", todo:"Planifier les interventions sur ce créneau."});
+    else { const pk=hub.indexOf(Math.max(...hub)); L.push({cls:"go", p:TURB[1].p, r:2, at:pk, t:"Bonne journée de production", where:"Parc de référence du djebel Ressas", when:`pic vers ${pk} h (${fmtSpeed(hub[pk])} au moyeu)`, what:"Le vent au moyeu reste dans la plage de production.", todo:"Reporter la maintenance à un jour plus calme."}); } }
+  for(const m of MY){ if(m.lat==null||m.lon==null) continue; const p=xy(m.lat,m.lon), key=ACT_SERVEUR[m.activite]||"vent_fort", a=ACTS[key]||ALERT_ACTS[key]; let hit=null;
+    for(let k=0;k<24;k++){ const h=(state.hour+k)%24, r=evalAt(key,...p,h); if(r.cls==="stop"||r.cls==="warn"){ hit={h,r}; break; } }
     m.res = hit ? `se déclenche à ${hit.h} h (${LV[hit.r.cls].toLowerCase()})` : "rien à signaler dans les 24 h";
-    if(hit) L.push({cls:hit.r.cls, p, at:hit.h, mine:true, t:`Votre alerte : ${a.n.toLowerCase()}`, where:pl[0], when:`à ${hit.h} h : ${hit.r.title.toLowerCase()} (${fmtSpeed(a.kind==="gust"?hit.r.g:hit.r.sp)})`, what:`Alerte créée par vous, envoi par ${m.chan}.`, todo:a.todo[hit.r.cls]||a.todo.go}); }
+    if(hit) L.push({cls:hit.r.cls, p, at:hit.h, mine:true, t:`Votre alerte : ${a.n.toLowerCase()}`, where:m.lieu||nearestName(p), when:`à ${hit.h} h : ${hit.r.title.toLowerCase()} (${fmtSpeed(a.kind==="gust"?hit.r.g:hit.r.sp)})`, what:`Votre alerte SMS (${m.numero}).`, todo:a.todo[hit.r.cls]||a.todo.go}); }
   if(window.ATOM && ATOM.alertesService) L.push(...ATOM.alertesService(xy));
   const ord={stop:0,warn:1,info:2,go:3}; L.sort((a,b)=>ord[a.cls]-ord[b.cls]);
   return L;
@@ -262,11 +262,13 @@ function countdown(a){ if(a.at===undefined || a.at<0) return ""; const d=a.at-st
   return `<div class="cdown" style="color:${col}"><span>${txt}</span><div class="bar"><i style="width:${pct}%;background:${col}"></i></div></div>`; }
 function renderAlerts(){
   ALERTS = buildAlerts(); if(selAlert>=ALERTS.length) selAlert=-1;
-  document.getElementById("alertlist").innerHTML = ALERTS.map((a,i)=>`<article class="alert ${a.cls}${i===selAlert?" sel":""}" data-i="${i}" tabindex="0"><div class="ic"><svg width="24" height="24" viewBox="0 0 24 24">${VERD_ICON[a.cls]}</svg></div><div><span class="pill ${PILL[a.cls]}">${LV[a.cls]}</span>${a.mine?' <span class="pill m">Mon alerte</span>':''}<h3 style="margin-top:6px">${a.t}</h3><dl><dt>Où</dt><dd>${a.where}</dd><dt>Quand</dt><dd>${a.when}</dd><dt>Pourquoi</dt><dd>${a.what}</dd></dl><div class="todo">Que faire : ${a.todo}</div>${a.cls!=="info"?countdown(a):""}</div></article>`).join("");
+  document.getElementById("alertlist").innerHTML = !PRET() ? `<div class="card empty-state"><b>Alertes de vent indisponibles</b><p class="muted" style="margin:6px 0 0">Le service de calcul ne répond pas : aucune alerte n'est calculée pour le moment.</p></div>` : !ALERTS.length ? `<div class="card empty-state"><b>Aucune alerte pour le moment</b><p class="muted" style="margin:6px 0 0">Ni vent fort, ni station muette, ni créneau à surveiller.</p></div>` : ALERTS.map((a,i)=>`<article class="alert ${a.cls}${i===selAlert?" sel":""}" data-i="${i}" tabindex="0"><div class="ic"><svg width="24" height="24" viewBox="0 0 24 24">${VERD_ICON[a.cls]}</svg></div><div><span class="pill ${PILL[a.cls]}">${LV[a.cls]}</span>${a.mine?' <span class="pill m">Mon alerte</span>':''}<h3 style="margin-top:6px">${a.t}</h3><dl><dt>Où</dt><dd>${a.where}</dd><dt>Quand</dt><dd>${a.when}</dd><dt>Pourquoi</dt><dd>${a.what}</dd></dl><div class="todo">Que faire : ${a.todo}</div>${a.cls!=="info"?countdown(a):""}</div></article>`).join("");
   document.querySelectorAll("#alertlist .alert").forEach(el=>{ const f=()=>{ selAlert=+el.dataset.i; renderAlerts(); }; el.onclick=f; el.onkeydown=e=>{ if(e.key==="Enter") f(); }; });
   const n=ALERTS.filter(a=>a.cls==="stop"||a.cls==="warn").length; const ac=document.getElementById("alertcount"); ac.textContent=n; ac.hidden=!n;
-  document.getElementById("al-mine").innerHTML = MY.length ? MY.map((m,i)=>`<div class="it"><span style="min-width:0"><b>${ACTS[m.act].n}</b> · ${PLACES[m.place][0]}<br><span class="muted" style="font-size:14px">${m.res||""} · par ${m.chan}</span></span><button class="x sm" data-del="${i}" aria-label="Supprimer cette alerte">×</button></div>`).join("") : `<span class="muted">Aucune alerte personnelle pour l'instant.</span>`;
-  document.querySelectorAll("[data-del]").forEach(b=>b.onclick=()=>{ MY.splice(+b.dataset.del,1); saveMy(); renderAlerts(); renderTB(); });
+  const form=document.getElementById("al-form"), gate=document.getElementById("al-login");
+  if(form) form.hidden=!me; if(gate) gate.hidden=!!me;
+  document.getElementById("al-mine").innerHTML = !me ? "" : MY.length ? MY.map((m,i)=>{ const key=ACT_SERVEUR[m.activite]||"vent_fort", a=ACTS[key]||ALERT_ACTS[key]; return `<div class="it"><span style="min-width:0"><b>${esc(a.n)}</b> · ${esc(m.lieu||"point choisi")}<br><span class="muted" style="font-size:14px">${m.res?esc(m.res)+" · ":""}SMS au ${esc(m.numero)}</span></span><button class="x sm" data-del="${i}" aria-label="Supprimer cette alerte">×</button></div>`; }).join("") : `<span class="muted">Aucune alerte SMS pour l'instant.</span>`;
+  document.querySelectorAll("[data-del]").forEach(b=>b.onclick=async()=>{ const m=MY[+b.dataset.del]; const r=await ATOM.retirerAbonnement(m.numero); if(r.erreur){ toast(r.erreur); return; } toast("Alerte supprimée."); loadMy(); });
 }
 // ---------------- ÉOLIEN ----------------
 const TURB = [["E1",36.618,10.315],["E2",36.612,10.33],["E3",36.605,10.345]].map(([n,a,b])=>({n,p:xy(a,b)}));
@@ -281,6 +283,7 @@ function turbineIcon(dur, w=70, h=90){
     <g>${[0,120,240].map(a=>`<path d="${blade}" transform="rotate(${a} ${cx} ${cy})" fill="var(--ink)" opacity=".86"/>`).join("")}${spin}</g><circle cx="${cx}" cy="${cy}" r="3.6" fill="var(--accent)" stroke="var(--surface)" stroke-width="1.2"/></svg>`;
 }
 function renderEol(){
+  if(!PRET()) return;
   const now = TURB.map(t=>{ const [u,v]=windE(...t.p,80,state.hour), sp=Math.hypot(u,v); return {...t,u,v,sp,P:power(sp)}; });
   const tot = now.reduce((s,t)=>s+t.P,0), day=Array.from({length:24},(_,h)=>TURB.reduce((s,t)=>s+power(Math.hypot(...windE(...t.p,80,h))),0)), energy=day.reduce((a,b)=>a+b,0);
   const avg = now.reduce((s,t)=>s+t.sp,0)/3;
@@ -304,8 +307,12 @@ function renderEol(){
 
 // ---------------- alertes : formulaire et carte ----------------
 document.getElementById("al-place").innerHTML = PLACES.map((p,i)=>`<option value="${i}">${p[0]}</option>`).join("");
-document.getElementById("al-act").innerHTML = Object.entries(ACTS).map(([k,a])=>`<option value="${k}">${a.n}</option>`).join("");
-document.getElementById("al-add").onclick = () => { MY.push({place:+document.getElementById("al-place").value, act:document.getElementById("al-act").value, chan:document.getElementById("al-chan").value}); saveMy(); renderAlerts(); renderTB(); };
+document.getElementById("al-act").innerHTML = [["traiter","Traiter mes cultures"],["arroser","Arroser par aspersion"],["eolienne","Produire avec une éolienne"],["vent_fort","Vent fort (rafales)"]].map(([k,n])=>`<option value="${k}">${n}</option>`).join("");
+document.getElementById("al-add").onclick = async () => { const err=document.getElementById("al-err"), tel=document.getElementById("al-tel").value.replace(/[\s.-]/g,""), pl=PLACES[+document.getElementById("al-place").value];
+  err.textContent=""; if(!/^\+\d{8,15}$/.test(tel)){ err.textContent="Numéro au format international, par exemple +216 12 345 678."; return; }
+  const r=await ATOM.ajouterAbonnement({numero:tel, lieu:pl[0], lat:pl[1], lon:pl[2], activite:document.getElementById("al-act").value, langue:document.getElementById("al-lang").value});
+  if(r.erreur){ err.textContent=r.erreur; return; } document.getElementById("al-tel").value=""; toast("Alerte créée : vous recevrez un SMS quand elle se déclenche."); loadMy(); };
+document.getElementById("al-login-btn").onclick=()=>openAuth("login");
 makeMap("c3","map3",{ z:()=>10, marks:()=>ALERTS.map((a,i)=>({p:a.p, r:a.r, cls:a.cls, sel:i===selAlert})), onClick:()=>{} });
 
 // ---------------- tableau de bord ----------------
@@ -314,14 +321,15 @@ function domainStats(h){ if(DSTAT[h]) return DSTAT[h]; let n=0, su=0, sv=0, ss=0
   for(let y=1;y<H;y+=2) for(let x=1;x<W;x+=2){ if(wat[idx(x,y)]) continue; const [u,v]=wind(x,y,10,h), sp=Math.hypot(u,v), g=sp*gustF(x,y,10); n++; su+=u; sv+=v; ss+=sp; if(g>gmax){ gmax=g; gwhere=[x,y]; } }
   return DSTAT[h]={mean:ss/n, u:su/n, v:sv/n, gmax, gwhere}; }
 function nearestName(p){ return PLACES.map(q=>[q[0],Math.hypot(p[0]-xy(q[1],q[2])[0],p[1]-xy(q[1],q[2])[1])]).sort((a,b)=>a[1]-b[1])[0][0].split(" (")[0]; }
-let relGood=null;
+let relGood=null, reliefURL=null;
 function renderTB(){
+  if(!PRET()) return;
   const d=domainStats(state.hour), prod=TURB.reduce((s,t)=>s+power(Math.hypot(...wind(...t.p,80,state.hour))),0), na=ALERTS.filter(a=>a.cls==="stop"||a.cls==="warn").length;
-  if(!relGood){ const keep=relMode; relMode="reel"; const a=relStats(); relMode="aneo"; const b=relStats(); relMode=keep; relGood=[a,b]; }
+  if(!relGood && ATOM.aSigma()){ const keep=relMode; relMode="reel"; const a=relStats(); relMode="aneo"; const b=ANEO.length?relStats():null; relMode=keep; relGood=[a,b]; }
   const reading=fmtSpeed(d.mean).split(" ");
   document.getElementById("tbhero").innerHTML=`<div class="territory-average"><span>Moyenne du territoire</span><b>${reading[0]} <small>${reading.slice(1).join(" ")}</small></b></div>`;
   renderTerritory(document.getElementById("tbmap"),{
-    water:[GULF,HAMM],lakes:LAKES,hills:HILLS,selected:state.pin,
+    water:[GULF,HAMM],lakes:LAKES,hills:HILLS,relief:(reliefURL??=reliefDataURL()),selected:state.pin,
     sample:(x,y)=>wind(x,y,10,state.hour),
     places:PLACES.map(p=>{const point=xy(p[1],p[2]);return {name:p[0],point,speed:fmtSpeed(Math.hypot(...wind(...point,10,state.hour))),selected:Math.hypot(point[0]-state.pin[0],point[1]-state.pin[1])<.01};}),
     select:selectTerritoryPlace
@@ -334,15 +342,15 @@ function renderTB(){
   document.getElementById("tblocations").innerHTML=[1,2,5,6,10].map(i=>{const p=PLACES[i],point=xy(p[1],p[2]);return `<button data-territory-place="${i}" aria-pressed="${i===selectedPlace}"><span>${p[0].split(" (")[0]}</span><b>${fmtSpeed(Math.hypot(...wind(...point,10,state.hour)))}</b></button>`;}).join("");
   document.querySelectorAll("[data-territory-place]").forEach(button=>button.onclick=()=>{const index=button.dataset.territoryPlace,keyboard=button.matches(":focus-visible");selectTerritoryPlace(+index);if(keyboard)document.querySelector(`[data-territory-place="${index}"]`)?.focus();});
   const [pu,pv]=wind(...state.pin,10,state.hour),pointSpeed=Math.hypot(pu,pv),pointRel=sigma(...state.pin,"reel"),[quality,qualityLabel]=relClass(pointRel.s),pointReading=fmtSpeed(pointSpeed).split(" ");
-  document.getElementById("tbpoint").innerHTML=`<div class="point-reading"><span>Vent à 10 m du sol · ${state.hour} h</span><strong>${pointReading[0]}<small> ${pointReading.slice(1).join(" ")}</small></strong><p>${arrowSvg(fromDeg(pu,pv),20)}Il vient ${dirName(pu,pv)}</p></div><dl class="point-facts"><div><dt>Rafales estimées</dt><dd>${fmtSpeed(pointSpeed*gustF(...state.pin,10))}</dd></div><div><dt>Fiabilité indicative</dt><dd><span class="point-quality ${quality}">${qualityLabel}</span></dd></div></dl>`;
+  document.getElementById("tbpoint").innerHTML=`<div class="point-reading"><span>Vent à 10 m du sol · ${state.hour} h</span><strong>${pointReading[0]}<small> ${pointReading.slice(1).join(" ")}</small></strong><p>${arrowSvg(fromDeg(pu,pv),20)}Il vient ${dirName(pu,pv)}</p></div><dl class="point-facts"><div><dt>Rafales estimées</dt><dd>${fmtSpeed(pointSpeed*gustF(...state.pin,10))}</dd></div><div><dt>${ATOM.aSigma()?"Fiabilité":"Fiabilité estimée"}</dt><dd><span class="point-quality ${quality}">${qualityLabel}</span></dd></div></dl>`;
   document.getElementById("tb-profile").onclick=()=>openSheet(...state.pin,10);
   document.getElementById("tbkpis").innerHTML = [
-    ["Parc virtuel", `${prod.toFixed(1).replace(".",",")} MW`, `${Math.round(prod/6*100)} % de la capacité`],
+    ["Parc de référence", `${prod.toFixed(1).replace(".",",")} MW`, `${Math.round(prod/6*100)} % de la capacité`],
     ["Points de vigilance", `${na}`, na ? "danger ou attention" : "aucune alerte importante"],
-    ["Couverture indicative", `${relGood[0]} %`, `${relGood[1]} % avec le réseau prévu`],
+    ...(relGood ? [["Fiabilité bonne", `${relGood[0]} %`, relGood[1]!==null ? `${relGood[1]} % avec le réseau ANEO prévu` : "des terres, incertitude calibrée"]] : []),
     ...((window.ATOM && ATOM.kpisReels) ? ATOM.kpisReels(state.hour) : [])
   ].map(([k,v,note])=>{const parts=String(v).split(" "),number=parts.shift(),unit=parts.join(" ");return `<div class="overview-metric"><span class="metric-label">${k}</span><strong><span>${number}</span>${unit?` <small>${unit}</small>`:""}</strong><span class="metric-note">${note}</span></div>`;}).join("");
-  document.getElementById("tb-source-note").textContent=window.ATOM?.pret()?"Calcul du modèle, avec interpolation entre les instants disponibles. Il ne s’agit pas de mesures à chaque point.":"Journée d’exemple. Les conditions actuelles ne sont pas affichées.";
+  document.getElementById("tb-source-note").textContent="Calcul du modèle, avec interpolation entre les instants disponibles. Il ne s’agit pas de mesures à chaque point.";
   const days=Array.from({length:24},(_,h)=>domainStats(h));
   const Wd=760,Hd=310,pl=42,pb=33,factor=unit==="kmh"?3.6:1,chartUnit=unit==="kmh"?"km/h":"m/s";
   const mx=Math.ceil(Math.max(...days.map(x=>x.gmax*factor))/5)*5;
@@ -363,15 +371,17 @@ function renderTB(){
   hoverChart("tbday",Wd,pl,16,h=>`<b>${h} h</b><br>Vent moyen : ${fmtSpeed(days[h].mean)}<br>Rafale la plus forte : ${fmtSpeed(days[h].gmax)}`);
   document.getElementById("tbalerts").innerHTML = ALERTS.slice(0,3).map((a,i)=>`<a class="it" href="#alertes" data-tb-alert="${i}"><span style="min-width:0"><span class="pill ${PILL[a.cls]}">${LV[a.cls]}</span> <b>${esc(a.t)}</b><br><span class="muted">${esc(a.where)} · ${esc(a.when)}</span></span><span class="alert-row-arrow" aria-hidden="true">↗</span></a>`).join("") || `<span class="muted">Aucune alerte.</span>`;
   document.querySelectorAll("[data-tb-alert]").forEach(link=>link.onclick=()=>{selAlert=+link.dataset.tbAlert;renderAlerts();});
-  const C=[["Anémomètre de Nabeul",2.42,2.57],["Anémomètre de Tunis-Carthage",2.70,2.81],["Anémomètre de Zaghouan",2.28,2.16],["Ballons-sondes, 0 à 250 m",2.22,2.29]];
+  // comparaison aux vraies mesures : évaluation du modèle servi (/atom-wind/qualite), jamais des chiffres figés
+  const Q=ATOM.qualite, C=Q ? [...(Q.stations||[]).filter(s=>s.modele_m_s!=null&&s.era5_m_s!=null).map(s=>[`Anémomètre de ${s.station}`,s.modele_m_s,s.era5_m_s]),
+    ...(Q.radiosondages||[]).filter(r=>r.modele_m_s!=null&&r.era5_m_s!=null).slice(0,1).map(r=>[`Ballons-sondes, ${r.tranche_m.replace(/[(\]]/g,"").replace(", "," à ")} m`,r.modele_m_s,r.era5_m_s])] : [];
   const bx=k=>Math.round(k/12*100);
-  document.getElementById("tbcomp").innerHTML = C.map(([n,a,b])=>`<div style="display:grid;gap:3px;margin-bottom:10px"><b style="font-size:15px">${n}</b>
+  document.getElementById("tbcomp").innerHTML = !C.length ? `<p class="muted" style="margin:0">Pas encore de validation sur de vraies mesures pour le modèle servi.</p>` : C.map(([n,a,b])=>`<div style="display:grid;gap:3px;margin-bottom:10px"><b style="font-size:15px">${n}</b>
     <div style="display:grid;grid-template-columns:90px minmax(0,1fr) 86px;gap:8px;align-items:center;font-size:14px"><span>ATOM Wind</span><span style="height:12px;border-radius:6px;background:var(--accent);width:${bx(kmh(a))}%"></span><span style="font-family:var(--f-data)">${kmh(a).toFixed(1).replace(".",",")} km/h</span></div>
-    <div style="display:grid;grid-template-columns:90px minmax(0,1fr) 86px;gap:8px;align-items:center;font-size:14px"><span class="muted">ERA5</span><span style="height:12px;border-radius:6px;background:var(--muted);opacity:.5;width:${bx(kmh(b))}%"></span><span style="font-family:var(--f-data)" class="muted">${kmh(b).toFixed(1).replace(".",",")} km/h</span></div></div>`).join("") + `<p class="muted" style="font-size:13px;margin:0">ATOM Wind fait mieux qu'ERA5 à Nabeul, à Tunis-Carthage et sur les ballons-sondes ; un peu moins bien à Zaghouan, en bord de zone.</p>`;
+    <div style="display:grid;grid-template-columns:90px minmax(0,1fr) 86px;gap:8px;align-items:center;font-size:14px"><span class="muted">ERA5</span><span style="height:12px;border-radius:6px;background:var(--muted);opacity:.5;width:${bx(kmh(b))}%"></span><span style="font-family:var(--f-data)" class="muted">${kmh(b).toFixed(1).replace(".",",")} km/h</span></div></div>`).join("") + `<p class="muted" style="font-size:13px;margin:0">Erreur moyenne du vent sur des jours jamais vus à l'entraînement : plus la barre est courte, plus le calcul est proche de la mesure.</p>`;
   document.getElementById("tbnet").innerHTML = [
     ["Stations de l'INM dans la zone","3","Tunis-Carthage, Zaghouan, Nabeul : vent à 10 m, toutes les 30 min à 3 h"],
     ["Mesure en altitude","1","Ballons-sondes de Tunis-Carthage, deux fois par jour"],
-    ["Réseau ANEO prévu",`${ANEO.length}<small>capteurs</small>`,`Fiabilité bonne sur ${relGood[1]} % des terres, contre ${relGood[0]} % aujourd'hui`]].map(([k,v,s2])=>`<div class="kpi"><div class="k">${k}</div><div class="v" style="font-size:26px">${v}</div><div class="s muted">${s2}</div></div>`).join("");
+    ...(ANEO.length ? [["Réseau ANEO prévu",`${ANEO.length}<small>capteurs</small>`,relGood&&relGood[1]!==null?`Fiabilité bonne sur ${relGood[1]} % des terres, contre ${relGood[0]} % aujourd'hui`:"Plan de déploiement OS6"]] : [])].map(([k,v,s2])=>`<div class="kpi"><div class="k">${k}</div><div class="v" style="font-size:26px">${v}</div><div class="s muted">${s2}</div></div>`).join("");
 }
 
 function selectTerritoryPlace(index){
@@ -417,11 +427,12 @@ function pushRotor(d){
   io.observe(fig);
 }
 function renderMyT(){
+  if(!PRET()) return;
   const t=TMOD[myT.m], e=dayEnergy(myT.p,myT.m), ref=dayEnergy(TURB[1].p,myT.m), cf=e/(t.pr*24), ratio=ref>0?e/ref:0, k=idx(...myT.p);
-  const verdict = wat[k]===1 ? ["info","En mer : ce prototype estime surtout les éoliennes à terre."] : cf>.3 ? ["go","Très bon emplacement"] : cf>.18 ? ["warn","Emplacement moyen"] : ["stop","Emplacement peu venté"];
+  const verdict = wat[k]===1 ? ["info","En mer : l'estimation vise les éoliennes à terre."] : cf>.3 ? ["go","Très bon emplacement"] : cf>.18 ? ["warn","Emplacement moyen"] : ["stop","Emplacement peu venté"];
   document.getElementById("myt").innerHTML = `<div class="answer ${verdict[0]}" style="padding:14px"><div class="verdict"><div class="badge-big" style="width:42px;height:42px"><svg width="22" height="22" viewBox="0 0 24 24">${VERD_ICON[verdict[0]]}</svg></div><div><div class="muted" style="font-size:13px;font-weight:700">${t.n[0].toUpperCase()+t.n.slice(1)} près de ${nearestName(myT.p)}, sol à ${Math.round(elev[k])} m</div><h2 style="font-size:21px">${verdict[1]}</h2></div></div>
     <div class="facts"><div class="fact"><div class="k">Énergie sur la journée</div><div class="v">${e>=1?e.toFixed(1).replace(".",",")+" MWh":Math.round(e*1000)+" kWh"}</div></div><div class="fact"><div class="k">Taux de charge</div><div class="v">${Math.round(cf*100)} %</div></div><div class="fact"><div class="k">Par rapport à la crête du djebel Ressas</div><div class="v">${Math.round(ratio*100)} %</div></div></div>
-    <p class="muted" style="font-size:14px">${ratio<.7?"Le vent est plus faible ici que sur la crête : une tour plus haute ou un site plus exposé produirait davantage.":"Cet emplacement produit presque autant que la crête, la meilleure zone de l'exemple."} Estimation pour ${EODAYS[eo.day]}.</p></div>`;
+    <p class="muted" style="font-size:14px">${ratio<.7?"Le vent est plus faible ici que sur la crête : une tour plus haute ou un site plus exposé produirait davantage.":"Cet emplacement produit presque autant que la crête du djebel Ressas, le site de référence."} Estimation pour ${EODAYS[eo.day]}.</p></div>`;
   // rotor
   const z0h=t.z, R=t.d/2, hs=[]; for(let i=0;i<=8;i++){ const z=Math.max(5,z0h-R+i*(2*R/8)); hs.push([z,Math.hypot(...windE(...myT.p,z,state.hour))]); }
   const top=hs[8][1], bot=hs[0][1], [hu,hv]=windE(...myT.p,z0h,state.hour), hub=Math.hypot(hu,hv);
@@ -447,7 +458,7 @@ function gisGrid(m,d){ const key=m+"|"+d; if(gisCache[key]) return gisCache[key]
   return gisCache[key]=g; }
 const GRAMP=[[0,[215,227,232]],[.1,[159,211,181]],[.2,[232,211,106]],[.32,[240,160,60]],[.45,[217,71,47]]];
 const gcol=v=>{ for(let i=1;i<GRAMP.length;i++) if(v<=GRAMP[i][0]){ const [a,ca]=GRAMP[i-1],[b,cb]=GRAMP[i], q=(v-a)/(b-a); return ca.map((c,k)=>Math.round(c+(cb[k]-c)*q)); } return GRAMP[GRAMP.length-1][1]; };
-function renderGis(){ const cv=document.getElementById("gis"); if(!cv || !cv.clientWidth) return; const g=gisGrid(myT.m,eo.day), S=8;
+function renderGis(){ const cv=document.getElementById("gis"); if(!cv || !cv.clientWidth || !PRET()) return; const g=gisGrid(myT.m,eo.day), S=8;
   const small=document.createElement("canvas"); small.width=W; small.height=H; const sc=small.getContext("2d"), img=sc.createImageData(W,H), wa=css("--water").match(/#(..)(..)(..)/).slice(1).map(h=>parseInt(h,16));
   for(let j=0;j<H;j++) for(let i=0;i<W;i++){ const v=g[j*W+i], c=v<0?wa:gcol(v), o=((H-1-j)*W+i)*4; img.data[o]=c[0]; img.data[o+1]=c[1]; img.data[o+2]=c[2]; img.data[o+3]=255; }
   sc.putImageData(img,0,0); cv.width=W*S; cv.height=H*S; const c=cv.getContext("2d"); c.imageSmoothingEnabled=true; c.drawImage(small,0,0,W*S,H*S);
@@ -472,6 +483,7 @@ makeMap("c4","map4",{ pin:()=>myT.p, z:()=>TMOD[myT.m].z, marks:()=>TURB.map(t=>
 // ---------------- coupe verticale ----------------
 let lastCut=null;
 function renderCut(A,B){
+  if(!PRET()) return;
   lastCut=[A,B]; const card=document.getElementById("cutcard"); card.hidden=false;
   const cv=document.getElementById("cutcv"), w=Math.max(320,cv.clientWidth||600), h=260, dpr=Math.min(2,devicePixelRatio||1);
   cv.width=w*dpr; cv.height=h*dpr; cv.style.height=h+"px"; const ctx=cv.getContext("2d"); ctx.setTransform(dpr,0,0,dpr,0,0);
@@ -498,11 +510,12 @@ const MILIEUX = { champ:"Plein champ", serre:"Serre ou tunnel", verger:"Verger" 
 const AGDAYS = ["Aujourd'hui","Demain","Après-demain"];
 const ag = { place:5, crop:"tomate", area:2, eff:.9, milieu:"champ", day:0 };
 const agP = () => { const q=PLACES[ag.place]; return xy(q[1],q[2]); };
-// Prototype : demain et après-demain sont des variantes simulées de la journée d'exemple. En service : prévision GFS à +24 h et +48 h, affinée par ATOM Wind.
-const DAYMOD = [{f:1,rot:0,dT:0,dRH:0},{f:1.35,rot:20,dT:4,dRH:-16},{f:.7,rot:-30,dT:-2,dRH:6}];
-function windD(x,y,z,h,d){ if(window.ATOM && ATOM.pretJour(d)) return ATOM.ventJour(d,x,y,z,h); const [u,v]=wind(x,y,z,h), m=DAYMOD[d], a=m.rot*Math.PI/180; return [m.f*(u*Math.cos(a)-v*Math.sin(a)), m.f*(u*Math.sin(a)+v*Math.cos(a))]; }
-const Tair = (h,x,y,d=0) => (window.ATOM && ATOM.aT(d)) ? ATOM.tJour(d,x,y,h) : 26.5 + 6.5*Math.sin((h-9)*Math.PI/12) - .0065*elev[idx(x,y)] + DAYMOD[d].dT;
-const RHair = (h,x,y,d=0) => (window.ATOM && ATOM.aT(d)) ? ATOM.hrJour(d,x,y,h) : Math.max(15, Math.min(98, 62 - 18*Math.sin((h-9)*Math.PI/12) + (sdist[idx(x,y)]<4 ? 8 : 0) + DAYMOD[d].dRH));
+// J0 : la journée affichée ; J+1 et J+2 : prévisions GFS affinées par ATOM Wind (temps réel), sinon rien.
+const jourDispo = d => (window.ATOM && ATOM.pretJour(d)) || (d===0 && PRET());
+function windD(x,y,z,h,d){ if(window.ATOM && ATOM.pretJour(d)) return ATOM.ventJour(d,x,y,z,h); return d===0 ? wind(x,y,z,h) : [NaN,NaN]; }
+// température et humidité à 2 m : GFS (servies avec le temps réel) ; absentes sinon
+const Tair = (h,x,y,d=0) => (window.ATOM && ATOM.aT(d)) ? ATOM.tJour(d,x,y,h) : NaN;
+const RHair = (h,x,y,d=0) => (window.ATOM && ATOM.aT(d)) ? ATOM.hrJour(d,x,y,h) : NaN;
 const esat = T => .6108*Math.exp(17.27*T/(T+237.3));
 function et0Day(x,y,d=0,du=0){ // FAO-56 Penman-Monteith, pas journalier ; du = vent ajouté (m/s) pour mesurer l'effet du vent
   const Ts=[], RH=[], U=[]; for(let h=0;h<24;h++){ Ts.push(Tair(h,x,y,d)); RH.push(RHair(h,x,y,d)); U.push(Math.hypot(...windD(x,y,10,h,d))*0.748 + du); }
@@ -523,8 +536,13 @@ const SRC_ATOM = '<span class="srctag atom">Vent : ATOM Wind</span>', SRC_GFS = 
 const AIC = { stop:'<path d="M12 5v9M12 18v.5" stroke="#fff" stroke-width="3" stroke-linecap="round"/>', warn:'<path d="M12 6v8M12 17.5v.5" stroke="#fff" stroke-width="3" stroke-linecap="round"/>', go:'<path d="M5 12l5 5 9-10" stroke="#fff" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/>' };
 const spanTxt = hs => { const w=[]; let a=null; hs.forEach((h,i)=>{ if(a===null) a=h; if(hs[i+1]!==h+1){ w.push(a===h?`${a} h`:`${a} h à ${h+1} h`); a=null; } }); return w.join(", "); };
 function renderAgri(){
-  const SRC_ATOM = window.ATOM?.pretJour(ag.day) || (ag.day===0&&window.ATOM?.pret()) ? '<span class="srctag atom">Vent : ATOM Wind</span>' : '<span class="srctag">Vent : simulation</span>';
-  const SRC_GFS = window.ATOM?.aT(ag.day) ? '<span class="srctag">Température, humidité : GFS</span>' : '<span class="srctag">Température, humidité : exemple</span>';
+  if(!PRET()) return;
+  if(!jourDispo(ag.day)){ const j=AGDAYS[ag.day].toLowerCase();
+    document.getElementById("ag-alerts").innerHTML=""; document.getElementById("ag-cards").innerHTML="";
+    document.getElementById("ag-top").innerHTML=`<div class="card empty-state"><b>Prévision ${j==="demain"?"de demain":"d'après-demain"} pas encore disponible</b><p class="muted" style="margin:6px 0 0">Elle est calculée quand le service temps réel répond (prévision GFS affinée par ATOM Wind). Choisissez « Aujourd'hui » en attendant.</p></div>`; return; }
+  const SRC_ATOM = '<span class="srctag atom">Vent : ATOM Wind</span>';
+  const hasT = !!(window.ATOM && ATOM.aT(ag.day));
+  const SRC_GFS = hasT ? '<span class="srctag">Température, humidité : GFS</span>' : '';
   const [x,y]=agP(), d=ag.day, c=CROPS[ag.crop], jour=AGDAYS[d].toLowerCase(), fmt1=v=>v.toFixed(1).replace(".",","), place=PLACES[ag.place][0].split(" (")[0];
   const H=[]; for(let h=0;h<24;h++){ const [u,v]=windD(x,y,10,h,d), [u2,v2]=windD(x,y,2,h,d), k=kmh(Math.hypot(u,v)); H.push({u,v,k:Math.round(k), k2:Math.round(kmh(Math.hypot(u2,v2))), g:Math.round(k*gustF(x,y,10)), T:Tair(h,x,y,d), RH:RHair(h,x,y,d)}); }
   const rel=sigma(x,y), [rc,rl]=relClass(rel.s);
@@ -543,17 +561,17 @@ function renderAgri(){
   // ---- eau
   const e=et0Day(x,y,d), etc=e.et0*c[1], gross=etc/ag.eff, m3ha=gross*10, tot=m3ha*ag.area, plus=Math.round((et0Day(x,y,d,10/3.6).et0/e.et0-1)*100);
   const asp = ag.eff<.8 && ag.eff>.7;
-  const rowsIrr=H.map(r=>({v:r.k*.8+Math.max(0,r.T-22)*2, cls:(asp ? (r.k>25||r.T>32) : r.T>32) ? "stop" : (asp ? (r.k>15||r.T>28) : r.T>29) ? "warn" : "go", t:`${r.k} km/h, ${Math.round(r.T)} °C`}));
+  const rowsIrr=H.map(r=>{ const T=hasT?r.T:20; return {v:r.k*.8+Math.max(0,T-22)*2, cls:(asp ? (r.k>25||T>32) : T>32) ? "stop" : (asp ? (r.k>15||T>28) : T>29) ? "warn" : "go", t:hasT?`${r.k} km/h, ${Math.round(r.T)} °C`:`${r.k} km/h`}; });
   document.getElementById("ag-top").innerHTML = `
     <div class="card"><h3>Quand traiter ${jour} ?</h3>${window.ATOM && ATOM.htmlProba ? ATOM.htmlProba(d, x, y) : ""}<div id="ag-trbars"></div><p style="margin:8px 0 4px">Créneaux conseillés : ${winTxt(windowsOf(rowsT))}</p>
       <p class="muted" style="font-size:14px;margin:0">Non au-dessus de 19 km/h à 10 m ; attention entre 15 et 19 km/h, si les rafales dépassent 30 km/h, ou sous 3 km/h. Vent au niveau de la rampe (2 m) à ${state.hour} h : ${H[state.hour].k2} km/h. Fiabilité ici : <span class="pill ${rc}">${rl}</span></p><div class="srcrow">${SRC_ATOM}</div></div>
-    <div class="answer info"><div class="verdict"><div class="badge-big"><svg width="28" height="28" viewBox="0 0 24 24"><path class="drop" d="M12 3c3 4 5 7 5 10a5 5 0 0 1-10 0c0-3 2-6 5-10z" fill="#fff"/></svg></div><div><div class="muted" style="font-size:14px;font-weight:700">${place} · ${c[0]} · ${MILIEUX[ag.milieu].toLowerCase()} · ${jour}</div><div class="big">Apportez ${Math.round(m3ha)} m³ par hectare</div></div></div>
+    ${!isFinite(e.et0) ? `<div class="card empty-state"><b>Besoin en eau non calculé</b><p class="muted" style="margin:6px 0 0">La méthode FAO-56 demande la température et l'humidité de GFS, servies avec le temps réel : elles ne sont pas disponibles pour cette journée.</p></div>` : `<div class="answer info"><div class="verdict"><div class="badge-big"><svg width="28" height="28" viewBox="0 0 24 24"><path class="drop" d="M12 3c3 4 5 7 5 10a5 5 0 0 1-10 0c0-3 2-6 5-10z" fill="#fff"/></svg></div><div><div class="muted" style="font-size:14px;font-weight:700">${place} · ${c[0]} · ${MILIEUX[ag.milieu].toLowerCase()} · ${jour}</div><div class="big">Apportez ${Math.round(m3ha)} m³ par hectare</div></div></div>
       <p>Soit <b>${Math.round(tot).toLocaleString("fr-FR")} m³</b> pour vos ${fmt1(ag.area)} ha (${fmt1(gross)} mm d'eau). ${ag.milieu==="serre"?"Sous serre, le besoin réel est souvent 20 à 30 % plus faible : ajustez selon l'aération.":""}</p>
       <div class="facts"><div class="fact"><div class="k">Évaporation de référence <span class="tip" tabindex="0" data-tip="Quantité d'eau qu'un gazon perdrait ce jour-là, calculée avec le vent, la chaleur, l'humidité et le soleil (méthode FAO-56).">?</span></div><div class="v">${fmt1(e.et0)} mm</div></div>
         <div class="fact"><div class="k">Besoin de la culture</div><div class="v">${fmt1(etc)} mm</div></div>
         <div class="fact"><div class="k">Vent moyen à 2 m</div><div class="v">${fmtSpeed(e.u2)}</div></div>
         <div class="fact"><div class="k">Chaleur du jour</div><div class="v">${Math.round(e.Tmin)} à ${Math.round(e.Tmax)} °C</div></div></div>
-      <p class="muted" style="font-size:14px">Le vent compte : avec 10 km/h de vent en plus, cette parcelle aurait besoin d'environ ${plus} % d'eau en plus.</p><div class="srcrow">${SRC_ATOM}${SRC_GFS}${SRC_FAO}</div></div>`;
+      <p class="muted" style="font-size:14px">Le vent compte : avec 10 km/h de vent en plus, cette parcelle aurait besoin d'environ ${plus} % d'eau en plus.</p><div class="srcrow">${SRC_ATOM}${SRC_GFS}${SRC_FAO}</div></div>`}`;
   const cards=[];
   cards.push(`<div class="card"><h3>Quand arroser ${jour} ?</h3><div id="ag-irrbars"></div><p style="margin:8px 0 4px">Meilleurs moments : ${winTxt(windowsOf(rowsIrr))}</p><p class="muted" style="font-size:14px;margin:0">${asp?"En aspersion, le vent emporte l'eau et la chaleur l'évapore : arrosez quand le vent est faible et l'air frais.":"Avec ce mode d'arrosage, l'heure compte moins ; évitez seulement les heures les plus chaudes."}</p><div class="srcrow">${SRC_ATOM}${SRC_GFS}</div></div>`);
   if(ag.milieu==="serre"){ const r=H[state.hour], lee=DIRS[(Math.round(fromDeg(r.u,r.v)/45)+4)%8].replace(/^du |^de l'|^de /,"");
@@ -578,17 +596,19 @@ document.getElementById("ag-irr").onchange=e=>{ ag.eff=+e.target.value; renderAg
 // ---------------- FIABILITÉ ----------------
 const map2 = makeMap("c2","map2",{ rel:true, z:()=>10, onClick:(x,y)=>openSheet(x,y,10) });
 function relStats(){ let n=0, g=0; for(let j=0;j<NY;j+=2) for(let i=0;i<NX;i+=2){ if(wat[j*NX+i]) continue; n++; if(sigma((i+.5)/G,(j+.5)/G).s<.9) g++; } return Math.round(g/n*100); }
-function renderRel(){ const a=relStats(); const other = relMode==="reel" ? (relMode="aneo", relStats()) : null; if(other!==null) relMode="reel";
+function renderRel(){ if(!PRET()) return; const a=relStats(); const other = relMode==="reel" ? (relMode="aneo", relStats()) : null; if(other!==null) relMode="reel";
   document.getElementById("relstats").innerHTML = (window.ATOM ? ATOM.noteFiabilite() : "") + (relMode==="reel"
-    ? `<h3>Aujourd'hui, avec 3 stations</h3><div class="kpi"><div class="v">${a} %</div><div class="s">des terres avec une fiabilité bonne</div></div><p style="margin-bottom:0">Avec le réseau ANEO prévu (${ANEO.length} capteurs, points orange), ce chiffre passerait à <b>${other} %</b>. Le plan de déploiement place chaque capteur là où il apporte le plus.</p>`
+    ? `<h3>Aujourd'hui, avec ${STATIONS.length} stations</h3><div class="kpi"><div class="v">${a} %</div><div class="s">des terres avec une fiabilité ${ATOM.aSigma()?"bonne":"estimée bonne"}</div></div>${ANEO.length ? `<p style="margin-bottom:0">Avec le réseau ANEO prévu (${ANEO.length} capteurs, points orange), ce chiffre passerait à <b>${other} %</b>. Le plan de déploiement place chaque capteur là où il apporte le plus.</p>` : ""}`
     : `<h3>Avec le réseau ANEO prévu</h3><div class="kpi"><div class="v">${a} %</div><div class="s">des terres avec une fiabilité bonne</div></div><p style="margin-bottom:0">Les points orange montrent les ${ANEO.length} emplacements proposés, dans l'ordre où les installer. Zones d'eau exclues.</p>`);
 }
-function setRel(m){ relMode=m; document.getElementById("m-reel").setAttribute("aria-pressed",m==="reel"); document.getElementById("m-aneo").setAttribute("aria-pressed",m==="aneo"); map2.redraw(); renderRel(); renderAnswer(); }
+function setRel(m){ if(m==="aneo" && !ANEO.length) m="reel"; relMode=m; document.getElementById("m-reel").setAttribute("aria-pressed",m==="reel"); document.getElementById("m-aneo").setAttribute("aria-pressed",m==="aneo"); map2.redraw(); renderRel(); renderAnswer(); }
 document.getElementById("m-reel").onclick=()=>setRel("reel"); document.getElementById("m-aneo").onclick=()=>setRel("aneo");
+document.getElementById("m-aneo").hidden=!ANEO.length;   // le réseau ANEO prévu n'existe que si le plan OS6 est servi
 
 // ---------------- fiche d'un point ----------------
 const sheet=document.getElementById("sheet");
 function openSheet(x,y,zSel){
+  if(!PRET()) return;
   const k=idx(x,y), [u,v]=wind(x,y,zSel,state.hour), sp=Math.hypot(u,v), rel=sigma(x,y), [rc,rl]=relClass(rel.s), deg=(fromDeg(u,v)+180)%360;
   const Z=[10,25,50,100,150,200,300,400,500,650,800,1000], prof=Z.map(z=>kmh(Math.hypot(...wind(x,y,z,state.hour)))), mx=Math.max(...prof)*1.15;
   const Wp=300,Hp=170, X=s=>34+s/mx*(Wp-44), Yz=z=>Hp-18-Math.log10(z/10)/2*(Hp-30);
@@ -599,7 +619,7 @@ function openSheet(x,y,zSel){
     <div class="muted">${beaufort(kmh(sp))}</div>
     <details><summary style="cursor:pointer;font-weight:700">Pourquoi ce vent ?</summary>${explainHtml(x,y,zSel,state.hour)}</details>
     <div class="row"><span class="pill m">Valeur calculée</span><span class="pill ${rc}">Fiabilité ${rl}</span></div>
-    <p style="margin:0;font-size:15px">Calculée à partir des stations et de la météo de grande échelle. Le capteur le plus proche (${rel.who}) est à ${Math.round(rel.d)} km. Erreur probable : ± ${Math.round(kmh(rel.s))} km/h.</p>
+    <p style="margin:0;font-size:15px">Calculée à partir des stations et de la météo de grande échelle. ${esc(relTexte(rel))}</p>
     <div><b style="font-size:15px">Le vent selon la hauteur</b><svg viewBox="0 0 ${Wp} ${Hp}" style="width:100%;height:auto" role="img" aria-label="Profil vertical du vent">
       ${[10,100,1000].map(z=>`<line x1="34" x2="${Wp-8}" y1="${Yz(z)}" y2="${Yz(z)}" stroke="var(--line)"/><text x="30" y="${Yz(z)+4}" text-anchor="end">${z} m</text>`).join("")}
       <polyline points="${pts}" fill="none" stroke="var(--accent)" stroke-width="2.5"/>${prof.map((s,i)=>`<circle cx="${X(s)}" cy="${Yz(Z[i])}" r="3" fill="var(--accent)"/>`).join("")}
@@ -629,15 +649,43 @@ function init3d(){
   let renderer; try{ renderer=new THREE.WebGLRenderer({antialias:true, alpha:true}); }catch(e){ host.insertAdjacentHTML("beforeend",`<div class="nogl"><div class="card"><b>Votre appareil n'affiche pas la 3D.</b><br><span class="muted">Utilisez l'onglet « Mon vent ».</span></div></div>`); return; }
   renderer.setPixelRatio(Math.min(1.75,devicePixelRatio)); renderer.outputColorSpace=THREE.SRGBColorSpace; renderer.toneMapping=THREE.ACESFilmicToneMapping; renderer.toneMappingExposure=1.15; host.prepend(renderer.domElement);
   const scene=new THREE.Scene(), cam=new THREE.PerspectiveCamera(45,host.clientWidth/host.clientHeight,.1,500); let EX=11/1000, AW3=null; const OBJ3={stations:[],turb:[]};
-  scene.fog=new THREE.FogExp2(0x21382e,.004); scene.add(new THREE.HemisphereLight(0xeaf1de,0x344838,2.1)); const sun=new THREE.DirectionalLight(0xfff1cf,2.4); sun.position.set(-30,40,20); scene.add(sun);
-  const SEG=[136,112], geo=new THREE.PlaneGeometry(W,H,SEG[0],SEG[1]); geo.rotateX(-Math.PI/2);
+  // ciel et brume d'horizon : le relief lointain se fond dans l'air au lieu de flotter sur un fond uni
+  const HORIZON=0xa7b9b8; scene.fog=new THREE.FogExp2(HORIZON,.0042);
+  { const c=document.createElement("canvas"); c.width=2; c.height=256; const g=c.getContext("2d"), gr=g.createLinearGradient(0,0,0,256);
+    gr.addColorStop(0,"#26404f"); gr.addColorStop(.55,"#6f8f9b"); gr.addColorStop(.8,"#a7b9b8"); gr.addColorStop(1,"#b9c4b8"); g.fillStyle=gr; g.fillRect(0,0,2,256);
+    const sky=new THREE.CanvasTexture(c); sky.colorSpace=THREE.SRGBColorSpace; scene.background=sky; }
+  scene.add(new THREE.HemisphereLight(0xdfeaf2,0x4a4234,1.7)); const sun=new THREE.DirectionalLight(0xfff0d6,2.9); sun.position.set(-34,30,-18); scene.add(sun);
+  // relief affiché : grille réelle à 125 m (Copernicus) quand elle est chargée, sinon la grille de la page
+  const RF=(window.ATOM&&ATOM.relief)||null, SEA_FLOOR=-.12, LAKE_FLOOR=-.04;
+  const eauV=(x,y)=> RF ? RF.eauA(x,y) : wat[idx(x,y)];
+  const solV=(x,y)=> eauV(x,y) ? 0 : RF ? RF.hauteur(x,y) : elev[idx(x,y)];
+  const yTerrain=(x,y,ex=EX)=>{ const e=eauV(x,y); return e===1 ? SEA_FLOOR : e ? LAKE_FLOOR : Math.max(.03, solV(x,y)*ex); };
+  const SEG=RF?[204,168]:[136,112], geo=new THREE.PlaneGeometry(W,H,SEG[0],SEG[1]); geo.rotateX(-Math.PI/2);
   const pos=geo.attributes.position, cols=new Float32Array(pos.count*3);
-  for(let i=0;i<pos.count;i++){ const x=pos.getX(i)+W/2, y=H/2-pos.getZ(i), k=idx(x,y); pos.setY(i, wat[k]?-.02:elev[k]*EX); pos.setX(i,x-W/2); pos.setZ(i,-(y-H/2)); }
+  for(let i=0;i<pos.count;i++){ const x=pos.getX(i)+W/2, y=H/2-pos.getZ(i); pos.setY(i, yTerrain(x,y)); pos.setX(i,x-W/2); pos.setZ(i,-(y-H/2)); }
   geo.computeVertexNormals(); geo.setAttribute("color",new THREE.BufferAttribute(cols,3));
-  const mesh=new THREE.Mesh(geo,new THREE.MeshStandardMaterial({vertexColors:true,roughness:.95,metalness:0})); scene.add(mesh);
-  function colorTerrain(){ const lo=new THREE.Color(0x839c67), mid=new THREE.Color(0xb5ab77), hi=new THREE.Color(0xd8d0a4), wa=new THREE.Color(0x487e7b), la=new THREE.Color(0x608f7b), ur=new THREE.Color(0x9eaa8b);
-    for(let i=0;i<pos.count;i++){ const x=pos.getX(i)+W/2, y=-pos.getZ(i)+H/2, k=idx(x,y); let c;
-      if(wat[k]===1) c=wa.clone(); else if(wat[k]===2) c=la.clone(); else { const t=Math.min(1,elev[k]/700); c = t<.5 ? lo.clone().lerp(mid,t*2) : mid.clone().lerp(hi,(t-.5)*2); if(z0[k]>.7) c.lerp(ur,.6); }
+  const mesh=new THREE.Mesh(geo,new THREE.MeshLambertMaterial({vertexColors:true})); scene.add(mesh);
+  // surface de la mer et des lacs au niveau 0, légèrement brillante, au-dessus d'un fond plus sombre
+  const seaMat=new THREE.MeshStandardMaterial({color:0x2f6c80,roughness:.28,metalness:.08,transparent:true,opacity:.86});
+  const sea=new THREE.Mesh(new THREE.PlaneGeometry(W,H),seaMat); sea.rotation.x=-Math.PI/2; sea.renderOrder=1; scene.add(sea);
+  // couleurs naturelles : champs et vergers en plaine, garrigue puis forêt sur les pentes, roche en crête.
+  // Lecture du relief seulement (altitude, pente) : ce n'est pas une carte d'occupation du sol.
+  const hash=(i,j)=>{ const h=Math.sin(i*127.1+j*311.7)*43758.5453; return h-Math.floor(h); };
+  const noise=(x,y)=>{ const i=Math.floor(x), j=Math.floor(y), u=x-i, v=y-j, a=hash(i,j), b=hash(i+1,j), c=hash(i,j+1), d=hash(i+1,j+1), su=u*u*(3-2*u), sv=v*v*(3-2*v); return (a*(1-su)+b*su)*(1-sv)+(c*(1-su)+d*su)*sv; };
+  const sstep=(a,b,t)=>{ const x=Math.min(1,Math.max(0,(t-a)/(b-a))); return x*x*(3-2*x); };
+  const PAL={champ:new THREE.Color(0xc4b27c), verger:new THREE.Color(0x949c5e), humide:new THREE.Color(0x8f9f78), garrigue:new THREE.Color(0x707c49), foret:new THREE.Color(0x4f6238), roche:new THREE.Color(0xa69a80), crete:new THREE.Color(0xc9bfa6), urbain:new THREE.Color(0xa9a396), fond:new THREE.Color(0x24505e), lac:new THREE.Color(0x4f8582)};
+  const tc=new THREE.Color();
+  function colorTerrain(){
+    for(let i=0;i<pos.count;i++){ const x=pos.getX(i)+W/2, y=-pos.getZ(i)+H/2, k=idx(x,y), e=eauV(x,y); let c=tc;
+      if(e===1) c.copy(PAL.fond); else if(e===2) c.copy(PAL.lac); else {
+        const h=solV(x,y), d=.125, sl=Math.hypot(solV(x+d,y)-solV(x-d,y), solV(x,y+d)-solV(x,y-d))/(2*d*1000), n=noise(x*.45,y*.45)*.7+noise(x*1.3,y*1.3)*.3;
+        c.copy(PAL.champ).lerp(PAL.verger, sstep(.35,.75,n));
+        if(h<4) c.lerp(PAL.humide,.55);
+        c.lerp(PAL.garrigue, Math.max(sstep(90,320,h), sstep(.06,.18,sl))*.85);
+        c.lerp(PAL.foret, sstep(.14,.32,sl)*sstep(120,380,h)*.8);
+        c.lerp(PAL.roche, Math.max(sstep(480,760,h)*.7, sstep(.38,.6,sl)*.75));
+        c.lerp(PAL.crete, sstep(650,800,h)*.5);
+        if(z0[k]>.7 && window.ATOM?.grille) c.lerp(PAL.urbain,.55); }
       if(relOn && !wat[k]){ const s=sigma(x,y).s, t=Math.min(1,Math.max(0,(s-.45)/1.6)); c.lerp(new THREE.Color(t<.3?0x1f9d55:t<.6?0xd98a00:0xd23a3a),.5); c.lerp(new THREE.Color(0xffffff),Math.max(0,t-.5)*.6); }
       cols[i*3]=c.r; cols[i*3+1]=c.g; cols[i*3+2]=c.b; } geo.attributes.color.needsUpdate=true; }
   colorTerrain();
@@ -646,39 +694,47 @@ function init3d(){
   const pts=new THREE.Points(pg,new THREE.PointsMaterial({size:.16, vertexColors:true, transparent:true, opacity:.8, depthWrite:false})); scene.add(pts);
   for(let i=0;i<N;i++) P.push({x:Math.random()*W, y:Math.random()*H, a:Math.random()*90|0});
   // stations et éoliennes
-  for(const s of STATIONS){ const k=idx(...s.p), m=new THREE.Mesh(new THREE.CylinderGeometry(.18,.18,1.2,10),new THREE.MeshLambertMaterial({color:0x3a6fd2})); m.position.set(s.p[0]-W/2,elev[k]*EX+.6,-(s.p[1]-H/2)); scene.add(m); OBJ3.stations.push({m,p:s.p}); }
-  for(const t of TURB){ const k=idx(...t.p), m=new THREE.Mesh(new THREE.CylinderGeometry(.06,.1,80*EX*4,8),new THREE.MeshLambertMaterial({color:0xf2f2f2})); m.position.set(t.p[0]-W/2,elev[k]*EX+80*EX*2,-(t.p[1]-H/2)); scene.add(m); OBJ3.turb.push({m,p:t.p}); }
+  for(const s of STATIONS){ const m=new THREE.Mesh(new THREE.CylinderGeometry(.18,.18,1.2,10),new THREE.MeshLambertMaterial({color:0x3a6fd2})); m.position.set(s.p[0]-W/2,solV(...s.p)*EX+.6,-(s.p[1]-H/2)); scene.add(m); OBJ3.stations.push({m,p:s.p}); }
+  for(const t of TURB){ const m=new THREE.Mesh(new THREE.CylinderGeometry(.06,.1,80*EX*4,8),new THREE.MeshLambertMaterial({color:0xf2f2f2})); m.position.set(t.p[0]-W/2,solV(...t.p)*EX+80*EX*2,-(t.p[1]-H/2)); scene.add(m); OBJ3.turb.push({m,p:t.p}); }
   const pin=new THREE.Mesh(new THREE.ConeGeometry(.5,1.6,16),new THREE.MeshLambertMaterial({color:0x0a6e7d})); pin.rotation.x=Math.PI; pin.visible=false; scene.add(pin);
   const labels=[...STATIONS.map(s=>({t:s.n,p:s.p,st:true})), {t:"Djebel Ressas",p:xy(36.61,10.33)},{t:"Golfe de Tunis",p:xy(36.84,10.42)},{t:"Tunis",p:xy(36.80,10.18)},{t:"Parc éolien virtuel",p:xy(36.612,10.33)}]
-    .map(l=>{ const d=document.createElement("div"); d.className="lbl3d"+(l.st?" st":""); d.textContent=l.t; host.appendChild(d); const k=idx(...l.p); return {d, p:l.p, st:!!l.st, v:new THREE.Vector3(l.p[0]-W/2, (wat[k]?0:elev[k]*EX)+1.6, -(l.p[1]-H/2))}; });
+    .map(l=>{ const d=document.createElement("div"); d.className="lbl3d"+(l.st?" st":""); d.textContent=l.t; host.appendChild(d); return {d, p:l.p, st:!!l.st, v:new THREE.Vector3(l.p[0]-W/2, solV(...l.p)*EX+1.6, -(l.p[1]-H/2))}; });
   const ctl=new THREE.OrbitControls(cam,renderer.domElement); ctl.enableDamping=true; ctl.dampingFactor=.09; ctl.screenSpacePanning=true; ctl.zoomSpeed=.8; ctl.panSpeed=.75; ctl.maxPolarAngle=Math.PI*.47; ctl.minDistance=12; ctl.maxDistance=280;
   const home=()=>{ cam.position.set(-20,68,82).multiplyScalar(Math.max(1,.95/cam.aspect)); ctl.target.set(0,2,0); ctl.update(); }; home();
   document.getElementById("recenter").onclick=home;
   const rb=document.getElementById("relbtn"); rb.onclick=()=>{ relOn=!relOn; rb.setAttribute("aria-pressed",relOn); rb.textContent=relOn?"Masquer la fiabilité":"Afficher la fiabilité"; colorTerrain(); };
   const hs=document.getElementById("h3"); hs.oninput=()=>{ z3=H3[+hs.value]; document.getElementById("h3txt").textContent=`${z3.toLocaleString("fr-FR")} m`;if(window.ATOM?.workspace)publishWorkspace(); };
   const ray=new THREE.Raycaster(), m2=new THREE.Vector2(); let down=null, hovPend=null;
+  // sélection sur le relief affiché par marche le long du rayon : exacte et peu coûteuse quelle que soit la finesse du maillage
+  function pickTerrain(r){ const o=r.ray.origin, d=r.ray.direction; let t0=0, t1=1e4;
+    for(const [oa,da,lo,hi] of [[o.x,d.x,-W/2,W/2],[o.z,d.z,-H/2,H/2]]){ if(Math.abs(da)<1e-9){ if(oa<lo||oa>hi) return null; continue; } let a=(lo-oa)/da, b=(hi-oa)/da; if(a>b) [a,b]=[b,a]; t0=Math.max(t0,a); t1=Math.min(t1,b); }
+    if(t0>t1) return null;
+    const gap=t=>{ const x=o.x+d.x*t+W/2, y=-(o.z+d.z*t)+H/2; return o.y+d.y*t-Math.max(0,yTerrain(Math.min(W,Math.max(0,x)),Math.min(H,Math.max(0,y)))); };
+    if(gap(t0)<=0) return {point:o.clone().addScaledVector(d,t0)};
+    for(let a=t0, t=t0+.08; a<t1; a=t, t+=.08){ const b=Math.min(t,t1); if(gap(b)<=0){ let lo=a, hi=b; for(let n=0;n<18;n++){ const m=(lo+hi)/2; if(gap(m)>0) lo=m; else hi=m; } return {point:o.clone().addScaledVector(d,hi)}; } }
+    return null; }
   const hring=new THREE.Mesh(new THREE.RingGeometry(.55,.8,32),new THREE.MeshBasicMaterial({color:0xffffff, transparent:true, opacity:.9, side:THREE.DoubleSide, depthTest:false})); hring.rotation.x=-Math.PI/2; hring.visible=false; hring.renderOrder=5; scene.add(hring);
   renderer.domElement.addEventListener("pointermove", e => { if(e.buttons){ hideTip("3d"); hring.visible=false; return; } if(hovPend) return; hovPend=requestAnimationFrame(()=>{ hovPend=null;
-    const r=renderer.domElement.getBoundingClientRect(); m2.set((e.clientX-r.left)/r.width*2-1,-(e.clientY-r.top)/r.height*2+1); ray.setFromCamera(m2,cam); const hit=ray.intersectObject(mesh)[0];
+    const r=renderer.domElement.getBoundingClientRect(); m2.set((e.clientX-r.left)/r.width*2-1,-(e.clientY-r.top)/r.height*2+1); ray.setFromCamera(m2,cam); const hit=pickTerrain(ray);
     if(!hit){ hideTip("3d"); hring.visible=false; return; } const x=hit.point.x+W/2, y=-hit.point.z+H/2, k=idx(x,y), zh=AW3?Math.max(2,AW3.zSol(x,y)):z3, [u,v]=wind(x,y,zh,state.hour), sp=Math.hypot(u,v), deg=(fromDeg(u,v)+180)%360;
     hring.position.set(hit.point.x, hit.point.y+.08, hit.point.z); hring.visible=true;
-    showTip(`<div style="display:flex;gap:8px;align-items:center"><b>${fmtSpeed(sp)}</b>${arrowSvg(deg,18,"currentColor")}</div>Vent ${dirName(u,v)}, ${AW3?AW3.texteHauteur(x,y):`à ${z3} m du sol`}<br><span class="sub">${wat[k]===1?"En mer":`Sol à ${Math.round(elev[k])} m`} · près de ${nearestName([x,y])} · cliquez pour le détail</span>`, e.clientX, e.clientY, "3d"); }); });
+    showTip(`<div style="display:flex;gap:8px;align-items:center"><b>${fmtSpeed(sp)}</b>${arrowSvg(deg,18,"currentColor")}</div>Vent ${dirName(u,v)}, ${AW3?AW3.texteHauteur(x,y):`à ${z3} m du sol`}<br><span class="sub">${eauV(x,y)===1?"En mer":eauV(x,y)===2?"Lac ou sebkha":`Sol à ${Math.round(solV(x,y))} m`} · près de ${nearestName([x,y])} · cliquez pour le détail</span>`, e.clientX, e.clientY, "3d"); }); });
   renderer.domElement.addEventListener("pointerleave", () => { hideTip("3d"); hring.visible=false; });
   renderer.domElement.addEventListener("pointerdown",e=>down=[e.clientX,e.clientY]);
   let cutMode=false, cutPts=[], cutObjs=[]; const cb=document.getElementById("cutbtn"), cap=document.getElementById("cap3");
   const clearCut=()=>{ cutObjs.forEach(o=>{scene.remove(o);o.geometry?.dispose();o.material?.dispose();}); cutObjs=[]; cutPts=[]; };
   cb.onclick=()=>{ cutMode=!cutMode; clearCut(); cb.setAttribute("aria-pressed",cutMode); cb.textContent=cutMode?"Touchez 2 points du relief":"Tracer une coupe"; cap.hidden=!cutMode; cap.textContent="Touchez le point de départ A, puis le point d'arrivée B."; };
-  function drawCut(A,B){ const pts=[]; for(let i=0;i<=80;i++){ const s=i/80, x=A[0]+(B[0]-A[0])*s, y=A[1]+(B[1]-A[1])*s, k=idx(x,y); pts.push(new THREE.Vector3(x-W/2,(wat[k]?0:elev[k]*EX)+.35,-(y-H/2))); }
+  function drawCut(A,B){ const pts=[]; for(let i=0;i<=80;i++){ const s=i/80, x=A[0]+(B[0]-A[0])*s, y=A[1]+(B[1]-A[1])*s; pts.push(new THREE.Vector3(x-W/2,solV(x,y)*EX+.35,-(y-H/2))); }
     const ln=new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),new THREE.LineBasicMaterial({color:0xc4842f})); scene.add(ln); cutObjs.push(ln); }
-  renderer.domElement.addEventListener("pointerup",e=>{ if(!down||Math.hypot(e.clientX-down[0],e.clientY-down[1])>6) return; const r=renderer.domElement.getBoundingClientRect(); m2.set((e.clientX-r.left)/r.width*2-1,-(e.clientY-r.top)/r.height*2+1); ray.setFromCamera(m2,cam); const hit=ray.intersectObject(mesh)[0]; if(!hit) return; const x=hit.point.x+W/2, y=-hit.point.z+H/2;
+  renderer.domElement.addEventListener("pointerup",e=>{ if(!down||Math.hypot(e.clientX-down[0],e.clientY-down[1])>6) return; const r=renderer.domElement.getBoundingClientRect(); m2.set((e.clientX-r.left)/r.width*2-1,-(e.clientY-r.top)/r.height*2+1); ray.setFromCamera(m2,cam); const hit=pickTerrain(ray); if(!hit) return; const x=hit.point.x+W/2, y=-hit.point.z+H/2;
     if(seedMode){ launchSeed(x,y,hit.point); return; }
     if(cutMode){ cutPts.push([x,y]); const mk=new THREE.Mesh(new THREE.SphereGeometry(.45,16,12),new THREE.MeshLambertMaterial({color:0xc4842f})); mk.position.set(hit.point.x,hit.point.y+.5,hit.point.z); scene.add(mk); cutObjs.push(mk);
       if(cutPts.length===2){ drawCut(...cutPts); renderCut(...cutPts); cutMode=false; cb.setAttribute("aria-pressed",false); cb.textContent="Nouvelle coupe"; cap.hidden=true; document.getElementById("cutcard").scrollIntoView({behavior:"smooth",block:"nearest"}); } else cap.textContent="Touchez maintenant le point d'arrivée B."; return; }
     pin.position.set(hit.point.x,hit.point.y+1.1,hit.point.z); pin.visible=true; placePin(x,y); if(AW3 && AW3.fiche(x,y)) return; openSheet(x,y,z3); });
-  const BREEZE={8:"8 h : le matin, le vent de terre faiblit.",10:"10 h : la terre chauffe plus vite que la mer.",12:"12 h : la brise de mer se lève et entre dans les terres.",14:"14 h : brise de mer forte sur toute la côte du golfe.",16:"16 h : la brise est à son maximum et pénètre à 10 ou 15 km.",18:"18 h : le soleil baisse, la brise faiblit.",20:"20 h : le vent tombe près de la côte.",22:"22 h : la nuit, une faible brise de terre souffle vers la mer."};
+  // la journée calculée heure par heure, près du sol : le vent qui tourne le long de la côte se voit tel que le modèle l'a calculé
   let bT=null; const bb=document.getElementById("breeze");
-  bb.onclick=()=>{ if(bT){ clearInterval(bT); bT=null; bb.textContent="Voir la brise de mer"; cap.hidden=true; return; } let h=8; hs.value=0; hs.oninput(); bb.textContent="Arrêter"; cap.hidden=false;
-    const step=()=>{ setHour(h); const k=Object.keys(BREEZE).map(Number).filter(q=>q<=h).pop(); cap.textContent=BREEZE[k]; h++; if(h>22){ clearInterval(bT); bT=null; bb.textContent="Voir la brise de mer"; setTimeout(()=>{ if(!bT) cap.hidden=true; },2500); } };
+  bb.onclick=()=>{ if(bT){ clearInterval(bT); bT=null; bb.textContent="Rejouer la journée"; cap.hidden=true; return; } let h=6; hs.value=0; hs.oninput(); bb.textContent="Arrêter"; cap.hidden=false;
+    const step=()=>{ setHour(h); const d=domainStats(h); cap.textContent=`${h} h : vent moyen ${fmtSpeed(d.mean)} à 10 m, ${dirName(d.u,d.v)}.`; h++; if(h>22){ clearInterval(bT); bT=null; bb.textContent="Rejouer la journée"; setTimeout(()=>{ if(!bT) cap.hidden=true; },2500); } };
     step(); bT=setInterval(step,1100); };
   function resize(){ const w=host.clientWidth, h=host.clientHeight; renderer.setSize(w,h,false); cam.aspect=w/h; cam.updateProjectionMatrix(); }
   const sceneObserver=new ResizeObserver(()=>{if(host.clientWidth&&host.clientHeight) resize();}); sceneObserver.observe(host);
@@ -692,7 +748,7 @@ function init3d(){
   const trail=new THREE.Line(tgeo,new THREE.LineBasicMaterial({color:0xffd34d})); scene.add(trail);
   const ball=new THREE.Mesh(new THREE.SphereGeometry(.5,20,14),new THREE.MeshBasicMaterial({color:0xfff1a8})); ball.visible=false; scene.add(ball);
   const glow=new THREE.Mesh(new THREE.SphereGeometry(1.1,20,14),new THREE.MeshBasicMaterial({color:0xffd34d, transparent:true, opacity:.25, depthWrite:false})); ball.add(glow);
-  const yOf=(x,y,z)=>{ const k=idx(x,y); return (wat[k]?0:elev[k])*EX + Math.max(.15, z*EX*1.4); };
+  const yOf=(x,y,z)=> solV(x,y)*EX + Math.max(.15, z*EX*1.4);
   sb.onclick=()=>{ seedMode=!seedMode; sb.setAttribute("aria-pressed",seedMode); sb.textContent=seedMode?"Touchez le relief…":"Lâcher dans le vent"; cap.hidden=!seedMode; cap.textContent=`Touchez le relief pour lâcher ${SEEDS[st.value].n}.`; };
   function launchSeed(x,y,p){ seedMode=false; sb.setAttribute("aria-pressed",false); sb.textContent="Lâcher encore";
     const T=SEEDS[st.value]; seed={x,y,x0:x,y0:y,z:T.z0,type:st.value,t:0,dist:0,n:0,zmax:T.z0,done:false}; ball.material.color.setHex(T.c); ball.visible=true; tgeo.setDrawRange(0,0); cap.hidden=false; }
@@ -720,7 +776,7 @@ function init3d(){
     lastFrame=now; const start=performance.now();
     if(!ATOM.scenePaused&&!reduce) stepSeed();
     if(!(AW3 && AW3.particules())&&!ATOM.scenePaused) for(let i=0;i<N;i++){ const p=P[i], [u,v]=wind(p.x,p.y,z3,state.hour), sp=Math.hypot(u,v); if(!reduce){ p.x+=u*.02; p.y+=v*.02; } if(++p.a>140||p.x<0||p.x>W||p.y<0||p.y>H){ p.x=Math.random()*W; p.y=Math.random()*H; p.a=0; }
-      const k=idx(p.x,p.y), gz=(wat[k]?0:elev[k]); pp[i*3]=p.x-W/2; pp[i*3+1]=gz*EX+Math.max(.15,z3*EX*1.4); pp[i*3+2]=-(p.y-H/2); const c=speedColor(kmh(sp)); pc[i*3]=c[0]/255; pc[i*3+1]=c[1]/255; pc[i*3+2]=c[2]/255; }
+      const gz=solV(p.x,p.y); pp[i*3]=p.x-W/2; pp[i*3+1]=gz*EX+Math.max(.15,z3*EX*1.4); pp[i*3+2]=-(p.y-H/2); const c=speedColor(kmh(sp)); pc[i*3]=c[0]/255; pc[i*3+1]=c[1]/255; pc[i*3+2]=c[2]/255; }
     pg.attributes.position.needsUpdate=true; pg.attributes.color.needsUpdate=true; if(AW3) AW3.image(); const moving=ctl.update(); renderer.render(scene,cam); stats.frames++;stats.renderMs=performance.now()-start; if((!ATOM.scenePaused&&!reduce)||moving) schedule();
     const labelRects=[]; const r=renderer.domElement.getBoundingClientRect(); for(const l of labels){ tmp.copy(l.v).project(cam); let vis=tmp.z<1&&Math.abs(tmp.x)<1&&Math.abs(tmp.y)<1;
       const lx=(tmp.x+1)/2*r.width,ly=(1-tmp.y)/2*r.height,lw=Math.min(160,l.d.textContent.length*6.4);
@@ -728,7 +784,7 @@ function init3d(){
       if(labelRects.some(b=>bounds.x<b.x+b.w&&bounds.x+bounds.w>b.x&&bounds.y<b.y+b.h&&bounds.y+bounds.h>b.y))vis=false;
       if(vis&&!l.cache)labelRects.push(bounds);
       l.d.hidden=!vis||!!l.cache; if(vis){ l.d.style.left=((tmp.x+1)/2*r.width)+"px"; l.d.style.top=((1-tmp.y)/2*r.height)+"px"; } } }
-  if(window.ATOM && ATOM.vue3d) try{ AW3=ATOM.vue3d({THREE, scene, cam, ctl, renderer, host, mesh, geo, pos, pts, pg, pp, pc, P, N, labels, objets:OBJ3, pin, hring, hs, H3, NX, NY, G, ex:()=>EX, setEx:v=>{EX=v}, z3:()=>z3, cutObjs:()=>cutObjs, wind, sigma, relClass, idx, elev, wat, W, H, STATIONS, TURB, ANEO, state, speedColor, kmh, fmtSpeed, dirName, fromDeg, nearestName, openSheet, setHour}); }catch(e){ console.error("vue 3D complète", e); AW3=null; }
+  if(window.ATOM && ATOM.vue3d) try{ AW3=ATOM.vue3d({THREE, scene, cam, ctl, renderer, host, mesh, geo, pos, pts, pg, pp, pc, P, N, labels, objets:OBJ3, pin, hring, hs, H3, NX, NY, G, ex:()=>EX, setEx:v=>{EX=v}, z3:()=>z3, cutObjs:()=>cutObjs, wind, sigma, relClass, idx, elev, wat, W, H, STATIONS, TURB, ANEO, state, speedColor, kmh, fmtSpeed, dirName, fromDeg, nearestName, openSheet, setHour, relief:{RF, eauV, solV, yTerrain, SEA_FLOOR}}); }catch(e){ console.error("vue 3D complète", e); AW3=null; }
   ATOM.sceneStats=()=>({...stats,drawCalls:renderer.info.render.calls,triangles:renderer.info.render.triangles,geometries:renderer.info.memory.geometries,textures:renderer.info.memory.textures,pixelRatio:renderer.getPixelRatio()});
   ATOM.invalidateScene=schedule;
   ctl.addEventListener("change",schedule);
@@ -743,29 +799,22 @@ function init3d(){
 let threeReady=false; let currentView="monvent";
 // ---------------- comptes, rôles et accès ----------------
 const ROLES = {
-  public:{n:"Grand public", auto:true, home:"monvent", d:"Vent près de chez soi, alertes"},
+  public:{n:"Grand public", auto:true, home:"tableau", d:"Vent près de chez soi, alertes"},
   agri:{n:"Agriculteur", auto:true, home:"agri", d:"Traitements, irrigation, alertes vent"},
   eolien:{n:"Exploitant éolien", auto:false, home:"eolien", d:"Production prévue, rotor, gisement"},
-  admin:{n:"Administrateur", auto:false, home:"admin", d:"Comptes, rôles, clés d'API"}
+  admin:{n:"Administrateur", auto:false, home:"tableau", d:"Comptes, rôles, clés d'API"}
 };
-const ACCESS = { monvent:"*", carte3d:"*", alertes:"*", agri:["agri","admin"], tableau:["eolien","admin"], eolien:["eolien","admin"], fiabilite:["eolien","admin"], admin:["admin"] };
-const TABNAME = { monvent:"Mon vent", agri:"Agriculteur", tableau:"Tableau de bord", carte3d:"Carte 3D", alertes:"Alertes", eolien:"Éolien", fiabilite:"Fiabilité", admin:"Administration" };
+const ACCESS = { tableau:"*", monvent:"*", carte3d:"*", alertes:"*", fiabilite:"*", outils:"*", historique:"*", agri:["agri","admin"], eolien:["eolien","admin"], admin:["admin"] };
+const TABNAME = { tableau:"Vue d’ensemble", monvent:"Mon vent", agri:"Agriculture", carte3d:"Atmosphère 3D", alertes:"Alertes", eolien:"Énergie éolienne", fiabilite:"Données & fiabilité", outils:"Outils de terrain", historique:"Historique", admin:"Administration" };
 const store = { get(k,d){ try{ const v=localStorage.getItem(k); return v?JSON.parse(v):d; }catch(e){ return d; } }, set(k,v){ try{ localStorage.setItem(k,JSON.stringify(v)); }catch(e){} } };
-let USERS = store.get("aw-users", null);
-if(!Array.isArray(USERS)){ USERS = [
-  {id:"u1", name:"Admin ATOM Wind", email:"admin@demo.atomwind.tn", role:"admin", status:"actif", demo:true, created:"2026-10-01"},
-  {id:"u2", name:"Hédi, agriculteur à Mornag", email:"agri@demo.atomwind.tn", role:"agri", status:"actif", demo:true, created:"2026-10-05"},
-  {id:"u3", name:"Société Vent du Cap", email:"eolien@demo.atomwind.tn", role:"eolien", status:"actif", demo:true, created:"2026-10-08"},
-  {id:"u4", name:"Domaine de Grombalia", email:"grombalia@demo.atomwind.tn", role:"public", requested:"eolien", status:"en attente", demo:true, created:"2026-10-20"} ]; store.set("aw-users",USERS); }
-USERS = USERS.filter(u=>!(u.demo && (u.role==="rd"||u.requested==="chantier"))); if(!USERS.some(u=>u.demo&&u.role==="eolien")) USERS.push({id:"u3", name:"Société Vent du Cap", email:"eolien@demo.atomwind.tn", role:"eolien", status:"actif", demo:true, created:"2026-10-08"});
-USERS.forEach(u=>{ if(!ROLES[u.role]) u.role="public"; if(u.requested && !ROLES[u.requested]) u.requested=null; });
-let KEYS = store.get("aw-keys", []); if(!Array.isArray(KEYS)) KEYS=[];
-let me = USERS.find(u=>u.id===store.get("aw-session",null) && u.status!=="désactivé") || null;
+// comptes : uniquement ceux du serveur (/api/comptes) ; la session est une clé gardée par atom-data.js
+try{ localStorage.removeItem("aw-users"); localStorage.removeItem("aw-keys"); localStorage.removeItem("aw-session"); localStorage.removeItem("aw-alertes"); }catch(e){}
+const USERS = [];
+let me = null;
 const roleOf = () => me ? me.role : "visiteur";
 const allowed = v => ACCESS[v]==="*" || (Array.isArray(ACCESS[v]) && ACCESS[v].includes(roleOf()));
 const toastEl=document.getElementById("toast"); let toastT=null;
 function toast(msg){ toastEl.textContent=msg; toastEl.hidden=false; clearTimeout(toastT); toastT=setTimeout(()=>toastEl.hidden=true,3200); }
-async function hashPw(salt,pw){ try{ const b=await crypto.subtle.digest("SHA-256", new TextEncoder().encode(salt+":"+pw)); return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,"0")).join(""); }catch(e){ let h=0; for(const c of salt+pw) h=(h*31+c.charCodeAt(0))|0; return "f"+h; } }
 const esc = t => String(t).replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const initials = n => n.split(/\s+/).filter(Boolean).slice(0,2).map(w=>w[0].toUpperCase()).join("");
 function applyAccess(){ document.querySelectorAll("nav.tabs a").forEach(a=>{ a.hidden = !allowed(a.dataset.v); });document.querySelectorAll("[data-access-view]").forEach(a=>{a.hidden=!allowed(a.dataset.accessView);}); renderUserBox(); }
@@ -780,8 +829,8 @@ function renderUserBox(){ const ub=document.getElementById("userbox");
   bu.onclick=e=>{ e.stopPropagation(); mn.hidden=!mn.hidden; bu.setAttribute("aria-expanded",!mn.hidden); };
   document.addEventListener("click",e=>{ if(!e.target.closest("#userbox")) mn.hidden=true; },{once:true});
   document.getElementById("b-out").onclick=logout; }
-function login(u, msg){ me=u; store.set("aw-session",u.id); applyAccess(); closeAuth(); const home=ROLES[u.role].home; navigate(home,true); toast(msg||`Bienvenue, ${u.name.split(",")[0]}`); }
-function logout(){ if(window.ATOM && ATOM.deconnexionServeur) ATOM.deconnexionServeur(); me=null; store.set("aw-session",null); applyAccess(); navigate("monvent",true); toast("Vous êtes déconnecté."); }
+function login(u, msg){ me=u; applyAccess(); closeAuth(); const home=(ROLES[u.role]||ROLES.public).home; navigate(home,true); loadMy(); toast(msg||`Bienvenue, ${u.name.split(",")[0]}`); }
+function logout(){ if(window.ATOM && ATOM.deconnexionServeur) ATOM.deconnexionServeur(); me=null; MY=[]; applyAccess(); navigate("tableau",true); renderAlerts(); toast("Vous êtes déconnecté."); }
 const authEl=document.getElementById("authm");
 function closeAuth(){ authEl.hidden=true; }
 function openAuth(mode){
@@ -794,8 +843,7 @@ function openAuth(mode){
       <label for="l-pw">Mot de passe<input class="inp" id="l-pw" type="password" autocomplete="current-password" required></label>
       <div class="err" id="l-err" role="alert"></div>
       <button class="btn primary" type="submit">Se connecter</button>
-      <button class="btn" type="button" id="l-forgot">Mot de passe oublié ?</button></form>
-      <div><b style="font-size:14px">Démonstration : entrer directement en tant que</b><div class="demo" style="margin-top:6px">${["agri","eolien","admin"].map(r=>`<button class="btn" data-demo="${r}">${ROLES[r].n}</button>`).join("")}</div></div>`
+      <button class="btn" type="button" id="l-forgot">Mot de passe oublié ?</button></form>`
     : `<form class="form" id="f-reg" novalidate>
       <label for="r-name">Nom ou raison sociale<input class="inp" id="r-name" autocomplete="name" required></label>
       <label for="r-mail">Adresse e-mail<input class="inp" id="r-mail" type="email" autocomplete="email" required></label>
@@ -806,67 +854,44 @@ function openAuth(mode){
       <label class="check" for="r-ok"><input type="checkbox" id="r-ok"> J'accepte les conditions d'utilisation et la politique de confidentialité d'ATOM Wind.</label>
       <div class="err" id="r-err" role="alert"></div>
       <button class="btn primary" type="submit">Créer mon compte</button></form>`}
-    <p class="muted" style="font-size:12px;margin:0">Prototype : les comptes sont enregistrés seulement dans ce navigateur, mot de passe chiffré (empreinte). En production, l'authentification se fait sur le serveur ATOM Wind.</p></div>`;
+    <p class="muted" style="font-size:12px;margin:0">Votre compte est gardé sur le serveur ATOM Wind ; le mot de passe n'est jamais stocké dans ce navigateur.</p></div>`;
   authEl.hidden=false;
   document.getElementById("a-close").onclick=closeAuth;
   document.getElementById("t-login").onclick=()=>openAuth("login"); document.getElementById("t-reg").onclick=()=>openAuth("register");
   if(mode==="login"){
     document.getElementById("l-mail").focus();
-    document.getElementById("l-forgot").onclick=()=>{ document.getElementById("l-err").textContent="Prototype : en production, un lien de réinitialisation est envoyé par e-mail."; };
-    authEl.querySelectorAll("[data-demo]").forEach(b=>b.onclick=()=>{ let u=USERS.find(x=>x.demo && x.role===b.dataset.demo && x.status==="actif"); if(!u){ u={id:"d"+b.dataset.demo, name: ROLES[b.dataset.demo].n, email:`${b.dataset.demo}@demo.atomwind.tn`, role:b.dataset.demo, status:"actif", demo:true, created:new Date().toISOString().slice(0,10)}; USERS.push(u); store.set("aw-users",USERS); } if(u) login(u, `Démonstration : connecté en tant que ${ROLES[u.role].n}`); });
+    document.getElementById("l-forgot").onclick=()=>{ document.getElementById("l-err").textContent="Demandez à l'administrateur ATOM Wind de votre organisation de réinitialiser votre accès."; };
     document.getElementById("f-login").onsubmit=async e=>{ e.preventDefault(); const mail=document.getElementById("l-mail").value.trim().toLowerCase(), pw=document.getElementById("l-pw").value, err=document.getElementById("l-err");
-      const u=USERS.find(x=>x.email===mail);
       if(!mail||!pw){ err.textContent="Saisissez votre e-mail et votre mot de passe."; return; }
-      if(window.ATOM && ATOM.comptesServeur && ATOM.comptesServeur()){ const r=await ATOM.connexionServeur(mail,pw); if(r.erreur){ err.textContent=r.erreur; return; } const su=ATOM.utilisateurLocal(r.compte,USERS); store.set("aw-users",USERS); login(su); return; }
-      if(!u || u.demo || !u.salt || await hashPw(u.salt,pw)!==u.hash){ err.textContent="E-mail ou mot de passe incorrect."; return; }
-      if(u.status==="désactivé"){ err.textContent="Ce compte est désactivé. Contactez l'équipe ATOM Wind."; return; }
-      login(u); };
+      const r=await ATOM.connexionServeur(mail,pw); if(r.erreur){ err.textContent=r.erreur; return; }
+      login(ATOM.utilisateurLocal(r.compte,USERS)); };
   } else {
     document.getElementById("r-name").focus();
     document.getElementById("f-reg").onsubmit=async e=>{ e.preventDefault(); const g=id=>document.getElementById(id), err=g("r-err");
       const name=g("r-name").value.trim(), mail=g("r-mail").value.trim().toLowerCase(), pw=g("r-pw").value, pw2=g("r-pw2").value, role=g("r-role").value;
       if(name.length<2){ err.textContent="Indiquez votre nom."; return; }
       if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(mail)){ err.textContent="Cette adresse e-mail n'est pas valide."; return; }
-      if(USERS.some(u=>u.email===mail)){ err.textContent="Un compte existe déjà avec cette adresse. Connectez-vous."; return; }
       if(pw.length<8 || !/\d/.test(pw)){ err.textContent="Le mot de passe doit faire 8 caractères au moins, dont un chiffre."; return; }
       if(pw!==pw2){ err.textContent="Les deux mots de passe ne sont pas identiques."; return; }
       if(!g("r-ok").checked){ err.textContent="Acceptez les conditions d'utilisation pour continuer."; return; }
-      if(window.ATOM && ATOM.comptesServeur && ATOM.comptesServeur()){ const r=await ATOM.inscriptionServeur(name,mail,pw,role); if(r.erreur){ err.textContent=r.erreur; return; } const c=await ATOM.connexionServeur(mail,pw); if(c.erreur){ err.textContent=c.erreur; return; } const su=ATOM.utilisateurLocal(c.compte,USERS); su.place=+g("r-place").value; store.set("aw-users",USERS); login(su, su.requested ? `Compte créé. Votre accès « ${ROLES[role].n} » sera validé par l'équipe ; en attendant, vous avez l'accès Grand public.` : "Compte créé. Bienvenue sur ATOM Wind !"); return; }
-      const salt=[...crypto.getRandomValues(new Uint8Array(12))].map(x=>x.toString(16).padStart(2,"0")).join(""), auto=ROLES[role].auto;
-      const u={id:"u"+Date.now(), name, email:mail, role: auto?role:"public", requested: auto?null:role, status: auto?"actif":"en attente", salt, hash:await hashPw(salt,pw), place:+g("r-place").value, created:new Date().toISOString().slice(0,10)};
-      USERS.push(u); store.set("aw-users",USERS);
-      if(u.role==="agri"){ ag.place=u.place; const ps=document.getElementById("ag-place"); if(ps) ps.value=String(u.place); renderAgri(); }
-      login(u, auto ? "Compte créé. Bienvenue sur ATOM Wind !" : `Compte créé. Votre accès « ${ROLES[role].n} » sera validé par l'équipe ; en attendant, vous avez l'accès Grand public.`); };
+      const r=await ATOM.inscriptionServeur(name,mail,pw,role); if(r.erreur){ err.textContent=r.erreur; return; }
+      const c=await ATOM.connexionServeur(mail,pw); if(c.erreur){ err.textContent=c.erreur; return; }
+      const su=ATOM.utilisateurLocal(c.compte,USERS); su.place=+g("r-place").value;
+      if(su.role==="agri"){ ag.place=su.place; const ps=document.getElementById("ag-place"); if(ps) ps.value=String(su.place); renderAgri(); }
+      login(su, su.requested ? `Compte créé. Votre accès « ${ROLES[role].n} » sera validé par l'équipe ; en attendant, vous avez l'accès Grand public.` : "Compte créé. Bienvenue sur ATOM Wind !"); };
   }
 }
 
-// ---------------- administration ----------------
+// ---------------- administration : comptes, clés, abonnés et supervision du serveur ----------------
 function renderAdmin(){
-  if(!document.getElementById("adusers")) return;
-  const n=s=>USERS.filter(u=>u.status===s).length;
-  document.getElementById("adkpis").innerHTML=[["Comptes",USERS.length],["Actifs",n("actif")],["En attente de validation",n("en attente")],["Clés d'API actives",KEYS.filter(k=>!k.revoked).length]].map(([k,v])=>`<div class="card kpi"><div class="k">${k}</div><div class="v">${v}</div></div>`).join("");
-  document.getElementById("adusers").innerHTML = `<thead><tr><th>Nom</th><th>E-mail</th><th>Rôle</th><th>Statut</th><th>Actions</th></tr></thead><tbody>${USERS.map(u=>`<tr>
-    <td><b>${esc(u.name)}</b><br><span class="muted" style="font-size:13px">créé le ${u.created}</span></td><td>${esc(u.email)}</td>
-    <td><select data-role="${u.id}" aria-label="Rôle de ${esc(u.name)}" ${u.id===me?.id?"disabled":""}>${Object.entries(ROLES).map(([k,r])=>`<option value="${k}" ${k===u.role?"selected":""}>${r.n}</option>`).join("")}</select>${u.requested?`<br><span class="pill mid" style="margin-top:4px">demande : ${ROLES[u.requested].n}</span>`:""}</td>
-    <td><span class="pill ${u.status==="actif"?"good":u.status==="en attente"?"mid":"bad"}">${u.status}</span></td>
-    <td><div class="row" style="gap:6px">${u.requested?`<button class="btn" data-ok="${u.id}">Valider</button>`:""}${u.id!==me?.id?`<button class="btn" data-off="${u.id}">${u.status==="désactivé"?"Réactiver":"Désactiver"}</button>`:`<span class="muted" style="font-size:13px">vous</span>`}</div></td></tr>`).join("")}</tbody>`;
-  document.querySelectorAll("[data-role]").forEach(sl=>sl.onchange=()=>{ const u=USERS.find(x=>x.id===sl.dataset.role); u.role=sl.value; u.requested=null; if(u.status==="en attente") u.status="actif"; store.set("aw-users",USERS); renderAdmin(); toast(`Rôle de ${u.name} : ${ROLES[u.role].n}`); });
-  document.querySelectorAll("[data-ok]").forEach(b=>b.onclick=()=>{ const u=USERS.find(x=>x.id===b.dataset.ok); u.role=u.requested; u.requested=null; u.status="actif"; store.set("aw-users",USERS); renderAdmin(); toast(`Accès « ${ROLES[u.role].n} » validé pour ${u.name}`); });
-  document.querySelectorAll("[data-off]").forEach(b=>b.onclick=()=>{ const u=USERS.find(x=>x.id===b.dataset.off); u.status = u.status==="désactivé" ? "actif" : "désactivé"; store.set("aw-users",USERS); renderAdmin(); toast(`${u.name} : compte ${u.status}`); });
+  if(!document.getElementById("adroles")) return;
   const tabs=Object.keys(ACCESS);
   document.getElementById("adroles").innerHTML = `<thead><tr><th>Rôle</th>${tabs.map(t=>`<th style="font-size:13px">${TABNAME[t]}</th>`).join("")}</tr></thead><tbody>${[["visiteur","Visiteur (sans compte)"],...Object.entries(ROLES).map(([k,r])=>[k,r.n])].map(([k,nm])=>`<tr><td><b>${nm}</b></td>${tabs.map(t=>{ const ok=ACCESS[t]==="*"||ACCESS[t].includes(k); return `<td style="text-align:center">${ok?'<span class="pill good">oui</span>':'<span class="muted">—</span>'}</td>`; }).join("")}</tr>`).join("")}</tbody>`;
-  document.getElementById("k-list").innerHTML = KEYS.length ? KEYS.map((k,i)=>`<div class="it"><span style="min-width:0"><b>${esc(k.name)}</b> <span class="pill ${k.revoked?"bad":"good"}">${k.revoked?"révoquée":"active"}</span><br><span class="muted" style="font-size:13px;font-family:var(--f-data)">${k.prefix}… · ${k.scope} · créée le ${k.created}</span></span>${k.revoked?"":`<button class="btn" data-rev="${i}">Révoquer</button>`}</div>`).join("") : `<span class="muted">Aucune clé pour l'instant.</span>`;
-  document.querySelectorAll("[data-rev]").forEach(b=>b.onclick=()=>{ KEYS[+b.dataset.rev].revoked=true; store.set("aw-keys",KEYS); renderAdmin(); toast("Clé révoquée : elle ne fonctionne plus."); });
+  if(window.ATOM){ ATOM.installerComptesService?.(); ATOM.installerClesService?.(); ATOM.installerAbonnesService?.(); ATOM.installerSupervision?.(); }
 }
-document.getElementById("k-add").onclick=()=>{ const name=document.getElementById("k-name").value.trim()||"Clé sans nom", scope=document.getElementById("k-scope").value;
-  const raw="aw_"+[...crypto.getRandomValues(new Uint8Array(20))].map(x=>x.toString(16).padStart(2,"0")).join("");
-  KEYS.push({name, scope, prefix:raw.slice(0,10), created:new Date().toISOString().slice(0,10), revoked:false}); store.set("aw-keys",KEYS);
-  document.getElementById("k-new").innerHTML=`<div class="answer go" style="padding:12px;margin-top:10px"><b>Copiez cette clé maintenant : elle ne sera plus affichée.</b><div class="keybox" id="k-raw">${raw}</div><button class="btn" id="k-copy">Copier</button></div>`;
-  document.getElementById("k-copy").onclick=()=>{ navigator.clipboard?.writeText(raw).then(()=>toast("Clé copiée."),()=>{ const r=document.createRange(); r.selectNodeContents(document.getElementById("k-raw")); getSelection().removeAllRanges(); getSelection().addRange(r); toast("Sélectionnée : copiez-la avec Ctrl+C."); }); };
-  document.getElementById("k-name").value=""; renderAdmin(); };
 
-function show(v){ if(!document.getElementById("v-"+v)) v="monvent";
-  if(!allowed(v)){ toast(me ? `L'espace « ${TABNAME[v]} » n'est pas inclus dans votre rôle (${ROLES[me.role].n}).` : `Connectez-vous pour accéder à l'espace « ${TABNAME[v]} ».`); if(!me) openAuth("login"); v = me ? ROLES[me.role].home : "monvent"; }
+function show(v){ if(!document.getElementById("v-"+v)) v="tableau";
+  if(!allowed(v)){ toast(me ? `L'espace « ${TABNAME[v]} » n'est pas inclus dans votre rôle (${ROLES[me.role].n}).` : `Connectez-vous pour accéder à l'espace « ${TABNAME[v]} ».`); if(!me) openAuth("login"); v = me ? ROLES[me.role].home : "tableau"; }
   if(v==="admin") renderAdmin();if(v==="tableau")renderTB(); document.querySelectorAll("section.view").forEach(s=>s.classList.toggle("on",s.id==="v-"+v)); document.querySelectorAll("nav.tabs a").forEach(a=>a.setAttribute("aria-current",a.dataset.v===v?"page":"false")); sheet.hidden=true; if(v==="carte3d")setSceneMode(sceneMode); currentView=v; if(window.ATOM?.workspace) publishWorkspace(); }
 function navigate(v,replace=false){
   show(v);
@@ -880,21 +905,18 @@ document.addEventListener("click", e => { if(e.defaultPrevented||e.button!==0||e
 // ---------------- « Pourquoi ce vent ? » ----------------
 function explainHtml(x,y,z,h){ return explainHtml0(x,y,z,h) + (window.ATOM && ATOM.htmlInfluence ? ATOM.htmlInfluence(x,y) : ""); }
 function explainHtml0(x,y,z,h){
-  const k=idx(x,y), [bu,bv]=synoptic(h), B=breeze(h), sd=sdist[k], zr=z0[k], zz=Math.max(z,1);
-  const low=Math.log(Math.min(zz,150)/zr)/Math.log(10/zr), reach = sd>0 ? Math.exp(-sd/13) : Math.exp(sd/9);
-  const relief=Math.max(-.25,Math.min(.45,.0016*(elev[k]-smooth[k])))*Math.exp(-z/400);
-  const syn=Math.hypot(bu,bv)*Math.max(.3,low), brz=Math.abs(B)*reach*Math.max(.6,low*.8)*Math.exp(-z/380);
-  const L=[];
-  L.push(`<b>La météo générale</b> amène un vent ${dirName(bu,bv)} d'environ ${fmtSpeed(syn)} à cette hauteur.`);
-  if(B>.5 && brz>.4) L.push(`<b>La brise de mer</b> ajoute environ ${fmtSpeed(brz)} : l'après-midi, la terre chauffe plus vite que la mer et l'air frais de la mer entre dans les terres. Ici, elle vient ${dirName(gx[k],gy[k])} ; ${sd>0?`vous êtes à ${Math.round(sd)} km de la côte`:"vous êtes en mer"}.`);
-  else if(B<0 && brz>.2) L.push(`<b>La brise de terre</b> : la nuit, la terre refroidit plus vite que la mer, et un léger vent descend vers la mer.`);
-  else if(B>.5 && sd>20) L.push(`<b>Pas de brise de mer ici</b> : vous êtes à ${Math.round(sd)} km de la côte, trop loin pour la sentir.`);
-  if(relief>.04) L.push(`<b>Le relief accélère le vent</b> d'environ ${Math.round(relief*100)} % : vous êtes sur une hauteur (sol à ${Math.round(elev[k])} m), le vent s'y engouffre.`);
-  else if(relief<-.04) L.push(`<b>Le relief abrite</b> : vous êtes dans un creux, le vent est freiné d'environ ${Math.round(-relief*100)} %.`);
+  if(!PRET()) return "";
+  const k=idx(x,y), zr=z0[k], sd=sdist[k], [u,v]=wind(x,y,z,h), L=[];
+  const [uh,vh]=wind(x,y,1000,h);
+  if(isFinite(uh)) L.push(`<b>En altitude</b>, à 1 000 m, le vent souffle ${dirName(uh,vh)} à ${fmtSpeed(Math.hypot(uh,vh))} : c'est l'écoulement de grande échelle, que le sol et le relief freinent ou dévient plus bas.`);
+  if(z<100){ const [u1,v1]=wind(x,y,100,h); if(isFinite(u1)) L.push(`<b>La hauteur compte</b> : à 100 m du sol, ${fmtSpeed(Math.hypot(u1,v1))} ; ici, à ${z} m, ${fmtSpeed(Math.hypot(u,v))}. Plus on monte, moins le sol freine le vent.`); }
+  const dz=elev[k]-smooth[k];
+  if(!wat[k] && dz>25) L.push(`<b>Sur une hauteur</b> : le sol est à ${Math.round(elev[k])} m, ${Math.round(dz)} m au-dessus des environs ; le vent y est plus exposé.`);
+  else if(!wat[k] && dz<-25) L.push(`<b>Dans un creux</b> : le sol est ${Math.round(-dz)} m sous les environs ; le relief abrite.`);
   if(zr>.5 && z<100) L.push(`<b>Bâtiments ou arbres</b> : le sol rugueux freine le vent près du sol.`);
   else if(zr<.01) L.push(`<b>Sur l'eau</b>, rien ne freine le vent : il est plus régulier qu'à terre.`);
-  if(z<100){ const s100=Math.hypot(...wind(x,y,100,h)); L.push(`<b>La hauteur compte</b> : à 100 m du sol, le vent souffle à ${fmtSpeed(s100)}. Plus on monte, moins le sol le freine.`); }
-  return `<div class="why"><ul>${L.map(t=>`<li>${t}</li>`).join("")}</ul><span class="src">Explication simplifiée, tirée des composantes du calcul.</span></div>`;
+  if(sd>0 && sd<15) L.push(`<b>Près de la côte</b>, à ${Math.round(sd)} km : l'après-midi, la brise de mer peut faire tourner le vent vers l'intérieur des terres.`);
+  return `<div class="why"><ul>${L.map(t=>`<li>${t}</li>`).join("")}</ul><span class="src">Lecture du champ calculé par PC-FNO3D (vent à plusieurs hauteurs), du relief et de la rugosité du sol.</span></div>`;
 }
 
 // ---------------- le vent qui chante ----------------
@@ -915,7 +937,7 @@ function soundToggle(){
   sbtn.setAttribute("aria-pressed",true); sbtn.innerHTML='<span class="wave" aria-hidden="true"><i></i><i></i><i></i><i></i></span> Couper le son'; updateSound();
   toast("Le son suit le vent : plus fort quand il forcit, à gauche ou à droite selon sa direction.");
 }
-function updateSound(){ if(!audio) return; const [x,y]=state.pin, [u,v]=wind(x,y,ACTS[state.act].z,state.hour), sp=Math.hypot(u,v), t=audio.ctx.currentTime;
+function updateSound(){ if(!audio) return; const [x,y]=state.pin, [u,v]=wind(x,y,ACTS[state.act].z,state.hour), sp=Math.hypot(u,v), t=audio.ctx.currentTime; if(!isFinite(sp)) return;
   const g=Math.min(.55,.03+sp*.04); audio.gain.gain.setTargetAtTime(g,t,.5); audio.lfoG.gain.setTargetAtTime(g*.4,t,.5); audio.lfo.frequency.setTargetAtTime(.08+sp*.025,t,.5);
   audio.bp.frequency.setTargetAtTime(220+sp*85,t,.5); if(audio.pan) audio.pan.pan.setTargetAtTime(Math.max(-.9,Math.min(.9,u/7)),t,.5); }
 sbtn.onclick=soundToggle;
@@ -950,7 +972,7 @@ function palAll(){ const L=[];
   PLACES.forEach((p,i)=>L.push({t:p[0], k:"Lieu", go:()=>{ state.pin=xy(p[1],p[2]); state.pinName=p[0]; townSel.value=String(i); navigate("monvent"); renderAnswer(); }}));
   Object.entries(ACTS).forEach(([k,a])=>L.push({t:a.n, k:"Activité", go:()=>{ state.act=k; document.querySelectorAll(".act").forEach(x=>x.setAttribute("aria-pressed",x.dataset.a===k)); navigate("monvent"); renderAnswer(); }}));
   Object.keys(ACCESS).filter(allowed).forEach(v=>L.push({t:TABNAME[v], k:"Espace", go:()=>navigate(v)}));
-  L.push({t:"Voir la brise de mer en 3D", k:"Action", go:()=>{ navigate("carte3d"); setTimeout(()=>document.getElementById("breeze").click(),900); }});
+  L.push({t:"Rejouer la journée en 3D", k:"Action", go:()=>{ navigate("carte3d"); setTimeout(()=>document.getElementById("breeze").click(),900); }});
   L.push({t:"Rejouer la journée", k:"Action", go:()=>document.getElementById("play").click()});
   L.push({t:"Thème sombre", k:"Action", go:()=>setTheme("dark")}); L.push({t:"Thème clair", k:"Action", go:()=>setTheme("light")});
   if(!me) L.push({t:"Se connecter", k:"Compte", go:()=>openAuth("login")}); else L.push({t:"Se déconnecter", k:"Compte", go:logout});
@@ -1005,7 +1027,7 @@ function makeWindLayer(){ return L.Layer.extend({
     const b=m.getBounds(), sw=toXY(b.getSouth(),b.getWest()), ne=toXY(b.getNorth(),b.getEast()); this._box=[Math.max(0,sw[0]),Math.max(0,sw[1]),Math.min(W,ne[0]),Math.min(H,ne[1])];
     const n=Math.round(Math.min(2200, sz.x*sz.y/420)); this._parts=Array.from({length:n},()=>this._np()); },
   _np(){ const [x0,y0,x1,y1]=this._box; return {x:x0+Math.random()*Math.max(.1,x1-x0), y:y0+Math.random()*Math.max(.1,y1-y0), a:Math.random()*60|0}; },
-  _frame(){ if(this._moving || !this._map || !document.getElementById("lmapbox").offsetParent) return; const g=this._c.getContext("2d"), dpr=this._dpr, m=this._map, z=ACTS[state.act].z, dt=.055*Math.pow(2,10-m.getZoom());
+  _frame(){ if(this._moving || !this._map || !document.getElementById("lmapbox").offsetParent || !PRET()) return; const g=this._c.getContext("2d"), dpr=this._dpr, m=this._map, z=ACTS[state.act].z, dt=.055*Math.pow(2,10-m.getZoom());
     g.globalCompositeOperation="destination-out"; g.fillStyle="rgba(0,0,0,.1)"; g.fillRect(0,0,this._c.width,this._c.height); g.globalCompositeOperation="source-over"; g.lineWidth=2*dpr; g.lineCap="round";
     for(const p of this._parts){ const [u,v]=wind(p.x,p.y,z,state.hour), nx=p.x+u*dt, ny=p.y+v*dt, a=m.latLngToContainerPoint(toLL(p.x,p.y)), b2=m.latLngToContainerPoint(toLL(nx,ny)), c=speedColor(kmh(Math.hypot(u,v)));
       g.strokeStyle=`rgb(${c[0]},${c[1]},${c[2]})`; g.beginPath(); g.moveTo(a.x*dpr,a.y*dpr); g.lineTo(b2.x*dpr,b2.y*dpr); g.stroke();
@@ -1052,19 +1074,35 @@ function publishWorkspace(){
   const [u,v]=sampleHeight>=2?wind(...state.pin,sampleHeight,state.hour):[NaN,NaN];
   const snapshot={ready:true,view:currentView,hour:state.hour,location:state.pinName,
     speed:isFinite(u)?fmtSpeed(Math.hypot(u,v)):"—",direction:isFinite(u)?dirName(u,v):"Sous le relief",altitude:z,heightReference,
-    source:window.ATOM?.pret()?"modele":"demonstration",sceneMode,terrainSource:window.ATOM?.terrainStats?.().windSource??"national"};
+    source:PRET()?(ATOM.dernierEtat?"dernier_etat":"modele"):"hors_ligne",service:window.ATOM?.etatService?.()??null,sceneMode,terrainSource:window.ATOM?.terrainStats?.().windSource??"national"};
   window.dispatchEvent(new CustomEvent("atom:state",{detail:snapshot}));
   return snapshot;
 }
 if(window.ATOM) ATOM.workspace={navigate,snapshot:publishWorkspace,
   terrainWind:(lon,lat,height)=>{const [x,y]=xy(lat,lon);if(x<0||x>W||y<0||y>H||!Number.isFinite(height)||height<2||height>1000)return null;const [u,v]=wind(x,y,height,state.hour),speed=Math.hypot(u,v);if(!Number.isFinite(speed))return null;return {u,v,speed,formatted:fmtSpeed(speed),direction:dirName(u,v),color:speedColor(kmh(speed))};},
   terrainPoint:(lon,lat)=>{const [x,y]=xy(lat,lon);if(x<0||x>W||y<0||y>H)return;placePin(x,y);navigate("monvent");},
-  inspect:()=>openSheet(...state.pin,currentView==="carte3d"?z3:ACTS[state.act].z)};
+  // assistant : droits d'accès, point placé par la conversation (null hors du Grand Tunis), activité de « Mon vent »
+  allowed:v=>allowed(v),
+  role:()=>roleOf(),
+  lieux:()=>PLACES.map(p=>({nom:p[0],lat:p[1],lon:p[2]})),
+  placer:(lat,lon)=>{const [x,y]=xy(lat,lon);if(!Number.isFinite(x)||x<0||x>W||y<0||y>H)return null;placePin(x,y);if(currentView!=="monvent")navigate("monvent");else renderAnswer();return state.pinName;},
+  activite:k=>{const a={traiter:"spray",arroser:"irr",eolienne:"turbine"}[k]||k;if(!ACTS[a])return false;state.act=a;document.querySelectorAll(".act").forEach(x=>x.setAttribute("aria-pressed",x.dataset.a===a));if(currentView!=="monvent")navigate("monvent");renderAnswer();return true;},
+  inspect:()=>openSheet(...state.pin,currentView==="carte3d"?z3:ACTS[state.act].z),
+  // bulletin de la vue d'ensemble : le vent réel de l'heure affichée, au point choisi et sur le territoire
+  bulletin:()=>{ if(!PRET()) return null; const [u,v]=wind(...state.pin,10,state.hour), sp=Math.hypot(u,v); if(!isFinite(sp)) return null;
+    const d=domainStats(state.hour), days=Array.from({length:24},(_,h)=>domainStats(h)), pk=days.reduce((b,x,i)=>x.gmax>days[b].gmax?i:b,0);
+    const vig=ALERTS.filter(a=>a.cls==="stop"||a.cls==="warn").length;
+    return {lieu:state.pinName.split(" (")[0], heure:state.hour, vitesse:fmtSpeed(sp), direction:dirName(u,v), versDeg:(fromDeg(u,v)+180)%360,
+      rafales:fmtSpeed(sp*gustF(...state.pin,10)), moyenne:fmtSpeed(d.mean), moyenneDeg:(fromDeg(d.u,d.v)+180)%360, ventMoyen:d.mean,
+      picRafale:fmtSpeed(days[pk].gmax), picHeure:pk, vigilance:vig, beaufort:beaufort(kmh(sp)),
+      echantillon:(fx,fy)=>wind(fx*W,fy*H,10,state.hour)}; }};
 applyAccess();
 const th0=store.get("aw-theme","light"); if(th0!=="auto") setTheme(th0);
 if(window.ATOM) ATOM.rafraichir = () => { for(const k in DSTAT) delete DSTAT[k]; MAPS.forEach(m=>m.redraw()); setHour(state.hour); renderRel(); }; if(window.ATOM) ATOM.setHour = setHour;
 renderAlerts(); setHour(15); renderRel();
-navigate(location.hash.slice(1)||(me?ROLES[me.role].home:"monvent"),true);
+navigate(location.hash.slice(1)||"tableau",true);
+// session d'un compte du serveur (clé gardée par atom-data.js) : rôle et alertes rechargés au démarrage
+if(window.ATOM?.compteCourant) ATOM.compteCourant().then(c=>{ if(!c) return; me=ATOM.utilisateurLocal(c,USERS); applyAccess(); loadMy(); if(!location.hash) navigate((ROLES[me.role]||ROLES.public).home,true); });
 let seen=false; try{ seen=localStorage.getItem("aw-tour")==="1"; }catch(e){}
 if(!seen) tour(0);
 }

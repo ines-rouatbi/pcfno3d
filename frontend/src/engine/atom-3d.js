@@ -44,7 +44,10 @@ A.vue3d = ctx => {
   const cfg = { mode: "sol", couleur: "vitesse", fact: 5,
                 couches: { particules: true, lignes: true, stations: true, aneo: true, eoliennes: true,
                            parcelle: true, coupes: true, horizontale: false, colonnes: false } };
-  const sol = (x, y) => { const k = idx(x, y); return wat[k] ? 0 : elev[k]; };
+  // relief affiché (grille réelle fine si chargée, sinon grille de la page) : même source que le maillage
+  const R3 = ctx.relief || null;
+  const sol = R3 ? R3.solV : (x, y) => { const k = idx(x, y); return wat[k] ? 0 : elev[k]; };
+  const yRelief = (x, y, ex) => R3 ? R3.yTerrain(x, y, ex) : (wat[idx(x, y)] ? -.02 : elev[idx(x, y)] * ex);
   // hauteur du point dans la scène : la maquette étire l'air × 1,4 par rapport au relief
   const ySc = (x, y, zSol) => sol(x, y) * ctx.ex() + Math.max(.15, zSol * ctx.ex() * 1.4);
   const zSol = (x, y) => cfg.mode === "sol" ? ctx.z3() : ctx.z3() - sol(x, y);
@@ -104,7 +107,7 @@ A.vue3d = ctx => {
   const coche = (k, t) => `<label style="display:flex;gap:6px;align-items:center"><input type="checkbox" data-c="${k}" ${cfg.couches[k] ? "checked" : ""}>${t}</label>`;
   pan.innerHTML = `<summary style="cursor:pointer;font-weight:700">Affichage 3D</summary>
     <div style="display:grid;gap:8px;margin-top:8px">
-      <p style="font-size:11px;margin:0;color:inherit">${A.pret() ? `Niveaux servis : ${A.jour.hauteurs_agl_m.join(", ")} m du sol. Entre les niveaux : interpolation. Sous le premier niveau : extrapolation de surface non validée.` : "Démonstration : relief et vent synthétiques. Les valeurs ne sont pas des observations."}</p>
+      <p style="font-size:11px;margin:0;color:inherit">${A.pret() ? `Niveaux servis : ${A.jour.hauteurs_agl_m.join(", ")} m du sol. Entre les niveaux : interpolation. Sous le premier niveau : extrapolation de surface non validée.` : "Champ de vent indisponible : le service de calcul ne répond pas."}</p>
       <label>Relief exagéré : <b id="aw3d-ext">× ${cfg.fact}</b><input type="range" id="aw3d-ex" min="1" max="10" step="1" value="${cfg.fact}" style="width:100%"></label>
       <div role="radiogroup" aria-label="Référence de hauteur" style="display:flex;gap:6px;flex-wrap:wrap">
         <label><input type="radio" name="aw3d-mode" value="sol" checked> au-dessus du sol</label>
@@ -125,7 +128,7 @@ A.vue3d = ctx => {
   let socle = null, cote = null;
   function construireSocle(){
     if(socle){ scene.remove(socle); socle.geometry.dispose(); socle.material.dispose(); }
-    const ex = ctx.ex(), bas0 = -1.2 - 400 * ex, n = 160, v = [], ind = [];
+    const ex = ctx.ex(), bas0 = -1.2 - 400 * ex, n = 160, v = [], ind = [], col = [];
     const bord = [];
     for(let i = 0; i <= n; i++) bord.push([W * i / n, 0]);
     for(let i = 1; i <= n; i++) bord.push([W, H * i / n]);
@@ -133,20 +136,22 @@ A.vue3d = ctx => {
     for(let i = 1; i < n; i++) bord.push([0, H - H * i / n]);
     bord.push([0, 0]);
     bord.forEach(([x, y], i) => {
-      const xx = Math.min(W - 1e-6, x), yy = Math.min(H - 1e-6, y), k = idx(xx, yy);
-      const haut = wat[k] ? -.02 : elev[k] * ex;
+      const xx = Math.min(W - 1e-6, x), yy = Math.min(H - 1e-6, y), mer = R3 ? R3.eauV(xx, yy) : wat[idx(xx, yy)];
+      const haut = mer ? 0 : Math.max(0, yRelief(xx, yy, ex));
       v.push(x - W/2, haut, -(y - H/2), x - W/2, bas0, -(y - H/2));
+      const c = mer ? [.14, .29, .35] : [.33, .29, .22]; col.push(...c, ...c.map(q => q * .55));
       if(i > 0){ const a = 2*(i-1), b = 2*i; ind.push(a, a+1, b, b, a+1, b+1); }
     });
     const g = new THREE.BufferGeometry();
-    g.setAttribute("position", new THREE.Float32BufferAttribute(v, 3)); g.setIndex(ind); g.computeVertexNormals();
-    socle = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ color: 0x46573b, side: THREE.DoubleSide }));
+    g.setAttribute("position", new THREE.Float32BufferAttribute(v, 3)); g.setAttribute("color", new THREE.Float32BufferAttribute(col, 3)); g.setIndex(ind); g.computeVertexNormals();
+    // coupe du sol (terre brune, mer bleu sombre), plus sombre vers le bas
+    socle = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide }));
     scene.add(socle);
   }
   function construireCote(){
-    // limite terre / mer sur la grille de la page, au niveau de la mer
-    const nx = ctx.NX, ny = ctx.NY, G = ctx.G, s = [];
-    const mer = (i, j) => wat[j*nx + i] === 1;
+    // limite terre / mer au niveau de la mer, sur la grille réelle fine si elle est chargée
+    const RF = R3 && R3.RF, nx = RF ? RF.nx : ctx.NX, ny = RF ? RF.ny : ctx.NY, G = RF ? 1 / RF.pas_km : ctx.G, s = [];
+    const mer = RF ? (i, j) => RF.eau[j*nx + i] === 1 : (i, j) => wat[j*nx + i] === 1;
     for(let j = 0; j < ny; j++) for(let i = 0; i < nx; i++){
       if(i < nx-1 && mer(i, j) !== mer(i+1, j)){ const x = (i+1)/G - W/2; s.push(x, .04, -(j/G - H/2), x, .04, -((j+1)/G - H/2)); }
       if(j < ny-1 && mer(i, j) !== mer(i, j+1)){ const z = -((j+1)/G - H/2); s.push(i/G - W/2, .04, z, (i+1)/G - W/2, .04, z); }
@@ -188,8 +193,8 @@ A.vue3d = ctx => {
     const ex0 = ctx.ex(), ex = f / 1000, r = ex / ex0;
     ctx.setEx(ex);
     for(let i = 0; i < pos.count; i++){
-      const x = pos.getX(i) + W/2, y = -pos.getZ(i) + H/2, k = idx(x, y);
-      pos.setY(i, wat[k] ? -.02 : elev[k] * ex);
+      const x = pos.getX(i) + W/2, y = -pos.getZ(i) + H/2;
+      pos.setY(i, yRelief(x, y, ex));
     }
     pos.needsUpdate = true; geo.computeVertexNormals(); geo.computeBoundingSphere();
     for(const o of objets.stations) posSt(o, .6);
@@ -453,13 +458,14 @@ A.vue3d = ctx => {
       + `<span class="pill ${rc}">Fiabilité ${rl}</span>`;
     const bloc = document.createElement("p");
     bloc.style.cssText = "margin:0;font-size:15px";
-    bloc.innerHTML = `Incertitude : ± ${fmtSpeed(s)} (écart-type, ${sigmaModele() ? "calibré sur l'ensemble du modèle" : "estimé selon la distance aux stations"}). `
+    bloc.innerHTML = (sigmaModele() ? `Incertitude : ± ${fmtSpeed(s)} (écart-type calibré sur l'ensemble du modèle). `
+      : `Incertitude calibrée du modèle non servie : fiabilité estimée selon la distance aux stations. `)
       + `Station la plus proche : <b>${prochesSt[0]}</b>, à ${prochesSt[1].toFixed(1).replace(".", ",")} km.`
       + (cfg.mode === "alt" ? ` Altitude ${ctx.z3()} m, soit ${Math.round(z)} m au-dessus du sol ici.` : "");
     const svg = sh.querySelector('svg[aria-label="Profil vertical du vent"]');
     if(svg){
       // profil avec l'intervalle à 80 % (vitesse ± 1,28 écart-type)
-      const pr = PROFIL_Z.map(zz => { const [u, v] = wind(x, y, zz, state.hour), sp = Math.hypot(u, v), sg = incert(x, y, zz);
+      const pr = PROFIL_Z.map(zz => { const [u, v] = wind(x, y, zz, state.hour), sp = Math.hypot(u, v), sg = sigmaModele() ? incert(x, y, zz) : 0;
         return [kmh(sp), kmh(Math.max(0, sp - Z80 * sg)), kmh(sp + Z80 * sg)]; });
       const mx = Math.max(...pr.map(q => q[2])) * 1.1, Wp = 300, Hp = 170;
       const X = s2 => 34 + s2 / mx * (Wp - 44), Yz = zz => Hp - 18 - Math.log10(zz / 10) / 2 * (Hp - 30);
@@ -471,7 +477,7 @@ A.vue3d = ctx => {
         + pr.map((q, i) => `<circle cx="${X(q[0])}" cy="${Yz(PROFIL_Z[i])}" r="3" fill="var(--accent)"/>`).join("")
         + `<text x="${Wp-8}" y="${Hp-4}" text-anchor="end">km/h →</text>`;
       const leg = document.createElement("div"); leg.className = "muted"; leg.style.fontSize = "13px";
-      leg.textContent = `Bande claire : ${sigmaModele() ? "intervalle à 80 % du modèle" : "intervalle indicatif, non calibré"}.`;
+      leg.textContent = sigmaModele() ? "Bande claire : intervalle à 80 % du modèle." : "Intervalle d’incertitude non disponible : le modèle ne sert pas d’incertitude calibrée.";
       svg.after(leg);
     }
     const p = sh.querySelector("p");

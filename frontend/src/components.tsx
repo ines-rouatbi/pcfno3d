@@ -1,5 +1,6 @@
-import { useState } from 'react';
-import { ArrowDownToLine, ArrowUpRight, AudioLines, Box, ChevronDown, ChevronRight, Compass, Gauge, Leaf, LifeBuoy, MapPin, Menu, Search, Settings2, ShieldCheck, Sparkles, Wind, X, Bell, Users, Activity, Command } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
+import { AssistantPanel } from './assistant/AssistantPanel';
+import { ArrowDownToLine, ArrowUpRight, AudioLines, Box, ChevronDown, ChevronRight, Compass, Gauge, Leaf, LifeBuoy, MapPin, Menu, Search, Settings2, ShieldCheck, Sparkles, Wind, X, Bell, Users, Activity, Command, Wrench, History } from 'lucide-react';
 import type { WorkspaceState } from './workspace';
 
 export function Mark({ small = false }: { small?: boolean }) {
@@ -18,10 +19,12 @@ const navigation = [
   { label: 'Mes activités', items: [
     { id: 'agri', name: 'Agriculture', icon: Leaf },
     { id: 'eolien', name: 'Énergie éolienne', icon: Activity },
+    { id: 'outils', name: 'Outils de terrain', icon: Wrench },
   ] },
   { label: 'Comprendre', items: [
     { id: 'carte3d', name: 'Atmosphère 3D', icon: Box },
     { id: 'fiabilite', name: 'Données & fiabilité', icon: ShieldCheck },
+    { id: 'historique', name: 'Historique', icon: History },
   ] },
   { label: 'Gestion', items: [{ id: 'admin', name: 'Administration', icon: Users }] },
 ];
@@ -69,7 +72,9 @@ const pageInfo: Record<string, { eyebrow: string; title: string; description: st
   eolien: { eyebrow: '', title: 'Éolien', description: 'Production estimée, emplacement des sites et vent à hauteur de moyeu.' },
   fiabilite: { eyebrow: '', title: 'Ce que l’on sait du vent', description: 'Les stations, la couverture et les écarts aux mesures.' },
   alertes: { eyebrow: '', title: 'Les alertes à suivre', description: 'Où, quand et quelles précautions prendre.' },
-  admin: { eyebrow: '', title: 'Administration', description: 'Les comptes et les accès de votre organisation.' },
+  admin: { eyebrow: '', title: 'Administration', description: 'Les comptes, les accès et l’état du service.' },
+  outils: { eyebrow: '', title: 'Outils de terrain', description: 'Levage, haies, mâts autonomes : le vent appliqué à vos chantiers.' },
+  historique: { eyebrow: '', title: 'Historique', description: 'Les journées et les prévisions déjà calculées par le service.' },
 };
 
 export function PageHeading({ state }: { state: WorkspaceState }) {
@@ -78,22 +83,25 @@ export function PageHeading({ state }: { state: WorkspaceState }) {
 }
 
 export function DataContext({ state }: { state: WorkspaceState }) {
-  return <section className="data-context" aria-label="Source et contexte temporel"><div className="source-line"><span className={`source-indicator ${state.source}`}><span className="status-dot"/><span id="aw-fresh">Démonstration : journée d’exemple</span></span><span className="context-separator"/><span>Heure de Tunis · UTC+1</span><select id="aw-jour" hidden aria-label="Journée"/></div>
+  return <section className="data-context" aria-label="Source et contexte temporel"><div className="source-line"><span className={`source-indicator ${state.source}`}><span className="status-dot"/><span id="aw-fresh">Connexion au service…</span></span><span className="context-separator"/><span>Heure de Tunis · UTC+1</span><select id="aw-jour" hidden aria-label="Journée"/></div>
     <div className="timebar"><label htmlFor="hour">Journée</label><div className="skywrap"><span className="sun day" id="sun" aria-hidden="true"/><div className="sky" aria-hidden="true"/><input type="range" id="hour" min="0" max="23" step="1" defaultValue="15" aria-label="Heure de la journée"/></div><span className="hourbig" id="hourtxt">15 h</span><button className="btn" id="play" aria-label="Rejouer la journée">Rejouer la journée</button></div>
-    <details className="provenance"><summary><ShieldCheck size={14}/>À propos des données<ChevronDown size={13}/></summary><div className="proto" id="aw-source">Journée d’exemple d’été. Ce ne sont pas des mesures en direct.</div></details>
+    <details className="provenance"><summary><ShieldCheck size={14}/>À propos des données<ChevronDown size={13}/></summary><div className="proto" id="aw-source">Connexion au service de calcul PC-FNO3D…</div></details>
   </section>;
 }
 
 export function WindReadout({ state }: { state: WorkspaceState }) {
   if (!['monvent', 'carte3d'].includes(state.view)) return null;
-  return <div className="wind-readout"><div className="readout-location"><span className="readout-kicker"><MapPin size={13}/>POINT SÉLECTIONNÉ</span><b>{state.location}</b><span>{state.source === 'demonstration' ? 'Valeurs de démonstration' : 'Vent calculé par le modèle'}</span></div><div className="readout-metric"><span>Vitesse du vent</span><strong>{state.speed}</strong></div><div className="readout-direction"><span>Provenance</span><b><Compass size={20}/>{state.direction}</b></div><div className="readout-height"><span>Hauteur de lecture</span><b>{state.altitude} <small>{state.heightReference === 'asl' ? 'm ASL' : 'm du sol'}</small></b></div><button className="inspect-button" onClick={() => window.ATOM?.workspace?.inspect()}><span>Inspecter le point</span><ArrowUpRight size={17}/></button></div>;
+  return <div className="wind-readout"><div className="readout-location"><span className="readout-kicker"><MapPin size={13}/>POINT SÉLECTIONNÉ</span><b>{state.location}</b><span>{state.source === 'dernier_etat' ? 'Dernier état réel connu' : 'Vent calculé par le modèle'}</span></div><div className="readout-metric"><span>Vitesse du vent</span><strong>{state.speed}</strong></div><div className="readout-direction"><span>Provenance</span><b><Compass size={20}/>{state.direction}</b></div><div className="readout-height"><span>Hauteur de lecture</span><b>{state.altitude} <small>{state.heightReference === 'asl' ? 'm ASL' : 'm du sol'}</small></b></div><button className="inspect-button" onClick={() => window.ATOM?.workspace?.inspect()}><span>Inspecter le point</span><ArrowUpRight size={17}/></button></div>;
 }
 
-export function Assistant() {
+export function Assistant({ state }: { state: WorkspaceState }) {
   const [open, setOpen] = useState(false);
-  const toggle = () => {
-    const button = document.getElementById('aw-asst-btn');
-    if (button) button.click(); else setOpen(!open);
-  };
-  return <><button className="assistant-entry" onClick={toggle}><Sparkles size={17}/><span>Assistant</span><span className="assistant-shortcut">Poser une question</span><ChevronRight size={15}/></button>{open && <aside className="assistant-unavailable card"><div className="row"><Sparkles size={18}/><b>Assistant ATOM Wind</b><button className="icon-button" onClick={() => setOpen(false)} aria-label="Fermer l’assistant"><X size={18}/></button></div><p>L’assistant nécessite une connexion au service PC-FNO3D. Les valeurs de cette journée sont des exemples.</p></aside>}</>;
+  const close = useCallback(() => setOpen(false), []);
+  // après une démonstration au curseur, le panneau revient
+  useEffect(() => { const ouvrir = () => setOpen(true); window.addEventListener('atom:assistant-ouvrir', ouvrir); return () => window.removeEventListener('atom:assistant-ouvrir', ouvrir); }, []);
+  return <>
+    <button className="assistant-entry" onClick={() => setOpen(!open)} aria-expanded={open}><Sparkles size={17}/><span>Assistant</span><span className="assistant-shortcut">Poser une question</span><ChevronRight size={15}/></button>
+    {!open && <button className="aw-assistant-fab" onClick={() => setOpen(true)} aria-label="Ouvrir l’assistant"><Sparkles size={18}/><span>Assistant</span></button>}
+    <AssistantPanel state={state} open={open} onClose={close}/>
+  </>;
 }

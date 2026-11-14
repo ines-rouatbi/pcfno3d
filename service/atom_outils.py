@@ -104,7 +104,8 @@ def archiver(wf, j: int, out: dict) -> dict:
     nom = (f"{out['date']}_temps_reel.json.gz" if j == 0 else
            f"{out['date']}_prevision_J{j}_emise_{atom_wind.date_locale_aujourdhui(0)}.json.gz")
     tmp = d / (nom + ".tmp")
-    tmp.write_bytes(gzip.compress(json.dumps({**out, "archive": nom}, ensure_ascii=False).encode("utf-8"), 6))
+    propre = {k: v for k, v in out.items() if not str(k).startswith("_")}       # sans les tableaux decodes
+    tmp.write_bytes(gzip.compress(json.dumps({**propre, "archive": nom}, ensure_ascii=False).encode("utf-8"), 6))
     tmp.replace(d / nom)
     return out
 
@@ -474,7 +475,7 @@ def explication_point(wf, lat=None, lon=None, lieu=None) -> dict:
 
 
 # micro-eolienne de mat (E18) : courbe GENERIQUE de 400 W, exemple a remplacer par la fiche du fabricant
-MICRO_EOLIENNE = {"nom": "micro-eolienne generique 400 W (exemple)", "puissance_w": 400.0,
+MICRO_EOLIENNE = {"nom": "micro-eolienne generique 400 W (courbe de reference)", "puissance_w": 400.0,
                   "vitesse_m_s": [0, 2.5, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12.5, 20, 20.01],
                   "puissance": [0, 0, 10, 30, 60, 100, 160, 230, 300, 350, 390, 400, 400, 0]}
 
@@ -516,7 +517,7 @@ def dimensionnement_mat(wf, lat=None, lon=None, lieu=None, hauteur_m: float = 30
                            "rendement": rendement},
             "production_w": [round(w) for w in prod],
             "limite": (f"{len(prod) // 24} jour(s) de vent ATOM Wind seulement : un dimensionnement definitif se fait "
-                       "sur l'atlas annuel et la courbe du fabricant ; la micro-eolienne est un exemple generique")}
+                       "sur l'atlas annuel et la courbe du fabricant ; la micro-eolienne est une courbe de reference generique")}
 
 
 # ---------------------------------------------------------------------- alertes du service (BF27, BF83)

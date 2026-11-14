@@ -1,0 +1,22 @@
+{
+  "errors": [],
+  "state": {
+    "ready": true,
+    "view": "carte3d",
+    "hour": 15,
+    "location": "Mornag (vignes)",
+    "speed": "35 km/h",
+    "direction": "du nord",
+    "altitude": 120,
+    "source": "demonstration"
+  },
+  "scene": {
+    "frames": 124,
+    "renderMs": 3.300000011920929,
+    "drawCalls": 59,
+    "triangles": 42044,
+    "geometries": 20,
+    "textures": 1,
+    "pixelRatio": 1
+  }
+}

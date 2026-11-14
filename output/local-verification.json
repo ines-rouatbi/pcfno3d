@@ -1,0 +1,1188 @@
+[
+  {
+    "path": "/api/health",
+    "status": 200,
+    "body": {
+      "status": "ok",
+      "modele": "best.pt",
+      "device": "cpu",
+      "mcp": "/mcp",
+      "cles_actives": 0,
+      "portees": [],
+      "auth": "ouvert",
+      "avertissement": "MODE OUVERT (PCFNO3D_INSECURE_OPEN) : sans cle active, l'API accepte tout. Developpement local uniquement, ne pas exposer au reseau."
+    }
+  },
+  {
+    "path": "/api/meta",
+    "status": 200,
+    "body": {
+      "modele": "best.pt",
+      "epoque": 2,
+      "device": "cpu",
+      "grille": {
+        "nz": 4,
+        "ny": 10,
+        "nx": 20,
+        "dx_m": 100.0,
+        "dy_m": 100.0
+      },
+      "z_levels_asl_m": [
+        25.0,
+        50.0,
+        100.0,
+        200.0
+      ],
+      "noeuds_valides": 469,
+      "passes_moyennees": 1,
+      "variables": [
+        "wind_u_m_s",
+        "wind_v_m_s",
+        "wind_w_m_s",
+        "wind_speed_m_s",
+        "wind_direction_deg"
+      ],
+      "conventions": {
+        "u": "positif vers l'Est",
+        "v": "positif vers le Nord",
+        "w": "positif vers le haut"
+      },
+      "domaine_m": {
+        "x_max": 1900.0,
+        "y_max": 900.0
+      },
+      "georef": null
+    }
+  },
+  {
+    "path": "/api/instants?split=test",
+    "status": 200,
+    "body": {
+      "total": 4,
+      "instants": [
+        {
+          "stem": "006_000000",
+          "timestamp": "2025-01-06 00:00:00",
+          "split": "test"
+        },
+        {
+          "stem": "006_060000",
+          "timestamp": "2025-01-06 06:00:00",
+          "split": "test"
+        },
+        {
+          "stem": "006_120000",
+          "timestamp": "2025-01-06 12:00:00",
+          "split": "test"
+        },
+        {
+          "stem": "006_180000",
+          "timestamp": "2025-01-06 18:00:00",
+          "split": "test"
+        }
+      ]
+    }
+  },
+  {
+    "path": "/api/field?z=200",
+    "status": 200,
+    "body": {
+      "timestamp_utc": "2025-01-06 00:00:00",
+      "variable": "speed",
+      "z_asl_m": 200.0,
+      "stride": 4,
+      "dx_m": 400.0,
+      "dy_m": 400.0,
+      "ny": 3,
+      "nx": 5,
+      "min": 9.014,
+      "max": 9.085,
+      "terrain_min_m": 30.0,
+      "terrain_max_m": 65.6,
+      "valeurs": [
+        [
+          9.078,
+          9.079,
+          9.075,
+          9.037,
+          9.022
+        ],
+        [
+          9.085,
+          9.028,
+          9.014,
+          9.021,
+          9.021
+        ],
+        [
+          9.069,
+          9.06,
+          9.048,
+          9.035,
+          9.015
+        ]
+      ]
+    }
+  },
+  {
+    "path": "/api/point?x=1000&y=500&z=200",
+    "status": 200,
+    "body": {
+      "ix": 20,
+      "iy": 10,
+      "x_m": 1000.0,
+      "y_m": 500.0,
+      "z_asl_m": 200.0,
+      "z_terrain_m": 53.49,
+      "z_agl_m": 146.51,
+      "sous_le_relief": false,
+      "wind_u_m_s": -6.106503009796143,
+      "wind_v_m_s": -6.6325788497924805,
+      "wind_w_m_s": -0.17450083792209625,
+      "wind_speed_m_s": 9.015568823283637,
+      "wind_direction_deg": 42.63524493148259,
+      "timestamp_utc": "2025-01-06 00:00:00"
+    }
+  },
+  {
+    "path": "/api/profile?x=1000&y=500",
+    "status": 200,
+    "body": {
+      "timestamp_utc": "2025-01-06 00:00:00",
+      "x_m": 1000.0,
+      "y_m": 500.0,
+      "z_terrain_m": 53.49,
+      "niveaux": [
+        {
+          "z_asl_m": 25.0,
+          "z_agl_m": -28.49,
+          "sous_le_relief": true,
+          "wind_speed_m_s": null,
+          "wind_direction_deg": null,
+          "wind_w_m_s": null
+        },
+        {
+          "z_asl_m": 50.0,
+          "z_agl_m": -3.49,
+          "sous_le_relief": true,
+          "wind_speed_m_s": null,
+          "wind_direction_deg": null,
+          "wind_w_m_s": null
+        },
+        {
+          "z_asl_m": 100.0,
+          "z_agl_m": 46.51,
+          "sous_le_relief": false,
+          "wind_speed_m_s": 9.028,
+          "wind_direction_deg": 42.3,
+          "wind_w_m_s": -0.1741
+        },
+        {
+          "z_asl_m": 200.0,
+          "z_agl_m": 146.51,
+          "sous_le_relief": false,
+          "wind_speed_m_s": 9.016,
+          "wind_direction_deg": 42.6,
+          "wind_w_m_s": -0.1745
+        }
+      ]
+    }
+  },
+  {
+    "path": "/api/dso",
+    "status": 200,
+    "body": {
+      "disponible": true,
+      "fichier": "C:\\Users\\mahdi\\Desktop\\pcfno3d\\artifacts\\mini_run\\eval_pcfno3d\\best\\test_summary.json",
+      "resume": {
+        "produit_par": "pcfno3d",
+        "modele": "best.pt",
+        "epoque": 2,
+        "instants_synoptiques": 4,
+        "instants_episodes": 0,
+        "capteurs_visibles": 0.5,
+        "tta": 1,
+        "tta_keep": null,
+        "niveaux_evalues": [
+          50,
+          100,
+          200
+        ],
+        "par_niveau_synoptique": [
+          {
+            "z_m": 25,
+            "couverture": 0.0,
+            "vitesse_moyenne": 0.0,
+            "rugosite": null,
+            "rmse_u": null,
+            "r2_u": null,
+            "rmse_v": null,
+            "r2_v": null,
+            "rmse_w": null,
+            "r2_w": null,
+            "seuil_omm": 0.5
+          },
+          {
+            "z_m": 50,
+            "couverture": 0.345,
+            "vitesse_moyenne": 7.42824483608854,
+            "rugosite": 0.13476057350635529,
+            "rmse_u": 1.2772778539528782,
+            "r2_u": -1.068849942037442,
+            "rmse_v": 3.0772296934883623,
+            "r2_v": -0.6013155706233446,
+            "rmse_w": 0.025452303413522347,
+            "r2_w": -0.6883258913735717,
+            "seuil_omm": 0.742824483608854
+          },
+          {
+            "z_m": 100,
+            "couverture": 1.0,
+            "vitesse_moyenne": 9.696265452504157,
+            "rugosite": 1.0053941309452057,
+            "rmse_u": 1.2355917689633968,
+            "r2_u": -0.3780645446418689,
+            "rmse_v": 3.1646085659028453,
+            "r2_v": -0.023605204357223686,
+            "rmse_w": 0.036915376905008075,
+            "r2_w": -2.1758444586578563,
+            "seuil_omm": 0.9696265452504158
+          },
+          {
+            "z_m": 200,
+            "couverture": 1.0,
+            "vitesse_moyenne": 11.442043659687043,
+            "rugosite": 1.269039824604988,
+            "rmse_u": 2.2052464809146843,
+            "r2_u": -2.2654649763002195,
+            "rmse_v": 3.7845587988444334,
+            "r2_v": -0.054244070193700145,
+            "rmse_w": 0.07102920307137209,
+            "r2_w": -8.419150085912532,
+            "seuil_omm": 1.1442043659687042
+          }
+        ],
+        "par_niveau_episodes": [],
+        "dso1_rmse": false,
+        "dso1_r2": false,
+        "dso1_r2_uvw": false,
+        "dso1_rmse_global_u": 1.7218829156925903,
+        "dso1_rmse_global_v": 3.43098609965834,
+        "dso1_rmse_global_conforme": false,
+        "critere_omm": false,
+        "dso2_rms_moyen": 0.00029664658723049797,
+        "dso2_rms_p95": 0.0004228696750942617,
+        "dso2_rms_max": 0.00044023673399351537,
+        "dso2_rms_tous_instants": 0.00029664658723049797,
+        "dso2_conforme": false,
+        "dso3_rugosite": 0.5888013616204262,
+        "dso3_rugosite_tous_instants": 0.5888013616204262,
+        "dso3_conforme": false,
+        "dso4_inference_s": 0.0013575399905676022,
+        "dso4_conforme": true,
+        "dso5_rmse_25pct": 3.779231173907602,
+        "dso5_conforme": false,
+        "mae_direction_deg": 16.25103199481964,
+        "robustesse": [
+          {
+            "capteurs_visibles": 0.1,
+            "rmse_u_max": 2.201358361567243,
+            "rmse_v_max": 3.7792997918153266,
+            "r2_u_min": -2.25396029879081,
+            "r2_v_min": -0.59251492779458
+          },
+          {
+            "capteurs_visibles": 0.25,
+            "rmse_u_max": 2.2007137881232963,
+            "rmse_v_max": 3.779231173907602,
+            "r2_u_min": -2.252055012160861,
+            "r2_v_min": -0.5973856624104483
+          },
+          {
+            "capteurs_visibles": 0.5,
+            "rmse_u_max": 2.2325449796356267,
+            "rmse_v_max": 3.9503236505681776,
+            "r2_u_min": -2.3468110149099948,
+            "r2_v_min": -0.5875349606337783
+          },
+          {
+            "capteurs_visibles": 1.0,
+            "rmse_u_max": 2.2344449991021205,
+            "rmse_v_max": 3.931061744357362,
+            "r2_u_min": -2.3525100821809994,
+            "r2_v_min": -0.5775561061775778
+          }
+        ]
+      }
+    }
+  },
+  {
+    "path": "/api/atom-wind/grille",
+    "status": 200,
+    "body": {
+      "format": "atom-wind/1",
+      "nx": 4,
+      "ny": 2,
+      "pas_km": 0.5,
+      "largeur_km": 2.0,
+      "hauteur_km": 1.0,
+      "lat0": null,
+      "lon0": null,
+      "rotation_deg": null,
+      "hauteurs_agl_m": [
+        10,
+        25,
+        50,
+        80,
+        100,
+        150,
+        200,
+        300,
+        500,
+        800,
+        1000
+      ],
+      "terrain_m": [
+        [
+          36.4,
+          50.9,
+          60.6,
+          64.2
+        ],
+        [
+          34.1,
+          43.6,
+          51.2,
+          56.2
+        ]
+      ],
+      "eau": [
+        [
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0
+        ]
+      ],
+      "z0_m": [
+        [
+          0.1,
+          0.1,
+          0.1,
+          0.1
+        ],
+        [
+          0.1,
+          0.1,
+          0.1,
+          0.1
+        ]
+      ],
+      "stations": [],
+      "modele": "best.pt",
+      "configuration": "test"
+    }
+  },
+  {
+    "path": "/api/atom-wind/jours",
+    "status": 200,
+    "body": {
+      "modele": "best.pt",
+      "jours": [
+        {
+          "date": "2025-01-06",
+          "instants": [
+            {
+              "stem": "006_000000",
+              "timestamp_utc": "2025-01-06T00:00:00Z",
+              "heure_locale": 1.0
+            },
+            {
+              "stem": "006_060000",
+              "timestamp_utc": "2025-01-06T06:00:00Z",
+              "heure_locale": 7.0
+            },
+            {
+              "stem": "006_120000",
+              "timestamp_utc": "2025-01-06T12:00:00Z",
+              "heure_locale": 13.0
+            },
+            {
+              "stem": "006_180000",
+              "timestamp_utc": "2025-01-06T18:00:00Z",
+              "heure_locale": 19.0
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "path": "/mcp tools/list",
+    "status": 200,
+    "body": {
+      "jsonrpc": "2.0",
+      "id": 1,
+      "result": {
+        "tools": [
+          {
+            "description": "Geometrie de sortie du modele : grille, altitudes disponibles, modele charge.\n\n    A appeler en premier : les autres outils attendent des altitudes et des coordonnees\n    coherentes avec cette grille.\n    ",
+            "inputSchema": {
+              "properties": {},
+              "type": "object",
+              "title": "grid_metaArguments"
+            },
+            "name": "grid_meta"
+          },
+          {
+            "description": "Instants reconstructibles, avec leur date et leur ensemble.\n\n    Args:\n        split: \"train\", \"val\" ou \"test\" pour filtrer ; None = tous.\n        limit: nombre maximal d'instants renvoyes (1-500).\n    ",
+            "inputSchema": {
+              "properties": {
+                "split": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "title": "Split"
+                },
+                "limit": {
+                  "default": 50,
+                  "title": "Limit",
+                  "type": "integer"
+                }
+              },
+              "type": "object",
+              "title": "list_instantsArguments"
+            },
+            "name": "list_instants"
+          },
+          {
+            "description": "Vent reconstruit en un point : u, v, w, vitesse et direction meteo.\n\n    Args:\n        x_m: distance en metres vers l'est depuis le coin sud-ouest.\n        y_m: distance en metres vers le nord.\n        z_asl_m: altitude au-dessus du niveau de la mer, interpolee entre deux niveaux.\n        stem: instant (JJJ_HHMMSS) ; None = premier instant de test.\n    ",
+            "inputSchema": {
+              "properties": {
+                "x_m": {
+                  "title": "X M",
+                  "type": "number"
+                },
+                "y_m": {
+                  "title": "Y M",
+                  "type": "number"
+                },
+                "z_asl_m": {
+                  "title": "Z Asl M",
+                  "type": "number"
+                },
+                "stem": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "title": "Stem"
+                }
+              },
+              "required": [
+                "x_m",
+                "y_m",
+                "z_asl_m"
+              ],
+              "type": "object",
+              "title": "wind_at_pointArguments"
+            },
+            "name": "wind_at_point"
+          },
+          {
+            "description": "Profil vertical complet en un point : une ligne par niveau du modele.\n\n    Utile pour un calcul de production eolienne : le vent a la hauteur de moyeu se lit\n    directement, et le cisaillement se voit d'un niveau a l'autre. Avec la fiabilite active,\n    chaque niveau porte aussi sigma, intervalle p10/p50/p90, statut, couverture et classe,\n    a null tant que `fiabilite` vaut en_cours (rappeler l'outil plus tard).\n\n    Args:\n        x_m: distance en metres vers l'est depuis le coin sud-ouest.\n        y_m: distance en metres vers le nord.\n        stem: instant (JJJ_HHMMSS) ; None = premier instant de test.\n    ",
+            "inputSchema": {
+              "properties": {
+                "x_m": {
+                  "title": "X M",
+                  "type": "number"
+                },
+                "y_m": {
+                  "title": "Y M",
+                  "type": "number"
+                },
+                "stem": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "title": "Stem"
+                }
+              },
+              "required": [
+                "x_m",
+                "y_m"
+              ],
+              "type": "object",
+              "title": "wind_profileArguments"
+            },
+            "name": "wind_profile"
+          },
+          {
+            "description": "Carte d'une variable a une altitude, decimee pour rester lisible.\n\n    Args:\n        z_asl_m: altitude ASL en metres (interpolee entre niveaux).\n        stem: instant (JJJ_HHMMSS) ; None = premier instant de test.\n        variable: \"speed\", \"u\", \"v\", \"w\" ou \"direction\".\n        stride: decimation horizontale (1-32) ; 8 donne une grille d'environ 60x30.\n    ",
+            "inputSchema": {
+              "properties": {
+                "z_asl_m": {
+                  "title": "Z Asl M",
+                  "type": "number"
+                },
+                "stem": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "title": "Stem"
+                },
+                "variable": {
+                  "default": "speed",
+                  "title": "Variable",
+                  "type": "string"
+                },
+                "stride": {
+                  "default": 8,
+                  "title": "Stride",
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "z_asl_m"
+              ],
+              "type": "object",
+              "title": "wind_field_at_altitudeArguments"
+            },
+            "name": "wind_field_at_altitude"
+          },
+          {
+            "description": "Resume chiffre d'un instant : vitesses par niveau, secteur dominant, temps d'inference.\n\n    Avec la fiabilite active : `fiabilite` (en_cours, prete, echec) et `fiabilite_s` (delai\n    de la fiabilite, null tant qu'elle n'est pas prete) ; inference_s = la valeur seule.\n\n    Args:\n        stem: instant (JJJ_HHMMSS) ; None = premier instant de test.\n    ",
+            "inputSchema": {
+              "properties": {
+                "stem": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "title": "Stem"
+                }
+              },
+              "type": "object",
+              "title": "instant_summaryArguments"
+            },
+            "name": "instant_summary"
+          },
+          {
+            "description": "Production du parc eolien declare a un instant (lot M5).\n\n    Par eolienne : vent au moyeu et vent equivalent rotor (REWS) avec intervalle p10/p50/p90,\n    cisaillement (exposant shear_alpha), rotation de direction (veer_deg), densite de l'air,\n    puissance et etat (production / arret_vent_faible / arret_vent_fort / indisponible) ;\n    puissance du parc ; alertes vent_fort_moyeu et cisaillement ; KPI hub_wind_* du domaine.\n    Hauteurs de moyeu AU-DESSUS DU SOL. Erreur si aucun parc n'est declare.\n\n    Args:\n        stem: instant (JJJ_HHMMSS) ; None = premier instant de test.\n    ",
+            "inputSchema": {
+              "properties": {
+                "stem": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "title": "Stem"
+                }
+              },
+              "type": "object",
+              "title": "production_eolienneArguments"
+            },
+            "name": "production_eolienne"
+          },
+          {
+            "description": "Dernier verdict DSO1-DSO5 archive pour le modele charge.\n\n    Renvoie le contenu de `test_summary.json` produit par l'evaluation. Si aucune\n    evaluation n'a encore ete archivee, le dit explicitement plutot que d'inventer\n    des chiffres.\n    ",
+            "inputSchema": {
+              "properties": {},
+              "type": "object",
+              "title": "dso_reportArguments"
+            },
+            "name": "dso_report"
+          },
+          {
+            "description": "Alertes OUVERTES d'un instant (lot M4) : capteurs en derive ou muets, stations\n    insuffisantes, incoherence physique, derive des entrees, zones mal couvertes.\n\n    Chaque alerte porte un niveau (information, avertissement, important, critique), une\n    cause et une recommandation ; format du contrat ATOM rev. 2 (alerts.schema.json).\n    Renvoie aussi le nombre d'alertes ouvertes par niveau et le bloc `physique` (residu\n    de masse de l'instant). Si les alertes sont desactivees (alerts.enabled = false), le\n    dit au lieu d'inventer une liste vide.\n\n    Args:\n        stem: instant (JJJ_HHMMSS) ; None = dernieres alertes calculees, sinon le premier\n              instant de test.\n    ",
+            "inputSchema": {
+              "properties": {
+                "stem": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "title": "Stem"
+                }
+              },
+              "type": "object",
+              "title": "alertes_activesArguments"
+            },
+            "name": "alertes_actives"
+          },
+          {
+            "description": "Ecrit un instant sur le disque du serveur (binaires Float32 + manifeste).\n\n    Destine a l'application qui consomme les donnees : elle lit ensuite le manifeste et\n    les binaires. Ecrit des fichiers, donc reserve a la portee `admin`.\n\n    Args:\n        stem: instant (JJJ_HHMMSS) ; None = premier instant de test.\n        stride: decimation horizontale (1 = pleine resolution).\n    ",
+            "inputSchema": {
+              "properties": {
+                "stem": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "title": "Stem"
+                },
+                "stride": {
+                  "default": 2,
+                  "title": "Stride",
+                  "type": "integer"
+                }
+              },
+              "type": "object",
+              "title": "export_instantArguments"
+            },
+            "name": "export_instant"
+          },
+          {
+            "description": "Vent prevu (cahier v12) en un point : aujourd'hui en temps reel (jour 0), demain (1) ou apres-demain (2),\n    a une heure locale de Tunis et une hauteur au-dessus du sol ; avec la temperature et l'humidite a 2 m de GFS.\n\n    Args:\n        jour: 0 aujourd'hui, 1 demain, 2 apres-demain.\n        heure: heure locale de Tunis (0 a 23).\n        hauteur_m: hauteur au-dessus du sol en metres.\n        lieu: lieu de l'application (Mornag, Nabeul, Soliman...), ou lat / lon.\n    ",
+            "inputSchema": {
+              "properties": {
+                "jour": {
+                  "title": "Jour",
+                  "type": "integer"
+                },
+                "heure": {
+                  "title": "Heure",
+                  "type": "number"
+                },
+                "hauteur_m": {
+                  "title": "Hauteur M",
+                  "type": "number"
+                },
+                "lieu": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "title": "Lieu"
+                },
+                "lat": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "title": "Lat"
+                },
+                "lon": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "title": "Lon"
+                }
+              },
+              "required": [
+                "jour",
+                "heure",
+                "hauteur_m"
+              ],
+              "type": "object",
+              "title": "prevision_pointArguments"
+            },
+            "name": "prevision_point"
+          },
+          {
+            "description": "Creneaux de traitement et d'aspersion d'une parcelle pour un jour (cahier v12) : regle de l'application\n    (traitement oui de 3 a 15 km/h a 10 m), heure par heure, et probabilite GEFS de pouvoir traiter si elle\n    est calculee.\n\n    Args:\n        jour: 0 aujourd'hui, 1 demain, 2 apres-demain.\n        lieu: lieu de l'application, ou lat / lon.\n    ",
+            "inputSchema": {
+              "properties": {
+                "jour": {
+                  "title": "Jour",
+                  "type": "integer"
+                },
+                "lieu": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "title": "Lieu"
+                },
+                "lat": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "title": "Lat"
+                },
+                "lon": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "title": "Lon"
+                }
+              },
+              "required": [
+                "jour"
+              ],
+              "type": "object",
+              "title": "decision_agricoleArguments"
+            },
+            "name": "decision_agricole"
+          },
+          {
+            "description": "Creneaux surs pour le travail en hauteur sur une eolienne ou un mat (cahier v12, E7) : heures ou le\n    vent moyen a la hauteur donnee reste sous le seuil (12 m/s par defaut ; vent moyen, sans rafales).\n\n    Args:\n        jour: 0 aujourd'hui, 1 demain, 2 apres-demain.\n        hauteur_m: hauteur de la nacelle ou du mat au-dessus du sol.\n        seuil_m_s: vent moyen maximal autorise par la procedure du site.\n        lieu: lieu de l'application (parc virtuel de Djebel Ressas si rien n'est donne), ou lat / lon.\n    ",
+            "inputSchema": {
+              "properties": {
+                "jour": {
+                  "title": "Jour",
+                  "type": "integer"
+                },
+                "hauteur_m": {
+                  "default": 80.0,
+                  "title": "Hauteur M",
+                  "type": "number"
+                },
+                "seuil_m_s": {
+                  "default": 12.0,
+                  "title": "Seuil M S",
+                  "type": "number"
+                },
+                "lieu": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "title": "Lieu"
+                },
+                "lat": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "title": "Lat"
+                },
+                "lon": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "title": "Lon"
+                }
+              },
+              "required": [
+                "jour"
+              ],
+              "type": "object",
+              "title": "fenetres_maintenanceArguments"
+            },
+            "name": "fenetres_maintenance"
+          },
+          {
+            "description": "Hausses et chutes rapides de production du parc virtuel (cahier v12, E13) : puissance heure par heure\n    et rampes d'au moins `seuil_pct` % de la puissance installee d'une heure a l'autre.\n\n    Args:\n        jour: 0 aujourd'hui, 1 demain, 2 apres-demain.\n        seuil_pct: rampe minimale signalee, en % de la puissance installee par heure.\n    ",
+            "inputSchema": {
+              "properties": {
+                "jour": {
+                  "title": "Jour",
+                  "type": "integer"
+                },
+                "seuil_pct": {
+                  "default": 20.0,
+                  "title": "Seuil Pct",
+                  "type": "number"
+                }
+              },
+              "required": [
+                "jour"
+              ],
+              "type": "object",
+              "title": "variations_productionArguments"
+            },
+            "name": "variations_production"
+          },
+          {
+            "description": "Valeur de chaque station de mesure aujourd'hui (cahier v12, E11) et aire de son influence (E10) : le\n    modele est relance sans chaque station ; erreur a son emplacement sans elle (faible = redondante).",
+            "inputSchema": {
+              "properties": {},
+              "type": "object",
+              "title": "valeur_stationsArguments"
+            },
+            "name": "valeur_stations"
+          },
+          {
+            "description": "Pourquoi ce vent ici (cahier v12, E10) : les stations qui ont le plus influence la valeur du point\n    aujourd'hui, a 10 m.\n\n    Args:\n        lieu: lieu de l'application (Mornag, Nabeul, Soliman...), ou lat / lon.\n    ",
+            "inputSchema": {
+              "properties": {
+                "lieu": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "title": "Lieu"
+                },
+                "lat": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "title": "Lat"
+                },
+                "lon": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "title": "Lon"
+                }
+              },
+              "type": "object",
+              "title": "explication_pointArguments"
+            },
+            "name": "explication_point"
+          },
+          {
+            "description": "Dimensionnement energetique d'un mat de mesure (cahier v12, E18) : production d'une micro-eolienne a la\n    hauteur du mat, couverture de la consommation et taille de batterie (aujourd'hui a apres-demain).\n\n    Args:\n        lieu: lieu de l'application, ou lat / lon.\n        hauteur_m: hauteur de la micro-eolienne sur le mat.\n        conso_w: consommation moyenne de la station (W).\n        autonomie_j: jours d'autonomie minimale sans vent.\n    ",
+            "inputSchema": {
+              "properties": {
+                "lieu": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "title": "Lieu"
+                },
+                "lat": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "title": "Lat"
+                },
+                "lon": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "title": "Lon"
+                },
+                "hauteur_m": {
+                  "default": 30.0,
+                  "title": "Hauteur M",
+                  "type": "number"
+                },
+                "conso_w": {
+                  "default": 5.0,
+                  "title": "Conso W",
+                  "type": "number"
+                },
+                "autonomie_j": {
+                  "default": 3.0,
+                  "title": "Autonomie J",
+                  "type": "number"
+                }
+              },
+              "type": "object",
+              "title": "dimensionnement_matArguments"
+            },
+            "name": "dimensionnement_mat"
+          },
+          {
+            "description": "Historique des journees calculees par ATOM Wind (cahier v12, HIS1) : temps reel et previsions deja\n    servies, avec leur date, leur type, leur date d'emission et leur taille. Le contenu d'une journee se lit\n    par l'API (/api/atom-wind/historique/<nom>).",
+            "inputSchema": {
+              "properties": {},
+              "type": "object",
+              "title": "historique_atom_windArguments"
+            },
+            "name": "historique_atom_wind"
+          },
+          {
+            "description": "Scenario de panne (cahier v12, BF88, espace R&D) : recalcule une heure deja mesuree d'aujourd'hui\n    SANS les stations donnees et dit ce que cela change sur le domaine et aux stations.\n\n    Args:\n        heure: heure locale de Tunis (0 a 23), deja passee.\n        stations: stations a retirer (Tunis-Carthage, Zaghouan, Nabeul ou leurs codes DTTA, INM60729, INM60728).\n    ",
+            "inputSchema": {
+              "properties": {
+                "heure": {
+                  "title": "Heure",
+                  "type": "number"
+                },
+                "stations": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "title": "Stations",
+                  "type": "array"
+                }
+              },
+              "required": [
+                "heure",
+                "stations"
+              ],
+              "type": "object",
+              "title": "simuler_panneArguments"
+            },
+            "name": "simuler_panne"
+          },
+          {
+            "description": "Espace holding (cahier v12, BF85) : emplacements recommandes pour les mats Porteur (15, 20, 25 ou 30 m),\n    classes par la production de leur eolienne a la hauteur du mat ; capteurs du plan ANEO classes de meme.\n\n    Args:\n        hauteur_m: hauteur du mat Porteur (15, 20, 25 ou 30).\n        n: nombre de sites.\n        eolienne_w: puissance nominale de l'eolienne du mat (W).\n    ",
+            "inputSchema": {
+              "properties": {
+                "hauteur_m": {
+                  "default": 20,
+                  "title": "Hauteur M",
+                  "type": "integer"
+                },
+                "n": {
+                  "default": 10,
+                  "title": "N",
+                  "type": "integer"
+                },
+                "eolienne_w": {
+                  "default": 400.0,
+                  "title": "Eolienne W",
+                  "type": "number"
+                }
+              },
+              "type": "object",
+              "title": "sites_porteursArguments"
+            },
+            "name": "sites_porteurs"
+          },
+          {
+            "description": "Espace chantier (cahier v12, BF86) : vent et rafale a la hauteur de la fleche d'une grue, heure par heure,\n    creneaux de levage sous la limite et effort du vent sur la charge.\n\n    Args:\n        jour: 0 aujourd'hui, 1 demain, 2 apres-demain.\n        hauteur_m: hauteur de la fleche au-dessus du sol.\n        limite_rafale_m_s: limite de service de la grue (rafale), 20 m/s si inconnue.\n        surface_charge_m2: surface au vent de la charge (0 si aucune).\n        lieu: lieu de l'application, ou lat / lon.\n    ",
+            "inputSchema": {
+              "properties": {
+                "jour": {
+                  "title": "Jour",
+                  "type": "integer"
+                },
+                "hauteur_m": {
+                  "default": 40.0,
+                  "title": "Hauteur M",
+                  "type": "number"
+                },
+                "limite_rafale_m_s": {
+                  "default": 20.0,
+                  "title": "Limite Rafale M S",
+                  "type": "number"
+                },
+                "surface_charge_m2": {
+                  "default": 0.0,
+                  "title": "Surface Charge M2",
+                  "type": "number"
+                },
+                "lieu": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "title": "Lieu"
+                },
+                "lat": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "title": "Lat"
+                },
+                "lon": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "title": "Lon"
+                }
+              },
+              "required": [
+                "jour"
+              ],
+              "type": "object",
+              "title": "vent_grueArguments"
+            },
+            "name": "vent_grue"
+          },
+          {
+            "description": "Espace environnement (cahier v12, BF87) : vent dominant au point, orientation des haies brise-vent et\n    zone protegee.\n\n    Args:\n        lieu: lieu de l'application, ou lat / lon.\n        hauteur_haie_m: hauteur adulte de la haie (m).\n        longueur_m: longueur de la haie (m).\n    ",
+            "inputSchema": {
+              "properties": {
+                "lieu": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "title": "Lieu"
+                },
+                "lat": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "title": "Lat"
+                },
+                "lon": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "title": "Lon"
+                },
+                "hauteur_haie_m": {
+                  "default": 3.0,
+                  "title": "Hauteur Haie M",
+                  "type": "number"
+                },
+                "longueur_m": {
+                  "default": 200.0,
+                  "title": "Longueur M",
+                  "type": "number"
+                }
+              },
+              "type": "object",
+              "title": "plan_haiesArguments"
+            },
+            "name": "plan_haies"
+          }
+        ]
+      }
+    }
+  }
+]

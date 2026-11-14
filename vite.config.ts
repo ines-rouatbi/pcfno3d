@@ -16,6 +16,7 @@ export default defineConfig({
         science: resolve('frontend/index.html'),
         atom: resolve('frontend/atom-wind/index.html'),
         export: resolve('frontend/export/index.html'),
+        presentation: resolve('frontend/presentation/index.html'),
       },
       output: { manualChunks(id) {
         if (id.includes('/node_modules/three/')) return 'atmosphere';

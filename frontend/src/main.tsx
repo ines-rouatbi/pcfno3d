@@ -1,6 +1,7 @@
 import { useState, useEffect, Component, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import '@fontsource-variable/manrope';
+import '@fontsource-variable/fraunces';
 import '@fontsource/ibm-plex-mono/400.css';
 import '@fontsource/ibm-plex-serif/latin-400.css';
 import '@fontsource/ibm-plex-serif/latin-500.css';
@@ -10,6 +11,7 @@ import './styles/terrain.css';
 import InstrumentViews from './views/InstrumentViews';
 import { Navigation, Topbar, PageHeading, DataContext, WindReadout, Assistant } from './components';
 import { useWorkspace } from './workspace';
+import { ServiceState, VUES_DONNEES } from './service-state';
 import { initializeTheme } from './theme';
 
 class ErrorBoundary extends Component<{children: ReactNode}, {error: boolean}> {
@@ -21,6 +23,8 @@ class ErrorBoundary extends Component<{children: ReactNode}, {error: boolean}> {
 function App() {
   const { state, error } = useWorkspace();
   const [menu, setMenu] = useState(false);
+  // sans données de vent, les vues qui en dépendent cèdent la place à l'état du service
+  const gated = state.ready && state.source === 'hors_ligne' && VUES_DONNEES.has(state.view);
   const national = state.view === 'carte3d' && state.sceneMode !== 'analysis' && state.terrainSource !== 'local';
   useEffect(() => {
     const close = (event: KeyboardEvent) => { if (event.key === 'Escape') setMenu(false); };
@@ -53,7 +57,7 @@ function App() {
       previous?.focus({ preventScroll: true });
     };
   }, [menu]);
-  return <ErrorBoundary><a className="skip-link" href="#workspace">Aller à l’espace de travail</a><div className="workspace-main" data-view={state.view}><Topbar onMenu={() => setMenu(!menu)} menuOpen={menu} national={national}/><Navigation open={menu} close={() => setMenu(false)} national={national}/><main className="workspace-content" id="workspace" tabIndex={-1}><PageHeading state={state}/><DataContext state={state}/>{error && <div className="startup-error" role="alert">L’espace n’a pas pu démarrer : {error} <button onClick={() => location.reload()}>Réessayer</button></div>}<WindReadout state={state}/><div className="instruments"><InstrumentViews/></div><footer className="workspace-footer"><span>ATOM Wind <span> / </span> PC-FNO3D</span><span>{national ? 'Tunisie · Prévisions GFS · Outils locaux dans le Grand Tunis' : 'Grand Tunis · Altitudes et sources précisées dans chaque vue'}</span><Assistant/></footer></main></div><aside className="sheet card" id="sheet" hidden/><div className="tour" id="tour" hidden/><div className="tour" id="authm" hidden/><div className="toast" id="toast" role="status" hidden/><div className="gtip" id="gtip" hidden/><div className="palette" id="palette" hidden/></ErrorBoundary>;
+  return <ErrorBoundary><a className="skip-link" href="#workspace">Aller à l’espace de travail</a><div className="workspace-main" data-view={state.view} data-gated={gated || undefined}><Topbar onMenu={() => setMenu(!menu)} menuOpen={menu} national={national}/><Navigation open={menu} close={() => setMenu(false)} national={national}/><main className="workspace-content" id="workspace" tabIndex={-1}><PageHeading state={state}/><DataContext state={state}/>{error && <div className="startup-error" role="alert">L’espace n’a pas pu démarrer : {error} <button onClick={() => location.reload()}>Réessayer</button></div>}<WindReadout state={state}/><div className="instruments" data-gated={gated || undefined}>{gated && <ServiceState state={state}/>}<InstrumentViews/></div><footer className="workspace-footer"><span>ATOM Wind <span> / </span> PC-FNO3D</span><span>{national ? 'Tunisie · Prévisions GFS · Outils locaux dans le Grand Tunis' : 'Grand Tunis · Altitudes et sources précisées dans chaque vue'}</span><Assistant state={state}/></footer></main></div><aside className="sheet card" id="sheet" hidden/><div className="tour" id="tour" hidden/><div className="tour" id="authm" hidden/><div className="toast" id="toast" role="status" hidden/><div className="gtip" id="gtip" hidden/><div className="palette" id="palette" hidden/></ErrorBoundary>;
 }
 
 initializeTheme();

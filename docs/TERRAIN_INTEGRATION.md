@@ -66,6 +66,28 @@ Les boutons Tunisie / Grand Tunis déplacent la caméra. Le sélecteur Source ch
 Les indications de territoire suivent la source et le mode : Tunisie pour les prévisions
 nationales, Grand Tunis pour la source locale et les outils d'analyse avancés.
 
+## Relief réel des outils d'analyse avancés
+
+Les outils d'analyse (scène 3D du domaine 68 × 56 km) et les cartes 2D de la page lisent
+`frontend/public/atom-wind/relief/grand-tunis.{json,bin.gz}` : une grille de 125 m (544 × 448)
+tirée de ce terrain — altitude moyenne de 4 × 4 points DEM par cellule, mer et lacs rasterisés
+depuis `water/mediterranean.glb` et `water/natural-lakes.glb` — sur la même projection linéaire
+que la page (`LAT0`, `LON0`, `KX`, `KY`). Ce fichier (≈ 330 Ko) est versionné, contrairement au
+terrain : il se régénère après un nouvel import.
+
+```powershell
+node scripts/build_grand_tunis_relief.mjs
+```
+
+- Avec le service PC-FNO3D, la grille de la page reste celle du modèle (`/api/atom-wind/grille`) ;
+  la grille fine ne sert alors qu'au maillage affiché.
+- Sans service, elle remplace le relief schématique de la maquette ; le vent reste une
+  démonstration synthétique, et la bannière le dit (« relief réel du Grand Tunis »).
+- Sans le fichier, la page revient au relief schématique.
+- Les couleurs de la scène se déduisent de l'altitude et de la pente (champs, garrigue, forêt,
+  roche) : ce n'est pas une carte d'occupation du sol. La teinte urbaine n'apparaît qu'avec la
+  rugosité réelle servie par le modèle.
+
 ## Coordonnées et altitudes
 
 - Géométrie : EPSG:32632, origine E=500 000 m / N=3 800 000 m. X vers l'est de grille,

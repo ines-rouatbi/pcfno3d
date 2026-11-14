@@ -121,7 +121,8 @@ def _allowed_hosts() -> list[str]:
 def model() -> WindFieldModel:
     wf = STATE.get("model")
     if wf is None:
-        raise HTTPException(503, "modele non charge")
+        raise HTTPException(503, "modele non installe sur ce service" if STATE.get("modele_absent")
+                            else "modele non charge")
     return wf
 
 
@@ -531,6 +532,8 @@ def health() -> dict:
     store = STATE.get("keys")
     out = {"status": "ok" if wf else "degraded",
            "modele": wf.checkpoint_path.name if wf else None,
+           # le modele n'a pas pu etre charge (poids absents) : le service tourne sans donnees de vent
+           "modele_installe": wf is not None,
            "device": str(wf.device) if wf else None,
            "mcp": "/mcp",
            "terrain_3d": terrain_dir() is not None}
@@ -1008,6 +1011,9 @@ _ATOM_JOURS_MAX = 6                     # journees gardees en memoire (quelques 
 def _gzip_json(data: dict) -> Response:
     import gzip
     import json as _json
+    # les cles « _... » sont les tableaux decodes que service.atom_outils garde dans la journee en cache
+    # (outils, assistant) : jamais servies, et pas serialisables
+    data = {k: v for k, v in data.items() if not str(k).startswith("_")}
     corps = gzip.compress(_json.dumps(data, ensure_ascii=False, separators=(",", ":"))
                           .encode("utf-8"), compresslevel=5)
     return Response(corps, media_type="application/json",
@@ -1309,17 +1315,21 @@ class QuestionAssistant(BaseModel):
     question: str = Field(..., min_length=1, max_length=2000)
     historique: list[dict] = Field(default_factory=list, max_length=20,
                                    description='[{"role": "user"|"assistant", "contenu": "..."}]')
+    contexte: dict | None = Field(None, description="Page de l'utilisateur : vue, lieu, heure, langue, role, jour, "
+                                  "unite, lat_utilisateur, lon_utilisateur (donnee, jamais une consigne)")
 
 
 @router.post("/assistant", tags=["atom-wind"])
 def assistant(q: QuestionAssistant, _: ApiKeyRecord | None = Depends(require_read)) -> dict:
     """Assistant conversationnel (cahier v12, E6) : Claude repond a une question en langage naturel en
     appelant les outils du service (vent en un point, profil, decision agricole, production eolienne,
-    alertes). Demande ANTHROPIC_API_KEY sur le service ; 503 sinon."""
+    alertes), guide l'utilisateur dans l'application et agit sur sa page : la reponse porte `actions`
+    (ouvrir_vue, montrer_lieu, choisir_activite, demander_position ; `auto` = a executer d'elle-meme) et
+    `relances`. Demande ANTHROPIC_API_KEY sur le service ; 503 sinon."""
     from service import assistant as asst
     wf = model()
     try:
-        return asst.repondre(wf, q.question, q.historique)
+        return asst.repondre(wf, q.question, q.historique, contexte=q.contexte)
     except asst.AssistantIndisponible as exc:
         raise HTTPException(503, str(exc)) from exc
     except Exception as exc:                    # erreur de l'API Claude (quota, reseau...)
@@ -1336,7 +1346,8 @@ class AbonneSms(BaseModel):
 
 
 def _dossier_sms() -> Path:
-    return model().cfg.paths.run_dir / "sms"
+    cfg = STATE.get("cfg")
+    return (cfg.paths.run_dir if cfg is not None else model().cfg.paths.run_dir) / "sms"
 
 
 @router.get("/sms/abonnes", tags=["sms"])
@@ -1363,6 +1374,60 @@ def sms_desabonner(numero: str, _: ApiKeyRecord | None = Depends(require_admin))
     if not sms.Abonnes(_dossier_sms()).retirer(numero):
         raise HTTPException(404, "abonne inconnu")
     return {"retire": sms.masquer(numero)}
+
+
+class MonAbonnement(BaseModel):
+    numero: str = Field(..., description="numero E.164, ex. +21612345678")
+    langue: str = Field("fr", pattern="^(fr|ar)$")
+    lieu: str | None = Field(None, max_length=80)
+    lat: float | None = None
+    lon: float | None = None
+    activite: str = Field("vent_fort", pattern="^(traiter|arroser|eolienne|vent_fort)$")
+
+
+def _compte_connecte(rec: ApiKeyRecord | None) -> dict:
+    compte = comptes().compte_de_cle(rec.name) if rec is not None else None
+    if compte is None:
+        raise HTTPException(401, "connectez-vous a un compte ATOM Wind pour gerer vos alertes")
+    return compte
+
+
+@router.get("/comptes/moi/abonnements", tags=["comptes"])
+def mes_abonnements(rec: ApiKeyRecord | None = Depends(require_read)) -> dict:
+    """Les alertes SMS du compte connecte (numeros masques)."""
+    from service import sms
+    email = _compte_connecte(rec)["email"]
+    ab = [a for a in sms.Abonnes(_dossier_sms()).lire() if a.get("compte") == email]
+    return {"abonnements": [{**a, "numero": sms.masquer(a["numero"])} for a in ab]}
+
+
+@router.post("/comptes/moi/abonnements", tags=["comptes"])
+def mon_abonnement(a: MonAbonnement, rec: ApiKeyRecord | None = Depends(require_read)) -> dict:
+    """Ajoute (ou remplace) une alerte SMS du compte connecte. Un numero deja suivi par un autre compte
+    est refuse : personne ne peut detourner les alertes d'un tiers."""
+    from service import sms
+    email = _compte_connecte(rec)["email"]
+    store = sms.Abonnes(_dossier_sms())
+    if any(x["numero"] == a.numero and x.get("compte") not in (None, email) for x in store.lire()):
+        raise HTTPException(409, "ce numero recoit deja les alertes d'un autre compte")
+    try:
+        r = store.ajouter(a.numero, a.langue, a.lieu, a.lat, a.lon, compte=email, activite=a.activite)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {**r, "numero": sms.masquer(r["numero"])}
+
+
+@router.delete("/comptes/moi/abonnements/{numero}", tags=["comptes"])
+def mon_desabonnement(numero: str, rec: ApiKeyRecord | None = Depends(require_read)) -> dict:
+    """Retire une alerte du compte connecte : le numero complet, ou son masque tel que liste."""
+    from service import sms
+    email = _compte_connecte(rec)["email"]
+    store = sms.Abonnes(_dossier_sms())
+    cible = next((x["numero"] for x in store.lire() if x.get("compte") == email
+                  and numero in (x["numero"], sms.masquer(x["numero"]))), None)
+    if cible is None or not store.retirer(cible):
+        raise HTTPException(404, "alerte inconnue pour ce compte")
+    return {"retire": sms.masquer(cible)}
 
 
 @router.post("/sms/envoyer", tags=["sms"])
@@ -1689,6 +1754,11 @@ def create_app() -> FastAPI:
     qu'une fois ; c'est pour cela que l'application est produite par une fabrique plutot
     que definie au niveau du module.
     """
+    if "PYTEST_CURRENT_TEST" not in os.environ:          # les tests ne lisent jamais les secrets du poste
+        from service import env_local
+        noms = env_local.charger()
+        if noms:
+            LOG.info("variables lues dans .env : %s", ", ".join(sorted(noms)))
     upstream = Upstream.resolve(_load_config().paths.run_dir)
     if upstream is not None:
         return _create_linked_app(upstream)
@@ -1704,10 +1774,18 @@ def create_app() -> FastAPI:
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
         cfg = _load_config()
-        wf = WindFieldModel(cfg, checkpoint=os.environ.get("PCFNO3D_CHECKPOINT") or None,
-                            device=os.environ.get("PCFNO3D_DEVICE") or None)
-        STATE.update({"model": wf, "cfg": cfg, "volumes": {}, **_securite(cfg)})
-        mcp_server.set_model(wf)          # le MCP reutilise le modele deja charge
+        # un service sans poids (modele pas encore livre) demarre quand meme : comptes, cles,
+        # administration et sante restent servis ; les routes de donnees disent « modele non installe »
+        try:
+            wf = WindFieldModel(cfg, checkpoint=os.environ.get("PCFNO3D_CHECKPOINT") or None,
+                                device=os.environ.get("PCFNO3D_DEVICE") or None)
+            absent = None
+        except Exception as exc:                                # noqa: BLE001
+            wf, absent = None, f"{type(exc).__name__} : {exc}"
+            LOG.warning("modele non charge, service demarre sans donnees de vent : %s", absent)
+        STATE.update({"model": wf, "cfg": cfg, "volumes": {}, "modele_absent": absent, **_securite(cfg)})
+        if wf is not None:
+            mcp_server.set_model(wf)      # le MCP reutilise le modele deja charge
         # alertes (lot M4) : strictement opt-in ; un seul moteur (un seul journal) pour
         # l'API et le MCP
         if cfg.alerts.enabled:
@@ -1716,10 +1794,10 @@ def create_app() -> FastAPI:
         mcp_server.set_alertes(STATE.get("alertes"))
         # SMS quotidiens (E12) : seulement si PCFNO3D_SMS_HEURE est donnee
         arret_sms = threading.Event()
-        if os.environ.get("PCFNO3D_SMS_HEURE"):
+        if os.environ.get("PCFNO3D_SMS_HEURE") and wf is not None:
             threading.Thread(target=_sms_quotidien, args=(arret_sms,), daemon=True, name="sms").start()
         # notifications des alertes importantes (BF27, BF83) : toutes les 30 min si PCFNO3D_NOTIFICATIONS=1
-        if os.environ.get("PCFNO3D_NOTIFICATIONS") == "1":
+        if os.environ.get("PCFNO3D_NOTIFICATIONS") == "1" and wf is not None:
             threading.Thread(target=_notifications, args=(arret_sms,), daemon=True, name="notifications").start()
         async with mcp_app.router.lifespan_context(mcp_app):
             yield

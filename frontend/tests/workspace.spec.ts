@@ -1,19 +1,10 @@
 import { test, expect, type Page } from '@playwright/test';
 import { mkdir, writeFile } from 'node:fs/promises';
+import { start as demarrer, admin, ADMIN_EMAIL, ADMIN_MDP } from './helpers';
 
 const directory='output/redesign';
-const views=['monvent','tableau','carte3d','agri','eolien','fiabilite','alertes','admin'];
-async function start(page:Page) {
-  await page.addInitScript(()=>{localStorage.setItem('aw-tour','1');localStorage.setItem('aw-theme',JSON.stringify('light'));});
-  await page.goto('/app/atom-wind/');
-  await page.waitForFunction(()=>window.ATOM?.workspace);
-}
-async function admin(page:Page) {
-  await page.locator('#userbox button').filter({hasText:'Se connecter'}).click();
-  await page.locator('[data-demo="admin"]').click();
-  await expect(page.locator('#authm')).toBeHidden();
-  await expect(page.locator('#toast')).toBeHidden();
-}
+const views=['tableau','monvent','carte3d','agri','eolien','outils','fiabilite','historique','alertes','admin'];
+const start=(page:Page)=>demarrer(page,'monvent');
 async function route(page:Page,view:string,mobile=false) {
   if(mobile)await page.getByRole('button',{name:'Ouvrir la navigation',exact:true}).click();
   await page.locator(`nav.tabs a[data-v="${view}"]`).click();
@@ -62,12 +53,14 @@ test('roles, agriculture, energy, and local alerts retain their controls',async(
   await expect(page.locator('a[data-v="admin"]')).toBeHidden();
   await page.evaluate(()=>window.ATOM.workspace!.navigate('admin'));
   await expect(page.locator('#authm')).toBeVisible();await expect(page.locator('#v-admin')).not.toHaveClass(/on/);
-  await page.locator('[data-demo="admin"]').click();
+  await page.locator('#authm .x, #a-close').first().click();await admin(page);
   await route(page,'agri');await page.locator('#ag-crop').selectOption('olivier');await page.locator('#ag-area').fill('3');await page.locator('#ag-area').dispatchEvent('change');
   await page.locator('#ag-day button').nth(1).click();await expect(page.locator('#ag-cards')).not.toBeEmpty();
   await route(page,'eolien');await page.locator('#tm').selectOption('s');await expect(page.locator('#rotor svg')).toBeVisible();await expect(page.locator('#prodchart svg')).toBeVisible();
-  await route(page,'alertes');await page.locator('#al-add').click();await expect(page.locator('#al-mine .it')).toHaveCount(1);
-  await route(page,'tableau');await page.locator('#tbday svg').focus();await page.keyboard.press('ArrowRight');await expect(page.locator('#hourtxt')).toHaveText('16 h');
+  // alerte SMS du compte, gardée sur le serveur, puis supprimée
+  await route(page,'alertes');await page.locator('#al-tel').fill('+21698765432');await page.locator('#al-add').click();
+  await expect(page.locator('#al-mine .it')).toHaveCount(1);await page.locator('#al-mine [data-del]').first().click();await expect(page.locator('#al-mine .it')).toHaveCount(0);
+  await route(page,'tableau');const h0=parseInt(await page.locator('#hourtxt').innerText());await page.locator('#tbday svg').focus();await page.keyboard.press(h0<23?'ArrowRight':'ArrowLeft');await expect(page.locator('#hourtxt')).toHaveText(`${h0<23?h0+1:h0-1} h`);
 });
 
 test('3D picking, cameras, layers, static rendering, and resource stability',async({page})=>{
@@ -94,11 +87,16 @@ test('3D picking, cameras, layers, static rendering, and resource stability',asy
 
 test('scientific field, vertical profile, DSO, integration, and export viewer',async({page})=>{
   const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
+  // outil interne : une vraie clé (session de l'administrateur de test), jamais d'accès anonyme
+  const r=await page.request.post('/api/comptes/connexion',{data:{email:ADMIN_EMAIL,mot_de_passe:ADMIN_MDP}});expect(r.ok()).toBe(true);
+  const cle=(await r.json()).cle;await page.addInitScript(k=>localStorage.setItem('pcfno3d.apikey',k),cle);
   await page.goto('/app/');await expect(page.locator('#app')).toBeVisible();await expect(page.locator('#instant option')).not.toHaveCount(0);
   await page.locator('#map').click({position:{x:200,y:100}});await expect(page.locator('#pointInfo')).not.toBeEmpty();
   await page.locator('[data-tab="point"]').click();await expect(page.locator('#profile')).toBeVisible();await page.screenshot({path:`${directory}/science-profile.png`,fullPage:true});
   await page.locator('[data-tab="qualite"]').click();await expect(page.locator('#dso')).not.toBeEmpty();await page.screenshot({path:`${directory}/science-quality.png`,fullPage:true});
   await page.locator('[data-tab="integration"]').click();await expect(page.locator('#mcpUrl')).toContainText('/mcp');
+  // l'export est produit par le service (portée admin), puis lu par la visionneuse
+  const ex=await page.request.post('/api/reconstruct',{data:{stem:'006_000000',export:true},headers:{'X-API-Key':cle}});expect(ex.ok()).toBe(true);
   await page.goto('/app/export/?src=/api/export/006_000000');await expect(page.locator('#status')).not.toContainText('introuvable');
   await expect(page.locator('#info')).toContainText('Grille');await page.locator('#variable').selectOption('u');await page.screenshot({path:`${directory}/export-viewer.png`,fullPage:true});
   await page.setViewportSize({width:390,height:844});await page.goto('/app/');await expect(page.locator('#app')).toBeVisible();expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)).toBe(true);await page.screenshot({path:`${directory}/science-mobile.png`,fullPage:true});
@@ -118,8 +116,7 @@ test('English and Arabic keep the dashboard connected and the mobile navigation 
     const context=await browser.newContext({viewport:{width:390,height:844}});
     await context.addInitScript(lang=>{localStorage.setItem('aw-langue',lang);localStorage.setItem('aw-tour','1');localStorage.setItem('aw-theme',JSON.stringify('light'));},language);
     const page=await context.newPage();const errors:string[]=[];page.on('pageerror',error=>errors.push(error.message));
-    await page.goto('/app/atom-wind/');await page.waitForFunction(()=>window.ATOM?.workspace);
-    await page.locator('#b-login').click();await page.locator('[data-demo="admin"]').click();
+    await page.goto('/app/atom-wind/');await page.waitForFunction(()=>window.ATOM?.workspace&&!document.getElementById('aw-chargement'),null,{timeout:240000});
     await page.evaluate(()=>window.ATOM.workspace!.navigate('tableau'));
     await expect(page.locator('html')).toHaveAttribute('lang',language);
     await expect(page.locator('.page-heading h1')).toHaveText(language==='en'?'Overview':'نظرة عامة');

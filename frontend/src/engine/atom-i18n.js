@@ -90,6 +90,8 @@ function texte(n){
   if(faits.get(n) === v) return;
   const p = n.parentNode;
   if(!p || p.nodeName === "SCRIPT" || p.nodeName === "STYLE" || p.nodeName === "TEXTAREA") return;
+  // conversation de l'assistant : la question et la réponse sont déjà dans la langue de l'utilisateur
+  if(p.closest && p.closest("[data-aw-no-i18n]")) return;
   origines.set(n, v);
   const tr = traduire(v);
   if(tr === null) return;

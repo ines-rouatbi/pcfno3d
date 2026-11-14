@@ -9,28 +9,31 @@
 }
 :root {
   color-scheme: light;
-  --bg:#f8f8f3; --surface:#fffefa; --surface-2:#edf0e6; --panel:var(--surface);
-  --ink:#263531; --muted:#68766d; --line:#d8ddd3; --accent:#2b6359; --accent-ink:#ffffff;
-  --sand:#947022; --go:#207854; --go-soft:#eaf3e9; --warn:#98651b; --warn-soft:#faf2de;
-  --stop:#b24c40; --stop-soft:#fbefeb; --info:#346c8a; --info-soft:#eaf1f6;
-  --land-lo:#c7d3ab; --land-hi:#8e956a; --water:#c0d8da; --lake:#b2cecb; --urban:#bfc3b0;
+  /* matin sur le golfe : air brumeux, mer profonde, olivier, sirocco */
+  --bg:#edf2f0; --surface:#ffffff; --surface-2:#e4ece8; --panel:var(--surface);
+  --ink:#1d2e2b; --muted:#5b6d68; --line:#d0dbd6; --accent:#16607a; --accent-ink:#ffffff;
+  --sand:#a8741f; --go:#4c7a2c; --go-soft:#e7f0dc; --warn:#ad6f17; --warn-soft:#f7ecd7;
+  --stop:#b1433a; --stop-soft:#f8e6e2; --info:#2d6d90; --info-soft:#e3eff4;
+  --land-lo:#cfd8b6; --land-hi:#8f9a6c; --water:#bcd6dd; --lake:#aecdcc; --urban:#c2c5b4;
   --f-display:'Manrope Variable','Segoe UI',sans-serif; --f-body:var(--f-display);
-  --f-data:'IBM Plex Mono',Consolas,monospace; --f-editorial:'IBM Plex Serif',Georgia,serif;
-  --r:10px; --shadow:0 2px 6px #1c2a3805; --rail-width:224px;
+  --f-data:'IBM Plex Mono',Consolas,monospace; --f-editorial:'Fraunces Variable','IBM Plex Serif',Georgia,serif;
+  --r:14px; --r-lg:22px; --shadow:0 1px 2px #1d2e2b0a, 0 8px 24px #1d2e2b0d; --rail-width:224px;
 }
 :root[data-theme="dark"] {
   color-scheme:dark;
-  --bg:#11171e; --surface:#17212b; --surface-2:#1d2b38; --panel:var(--surface);
-  --ink:#e4edf4; --muted:#9babb9; --line:#304151; --accent:#a5cbea; --accent-ink:#142535;
-  --sand:#e2b975; --go:#9bcc9a; --go-soft:#233a34; --warn:#e5bd73; --warn-soft:#3c3428;
-  --stop:#ed9b8e; --stop-soft:#402d2c; --info:#9dc7da; --info-soft:#21394b;
-  --land-lo:#72846a; --land-hi:#9b9e76; --water:#29454a; --lake:#375950; --urban:#727c72;
+  /* nuit sur le golfe */
+  --bg:#0d191d; --surface:#132328; --surface-2:#1a2f35; --panel:var(--surface);
+  --ink:#e5efed; --muted:#97aba7; --line:#28414a; --accent:#7cc2d6; --accent-ink:#0d2229;
+  --sand:#e4b46a; --go:#a5cb7d; --go-soft:#22382a; --warn:#e8b466; --warn-soft:#3a3122;
+  --stop:#ee9a8c; --stop-soft:#402b29; --info:#90c6dc; --info-soft:#1d3846;
+  --land-lo:#6d8165; --land-hi:#979b73; --water:#24434b; --lake:#335650; --urban:#6f7a70;
 }
 @media(prefers-color-scheme:dark){:root:not([data-theme="light"]):not([data-theme="dark"]){
   color-scheme:dark;
-  --bg:#11171e; --surface:#17212b; --surface-2:#1d2b38; --panel:var(--surface);
-  --ink:#e4edf4; --muted:#9babb9; --line:#304151; --accent:#a5cbea; --accent-ink:#142535;
-  --sand:#e2b975; --go:#9bcc9a; --go-soft:#233a34; --warn:#e5bd73; --warn-soft:#3c3428;
-  --stop:#ed9b8e; --stop-soft:#402d2c; --info:#9dc7da; --info-soft:#21394b;
-  --land-lo:#72846a; --land-hi:#9b9e76; --water:#29454a; --lake:#375950; --urban:#727c72;
+  /* nuit sur le golfe */
+  --bg:#0d191d; --surface:#132328; --surface-2:#1a2f35; --panel:var(--surface);
+  --ink:#e5efed; --muted:#97aba7; --line:#28414a; --accent:#7cc2d6; --accent-ink:#0d2229;
+  --sand:#e4b46a; --go:#a5cb7d; --go-soft:#22382a; --warn:#e8b466; --warn-soft:#3a3122;
+  --stop:#ee9a8c; --stop-soft:#402b29; --info:#90c6dc; --info-soft:#1d3846;
+  --land-lo:#6d8165; --land-hi:#979b73; --water:#24434b; --lake:#335650; --urban:#6f7a70;
 }}

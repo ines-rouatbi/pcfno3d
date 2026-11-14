@@ -1,0 +1,42 @@
+  function updateVectors(){
+    const state=workspaceState,key=`${height}/${state.hour}/${state.source}/${quality.value}`;
+    if(windEnabled&&flow.ready&&key!==lastWindKey){
+      flow.rebuild(height,matchMedia('(max-width:700px)').matches||quality.value==='low',(lon,lat,z)=>window.ATOM.workspace?.terrainWind?.(lon,lat,z)??null);
+      lastWindKey=key;
+    }
+    flow.root.visible=windEnabled;
+    text('terrain-wind-source',windEnabled?`${state.source==='modele'?'Vent du modèle':'Vent de démonstration'} · ${height} m AGL · ${state.hour} h`:'Vent masqué');
+    text('terrain-live-meta',`${state.source==='modele'?'Modèle':'Démonstration'} · ${height} m du sol`);
+    text('terrain-native-hour',`${state.hour} h`);
+    (document.getElementById('terrain-hour') as HTMLInputElement).value=String(state.hour);
+    const metres=state.speed.includes('m/s');
+    text('terrain-legend-max',metres?'17,2 m/s et plus':'62 km/h et plus');
+    document.getElementById('terrain-wind-legend')!.hidden=!windEnabled;
+    document.getElementById('terrain-wind')!.setAttribute('aria-pressed',String(windEnabled));
+    (document.getElementById('terrain-height') as HTMLSelectElement).disabled=!windEnabled;
+    queueMicrotask(()=>document.getElementById('terrain-replay')?.setAttribute('aria-pressed',String(document.getElementById('play')?.textContent==='Pause')));
+    updatePoint();syncView();render();
+  }
+  async function prepareWind(){
+    if(!terrain||windLoading||flow.ready)return;
+    windLoading=true;text('terrain-flow-state','Préparation du vent…');
+    try{
+      await flow.prepare(terrain,lifetime.signal);
+      if(disposed)return;
+      updateVectors();
+      text('terrain-flow-state','');
+    }catch(error){if(!lifetime.signal.aborted){text('terrain-flow-state','Vent indisponible. Réactivez la couche pour réessayer.');console.error(error);}}
+    finally{windLoading=false;}
+  }
+  function toggleWind(){
+    windEnabled=!windEnabled;
+    if(windEnabled){local();void prepareWind();}
+    updateVectors();
+  }
+  function updatePoint(){
+    const button=document.getElementById('terrain-open-point') as HTMLButtonElement;
+    if(!selected){button.hidden=true;return;}
+    const sample=window.ATOM.workspace?.terrainWind?.(selected.lon,selected.lat,height);
+    text('terrain-wind-reading',sample?`${sample.formatted} · ${sample.direction} · ${height} m du sol`:'Hors du champ de vent Grand Tunis');
+    button.hidden=!sample;
+  }

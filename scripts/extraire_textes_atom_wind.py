@@ -205,7 +205,10 @@ def textes_frontend() -> list[str]:
                     for name in (*MODULES, "atom-runtime.js"))
     # The existing lexer also extracts page headings and navigation names from TSX.
     modules += tuple((src / name).read_text(encoding="utf-8")
-                     for name in ("components.tsx", "main.tsx", "territory-map.ts", "terrain/terrain-viewer.ts"))
+                     for name in ("components.tsx", "main.tsx", "territory-map.ts", "terrain/terrain-viewer.ts",
+                                  "assistant/AssistantPanel.tsx", "assistant/assistant-core.ts",
+                                  "service-state.tsx", "api.ts", "views/ViewOutils.tsx", "views/ViewHistorique.tsx",
+                                  "bulletin.tsx", "assistant/curseur.ts"))
     return avec_supplements(extraire(markup, modules))
 
 
