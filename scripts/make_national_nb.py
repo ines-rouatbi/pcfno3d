@@ -475,22 +475,30 @@ import shlex
 from google.colab import runtime
 import traceback
 regle = json.loads((CODE / "configs" / "national" / "regle_v4_national.json").read_text(encoding="utf-8"))
-scores = {}
+fige = json.loads((CODE / "configs" / "national" / "regle_choix_v4_Cp_s44.json").read_text(encoding="utf-8"))
+scores, epoques = {}, {}                      # rapportes sans effet sur le choix (regle_choix_v4_Cp_s44)
 for cand in ("Cp", "D"):
     for g in regle["candidats"]["commun"]["graines"]:
         h = NAT / "runs" / f"national_1km_v4_{cand}_s{g}" / "history.json"
         if not h.exists():
-            raise FileNotFoundError(f"{cand} graine {g} pas entraine ({h})")
-        scores[f"{cand}_s{g}"] = min(float(e["val_score"]) for e in json.loads(h.read_text()) if "val_score" in e)
-print("scores de selection (validation) :", scores)
-GRAINE = min(scores, key=scores.get)          # ex. "Cp_s43" : l'entrainement choisi
+            print(f"{cand} graine {g} : pas d'history.json (rapporte, sans effet sur le choix)")
+            continue
+        hist = [e for e in json.loads(h.read_text()) if "val_score" in e]
+        scores[f"{cand}_s{g}"] = min(float(e["val_score"]) for e in hist)
+        epoques[f"{cand}_s{g}"] = len(hist)
+print("scores de selection (validation) :", scores, "| epoques :", epoques)
+GRAINE = fige["entrainement_choisi"]          # "Cp_s44", fixe par la regle datee du 14/11 (accord d'Ines)
 RUN = NAT / "runs" / f"national_1km_v4_{GRAINE}"
-import statistics
-par_cand = {c: [v for k, v in scores.items() if k.startswith(c + "_")] for c in ("Cp", "D")}
-choix = {"regle_sha256": "@SHA_V4@", "scores_validation": scores, "entrainement_choisi": GRAINE,
-         "par_candidat": {c: {"moyenne": statistics.mean(v), "ecart_type": statistics.pstdev(v)}
-                          for c, v in par_cand.items()}}
-(NAT / "runs" / "choix_v4.json").write_text(json.dumps(choix, indent=2))
+if not (RUN / "best.pt").exists():
+    raise FileNotFoundError(f"{RUN / 'best.pt'} absent")
+choix = {"regle_sha256": "@SHA_V4@", "regle_choix": "regle_choix_v4_Cp_s44.json",
+         "regle_choix_sha256": "@SHA_CHOIX@", "scores_validation": scores, "epoques_validation": epoques,
+         "entrainement_choisi": GRAINE, "test_autorise": True,
+         "accord": "Ines, 14/11/2026 : option b, j'autorise la lecture unique du test v4"}
+CH = NAT / "runs" / "choix_v4.json"
+if CH.exists():                               # l'ancien choix est mis de cote, jamais ecrase
+    shutil.move(str(CH), str(CH.with_name("choix_v4_avant_" + time.strftime("%Y%m%d_%H%M%S") + ".json")))
+CH.write_text(json.dumps(choix, indent=2))
 import yaml
 c = yaml.safe_load(open(CODE / "configs" / "national_1km_colab.yaml"))
 c["name"] = "national_v4_eval"
@@ -611,16 +619,26 @@ def v4_carnets(commit: str, sync_last: str = "false") -> dict[str, dict]:
                 md("## 4. Entraînement (validation seulement), fin de la session"),
                 code(CHOIX_POIDS + TRAIN_V4.replace("@GRAINE@", str(g)).replace("@SYNC_LAST@", sync_last)
                      .replace("@CANDIDAT@", cand))], gpu=True)
+    sha_choix = (REPO / "configs" / "national" / "regle_choix_v4_Cp_s44.json.sha256").read_text(
+        encoding="ascii").split()[0]
+    sha_w = (REPO / "configs" / "national" / "regle_w_servi_v4.json.sha256").read_text(encoding="ascii").split()[0]
+    git_test = git.replace('for f, h in (("regle_v4_national.json", ',
+                           f'for f, h in (("regle_choix_v4_Cp_s44.json", "{sha_choix}"), '
+                           f'("regle_w_servi_v4.json", "{sha_w}"), ("regle_v4_national.json", ')
+    assert git_test != git
     out["pcfno3d_national_v4_test_colab.ipynb"] = carnet([
         md(f"# PC-FNO3D NATIONAL v4 — lecture UNIQUE du test 2022 (Colab, A100)\n\n{tete}\n\n"
-           "L'entraînement est choisi sur le score de validation des six (C' et D, 3 graines chacun) ; le test "
-           "n'est lu que pour lui, une fois, et pour le modèle livré sur la même vérité."),
+           f"Entraînement choisi : **C' s44**, fixé par `configs/national/regle_choix_v4_Cp_s44.json` "
+           f"(sha256 `{sha_choix[:12]}…`, 14/11/2026, accord écrit d'Ines : « option b, j'autorise la lecture "
+           "unique du test v4 »), w servi = w_continuité + 0,75 (w_réseau − w_continuité) "
+           "(`regle_w_servi_v4.json`). Le test est lu une fois pour lui et une fois pour le modèle livré sur "
+           "la même vérité ; aucun réglage sur le test, aucun bruit ajouté."),
         md("## 0. GPU (A100 obligatoire)"), code(GARDE_GPU),
-        md("## 1. Drive, code et données"), code(COMMUN + git),
+        md("## 1. Drive, code et données"), code(COMMUN + git_test),
         md("## 2. Cache v3"), code(_ent_v3()),
         md("## 3. Mémoire du GPU"), code(MEM),
-        md("## 4. Choix de l'entraînement, test, DSO, mesures réelles, décision"),
-        code(CHOIX_POIDS + TEST_V4.replace("@SHA_V4@", sha))], gpu=True)
+        md("## 4. Entraînement fixé (C' s44), test, DSO, mesures réelles, décision"),
+        code(CHOIX_POIDS + TEST_V4.replace("@SHA_V4@", sha).replace("@SHA_CHOIX@", sha_choix))], gpu=True)
     return out
 
 

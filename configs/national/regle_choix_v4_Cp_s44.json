@@ -1,0 +1,18 @@
+{
+  "fixee_le": "2026-11-14, AVANT toute lecture du test 2022 de la verite v3 (choix_v4.json : test_autorise false, aucun eval_pcfno3d/best_wcont/test_summary.json n'existe pour la v4) ; les regles deja hachees (regle_v4_national 60671e84..., regle_w_servi_v4 4e545345..., regle_postraitement_r2_v4 c82dff46..., regle_ensemble_cp 271ddc61...) sont INCHANGEES",
+  "accord": "accord ecrit d'Ines dans la conversation du 14/11/2026 : « option b, j'autorise la lecture unique du test v4 » ; l'option b lui avait ete decrite ainsi : une nouvelle regle datee fixe C' s44 comme entrainement choisi, puis le test 2022 est lu une seule fois",
+  "remplace": "uniquement le paragraphe « choix_du_candidat » de regle_v4_national.json (choix parmi les 6 entrainements C' et D, graines 42, 43, 44) ; tout le reste de regle_v4_national.json s'applique tel quel (test, modele livre de reference, ERA5 seule, comparaisons, mesures reelles, huit conditions de remplacement, publication, interdits)",
+  "motif": "D s43 a ete coupe a l'epoque 28/30 et D s44 n'a jamais ete lance (memoire du GPU : A100 obligatoire, unites Colab) ; la regle v4 ne pouvait donc pas etre appliquee telle quelle. Sur la VALIDATION, C' s44 a le meilleur score de selection des trois graines de C' (val_score, history.json) ; ses w_servi_validation (regle_w_servi_v4) donnent beta 0,75 retenu, R2 u, v, w 48/48 >= 0,95, DSO2 2,6e-5 ; s42 et s43 donnent le meme beta et des chiffres equivalents (R2 min 0,965, DSO2 2,56e-5 / 2,57e-5), et la moyenne des graines n'apporte pas de gain DSO1 (regle_ensemble_cp : « Moyenne proposee pour le test : NON »)",
+  "entrainement_choisi": "Cp_s44",
+  "run_dir": "runs/national_1km_v4_Cp_s44",
+  "post_traitement_servi": "w = w_continuite + 0,75 x (w_reseau - w_continuite) (configs/national_1km_colab.yaml inference.w_beta 0.75, choisi sur la validation par regle_w_servi_v4.json) ; u, v du reseau",
+  "rapporte_sans_effet": "les scores de selection (validation) de TOUS les entrainements v4 dont history.json existe, finis ou non, sont ecrits dans runs/choix_v4.json avec le nombre d'epoques ; aucun n'entre dans le choix",
+  "test": "lu UNE fois pour C' s44 et UNE fois pour le modele livre (v2 sur verite v3), selon regle_v4_national.json ; une etape dont la sortie existe deja n'est pas refaite",
+  "interdits": [
+    "aucun reglage choisi sur le test ; si un DSO echoue sur le test, il est publie non conforme, sans nouvelle lecture",
+    "aucun bruit ajoute aux predictions",
+    "seuils des DSO inchanges",
+    "ERA5 et la verite generee sont la verite d'entrainement, jamais des mesures ; les METAR et radiosondages sont les mesures",
+    "aucune regle deja hachee n'est modifiee, rien n'est supprime ni ecrase sur le Drive"
+  ]
+}
