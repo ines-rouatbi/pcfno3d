@@ -1,0 +1,21 @@
+{
+  "fixee_le": "2026-11-15, apres la lecture unique du test v4 (C' s44 : aeroports 2,844 contre ERA5 2,857 m/s) et AVANT tout calcul de ce diagnostic ; aucune regle deja hachee n'est modifiee",
+  "demande": "Ines, 15/11/2026 : « i wanna make it better than era5 so it beats era5 »",
+  "statut": "DIAGNOSTIC sur la VALIDATION 2021 seulement, sans effet sur aucun modele livre ; il dit quel levier peut battre l'ERA5 aux aeroports en jugeant chaque aeroport RETIRE ; tout modele qui en sortira aura sa propre regle datee avant son entrainement et sa lecture du test",
+  "donnees": "artifacts/national/mos/paires_29/paires_<annee>.csv.gz (ERA5 Open-Meteo maille la plus proche et mesures aux 29 stations, deja controlees par scripts/mos_era5.py) ; ajustement 2015-2020, jugement 2021 ; l'annee 2022 n'est PAS lue",
+  "instants": "synoptiques (heure multiple de 3 h, UTC), mesure et ERA5 presentes",
+  "jugement": "les 12 aeroports METAR (colonne aeroport), chacun RETIRE de tout ajustement et de toute entree quand il est juge (comme le DSO7) ; metrique = RMSE vectoriel par aeroport, puis moyenne sur les aeroports (definition du DSO7) ; IC 95 % de l'ecart a l'ERA5 par bootstrap sur les jours (2000 tirages, graine 2030)",
+  "leviers": {
+    "era5": "ERA5 10 m seule (reference)",
+    "oi_aeroports": "ERA5 + interpolation optimale des innovations (mesure - ERA5) des 11 AUTRES aeroports au meme instant ; correlation gaussienne rho(r) = exp(-r^2 / 2 L^2), L et lambda = sigma_o^2 / sigma_b^2 choisis sur 2015-2020 en retirant chaque aeroport (L dans {25, 50, 75, 100, 150, 200} km, lambda dans {0,25, 0,5, 1, 2, 4}) ; innovations centrees par le biais moyen 2015-2020 de chaque AUTRE aeroport (connu en production) ; le biais de l'aeroport juge n'est jamais utilise",
+    "mos_generique": "correction ERA5 -> station apprise sur les 28 AUTRES stations (2015-2020), configuration choisie par regle_mos_era5 (gb_lr0.1_d3_n500), predictions de validation deja ecrites (choix_29/predictions_validation.csv.gz), rapportee",
+    "mos_plus_oi": "mos_generique + interpolation optimale des residus (mesure - MOS) des 11 autres aeroports, memes grilles L et lambda choisies sur 2015-2020"
+  },
+  "lecture": "un levier est dit PROMETTEUR s'il bat l'ERA5 en moyenne sur les 12 aeroports avec un IC 95 % entierement negatif ET a au moins 8 aeroports sur 12 ; c'est une information pour choisir le prochain essai, pas un verdict",
+  "interdits": [
+    "l'annee 2022 (test) n'est pas lue",
+    "aucun bruit ajoute aux predictions",
+    "ERA5 et la verite generee ne sont jamais appelees mesures ; METAR et SYNOP sont les mesures",
+    "aucune regle deja hachee n'est modifiee ; aucun seuil de DSO n'est change"
+  ]
+}
