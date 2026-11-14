@@ -1,0 +1,65 @@
+{
+ "objet": "biais moyen des innovations mesure - ERA5 10 m (Open-Meteo, maille la plus proche) aux 12 aeroports METAR, instants synoptiques 2015-2020 (artifacts/national/mos/paires_29, deja controles par scripts/mos_era5.py) ; utilise par regle_oi_post_v4 pour centrer les innovations des AUTRES aeroports ; 2021 et 2022 non lues",
+ "biais": {
+  "DTKA": {
+   "du_moyen": 0.0847,
+   "dv_moyen": 0.288,
+   "instants": 17187
+  },
+  "DTMB": {
+   "du_moyen": -0.0154,
+   "dv_moyen": -0.2076,
+   "instants": 17282
+  },
+  "DTNH": {
+   "du_moyen": -0.155,
+   "dv_moyen": 0.1581,
+   "instants": 17405
+  },
+  "DTTA": {
+   "du_moyen": -0.0069,
+   "dv_moyen": 0.1834,
+   "instants": 17468
+  },
+  "DTTB": {
+   "du_moyen": 0.0432,
+   "dv_moyen": -0.2401,
+   "instants": 16887
+  },
+  "DTTD": {
+   "du_moyen": 0.5088,
+   "dv_moyen": 0.1322,
+   "instants": 16329
+  },
+  "DTTF": {
+   "du_moyen": -0.7028,
+   "dv_moyen": -0.5159,
+   "instants": 16331
+  },
+  "DTTG": {
+   "du_moyen": -0.0467,
+   "dv_moyen": 0.1428,
+   "instants": 16124
+  },
+  "DTTJ": {
+   "du_moyen": 0.0353,
+   "dv_moyen": -0.6277,
+   "instants": 17455
+  },
+  "DTTK": {
+   "du_moyen": -0.2201,
+   "dv_moyen": 0.1634,
+   "instants": 17359
+  },
+  "DTTX": {
+   "du_moyen": 0.4079,
+   "dv_moyen": -0.1365,
+   "instants": 17056
+  },
+  "DTTZ": {
+   "du_moyen": -0.5661,
+   "dv_moyen": 0.3765,
+   "instants": 17104
+  }
+ }
+}

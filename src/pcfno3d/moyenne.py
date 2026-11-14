@@ -1,14 +1,15 @@
-"""Moyenne de plusieurs entrainements du meme modele (graines) : u, v moyens, w par continuite.
+"""Moyenne de plusieurs entrainements du meme modele (graines) : u, v moyens, w servi moyen.
 
 Chaque membre est un `WindFieldModel` complet (poids et norm_stats.json de SON run_dir), sur une
 geometrie commune chargee une fois. La sortie servie de la moyenne :
 
     u = (1/N) somme_g u_g      v = (1/N) somme_g v_g      (m/s, apres denormalisation par membre)
-    w = Geometry.w_continuite(u, v)                         (comme le modele servi)
+    w = (1/N) somme_g Geometry.w_servi(u_g, v_g, w_g)       (comme le modele servi)
 
-w par continuite est lineaire en (u, v) : il vaut aussi la moyenne des w par continuite des membres.
+w servi (w par continuite + w_beta x (w_reseau - w par continuite)) est lineaire en (u, v, w_reseau) : la
+moyenne des w servis est le w servi des moyennes (w par continuite des moyennes si w_beta = 0).
 Les passes des membres se font l'une apres l'autre ; la passe servie (`predict`, DSO4) ne garde que
-les sommes de u et v, donc la memoire du GPU est celle des poids des N membres plus UNE passe.
+les sommes de u, v et w, donc la memoire du GPU est celle des poids des N membres plus UNE passe.
 Pour l'evaluation (`predire`, signature des predicteurs de evaluate.metriques_loader et de
 scripts/dso_hauteur_sol.mesurer), les sorties des membres de l'instant sont gardees : `predire_membre`
 les relit, chaque graine est donc evaluee sur les memes passes que la moyenne, sans les refaire.
@@ -87,10 +88,10 @@ class ModeleMoyen:
         return [self.passe(i, s_raw, sensor, tfeat) for i in range(self.n)]
 
     def moyenne(self, sorties: list[tuple]) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        """(u, v) moyens des membres, w par continuite de (u, v) moyens."""
-        u = sum(s[0] for s in sorties) / len(sorties)
-        v = sum(s[1] for s in sorties) / len(sorties)
-        return u, v, self.geom.w_continuite(u, v)
+        """(u, v, w) moyens des membres. w servi (Geometry.w_servi) est lineaire en (u, v, w_reseau) : la
+        moyenne des w servis = le w servi des moyennes (w par continuite de (u, v) moyens si w_beta = 0)."""
+        n = len(sorties)
+        return tuple(sum(s[c] for s in sorties) / n for c in range(3))
 
     @staticmethod
     def dispersion(moyenne: tuple, sorties: list[tuple]) -> dict[str, np.ndarray]:
@@ -151,19 +152,19 @@ class ModeleMoyen:
         t_t = torch.from_numpy(tfeat)[None].to(self.device)
 
         t0 = time.perf_counter()
-        su = sv = None
+        su = sv = sw = None
         for i in range(self.n):
-            u_i, v_i = self.passe(i, s_t, m_t, t_t, avec_w=False)
+            u_i, v_i, w_i = self.passe(i, s_t, m_t, t_t)          # w servi du membre (lineaire)
             su = u_i if su is None else su + u_i
             sv = v_i if sv is None else sv + v_i
-            del u_i, v_i
-        u_t, v_t = su / self.n, sv / self.n
-        w_t = geom.w_continuite(u_t, v_t)
+            sw = w_i if sw is None else sw + w_i
+            del u_i, v_i, w_i
+        u_t, v_t, w_t = su / self.n, sv / self.n, sw / self.n
         u, v, w = (a[0].float().cpu().numpy() for a in (u_t, v_t, w_t))
         if self.device.type == "cuda":
             torch.cuda.synchronize()
         elapsed = time.perf_counter() - t0
-        del su, sv, u_t, v_t, w_t
+        del su, sv, sw, u_t, v_t, w_t
 
         if mask_nan:
             u = np.where(geom.valid, u, np.nan)

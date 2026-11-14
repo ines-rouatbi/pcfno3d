@@ -1,0 +1,20 @@
+{
+  "fixee_le": "2026-11-15, apres le diagnostic regle_diag_leviers_aeroports (fc379013..., validation 2021) et AVANT tout calcul avec le modele ; aucune regle deja hachee n'est modifiee, aucun seuil de DSO n'est change",
+  "demande": "Ines, 15/11/2026 : « i wanna make it better than era5 so it beats era5 »",
+  "objet": "post-traitement SANS reentrainement du modele national v4 (C' s44, w servi 0,75) : ajouter a sa sortie l'interpolation optimale (OI) des innovations des aeroports EN ENTREE (mesure METAR - modele a 10 m au-dessus du sol), pour utiliser une information que l'ERA5 n'a pas",
+  "definition": {
+    "innovation": "d_j = vent mesure a l'aeroport j - vent du modele a 10 m au-dessus du sol a sa cellule (vent_a_hauteur, comme valider_grand_tunis_reel), centree par le biais moyen 2015-2020 de l'aeroport j (configs/national/biais_innovations_aeroports_2015_2020.json, mesure - ERA5 : le modele vaut l'ERA5 aux aeroports a 0,5 % pres)",
+    "etalement": "increment(x) = rho(x, .) (rho(D) + lambda I)^-1 d ; rho gaussienne exp(-d^2 / 2 L^2) ; L = 150 km et lambda = 4, FIXES par le diagnostic (choisis sur 2015-2020, aeroport retire), sans nouveau reglage",
+    "a_10m": "vent servi a 10 m = modele + increment ; la composante verticale du champ 3D et la decroissance avec la hauteur feront l'objet d'une regle separee (DSO1-DSO6 sur la verite) avant tout service"
+  },
+  "jugement_validation": "validation de la verite v3 (jours de validation 2021, instants synoptiques), scripts/valider_grand_tunis_reel.py --jeu validation : chaque aeroport juge est RETIRE de l'entree du modele ET des innovations ; innovation des autres aeroports j prise dans la passe ou j est lui-meme retire (le modele ne bouge presque pas avec un point de mesure : controle du 11/11) ; sources rapportees : modele, era5, modele_oi, era5_oi (meme OI sur l'ERA5)",
+  "lecture": "le post-traitement est dit PROMETTEUR sur la validation si : (1) moyenne sur les 12 aeroports du RMSE vectoriel de modele_oi < celle de l'ERA5, IC 95 % (bootstrap par jours, 2000 tirages, graine 2030) de l'ecart entierement negatif ; (2) au moins 8 aeroports sur 12 ameliores ; (3) aucun aeroport degrade de plus de 5 % par rapport a l'ERA5",
+  "test": "AUCUNE lecture de 2022 ici : le test 2022 des aeroports a deja ete lu une fois pour C' s44 (regle_choix_v4_Cp_s44) ; toute evaluation independante (periode 2023-2024 jamais utilisee, ou seconde lecture declaree de 2022) demande l'accord ecrit d'Ines et sa propre regle",
+  "interdits": [
+    "2022 n'est pas lue",
+    "aucun bruit ajoute aux predictions",
+    "ERA5 et la verite generee ne sont jamais appelees mesures ; METAR = mesures",
+    "aucune regle deja hachee n'est modifiee ; aucun seuil de DSO n'est change ; rien n'est ecrase sur le Drive (dossier de sortie neuf)"
+  ],
+  "code": "scripts/oi_post_aeroports.py (verifie cette regle et lit <run>/validation_reelle/validation/stations_paires.csv)"
+}
