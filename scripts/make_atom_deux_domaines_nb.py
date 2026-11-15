@@ -137,6 +137,13 @@ OS5.mkdir(exist_ok=True)
 # front-end React : webapp/assets/ est ignore par git, il faut le construire avant de servir /app/atom-wind/
 !cd /content/PFE && npm ci --no-audit --no-fund 2>&1 | tail -1 && npm run build 2>&1 | grep -E "built in|rror"
 assert list((CODE / "webapp" / "assets").glob("atom-*.js")), "front-end non construit"
+# relief 3D de la Carte 3D (donnee hors git, ~460 Mo) : depose une fois sur le Drive par Ines
+TERRAIN_ZIP = NAT / "atom_terrain_tunisia.zip"
+if TERRAIN_ZIP.exists() and not (CODE / "webapp" / "terrain" / "tunisia" / "terrain-manifest.json").exists():
+    with zipfile.ZipFile(TERRAIN_ZIP) as zf:
+        zf.extractall(CODE / "webapp")
+print("relief 3D :", "installe" if (CODE / "webapp" / "terrain" / "tunisia" / "terrain-manifest.json").exists()
+      else f"absent (deposer {TERRAIN_ZIP.name} dans {NAT})")
 print("config national_v4_service :", c["inference"])
 '''
 
