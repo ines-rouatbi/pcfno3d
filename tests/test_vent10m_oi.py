@@ -62,3 +62,24 @@ def test_config_couche_10m_oi(cfg):
     from pcfno3d.config import InferenceCfg
     assert InferenceCfg().couche_10m_oi is False
     assert InferenceCfg(couche_10m_oi=True).couche_10m_oi is True
+
+
+def test_os4_point_le_plus_eloigne_et_statistiques():
+    import importlib.util
+    from pathlib import Path
+    spec = importlib.util.spec_from_file_location("os4", Path(__file__).resolve().parents[1] / "scripts" / "os4_oi_national.py")
+    m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+    cand = np.array([[0, 0], [0, 10], [10, 0], [10, 10], [5, 5], [1, 1]])
+    k = m.point_le_plus_eloigne(cand, 4, 4, 1000.0, 1000.0)
+    assert k[0] == 4 and set(k[1:]) <= {0, 1, 2, 3} and len(set(k)) == 4      # les coins d'abord, emboites
+    assert list(m.point_le_plus_eloigne(cand, 2, 4, 1000.0, 1000.0)) == list(k[:2])
+    # innovations synthetiques : sigma_b 1, L 50 km, sigma_o 0,5 -> l'ajustement retrouve l'ordre de grandeur
+    rng = np.random.default_rng(0)
+    cel = rng.integers(0, 300, size=(60, 2))
+    d = np.hypot(cel[:, None, 0] - cel[None, :, 0], cel[:, None, 1] - cel[None, :, 1])
+    C = np.exp(-d ** 2 / (2 * 50.0 ** 2)) + 1e-9 * np.eye(60)
+    Lc = np.linalg.cholesky(C)
+    innov = np.stack([np.stack([Lc @ rng.standard_normal(60) + 0.5 * rng.standard_normal(60) for _ in (0, 1)], 1)
+                      for _ in range(400)])
+    st = m.statistiques(innov, cel, 1000.0, 1000.0)
+    assert 35 <= st["L_km"] <= 70 and 0.8 <= st["sigma_b"] <= 1.2 and 0.3 <= st["sigma_o"] <= 0.7

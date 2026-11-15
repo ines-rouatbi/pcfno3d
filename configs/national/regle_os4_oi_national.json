@@ -1,0 +1,31 @@
+{
+  "fixee_le": "2026-11-16, AVANT tout calcul ; aucune regle deja hachee n'est modifiee",
+  "demande": "plan d'Ines du 16/11/2026 : « Rendre OS4 (reseau ANEO) positif, sans attendre D2 » : dimensionner le reseau ANEO avec l'interpolation optimale (OI), sans reentrainer de reseau",
+  "nature": "simulation (OSSE) : les capteurs simules mesurent la verite d'entrainement generee ; la courbe est un gain POTENTIEL face a cette verite, pas un gain mesure sur le terrain ; elle est publiee a cote du gain REEL de l'OI des aeroports (2023-2024 : -3,7 %, regle_independant_2023_2024)",
+  "donnees": "verite nationale v3 (cache_v3 : vent a 10 m de la surface du cache _S, ERA5 10 m _E) ; 2022 (test) NON lu",
+  "jeux": {
+    "statistiques": "jours d'ENTRAINEMENT : 200 instants synoptiques tires avec la graine 2030",
+    "courbe": "jours de VALIDATION : tous les instants synoptiques (rien n'y est regle : tout est fixe par cette regle ou par les jours d'entrainement)"
+  },
+  "fond": "ERA5 10 m degradee comme pour le candidat D : champ gaussien correle (sigma_u, sigma_v, L de runs/degradation_era5_v4.json, ajustes sur l'ecart ERA5 - METAR aux 12 aeroports, jours d'entrainement), tire aux mailles ERA5 et interpole aux noeuds (pcfno3d.aneo_entree.EntreeANEO), sans masquage par zones ; graine 1000 + numero de l'instant",
+  "capteurs": {
+    "sites": "candidats de l'OS6 (pcfno3d.os6.candidats, contraintes par defaut : terre z0 >= 0,005 m, pente <= 20 deg, altitude <= 650 m, 1 km du bord, un candidat tous les 500 m)",
+    "valeur": "verite a 10 m de la maille + bruit gaussien par composante d'ecart-type sigma_capteur",
+    "sigma_capteur_m_s": {"principal": 1.0, "sensibilite": [0.5, 1.8]},
+    "justification_sigma": "1,0 m/s couvre l'implantation et la representativite d'un mat de 10 m face a une maille de 1 km ; 1,8 m/s est l'erreur de mesure equivalente des aeroports reels (OI ajustee sur 2015-2020, lambda 4) ; 0,5 m/s, un mat tres bien implante"
+  },
+  "placements": {
+    "regulier": "echantillonnage du point le plus eloigne parmi les candidats (depart : candidat le plus proche du centre de la terre du domaine) ; les N premiers points, emboites",
+    "aleatoire": "3 tirages (graines 1, 2, 3), les N premiers points d'une permutation des candidats, emboites"
+  },
+  "N": [10, 25, 50, 100, 200],
+  "oi": {
+    "definition": "analyse = fond + rho(x, .) (rho(D) + lambda I)^-1 (mesure - fond aux capteurs), rho gaussienne de longueur L (pcfno3d.vent10m_oi.couche_10m, sans biais)",
+    "parametres": "L, sigma_b, sigma_o ajustes sur les jours d'ENTRAINEMENT par la methode de Hollingsworth et Loennberg (pcfno3d.innovation.ajuster_statistiques, correlation gaussienne, L borne a [10 ; 400] km) a partir de 200 capteurs aleatoires fixes (graine 2030), pour chaque sigma_capteur ; lambda = (sigma_o / sigma_b)^2"
+  },
+  "mesure": "RMSE vectoriel a 10 m sur les noeuds de terre (z0 >= 0,001 m) du domaine, cumule sur les instants de validation, pour : ERA5 propre, ERA5 degradee (fond), fond + OI pour chaque placement et chaque N ; gain = 1 - RMSE(analyse) / RMSE(fond)",
+  "dimensionnement": "N minimal = plus petit N de la grille dont le gain du placement REGULIER, avec sigma_capteur principal, atteint 10 % ; si aucun, publie « non atteint avec 200 capteurs » ; les placements aleatoires et la sensibilite a sigma_capteur sont rapportes",
+  "sorties": "MyDrive/pcfno3d_national/os4_oi/ (dossier neuf) : courbe.csv, statistiques_oi.json, plan_regulier.csv (lat, lon des N minimal capteurs), bilan.json, bilan.md",
+  "interdits": ["2022 non lu", "aucun bruit ajoute aux predictions du modele (le bruit est celui des capteurs simules)", "la verite generee et l'ERA5 ne sont jamais appelees mesures", "aucune regle hachee modifiee ; rien d'ecrase ni de supprime"],
+  "code": "scripts/os4_oi_national.py"
+}
