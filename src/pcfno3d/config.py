@@ -381,8 +381,13 @@ class InferenceCfg:
     # continuite seul (defaut, inchange) ; 1 = w du reseau. Choisi sur la VALIDATION par
     # configs/national/regle_w_servi_v4.json (national v4 : 0,75, R2 48/48, DSO2 2,6e-5).
     w_beta: float = 0.0
+    # Couche de vent a 10 m servie a l'application ATOM Wind : fond (ERA5 du cache, GFS en temps reel) +
+    # interpolation optimale des mesures des stations (pcfno3d.vent10m_oi ; produit national v4,
+    # configs/national/regle_produit_vent10m_v4.json). Ne touche ni au champ 3D ni aux DSO.
+    couche_10m_oi: bool = False
 
     def __post_init__(self) -> None:
+        self.couche_10m_oi = bool(self.couche_10m_oi)
         self.tta = int(self.tta)
         if self.tta < 1:
             raise ValueError("inference.tta doit etre >= 1")

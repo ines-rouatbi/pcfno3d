@@ -61,3 +61,11 @@ def couche_10m(fond: np.ndarray, cellules: dict[str, tuple[int, int]], mesures: 
         inc[0] += alpha[j, 0] * rho
         inc[1] += alpha[j, 1] * rho
     return fond + inc, inc
+
+
+def couche_service(geom, fond: np.ndarray, mesures: dict[str, tuple[float, float]]) -> tuple[np.ndarray, np.ndarray]:
+    """Couche 10 m d'un instant pour le service : fond (2, ny, nx) + OI des stations du domaine mesurees
+    (cellules de stations.json). -> (u10, v10), NaN hors du domaine valide comme le fond."""
+    from .stations_reelles import cellules_codes
+    v, _ = couche_10m(fond, cellules_codes(geom), mesures, float(geom.dx), float(geom.dy))
+    return v[0], v[1]

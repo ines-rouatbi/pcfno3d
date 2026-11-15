@@ -185,23 +185,32 @@ def encoder(champs: np.ndarray) -> str:
     return base64.b64encode(q.astype("<i2").tobytes()).decode("ascii")
 
 
-def instant(volume, geom) -> np.ndarray:
-    """(n_hauteurs, 2, ny, nx) : u, v aux hauteurs AGL, moyennes par blocs (`facteur`)."""
+COUCHE_10M = ("10 m : fond + interpolation optimale des mesures des stations (pcfno3d.vent10m_oi, "
+              "regle_produit_vent10m_v4) ; hauteurs superieures : champ 3D du modele")
+
+
+def instant(volume, geom, couche10: tuple[np.ndarray, np.ndarray] | None = None) -> np.ndarray:
+    """(n_hauteurs, 2, ny, nx) : u, v aux hauteurs AGL, moyennes par blocs (`facteur`). couche10 = (u, v)
+    a 10 m sur la grille des noeuds (vent10m_oi) : remplace le niveau de 10 m tire du volume."""
     b = facteur(geom)
     out = []
     for h in HAUTEURS_AGL:
-        u, v = champ_agl(volume.u, volume.v, geom, float(h))
+        if h == 10 and couche10 is not None:
+            u = np.where(geom.valid.any(axis=0), couche10[0], np.nan)
+            v = np.where(geom.valid.any(axis=0), couche10[1], np.nan)
+        else:
+            u, v = champ_agl(volume.u, volume.v, geom, float(h))
         out.append([blocs(u, b), blocs(v, b)])
     return np.asarray(out, dtype=np.float32)
 
 
-def jour(predire, geom, j: dict, fiabilite=None) -> dict:
+def jour(predire, geom, j: dict, fiabilite=None, couche10=None) -> dict:
     """Les champs d'une journee. predire(stem) -> Volume ; fiabilite(volume) -> (n_h, ny, nx)
-    sigma de la vitesse (m/s) ou None."""
+    sigma de la vitesse (m/s) ou None ; couche10(stem) -> (u, v) a 10 m (vent10m_oi) ou None."""
     instants, blocs_vent, blocs_sigma = [], [], []
     for it in j["instants"]:
         vol = predire(it["stem"])
-        blocs_vent.append(instant(vol, geom))
+        blocs_vent.append(instant(vol, geom, couche10(it["stem"]) if couche10 is not None else None))
         if fiabilite is not None:
             s = fiabilite(vol)
             if s is not None:
@@ -213,6 +222,8 @@ def jour(predire, geom, j: dict, fiabilite=None) -> dict:
            "hauteurs_agl_m": list(HAUTEURS_AGL), "forme": list(a.shape),
            "unite": "cm/s, int16 petit-boutiste, -32768 = sans valeur",
            "ordre": "instant, hauteur, (u, v), y, x", "vent": encoder(a)}
+    if couche10 is not None:
+        out["couche_10m"] = COUCHE_10M
     if blocs_sigma and len(blocs_sigma) == len(instants):
         s = np.stack(blocs_sigma)
         out["sigma_vitesse"] = encoder(s)
@@ -273,7 +284,14 @@ def jour_direct(wf, source, date_locale: str, maintenant: pd.Timestamp | None = 
         stamp = t.strftime("%Y-%m-%dT%H:%M:%SZ")
         vol = wf.predict(S, t.hour + t.minute / 60, int(t.dayofyear), timestamp=stamp,
                          forcage=f.vecteur(t), reliability=fiabilite)
-        blocs_vent.append(instant(vol, geom))
+        c10 = None
+        if getattr(wf.cfg.inference, "couche_10m_oi", False):
+            # fond GFS 10 m (comme tr.entree) + mesures des stations de l'heure ; le gain mesure l'a ete
+            # avec un fond ERA5 (regle_produit_vent10m_v4) : avec GFS, il reste a verifier
+            from .vent10m_oi import couche_service
+            fond = np.stack([tr._bil(f.u[it, 0], geom.interp_era5), tr._bil(f.v[it, 0], geom.interp_era5)])
+            c10 = couche_service(geom, fond, mesures)
+        blocs_vent.append(instant(vol, geom, c10))
         if fiabilite:
             sg = sigma_agl(vol, geom)
             if sg is not None:
@@ -308,6 +326,8 @@ def jour_direct(wf, source, date_locale: str, maintenant: pd.Timestamp | None = 
     if blocs_sigma and len(blocs_sigma) == len(instants):
         sg = np.stack(blocs_sigma)
         extra.update({"sigma_vitesse": encoder(sg), "forme_sigma": list(sg.shape)})
+    if getattr(wf.cfg.inference, "couche_10m_oi", False):
+        extra["couche_10m"] = COUCHE_10M + " ; fond GFS en temps reel (gain mesure avec un fond ERA5)"
     return {**extra, "format": "atom-wind/1", "date": date_locale, "temps_reel": True,
             "prevision": prevision,
             "instants": instants, "hauteurs_agl_m": list(HAUTEURS_AGL), "forme": list(a.shape),

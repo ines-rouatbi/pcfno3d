@@ -38,3 +38,27 @@ def test_identique_au_jugement_hors_grille():
     rho = np.exp(-dist ** 2 / (2 * 150.0 ** 2))
     attendu = rho @ (W @ d)
     assert np.allclose(inc[:, iy, ix].T, attendu)
+
+
+def test_atom_wind_instant_remplace_le_niveau_10m(geom):
+    from types import SimpleNamespace
+
+    from pcfno3d import atom_wind
+
+    nz, ny, nx = geom.nz, geom.ny, geom.nx
+    vol = SimpleNamespace(u=np.where(geom.valid, 4.0, np.nan), v=np.where(geom.valid, -2.0, np.nan))
+    sans = atom_wind.instant(vol, geom)
+    c10 = (np.full((ny, nx), 7.0), np.full((ny, nx), 1.0))
+    avec = atom_wind.instant(vol, geom, c10)
+    i10 = atom_wind.HAUTEURS_AGL.index(10)
+    colonne = geom.valid.any(axis=0).any()
+    assert colonne
+    assert np.nanmax(np.abs(avec[i10, 0] - 7.0)) < 1e-6 and np.nanmax(np.abs(avec[i10, 1] - 1.0)) < 1e-6
+    autres = [k for k in range(len(atom_wind.HAUTEURS_AGL)) if k != i10]
+    assert np.array_equal(np.nan_to_num(avec[autres]), np.nan_to_num(sans[autres]))
+
+
+def test_config_couche_10m_oi(cfg):
+    from pcfno3d.config import InferenceCfg
+    assert InferenceCfg().couche_10m_oi is False
+    assert InferenceCfg(couche_10m_oi=True).couche_10m_oi is True

@@ -1043,7 +1043,13 @@ def atom_jour(date: str = Query(..., pattern=r"^\d{4}-\d{2}-\d{2}$"),
                 fiab = None
                 if wf.cfg.inference.reliability is not None:
                     fiab = lambda vol: atom_wind.sigma_agl(vol, wf.geom)  # noqa: E731
-                out = atom_wind.jour(wf.predict_stem, wf.geom, j, fiab)
+                c10 = None
+                if getattr(wf.cfg.inference, "couche_10m_oi", False):
+                    from pcfno3d.vent10m_oi import couche_service
+
+                    def c10(stem):                     # fond ERA5 du cache + vraies mesures des stations
+                        return couche_service(wf.geom, *wf.fond_et_mesures(stem))
+                out = atom_wind.jour(wf.predict_stem, wf.geom, j, fiab, couche10=c10)
                 out["modele"] = wf.checkpoint_path.name
                 while len(cache) >= _ATOM_JOURS_MAX:
                     cache.pop(next(iter(cache)))

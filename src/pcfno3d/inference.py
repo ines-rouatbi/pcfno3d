@@ -509,6 +509,22 @@ class WindFieldModel:
             S = self._entree_production(S, stem, str(row["timestamp"]))
         return S, float(row["hour"]), int(row["doy"]), str(row["timestamp"])
 
+    def fond_et_mesures(self, stem: str) -> tuple[np.ndarray, dict]:
+        """Instant en cache : (ERA5 10 m sur la grille (2, ny, nx), {code: (u, v)} des VRAIES mesures des
+        stations a 30 min au plus) ; mesures vides sans paths.stations_obs. Pour la couche 10 m (vent10m_oi)."""
+        from .cache import load_index
+        from .stations_reelles import cellules_codes, lire_observations, obs_a
+        E = np.load(self.cfg.paths.cache_dir / f"{stem}_E.npy").astype(np.float32)
+        if self.cfg.paths.stations_obs is None:
+            return E, {}
+        index = load_index(self.cfg)
+        stamp = str(index.loc[index["stem"] == stem, "timestamp"].iloc[0])
+        obs = getattr(self, "_obs_stations", None)
+        if obs is None:
+            obs = self._obs_stations = lire_observations(
+                self.cfg.paths.stations_obs, verbose=False, codes=list(cellules_codes(self.geom)) or None)
+        return E, obs_a(obs, pd.Timestamp(stamp))
+
     def _entree_production(self, S: np.ndarray, stem: str, stamp: str) -> np.ndarray:
         """Modele reel (mask.entree = era5_stations) : l'entree de PRODUCTION, pas la couche de
         surface generee du cache — ERA5 10 m (_E du cache) sur le reseau regulier + les
