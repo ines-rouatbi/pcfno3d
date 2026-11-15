@@ -1331,5 +1331,9 @@
   "{0} · ordre {1} · phase {2} · {3}": "{0} · order {1} · phase {2} · {3}",
   "{0} · {1} capteurs · {2}": "{0} · {1} sensors · {2}",
   "{0} à {1}": "{0} to {1}",
-  "{0}, ordre {1}, phase {2}": "{0}, order {1}, phase {2}"
+  "{0}, ordre {1}, phase {2}": "{0}, order {1}, phase {2}",
+  "Tunisie entière": "All of Tunisia",
+  "Zone :": "Area:",
+  "la Tunisie entière": "all of Tunisia",
+  "Vent à 10 m :": "Wind at 10 m:"
 }

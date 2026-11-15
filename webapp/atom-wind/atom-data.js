@@ -14,6 +14,13 @@
 const P = new URLSearchParams(location.search);
 const BASE = (P.get("api") || "").replace(/\/+$/, "");
 const KEY_STORAGE = "pcfno3d.apikey";
+// OS5 : domaine servi (Grand Tunis par defaut, « national » pour la Tunisie entiere), ?domaine=national
+const DOMAINE = P.get("domaine") || "";
+const PAR_DOMAINE = ["/atom-wind/grille", "/atom-wind/jours", "/atom-wind/jour", "/atom-wind/direct"];
+function avecDomaine(path){
+  if(!DOMAINE || !PAR_DOMAINE.some(r => path === r || path.startsWith(r + "?"))) return path;
+  return path + (path.includes("?") ? "&" : "?") + "domaine=" + encodeURIComponent(DOMAINE);
+}
 const NODATA = -32768;
 
 function cle(){ try { return localStorage.getItem(KEY_STORAGE); } catch(e) { return null; } }
@@ -33,7 +40,7 @@ async function get(path, ms = 90000){
   const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), ms);
   const debut = performance.now();
   try {
-    const r = await fetch(`${BASE}/api${path}`, { headers: h, signal: ctl.signal });
+    const r = await fetch(`${BASE}/api${avecDomaine(path)}`, { headers: h, signal: ctl.signal });
     if(A.mesureRequete) A.mesureRequete(path, performance.now() - debut);
     if(r.status === 401 || r.status === 403){ const e = new Error("clé d'API refusée ou absente"); e.auth = true; throw e; }
     if(!r.ok){
@@ -207,10 +214,18 @@ function banniere(){
         + (A.jour.avertissement ? ` <span class="muted">(${A.jour.avertissement})</span>` : "");
       if(fr) fr.textContent = `Temps réel · ${hm}`;
     } else {
-      src.innerHTML = horsLigne + `Vent calculé par le modèle <b>PC-FNO3D</b> (${modele}) sur le Grand Tunis, `
+      const zone = A.grille && A.grille.domaine && A.grille.domaine.etendue === "national" ? "la Tunisie entière" : "le Grand Tunis";
+      src.innerHTML = horsLigne + `Vent calculé par le modèle <b>PC-FNO3D</b> (${modele}) sur ${zone}, `
         + `journée du <b>${fmtDate(A.jour.date)}</b> (jeu de test, jamais vu à l'entraînement). `
         + `Sorties du modèle à ${hh} (heure de Tunis), interpolées heure par heure. Ce ne sont pas des mesures en direct.`;
       if(fr) fr.textContent = `Modèle : ${modele}`;
+    }
+    if(A.jour.couche_10m) src.insertAdjacentHTML("beforeend", ` <span class="muted">Vent à 10 m : ${A.jour.couche_10m}.</span>`);
+    if((A.domaines || []).length > 1){
+      const nat = A.grille && A.grille.domaine && A.grille.domaine.etendue === "national";
+      src.insertAdjacentHTML("beforeend", ` <span class="aw-domaines">Zone : `
+        + (nat ? `<a href="?">Grand Tunis</a> · <b>Tunisie entière</b>` : `<b>Grand Tunis</b> · <a href="?domaine=national">Tunisie entière</a>`)
+        + `</span>`);
     }
     if(sel){
       const cle = A.jour.cle || A.jour.date;
@@ -870,6 +885,7 @@ function heureLocale(){
 async function demarrer(){
   chargement("Connexion au modèle PC-FNO3D…");
   try {
+    try { A.domaines = (await get("/atom-wind/domaines", 15000)).domaines || []; } catch(e){ A.domaines = []; }
     A.grille = await get("/atom-wind/grille", 20000);
     A.z0 = Float32Array.from(A.grille.z0_m.flat());
     const J = await get("/atom-wind/jours", 20000);
