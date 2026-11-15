@@ -51,8 +51,8 @@ Près du sol, le réseau aide : grille régulière −12 % (0–100 m) et −14 
 | B2 | `ff86ed8`, `31ea249` | couche 10 m ERA5 + OI servie ; chaque réponse indique `domaine` et `source_vent` | fait, testé |
 | B3 | `9019f8d` | MCP (`prevision_point` par position, outil `domaines_servis`, 23 outils), `INTEGRATION.md`, OpenAPI | fait, testé |
 | B4 | `f541553`, `fd48cc1` | vue nationale (`?domaine=national`, bascule Grand Tunis / Tunisie), onglet Réseau ANEO lit le plan OS4 | fait, testé |
-| B5 | carnet `668c9c0` + `e8c85c6` | DSO4 sur le GPU du service (L4) : national 1,010 s (p95 1,028, 9,7 Go), Grand Tunis 1,118 s — `os5_service.md` | **exécuté, non conforme sur L4** (seuil 1 s ; 264 ms sur A100) |
+| B5 | carnet `668c9c0` + `e8c85c6` | DSO4 sur le GPU du service (L4) : national 1,010 s (p95 1,028, 9,7 Go), Grand Tunis 1,118 s — `os5_service.md` | **conforme sur A100** : national 0,228 s, Grand Tunis 0,263 s (sur L4 : 1,010 / 1,118 s, non conforme) |
 | B6 | — | dernier état connu conservé (cache du Worker, aucun changement nécessaire) | inchangé |
-| B7 | `202894d`, `0ecd3f2`, `captures_os5.py` | démo API : Sfax, Gafsa, Tozeur, Gabès servis par le national, Tunis par le Grand Tunis, source du vent indiquée ; captures de la page sur le Drive (`os5/captures/`) | **démo faite** ; vue nationale de la page : « NaN h » et point sélectionné figé (à corriger) ; captures pas encore copiées dans `docs/demo/` |
+| B7 | `202894d`, `0ecd3f2`, `captures_os5.py` | démo API : Sfax, Gafsa, Tozeur, Gabès servis par le national, Tunis par le Grand Tunis, source du vent indiquée ; captures de la page sur le Drive (`os5/captures/`) | **fait** : démo API 5 villes ; page nationale corrigée (`d7a7c0b`, heure NaN) et vérifiée ; captures Gafsa, Tozeur, Gabès, Tunis dans `docs/demo/` (Sfax, onglet Réseau ANEO et carte 3D à refaire depuis un vrai navigateur) |
 
 Détails : `docs/resultats/national/os5_service.md`.
