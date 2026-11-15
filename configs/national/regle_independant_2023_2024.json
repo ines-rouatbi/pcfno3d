@@ -1,0 +1,23 @@
+{
+  "fixee_le": "2026-11-15, AVANT le telechargement et toute lecture des donnees 2023-2024 ; aucune regle deja hachee n'est modifiee",
+  "accord": "Ines, 15/11/2026 : « ok télécharge 2023-2024 » (option b : periode jamais utilisee, pour un jugement independant de « bat l'ERA5 »)",
+  "donnees": {
+    "mesures": "METAR des 12 aeroports de l'entree du modele (configs/national/stations_metar.csv), archive IEM (reseau TN__ASOS), scripts/historique_metar.py, 2023-01-01 -> 2024-12-31 ; ce sont les MESURES",
+    "era5": "ERA5 10 m Open-Meteo (models=era5, maille la plus proche), memes variables et memes conversions que scripts/mos_era5.py ; reanalyse, jamais des mesures",
+    "dossier": "artifacts/national/independant_2023_2024/ (hors git)"
+  },
+  "instants": "synoptiques (heure multiple de 3 h UTC) ; mesure METAR a 30 min au plus de l'heure, la plus proche ; vent calme garde (u = v = 0)",
+  "juge": {
+    "era5": "ERA5 10 m seule (reference)",
+    "era5_oi": "ERA5 + OI des innovations des 11 AUTRES aeroports au meme instant, exactement comme regle_oi_post_v4 et regle_diag_leviers_aeroports : L 150 km, lambda 4, innovations des autres aeroports centrees par configs/national/biais_innovations_aeroports_2015_2020.json ; aucun parametre n'est reajuste sur 2023-2024"
+  },
+  "modele": "le modele national C' s44 (et C' s44 + OI) ne peut etre juge sur 2023-2024 qu'avec le forcage ERA5 national de ces instants (niveaux de pression, scripts/forcage_era5.py) : etape separee, non faite par cette regle ; elle aura sa propre regle avant tout calcul",
+  "lecture": "ERA5 + OI bat l'ERA5 sur la periode independante si : (1) moyenne sur les 12 aeroports du RMSE vectoriel inferieure, IC 95 % de l'ecart (bootstrap par jours, 2000 tirages, graine 2030) entierement negatif ; (2) au moins 8 aeroports sur 12 ameliores ; (3) aucun aeroport degrade de plus de 5 % ; resultat publie tel quel, une seule lecture",
+  "interdits": [
+    "aucun parametre choisi sur 2023-2024 ; lecture unique",
+    "aucun bruit ajoute aux predictions",
+    "ERA5 jamais appelee mesure",
+    "rien n'est supprime ; dossiers de sortie neufs"
+  ],
+  "code": "scripts/independant_2023_2024.py"
+}
