@@ -43,10 +43,16 @@ Corrigé pendant le run :
 - les fichiers construits (`webapp/assets/`, ignorés par git) manquaient sur Colab : le carnet doit
   lancer `npm ci && npm run build` avant le service (à ajouter au carnet).
 
-Défauts restants de la vue nationale (vus sur les captures, non corrigés) :
+Défauts vus sur les captures du 15/11 :
 - le curseur d'heure affiche « NaN h » en temps réel ;
 - la carte « point sélectionné » et la réponse restent sur Tunis-Carthage quand on choisit une autre
   ville (Sfax…) dans « Où êtes-vous ? ».
+
+Cause trouvée après le run : `heureLocale()` lisait `Intl.DateTimeFormat("fr-FR", {hour: "numeric"})`,
+qui renvoie « 16 h » ; `Number("16 h")` vaut NaN, donc l'heure de la page devenait NaN en temps réel
+(Grand Tunis compris). Corrigé dans `d7a7c0b` (lecture de la seule partie heure). Le second défaut
+en découle très probablement (réponse calculée à l'heure NaN) : à vérifier au prochain run. Le
+carnet (`3d28355`) construit maintenant le front-end et refait les captures.
 
 Adresse publique : atom.zelqane.com sert encore l'ancien front-end du Worker (déploiement de Rayen) ;
 la page à deux domaines est servie à `atom-origin.zelqane.com/app/atom-wind/?domaine=national`
