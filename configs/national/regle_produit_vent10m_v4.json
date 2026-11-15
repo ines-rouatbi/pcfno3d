@@ -1,0 +1,23 @@
+{
+  "fixee_le": "2026-11-15, apres le jugement independant 2023-2024 (regle_independant_2023_2024, 98cdbeac...) et le choix d'Ines « Option i » (question du 15/11) ; aucune regle deja hachee n'est modifiee",
+  "objet": "produit national servi (option i d'Ines) : champ 3D du modele C' s44 (regle_choix_v4_Cp_s44, w servi 0,75) et, a 10 m au-dessus du sol, la couche « ERA5 + OI des mesures des aeroports »",
+  "couche_10m": {
+    "definition": "vent_10m(x) = fond_10m(x) + sum_j alpha_j rho(d(x, j)) ; alpha = (rho(D) + lambda I)^-1 (d - b), d_j = mesure METAR a l'aeroport j - fond_10m a sa cellule, b_j = biais 2015-2020 (configs/national/biais_innovations_aeroports_2015_2020.json) ; rho gaussienne exp(-d^2 / 2 L^2), L = 150 km, lambda = 4 ; seuls les aeroports mesures a l'instant (30 min au plus) entrent",
+    "fond": "ERA5 10 m (_E du cache, ou le fond temps reel du service) ; avec un fond autre que l'ERA5 (GFS, IFS en temps reel), le gain mesure ne s'applique pas tel quel : a verifier avant de l'annoncer",
+    "distances": "plan local de la grille nationale a pas constant (dx, dy) ; l'echelle est-ouest varie de 0,954 a 1,041 du nord au sud (grille_reelle.json), ecart negligeable devant L = 150 km",
+    "preuves": "regle_diag_leviers_aeroports (2015-2020 / 2021) ; regle_independant_2023_2024 : 2,639 contre 2,739 m/s pour l'ERA5 (-3,7 %, IC 95 % [-0,108 ; -0,092], 9/12 aeroports, pire +2,1 %), periode jamais utilisee"
+  },
+  "champ_3d": "inchange : sortie de C' s44 (DSO1-DSO6 conformes sur le test 2022, voir docs/resultats/national/v4_test_2022.md) ; la couche 10 m ne modifie pas le champ 3D ni ses DSO",
+  "ce_qui_peut_etre_dit": [
+    "le modele national C' s44 est conforme aux six DSO et bat l'ERA5 face a la verite de reference (0-1 km : 0,235 contre 0,299 m/s ; w : R2 0,975 contre 0,382)",
+    "a 10 m, la couche ERA5 + OI des aeroports bat l'ERA5 aux mesures reelles sur une periode independante (-3,7 %)",
+    "le reseau seul est au niveau de l'ERA5 aux aeroports (2,844 contre 2,857 m/s sur 2022) : limite de la verite d'entrainement"
+  ],
+  "ce_qui_ne_peut_pas_etre_dit": [
+    "que le reseau seul bat l'ERA5 aux mesures reelles",
+    "que la couche 10 m bat l'ERA5 loin des aeroports (au-dela d'environ 2 L = 300 km, elle vaut le fond)",
+    "que la couche et le champ 3D proviennent du meme outil"
+  ],
+  "interdits": ["aucun bruit ajoute", "ERA5 jamais appelee mesure", "aucun seuil de DSO change"],
+  "code": "src/pcfno3d/vent10m_oi.py (tests/test_vent10m_oi.py)"
+}

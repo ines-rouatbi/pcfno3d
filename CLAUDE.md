@@ -265,6 +265,14 @@ left out of the innovations too), info_capteurs_d2, decision_d2_national. Simula
 10 m (`mask.aneo_hauteur_capteur_m=10`). Option `innovation.base_residuel: era5_oi` coded, not trained. Notebooks
 `scripts/make_national_d2_nb.py` (runs `runs/national_1km_v4_D2_s<g>`, seed 42 writes the shared JSONs). OI cost on
 CPU at national size: ~15 ms (12 airports) to ~180 ms (220 points) per instant.
+**National v4 DELIVERED (2026-11-14/15).** C' s44 (`regle_choix_v4_Cp_s44`, w served = w_continuite + 0.75 (w_net -
+w_continuite), `regle_w_servi_v4`), test 2022 read once with Ines's written approval: DSO1-DSO6 conforming (RMSE max 0.285,
+R2 min 0.952 w 2000 m, DSO2 2.4e-5, DSO3 0.995, DSO4 264 ms, DSO5 0.286, DSO6 coverage 0.86); 0-1 km vs truth beats ERA5
+(0.235 vs 0.299); `decision_v4_national.json`: replaces v2. Real airports: level with ERA5 (2.844 vs 2.857) - limit of the
+training truth. Served product (Ines's option i, `regle_produit_vent10m_v4`): C' s44 3D field + 10 m layer ERA5 + OI of the
+airport measurements (`pcfno3d.vent10m_oi`, L 150 km, lambda 4), judged on 2023-2024 (never used): -3.7 % vs ERA5, 9/12.
+Model + OI failed its own rule on 2021 validation (Monastir +10.9 %). Results: `docs/resultats/national/v4_test_2022.md`,
+`oi_post_v4_validation.md`, `independant_2023_2024.md`. Test 2022 must not be read again.
 History of the start:
 **National model (started 2026-11-06, Ines's request).** The Grand Tunis v4 method over
 all of Tunisia: `configs/national_1km_colab.yaml`, domain 30.15–37.615 N × 7.45–11.644 E (828 × 388 km),
