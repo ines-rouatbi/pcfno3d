@@ -82,29 +82,37 @@ def main(argv=None) -> int:
     k = float(ok["k"].max())
     print(f"k retenu sur 2015-2020 : {k}", flush=True)
 
-    # 2. jugement 2021 : modele refait sans le site juge, k fixe
-    pv = []
-    for s in sorted(val["code"].unique()):
+    # 2. jugement 2021 : modele refait sans le site juge, k fixe (reprise : predictions deterministes, graine 2030,
+    # relues si une passe precedente les a ecrites avec le meme k)
+    f_pred = sortie / "predictions_2021.csv.gz"
+    if f_pred.exists() and (sortie / "k.txt").exists() and float((sortie / "k.txt").read_text()) == k:
+        pv = pd.read_csv(f_pred, parse_dates=["temps"])
+        print("predictions 2021 relues (meme k)", flush=True)
+    else:
+        pv = []
+    for s in ([] if isinstance(pv, pd.DataFrame) else sorted(val["code"].unique())):
         m = mos.ajuster(cfg, fit[fit["code"] != s], var, 2030)
         q = val[val["code"] == s]
         X = q[var].to_numpy(float)
         pv.append(q[["code", "temps", "u_obs", "v_obs", "u10_era5", "v10_era5"]].assign(
             u_c=q["u10_era5"].to_numpy() + k * m["du"].predict(X), v_c=q["v10_era5"].to_numpy() + k * m["dv"].predict(X)))
-    pv = pd.concat(pv)
-    pv["icao"] = pv["code"].map(st["icao"])
-    pv["aeroport"] = pv["icao"].isin(metar)
-    pv.to_csv(sortie / "predictions_2021.csv.gz", index=False)
+    if isinstance(pv, list):
+        pv = pd.concat(pv)
+        pv["icao"] = pv["code"].map(st["icao"])
+        pv["aeroport"] = pv["icao"].isin(metar)
+        pv.to_csv(f_pred, index=False)
+        (sortie / "k.txt").write_text(str(k))
     res = {}
     rng = np.random.default_rng(2030)
     for nom, sel in (("aeroports", pv[pv["aeroport"]]), ("toutes_stations", pv)):
         e0 = rmse_site(sel, "u10_era5", "v10_era5")
         e1 = rmse_site(sel, "u_c", "v_c")
-        jours = sel["temps"].dt.normalize()
-        ju = jours.unique()
-        grp = {j: np.where(jours.to_numpy() == j)[0] for j in ju}
+        jours = sel["temps"].dt.normalize().to_numpy()
+        ju = np.unique(jours)
+        grp = [np.where(jours == j)[0] for j in ju]
         ec = []
         for _ in range(2000):
-            idx = np.concatenate([grp[j] for j in rng.choice(ju, len(ju))])
+            idx = np.concatenate([grp[i] for i in rng.integers(0, len(ju), len(ju))])
             b = sel.iloc[idx]
             ec.append(rmse_site(b, "u_c", "v_c").mean() - rmse_site(b, "u10_era5", "v10_era5").mean())
         ic = (float(np.percentile(ec, 2.5)), float(np.percentile(ec, 97.5)))
