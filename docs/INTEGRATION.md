@@ -362,11 +362,21 @@ les ~580 mailles GFS sont demandées à Open-Meteo par paquets de 100 (pause sou
 minute ; aucune avec `PCFNO3D_OPEN_METEO_CLE`), gardées 6 h (`PCFNO3D_TTL_GFS_S`), les METAR des 12
 aéroports toutes les 30 min.
 
+**Plusieurs domaines (OS5, 16/11/2026).** Avec `PCFNO3D_CONFIG_NATIONAL` (+ `PCFNO3D_CHECKPOINT_NATIONAL`), le
+service charge le modèle national (C' s44, w servi β = 0,75) **à côté** du domaine principal (Grand Tunis), sans le
+remplacer. `?domaine=<nom>` choisit le domaine sur `grille`, `jours`, `jour` et `direct` (absent : le principal) ;
+`/atom-wind/point` et l'outil MCP `prevision_point` prennent le **plus petit domaine qui contient la position**
+(Tunis → Grand Tunis ; Sfax, Gafsa, Tozeur → national). Avec `inference.couche_10m_oi`, le niveau de 10 m vient de
+la couche « fond + interpolation optimale des METAR » (`pcfno3d.vent10m_oi`, `regle_produit_vent10m_v4`) : ERA5 pour
+les journées du cache, GFS en temps réel ; chaque réponse le dit (`couche_10m`, `source_vent`).
+
 | Route | Rôle |
 |---|---|
-| `GET /atom-wind/grille` | relief, eau, rugosité, stations (avec leur code), emprise, projection et étendue du domaine sur la grille de blocs |
-| `GET /atom-wind/jours`, `/jour?date=` | journées de test (instants du cache) |
-| `GET /atom-wind/direct?j=0\|1\|2` | aujourd'hui en temps réel (GFS + anémomètres), demain et après-demain en prévision ; t2m, hr2m (GFS), physique de chaque instant (`residu_masse_rms`) ; sigma si `PCFNO3D_SIGMA_DIRECT=1` |
+| `GET /atom-wind/domaines` | domaines servis : nom, libellé, emprise lat / lon, pas, niveaux (25 à 2 500 m pour le national), modèle, source du vent à 10 m |
+| `GET /atom-wind/point?lat=&lon=&heure=&hauteur_m=&j=` | « Mon vent » en un point : domaine choisi par la position, vent, direction, `domaine`, `source_vent` (« modèle national » ou « ERA5 / GFS corrigée par les aéroports » selon la hauteur), t2m et hr2m (GFS) |
+| `GET /atom-wind/grille[?domaine=]` | relief, eau, rugosité, stations (avec leur code), emprise, projection et étendue du domaine sur la grille de blocs |
+| `GET /atom-wind/jours`, `/jour?date=[&domaine=]` | journées de test (instants du cache) ; `couche_10m` si la couche corrigée est active |
+| `GET /atom-wind/direct?j=0\|1\|2[&domaine=]` | aujourd'hui en temps réel (GFS + anémomètres), demain et après-demain en prévision ; t2m, hr2m (GFS), physique de chaque instant (`residu_masse_rms`) ; sigma si `PCFNO3D_SIGMA_DIRECT=1` |
 | `GET /atom-wind/ensemble?j=` | prévision probabiliste GEFS (probabilité de pouvoir traiter, quantiles) |
 | `GET /atom-wind/agricole`, `/production`, `/maintenance`, `/variations`, `/dimensionnement` | décision agricole, production d'une éolienne de référence, créneaux de maintenance, rampes du parc virtuel, mât de mesure (lieu ou lat / lon) |
 | `GET /atom-wind/porteurs`, `/grue`, `/haies` | espaces en perspective (cahier v12, 6.11) : emplacements des mâts Porteur classés par la production de leur éolienne (et capteurs du plan OS6), vent et rafale à hauteur de flèche avec créneaux de levage, orientation des haies brise-vent et zone protégée (GeoJSON) ; statistiques sur les journées disponibles |

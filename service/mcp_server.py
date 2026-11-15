@@ -475,7 +475,24 @@ def prevision_point(jour: int, heure: float, hauteur_m: float, lieu: str | None 
         lieu: lieu de l'application (Mornag, Nabeul, Soliman...), ou lat / lon.
     """
     from service import atom_outils
-    return atom_outils.lire_point(get_model(), int(jour), float(hauteur_m), float(heure), lat=lat, lon=lon, lieu=lieu)
+    # OS5 : le domaine le plus fin qui contient la position (Grand Tunis, sinon national), s'il y en a plusieurs
+    wf = atom_outils.modele_pour(lat=lat, lon=lon, lieu=lieu, defaut=get_model())
+    return atom_outils.lire_point(wf, int(jour), float(hauteur_m), float(heure), lat=lat, lon=lon, lieu=lieu)
+
+
+@mcp.tool()
+def domaines_servis() -> dict:
+    """Les domaines servis par ce service (Grand Tunis, Tunisie entiere) : nom, emprise lat/lon, modele, et
+    la source du vent a 10 m (couche corrigee par les aeroports quand elle est active)."""
+    from service import atom_outils
+    mods = atom_outils.domaines() or {get_model().cfg.name: get_model()}
+    out = []
+    for nom, wf in mods.items():
+        g = atom_outils.grille(wf)
+        out.append({"nom": nom, "libelle": atom_outils.nom_domaine(wf), "emprise": g.get("emprise"),
+                    "modele": wf.checkpoint_path.name, "source_vent_10m": atom_outils.source_vent(wf, 10.0),
+                    "source_vent_100m": atom_outils.source_vent(wf, 100.0)})
+    return {"domaines": out}
 
 
 @mcp.tool()
