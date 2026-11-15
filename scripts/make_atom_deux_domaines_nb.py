@@ -14,7 +14,12 @@ import argparse
 import json
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parents[1]
+import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from make_grand_tunis_nb import CHOIX_POIDS  # noqa: E402  (meme choix de poids que le carnet de service)
+
+REPO =Path(__file__).resolve().parents[1]
 SOURCE = REPO / "notebooks" / "current" / "pcfno3d_national_v4_test_colab.ipynb"
 SORTIE = REPO / "notebooks" / "current" / "pcfno3d_atom_deux_domaines_colab.ipynb"
 SHA_PRODUIT = (REPO / "configs" / "national" / "regle_produit_vent10m_v4.json.sha256").read_text(encoding="ascii").split()[0]
@@ -48,10 +53,39 @@ if not (CACHEN / "index.csv").exists():
 print("national :", len(list(CACHEN.glob("*_Y.npy"))), "instants de test ; METAR :", (G / "obs").exists())
 '''
 
-GRAND_TUNIS = r'''# Grand Tunis : donnees, instants de test, vraies mesures ; modele livre deja en production (rien n'est copie
-# ni supprime ici)
+GRAND_TUNIS = CHOIX_POIDS + r'''# Grand Tunis : donnees, instants de test, vraies mesures ; modele livre (decision_v4.json). Si la copie de
+# production manque (le carnet de service Grand Tunis n'a pas tourne depuis la decision v4), elle est faite ici
+# exactement comme dans ce carnet : copie seulement, rien n'est supprime, une ancienne copie est renommee.
 GT = Path("/content/drive/MyDrive/pcfno3d_grand_tunis")
-PROD = GT / "runs" / "grand_tunis_v9_production"
+RUNS = GT / "runs"
+PROD = RUNS / "grand_tunis_v9_production"
+DECISION = RUNS / "decision_v4.json"
+livre = json.loads(DECISION.read_text())["modele_livre"] if DECISION.exists() else "grand_tunis_v2_long"
+SRC = RUNS / livre
+print("modele Grand Tunis livre :", livre)
+if (PROD / "PROVENANCE.txt").exists() and f"runs/{livre} " not in (PROD / "PROVENANCE.txt").read_text():
+    import re
+    ancien = re.search(r"Copie de runs/(\S+)", (PROD / "PROVENANCE.txt").read_text())
+    cote = RUNS / f"grand_tunis_v9_production_avant_{livre}_{ancien[1] if ancien else 'inconnu'}"
+    if cote.exists():
+        raise RuntimeError(f"{cote} existe deja : verifie avant de remplacer {PROD}")
+    PROD.rename(cote)
+    print("ancienne copie de production mise de cote :", cote.name)
+if not (PROD / "best.pt").exists():
+    PROD.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(choisir_poids(SRC), PROD / "best.pt")
+    for nom in ("norm_stats.json", "history.json"):
+        shutil.copy2(SRC / nom, PROD / nom)
+    for d in ("eval_pcfno3d", "validation_reelle", "fiabilite_pcfno3d", "figures"):
+        if (SRC / d).exists():
+            shutil.copytree(SRC / d, PROD / d, dirs_exist_ok=True)
+    for nom in ("decision_v4.json", "rapport_v4.md"):
+        if (RUNS / nom).exists():
+            shutil.copy2(RUNS / nom, PROD / nom)
+    (PROD / "PROVENANCE.txt").write_text(
+        f"Copie de runs/{livre} : le modele livre PC-FNO3D Grand Tunis, servi avec w recalcule par "
+        "continuite (decision d'Ines, 2026-10-24 ; runs/decision_v4.json et rapport_v4.md).", encoding="utf-8")
+    print("copie de production faite :", PROD)
 assert (PROD / "best.pt").exists(), PROD
 if not (DON / "grand_tunis" / "forcage_era5.csv").exists():
     with zipfile.ZipFile(GT / "grand_tunis_donnees.zip") as zf:
