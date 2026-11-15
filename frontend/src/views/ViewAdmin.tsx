@@ -10,5 +10,6 @@ export default memo(function ViewAdmin(){ return (
 <div className="form"><label htmlFor="k-name">{"Nom de la clé"}<input className="inp" id="k-name" placeholder="Ex. : Parc éolien de Bizerte" /></label><label htmlFor="k-scope">{"Accès"}<select className="inp" id="k-scope"><option value="lecture">{"Lecture du vent"}</option><option value="simulation">{"Lecture et simulations (R&D)"}</option><option value="admin">{"Administration"}</option></select></label><button className="btn primary" id="k-add">{"Créer la clé"}</button></div>
 <div id="k-new"></div><div className="mine" id="k-list"></div></div>
 </div>
+<div id="svc-admin" className="sv-pile"></div>
 </section>
 ); });

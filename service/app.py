@@ -71,6 +71,12 @@ from .quotas import Quotas
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 WEBAPP_DIR = REPO_ROOT / "webapp"
+# Relief 3D de la Carte 3D (~470 Mo, hors git, voir docs/TERRAIN_INTEGRATION.md) : une DONNEE
+# servie par le service, pas un fichier du build. PCFNO3D_TERRAIN_DIR pointe vers le dossier qui
+# contient tunisia/ (volume en production) ; sinon la copie du build, puis celle de l'import.
+TERRAIN_DIRS = (REPO_ROOT / "webapp" / "terrain", REPO_ROOT / "frontend" / "public" / "terrain")
+TERRAIN_ABSENT = ("relief 3D non installe sur ce serveur : node scripts/import_tukai_terrain.mjs "
+                  "<dossier>, ou PCFNO3D_TERRAIN_DIR vers un dossier contenant tunisia/")
 MAX_UPLOAD_MB = 200
 MAX_CACHED_VOLUMES = 4
 EXPORT_FILES = {"u.bin", "v.bin", "w.bin", "speed.bin", "direction.bin", "terrain.bin"}
@@ -482,6 +488,42 @@ class ReconstructRequest(BaseModel):
 router = APIRouter(prefix="/api")
 
 
+def terrain_dir() -> Path | None:
+    """Dossier servi sous /app/terrain/, ou None si le relief n'est installe nulle part."""
+    env = os.environ.get("PCFNO3D_TERRAIN_DIR")
+    candidats = (Path(env),) if env else TERRAIN_DIRS
+    for dossier in candidats:
+        if (dossier / "tunisia" / "terrain-manifest.json").is_file():
+            return dossier
+    return None
+
+
+class _TerrainStatique(StaticFiles):
+    """Tuiles non hachees et stables entre deux imports : cache d'un jour."""
+
+    async def get_response(self, path, scope):
+        reponse = await super().get_response(path, scope)
+        if reponse.status_code == 200:
+            reponse.headers["Cache-Control"] = "public, max-age=86400"
+        return reponse
+
+
+def monter_webapp(app: FastAPI) -> None:
+    """/app/terrain/ (donnee) AVANT /app/ (build) : le premier montage qui correspond gagne."""
+    dossier = terrain_dir()
+    if dossier is not None:
+        app.mount("/app/terrain", _TerrainStatique(directory=dossier), name="terrain")
+    else:
+        @app.get("/app/terrain/{chemin:path}", include_in_schema=False)
+        def terrain_absent(chemin: str):
+            return JSONResponse({"detail": TERRAIN_ABSENT}, status_code=404)
+    app.mount("/app", StaticFiles(directory=WEBAPP_DIR, html=True), name="webapp")
+
+    @app.get("/", include_in_schema=False)
+    def index():
+        return RedirectResponse("/app/atom-wind/")
+
+
 @router.get("/health", tags=["service"])
 def health() -> dict:
     """Etat du service. Seule route publique : elle dit si une cle est exigee."""
@@ -490,7 +532,8 @@ def health() -> dict:
     out = {"status": "ok" if wf else "degraded",
            "modele": wf.checkpoint_path.name if wf else None,
            "device": str(wf.device) if wf else None,
-           "mcp": "/mcp"}
+           "mcp": "/mcp",
+           "terrain_3d": terrain_dir() is not None}
     if store is not None:
         out.update(summarize(store))
     return out
@@ -1363,7 +1406,7 @@ def sms_abonnes(_: ApiKeyRecord | None = Depends(require_admin)) -> dict:
     """Abonnes aux alertes SMS (E12), numeros masques. Portee administrateur."""
     from service import sms
     ab = sms.Abonnes(_dossier_sms()).lire()
-    return {"abonnes": [{**a, "numero": sms.masquer(a["numero"])} for a in ab]}
+    return {"abonnes": [{**a, "numero": sms.masquer(a["numero"]), "id": sms.identifiant(a["numero"])} for a in ab]}
 
 
 @router.post("/sms/abonnes", tags=["sms"])
@@ -1373,15 +1416,16 @@ def sms_abonner(a: AbonneSms, _: ApiKeyRecord | None = Depends(require_admin)) -
         r = sms.Abonnes(_dossier_sms()).ajouter(a.numero, a.langue, a.lieu, a.lat, a.lon)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
-    return {**r, "numero": sms.masquer(r["numero"])}
+    return {**r, "numero": sms.masquer(r["numero"]), "id": sms.identifiant(r["numero"])}
 
 
 @router.delete("/sms/abonnes/{numero}", tags=["sms"])
 def sms_desabonner(numero: str, _: ApiKeyRecord | None = Depends(require_admin)) -> dict:
+    """Desabonne par le numero complet ou par l'identifiant opaque donne dans la liste (`id`)."""
     from service import sms
     if not sms.Abonnes(_dossier_sms()).retirer(numero):
         raise HTTPException(404, "abonne inconnu")
-    return {"retire": sms.masquer(numero)}
+    return {"retire": sms.masquer(numero) if numero.startswith("+") else numero}
 
 
 @router.post("/sms/envoyer", tags=["sms"])
@@ -1816,11 +1860,7 @@ def create_app() -> FastAPI:
     app.mount("/mcp", mcp_app)
 
     if WEBAPP_DIR.exists():
-        app.mount("/app", StaticFiles(directory=WEBAPP_DIR, html=True), name="webapp")
-
-        @app.get("/", include_in_schema=False)
-        def index():
-            return RedirectResponse("/app/")
+        monter_webapp(app)
     else:                                                   # pragma: no cover
         @app.get("/", include_in_schema=False)
         def index():
@@ -1871,6 +1911,7 @@ def _create_linked_app(upstream: Upstream) -> FastAPI:
                "modele": amont.get("modele"),
                "device": amont.get("device"),
                "mcp": "/mcp",
+               "terrain_3d": terrain_dir() is not None,
                "sante_amont": amont}
         if store is not None:
             out.update(summarize(store))
@@ -1879,11 +1920,7 @@ def _create_linked_app(upstream: Upstream) -> FastAPI:
     install_link(app, upstream)
 
     if WEBAPP_DIR.exists():
-        app.mount("/app", StaticFiles(directory=WEBAPP_DIR, html=True), name="webapp")
-
-        @app.get("/", include_in_schema=False)
-        def index():
-            return RedirectResponse("/app/")
+        monter_webapp(app)
 
     return app
 

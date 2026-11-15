@@ -2,6 +2,7 @@ import { memo, type CSSProperties } from "react";
 export default memo(function ViewAlertes(){ return (
 <section className="view" id="v-alertes">
 <div className="card"><h2>{"Alertes de la journée"}</h2><p className="muted" style={{"margin": "0"} as CSSProperties}>{"Chaque alerte dit quoi, où, quand et que faire. Les plus urgentes sont en haut."}</p></div>
+<div id="svc-alertes" className="sv-pile"></div>
 <div className="grid2">
 <div className="alerts" id="alertlist"></div>
 <div className="steps">

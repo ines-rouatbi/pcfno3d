@@ -255,6 +255,39 @@ def test_application_web_servie(client):
         pytest.skip("bundles React non construits (webapp/assets/ est ignore par git) : npm ci && npm run build")
     for asset in assets:
         assert client.get(asset).status_code == 200, asset
+    racine = client.get("/", follow_redirects=False)
+    assert racine.status_code in (307, 302)
+    assert racine.headers["location"] == "/app/atom-wind/"     # le SaaS, pas le laboratoire
+
+
+def test_relief_3d_servi_par_le_service(env, monkeypatch, tmp_path):
+    """Le relief est une donnee du service (PCFNO3D_TERRAIN_DIR), pas un fichier du build."""
+    from fastapi.testclient import TestClient
+    from service.app import create_app
+
+    tunisia = tmp_path / "tunisia"
+    tunisia.mkdir()
+    (tunisia / "terrain-manifest.json").write_text('{"tiles": []}', encoding="utf-8")
+    monkeypatch.setenv("PCFNO3D_TERRAIN_DIR", str(tmp_path))
+    client = TestClient(create_app())
+    r = client.get("/app/terrain/tunisia/terrain-manifest.json")
+    assert r.status_code == 200 and r.json() == {"tiles": []}
+    assert "max-age" in r.headers["cache-control"]
+    assert client.get("/app/terrain/tunisia/../../secret").status_code == 404
+    assert client.get("/api/health").json()["terrain_3d"] is True
+    # le build reste servi a cote du relief
+    assert client.get("/app/atom-wind/").status_code == 200
+
+
+def test_relief_3d_absent_dit_comment_l_installer(env, monkeypatch, tmp_path):
+    from fastapi.testclient import TestClient
+    from service.app import create_app
+
+    monkeypatch.setenv("PCFNO3D_TERRAIN_DIR", str(tmp_path / "vide"))
+    client = TestClient(create_app())
+    r = client.get("/app/terrain/tunisia/terrain-manifest.json")
+    assert r.status_code == 404 and "import_tukai_terrain" in r.json()["detail"]
+    assert client.get("/api/health").json()["terrain_3d"] is False
 
 
 # ---------------------------------------------------------------------------- MCP

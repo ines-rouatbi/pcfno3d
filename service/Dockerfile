@@ -9,7 +9,12 @@
 #     -e PCFNO3D_DATA_DIR=/data \
 #     -e PCFNO3D_API_KEYS=app-externe:pcf_... \
 #     -e PCFNO3D_ALLOWED_HOSTS=mon-domaine.tn \
+#     -v /chemin/vers/terrain:/terrain:ro \
 #     pcfno3d-api
+#
+# Le relief 3D de la Carte 3D (~470 Mo, dossier contenant tunisia/) n'est pas dans l'image
+# (.dockerignore) : il est monte sur /terrain et servi sous /app/terrain/. Sans lui, la
+# Carte 3D l'indique et les autres vues fonctionnent ; /api/health dit terrain_3d.
 #
 # Le volume artifacts doit contenir runs/v7/{best_dso_v7.pt,norm_stats.json} et le cache
 # des instants. PCFNO3D_ALLOWED_HOSTS est obligatoire derriere un proxy : le transport
@@ -18,7 +23,7 @@ FROM node:24-slim AS frontend-build
 WORKDIR /ui
 COPY package.json package-lock.json vite.config.ts tsconfig.json ./
 COPY frontend ./frontend
-# Portable archives retain the imported terrain in their runtime copy.
+# webapp/terrain est exclu (.dockerignore) : le relief est un volume, pas une couche d'image.
 COPY webapp ./webapp
 COPY scripts/extract_frontend_markup.mjs ./scripts/extract_frontend_markup.mjs
 COPY scripts/finalize_frontend.mjs ./scripts/finalize_frontend.mjs
@@ -31,7 +36,8 @@ FROM python:3.12-slim
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PCFNO3D_CONFIG=default \
-    PCFNO3D_PORT=8000
+    PCFNO3D_PORT=8000 \
+    PCFNO3D_TERRAIN_DIR=/terrain
 
 WORKDIR /app
 

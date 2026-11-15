@@ -294,13 +294,20 @@ def test_page_construite_depuis_la_maquette(client):  # noqa: F811
     for hook in ("ATOM.vent(", "ATOM.aSigma()", "AW3=ATOM.vue3d(", "AW3.fiche(x,y)",
                  'reseau:["admin"]', "ATOM.reseauAneo.afficher()", "ATOM.domaine()"):
         assert hook in runtime, hook
-    # onglet Reseau ANEO : vue React (point de montage), navigation, chargement du module, habillage isole
+    # onglet Reseau ANEO : vue React (point de montage), navigation, chargement du module (maquette
+    # atom_wind_reseau_aneo.html portee), habillage isole sous #aneo-plan
     vue = (REPO / "frontend/src/views/ViewReseauAneo.tsx").read_text(encoding="utf-8")
-    assert 'id="v-reseau"' in vue and 'id="aneo-reseau"' in vue and "reseau-aneo.css" in vue
+    assert 'id="v-reseau"' in vue and 'id="aneo-reseau"' in vue and "reseau-aneo-plan.css" in vue
     assert "id: 'reseau'" in (REPO / "frontend/src/components.tsx").read_text(encoding="utf-8")
-    assert "engine/reseau-aneo.js" in (REPO / "frontend/src/workspace.ts").read_text(encoding="utf-8")
-    moteur = (REPO / "frontend/src/engine/reseau-aneo.js").read_text(encoding="utf-8")
-    assert "/atom-wind/reseau-aneo?detail=true" in moteur and "A.reseauAneo" in moteur
+    assert "engine/reseau-aneo-plan.js" in (REPO / "frontend/src/workspace.ts").read_text(encoding="utf-8")
+    moteur = (REPO / "frontend/src/engine/reseau-aneo-plan.js").read_text(encoding="utf-8")
+    for a in ("/atom-wind/reseau-aneo?detail=true", "/atom-wind/reseau-aneo/installes", "A.reseauAneo",
+              "ATOM.loadThree", "Données d'exemple"):
+        assert a in moteur, a
+    assert "cdn.jsdelivr" not in moteur and "fonts.googleapis" not in moteur     # ressources locales seulement
+    css = (REPO / "frontend/src/styles/reseau-aneo-plan.css").read_text(encoding="utf-8")
+    assert all(r.startswith(("#aneo-plan", "@container", "/*", "}")) or not r.strip()
+               for r in css.splitlines() if not r.startswith((" ", "\t"))), "regle CSS hors de #aneo-plan"
     for f in ("i18n/ar.json", "i18n/en.json"):
         assert client.get(f"/app/atom-wind/{f}").status_code == 200, f
     r = client.get("/app/atom-wind/")

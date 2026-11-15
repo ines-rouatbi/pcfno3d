@@ -53,9 +53,16 @@ export function startApplication() {
       const { mountTerrain } = await import('./terrain/terrain-viewer');
       await mountTerrain(document.getElementById('terrain-host')!);
     };
+    window.ATOM.loadTurbine = async (host: HTMLElement, opts: { label: string }) => {
+      const { mountTurbine } = await import('./terrain/turbine-view');
+      return mountTurbine(host, opts);
+    };
     await import('./engine/atom-3d.js');
-    // onglet d'administration « Réseau ANEO » : avant atom-data.js, qui lance la page
-    await import('./engine/reseau-aneo.js');
+    // onglet d'administration « Réseau ANEO » (maquette atom_wind_reseau_aneo.html : planification nationale et
+    // installation par zone) : avant atom-data.js, qui lance la page
+    await import('./engine/reseau-aneo-plan.js');
+    // fonctions du service sans écran jusque-là (sillage, maintenance, alertes du service, SMS, exports…)
+    await import('./engine/services-atom.js');
     await import('./engine/atom-data.js');
   })();
 }

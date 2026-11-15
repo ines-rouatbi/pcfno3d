@@ -194,8 +194,9 @@ def _affichable(t: str, classes: set[str]) -> bool:
     return not code or bool(MOTS_FR.search(f" {t} "))
 
 
-# couche de donnees, vue 3D et onglet d'administration « Reseau ANEO » : textes affiches eux aussi
-MODULES = ("atom-data.js", "atom-3d.js", "reseau-aneo.js")
+# couche de donnees, vue 3D, onglet d'administration « Reseau ANEO » (maquette de planification et d'installation),
+# fonctions du service branchees dans les vues : textes affiches eux aussi
+MODULES = ("atom-data.js", "atom-3d.js", "reseau-aneo-plan.js", "services-atom.js")
 
 
 def textes_frontend() -> list[str]:

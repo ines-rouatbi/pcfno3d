@@ -18,6 +18,7 @@ export default memo(function ViewAgri(){ return (
 <div className="alerts" id="ag-alerts"></div>
 <div className="agcards" id="ag-top"></div>
 <div className="agcards" id="ag-cards"></div>
+<div id="svc-agri" className="sv-pile"></div>
 <div className="card">
 <h3>{"D'où viennent les chiffres"}</h3>
 <ul className="agsrc">
