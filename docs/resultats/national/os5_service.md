@@ -73,8 +73,16 @@ Limites restantes, constatées sur les captures :
 - carte 3D : le relief ne se charge pas dans Chromium headless (WebGL logiciel) : à capturer depuis
   un vrai navigateur.
 
-`docs/demo/` : `os5_national_gafsa.png`, `os5_national_tozeur.png`, `os5_national_gabes.png`,
-`os5_grand_tunis_tunis.png` (copies d'écran de l'aperçu Drive des PNG produits sur Colab ; les
+Mise à jour du 15/11 au soir (carnet `5d2e0ee`, front-end d'Ines `verif-app-mahdi` fusionné, L4) :
+Sfax est maintenant capturée correctement (point et réponse « Sfax », 16 km/h du sud-est) ; l'onglet
+« Réseau ANEO » s'affiche avec une clé admin temporaire (plan OS4, 400 capteurs, nombre recommandé
+« non atteint ») ; la carte 3D reste en « Chargement du terrain » en mode headless. La carte nationale
+de la vue 3D lit désormais le modèle national (commit `f459dd2`). DSO4 sur cette L4 : national
+0,997 s, Grand Tunis 1,103 s (le fichier `os5/dso4_service.json` du Drive contient ce dernier run L4 ;
+les chiffres A100 sont ceux du tableau ci-dessus).
+
+`docs/demo/` : `os5_national_sfax.png`, `os5_national_gafsa.png`, `os5_national_tozeur.png`,
+`os5_national_gabes.png`, `os5_national_reseau_aneo.png`, `os5_grand_tunis_tunis.png` (copies d'écran de l'aperçu Drive des PNG produits sur Colab ; les
 originaux 1440 × 900 sont dans `MyDrive/pcfno3d_national/os5/captures/`).
 
 Adresse publique : atom.zelqane.com sert encore l'ancien front-end du Worker (déploiement de Rayen) ;
