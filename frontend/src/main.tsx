@@ -21,7 +21,9 @@ class ErrorBoundary extends Component<{children: ReactNode}, {error: boolean}> {
 function App() {
   const { state, error } = useWorkspace();
   const [menu, setMenu] = useState(false);
-  const national = state.view === 'carte3d' && state.sceneMode !== 'analysis' && state.terrainSource !== 'local';
+  // OS5 : la page ouverte sur le domaine national (?domaine=national) est nationale dans toutes les vues
+  const domaineNational = new URLSearchParams(location.search).get('domaine') === 'national';
+  const national = domaineNational || (state.view === 'carte3d' && state.sceneMode !== 'analysis' && state.terrainSource !== 'local');
   useEffect(() => {
     const close = (event: KeyboardEvent) => { if (event.key === 'Escape') setMenu(false); };
     window.addEventListener('keydown', close);

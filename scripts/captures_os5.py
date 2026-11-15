@@ -34,11 +34,15 @@ def attendre_donnees(page, delai_s: float) -> str:
 
 
 def choisir_ville(page, morceau: str) -> str | None:
-    return page.evaluate(
+    trouve = page.evaluate(
         """(m) => { const s = document.getElementById('town'); if(!s) return null;
-                    const o = [...s.options].find(o => o.text.includes(m)); if(!o) return null;
-                    s.value = o.value; s.dispatchEvent(new Event('change', {bubbles: true})); return o.text; }""",
+                    const o = [...s.options].find(o => o.text.includes(m)); return o ? [o.value, o.text] : null; }""",
         morceau)
+    if not trouve:
+        return None
+    page.locator("#town").scroll_into_view_if_needed()
+    page.select_option("#town", value=trouve[0])          # vrai choix utilisateur (input + change)
+    return trouve[1]
 
 
 def main() -> int:
