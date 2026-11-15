@@ -22,15 +22,15 @@ ADMIN = {"id": "u1", "name": "Admin ATOM Wind", "email": "admin@demo.atomwind.tn
 
 
 def attendre_donnees(page, delai_s: float) -> str:
-    """Attend que la page ait quitte l'ecran de chargement (bandeau source rempli), au plus delai_s."""
+    """Attend que l'ecran de chargement (#aw-chargement, retire par lancerPage) ait disparu, au plus delai_s."""
     fin = time.time() + delai_s
-    texte = ""
     while time.time() < fin:
-        texte = page.evaluate("() => document.body ? document.body.innerText : ''")
-        if "PC-FNO3D" in texte and "Connexion au modèle" not in texte:
-            return texte
+        if page.evaluate("() => !!document.body && !document.getElementById('aw-chargement')"):
+            time.sleep(10)                         # rendu de la carte et du bandeau
+            return page.evaluate("() => document.body.innerText")
         time.sleep(5)
-    return texte
+    print("ATTENTION : page encore en chargement apres", delai_s, "s", flush=True)
+    return page.evaluate("() => document.body ? document.body.innerText : ''")
 
 
 def choisir_ville(page, morceau: str) -> str | None:
