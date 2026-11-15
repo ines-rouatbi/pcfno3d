@@ -60,7 +60,8 @@ def main() -> int:
             nav = p.chromium.launch(args=["--use-gl=swiftshader", "--enable-webgl", "--ignore-gpu-blocklist"])
             ctx = nav.new_context(viewport={"width": 1440, "height": 900}, locale="fr-FR")
             ctx.add_init_script(
-                "try { localStorage.setItem('pcfno3d.apikey', %s); localStorage.setItem('aw-langue', 'fr'); } catch(e) {}"
+                "try { localStorage.setItem('pcfno3d.apikey', %s); localStorage.setItem('aw-langue', 'fr'); "
+                "localStorage.setItem('aw-tour', '1'); } catch(e) {}"
                 % json.dumps(secret))
             page = ctx.new_page()
             page.set_default_timeout(int(a.delai * 1000))
