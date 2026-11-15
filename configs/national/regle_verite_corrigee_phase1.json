@@ -1,0 +1,19 @@
+{
+  "fixee_le": "2026-11-16, AVANT tout calcul de cette phase ; aucune regle deja hachee n'est modifiee",
+  "accord": "Ines, 16/11/2026 : « corrige la vérité et réentraîne » (apres l'explication : le reseau reproduit sa verite, dont la precision aux aeroports est celle de l'ERA5)",
+  "contrainte": "Drive : 19 Go libres pour ~50 Go de verite ; rien ne doit etre supprime sur le Drive (regle d'Ines) : la verite n'est PAS regeneree ; elle sera corrigee a la lecture (cible = verite v3 + correction a 10 m decroissante avec la hauteur), phase 2, regle separee",
+  "objet_phase1": "FAISABILITE, CPU, sans Colab : une correction du vent ERA5 a 10 m calculable EN TOUT POINT de la grille nationale (variables disponibles sur la grille seulement) bat-elle l'ERA5 aux stations, station retiree ? Si non, corriger la verite ainsi ne peut pas faire battre l'ERA5 au modele : arret, sans depense d'unites",
+  "donnees": "artifacts/national/mos/paires_29 (28 stations, ERA5 Open-Meteo et mesures controlees par scripts/mos_era5.py) ; ajustement 2015-2020 ; jugement 2021 ; 2022 et 2023-2024 NON lues",
+  "variables": ["z_maille_500m_m", "pente_maille_deg", "log10_z0_maille", "tpi_5km_m", "tpi_20km_m", "log1p_distance_cote_km", "dz_maille_moins_era5_m", "sin_heure", "cos_heure", "sin_jour", "cos_jour", "u10_era5", "v10_era5", "vitesse10_era5", "sin_dir10_era5", "cos_dir10_era5", "u100_era5", "v100_era5", "rapport_v100_v10_era5", "dt_terre_mer_k"],
+  "variables_note": "celles de regle_mos_era5 SAUF blh, rayonnement, nebulosite, absentes du cache national ; toutes les autres se calculent sur la grille (relief, z0, TPI, cote : grille_reelle ; ERA5 10 m et 100 m : cellules du forcage ; dT terre-mer : scalaire du forcage ; heure, jour)",
+  "modele": "HistGradientBoostingRegressor de regle_mos_era5 (lr 0,1, profondeur 3, 500 iterations, min_samples_leaf 100, l2 1, graine 2030), un modele par composante (du, dv)",
+  "retrecissement": {
+    "definition": "correction servie = k x correction predite, k dans {0,25 ; 0,5 ; 0,75 ; 1}",
+    "choix": "sur 2015-2020 seulement, validation croisee par SITE (chaque site retire de l'ajustement) : le plus grand k dont la pire degradation relative par site (RMSE vectoriel, contre l'ERA5) est <= 5 % ; si aucun, la phase 1 conclut a l'echec"
+  },
+  "jugement_2021": "chaque site retire de l'ajustement (modele refait sans lui sur 2015-2020), k choisi ci-dessus ; instants synoptiques ; sur les 12 aeroports ET sur les 28 stations",
+  "lecture": "la phase 1 REUSSIT si, sur les 12 aeroports en 2021 : (1) moyenne du RMSE vectoriel inferieure a celle de l'ERA5, IC 95 % (bootstrap par jours, 2000 tirages, graine 2030) de l'ecart entierement negatif ; (2) au moins 8 aeroports sur 12 ameliores ; (3) aucun aeroport degrade de plus de 5 %. Sinon : arret, rapport a Ines",
+  "suite_si_reussite": "phase 2 (regle separee, avant tout calcul) : appliquer cette correction a la verite v3 a la lecture (decroissance verticale, w de la verite par continuite), affiner C' s44 sur les jours d'entrainement (Colab A100), DSO et aeroports sur la validation, puis jugement independant 2023-2024 (forcage national 2023-2024 a telecharger)",
+  "interdits": ["2022 et 2023-2024 non lues", "aucun bruit ajoute", "ERA5 et la verite generee jamais appelees mesures", "aucune regle hachee modifiee ; rien de supprime"],
+  "code": "scripts/verite_corrigee_phase1.py"
+}
