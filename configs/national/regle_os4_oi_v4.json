@@ -1,0 +1,39 @@
+{
+  "fixee_le": "2026-11-16, AVANT tout calcul ; remplace regle_os4_oi_national.json (ce752e9d..., jamais executee, inchangee) ; aucune regle deja hachee n'est modifiee",
+  "demande": "objectif d'Ines du 16/11/2026, chantier A : OS4, dimensionnement du reseau ANEO par interpolation optimale, sur CPU, sans reentrainement",
+  "nature": "experience OSSE sur la verite nationale v3 : les capteurs simules mesurent la verite generee ; c'est une experience DISTINCTE du modele C' s44 (aucun reseau n'est evalue) ; ERA5 et verite ne sont jamais appelees mesures",
+  "fond": {
+    "definition": "ERA5 degradee : profil ERA5 de l'instant aux noeuds (cellules du forcage, interpolation d'InterpERA5) + champ gaussien correle par composante, tire aux mailles ERA5 (exp(-d / L)) et interpole aux noeuds, identique a toutes les hauteurs (comme la variante D, pcfno3d.aneo_entree.EntreeANEO), sans masquage par zones",
+    "parametres": {"sigma_u_m_s": 1.91, "sigma_v_m_s": 2.02, "L_km": 55.0, "source": "runs/degradation_era5_v4.json (le script verifie l'accord a 0,01 pres et s'arrete sinon)"},
+    "graine": "1000 + numero de l'instant dans son jeu",
+    "sans_reseau": "ce fond seul"
+  },
+  "capteurs": {
+    "hauteur_m_agl": 25.0,
+    "valeur": "verite (u, v) a 25 m au-dessus du sol dans la colonne du capteur (interpolation de pcfno3d.atom_wind.champ_agl entre noeuds valides, profil log sous le premier noeud) + bruit gaussien par composante",
+    "bruit_m_s": 0.5,
+    "sites": "candidats de l'OS6 (pcfno3d.os6.candidats, contraintes par defaut : terre z0 >= 0,005 m, pente <= 20 deg, altitude <= 650 m, 1 km du bord, un candidat tous les 500 m)"
+  },
+  "oi_3d": {
+    "horizontal": "parametres repris TELS QUELS de regle_produit_vent10m_v4 : correlation gaussienne exp(-d^2 / 2 L^2), L = 150 km, lambda = sigma_o^2 / sigma_b^2 = 4 ; aucun reglage sur la verite",
+    "vertical": "correlation exp(-|dz| / H), dz = difference de hauteur au-dessus du sol, H = 300 m, FIXE ici et jamais regle apres",
+    "analyse": "analyse(noeud) = fond + sum_j alpha_j rho_h(d_j) exp(-|h_noeud - z_j| / H), alpha = (R + lambda I)^-1 (mesure - fond aux points), R_ij = rho_h(d_ij) exp(-|z_i - z_j| / H) ; fond aux points = fond interpole a la hauteur du point comme la verite",
+    "biais": "aucun"
+  },
+  "N": [10, 25, 50, 100, 200, 400],
+  "placements": {
+    "glouton": "variance d'erreur du fond a 25 m (moyenne u, v de (fond - verite)^2) estimee sur 100 instants synoptiques d'ENTRAINEMENT (graine 2030) ; a chaque pas, candidat de variance courante maximale, puis variance(x) <- variance(x) x (1 - rho_h(x, choisi)^2 / (1 + lambda)) ; ordre emboite jusqu'a 400",
+    "regulier": "couverture reguliere par echantillonnage du point le plus eloigne parmi les candidats (depart : candidat le plus proche du centre de la terre du domaine), emboite",
+    "aleatoire": "3 tirages (graines 1, 2, 3) : les N premiers points d'une permutation des candidats, emboites"
+  },
+  "variante_drone": "placement glouton + 4 profils verticaux aux 4 PREMIERS sites gloutons, mesures a 25, 50, 100, 200, 300, 500, 750 et 1000 m au-dessus du sol (verite + bruit 0,5 m/s), pour chaque N",
+  "metriques": {
+    "principale": "RMSE u, v de la pire tranche 0-1 km au-dessus du sol (tranches de scripts/dso_hauteur_sol.py : 0-100, 100-300, 300-600, 600-1000 m ; noeuds valides ; max sur les tranches et sur u, v), cumulee sur les instants",
+    "secondaire": "RMSE u, v (max des deux) de la tranche 0-100 m"
+  },
+  "critere_os4": "par strategie, N minimal tel que la metrique principale est au moins 10 % plus basse que sans reseau ; sinon publie « non atteint jusqu'a N = 400 »",
+  "evaluation": "UNE seule lecture, sur les 180 instants synoptiques du test 2022 de la verite v3, declaree comme experience distincte de C' ; placements et parametres fixes sans regarder le test (glouton : entrainement seulement)",
+  "livrables": "MyDrive/pcfno3d_national/os4_oi_v4/ (dossier neuf) : courbe.csv, courbe.png, n_minimal.json, plan_glouton.geojson (sites ordonnes, pour la console ANEO), drone.csv, bilan.json, bilan.md",
+  "interdits": ["aucune autre lecture du test 2022", "aucun reglage sur le test ni sur la verite des instants evalues", "aucun bruit ajoute aux predictions d'un modele (le bruit est celui des capteurs simules)", "aucune regle hachee modifiee ; rien d'ecrase ni de supprime"],
+  "code": "scripts/os4_oi_v4.py"
+}
