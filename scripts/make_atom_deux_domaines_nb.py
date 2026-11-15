@@ -134,6 +134,9 @@ yaml.safe_dump(c, open(CODE / "configs" / "national_v4_service.yaml", "w"), sort
 OS5 = NAT / "os5"
 OS5.mkdir(exist_ok=True)
 !pip install -q fastapi uvicorn python-multipart httpx mcp==2.3.0 anthropic 2>&1 | tail -2
+# front-end React : webapp/assets/ est ignore par git, il faut le construire avant de servir /app/atom-wind/
+!cd /content/PFE && npm ci --no-audit --no-fund 2>&1 | tail -1 && npm run build 2>&1 | grep -E "built in|rror"
+assert list((CODE / "webapp" / "assets").glob("atom-*.js")), "front-end non construit"
 print("config national_v4_service :", c["inference"])
 '''
 
@@ -222,6 +225,9 @@ try:
 finally:
     store.revoke("demo-os5")
 print(f"\nEN LIGNE : https://{HOTE}/app/atom-wind/ — Grand Tunis ET Tunisie entiere (choix par la position).")
+# captures de la page (Chromium headless, cle temporaire revoquee) -> NAT/os5/captures, a copier dans docs/demo/
+!pip install -q playwright 2>&1 | tail -1; playwright install --with-deps chromium 2>&1 | tail -1
+!cd /content/PFE && PYTHONPATH=/content/PFE:/content/PFE/src python scripts/captures_os5.py --cles {PROD}/api_keys.json --sortie {NAT}/os5/captures 2>&1 | tail -12
 '''
 
 VIE = r'''try:

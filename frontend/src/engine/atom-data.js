@@ -913,7 +913,10 @@ function lancerPage(){
   }, 30 * 60 * 1000);
 }
 function heureLocale(){
-  return Number(new Intl.DateTimeFormat("fr-FR", { hour: "numeric", hour12: false, timeZone: "Africa/Tunis" }).format(new Date())) % 24;
+  // fr-FR formate « 16 h » : Number() donnait NaN (curseur « NaN h », reponse figee) ; on lit la seule partie heure
+  const h = new Intl.DateTimeFormat("fr-FR", { hour: "numeric", hourCycle: "h23", timeZone: "Africa/Tunis" })
+    .formatToParts(new Date()).find(p => p.type === "hour");
+  return Number(h ? h.value : new Date().getUTCHours() + 1) % 24;
 }
 
 async function demarrer(){
