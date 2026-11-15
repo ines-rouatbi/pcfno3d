@@ -55,3 +55,33 @@ def test_routes_domaines_un_seul_domaine(client):  # noqa: F811
     assert len(d) == 1 and d[0]["principal"] is True
     assert client.get("/api/atom-wind/grille?domaine=inconnu").status_code == 404
     assert client.get("/api/atom-wind/jours").status_code == 200
+
+
+def test_onglet_aneo_lit_le_plan_os4(tmp_path, cfg, geom):
+    import json
+
+    import pandas as pd
+
+    from pcfno3d import atom_wind
+    run = tmp_path / "runs" / "national"
+    run.mkdir(parents=True)
+    d = tmp_path / atom_wind.NOM_OS4
+    d.mkdir()
+    feats = [{"type": "Feature", "geometry": {"type": "Point", "coordinates": [10.0 + k / 10, 35.0]},
+              "properties": {"id": f"ANEO-{k:03d}", "priorite": k, "phase": 1 if k <= 10 else 2, "lat": 35.0,
+                             "lon": 10.0 + k / 10, "gain_marginal": 0.1 / k, "hauteur_m": 25.0}} for k in range(1, 13)]
+    (d / "plan_glouton.geojson").write_text(json.dumps({"type": "FeatureCollection", "features": feats}))
+    lignes = [{"strategie": "sans_reseau", "N": 0, "pire_tranche_0_1km": 1.8, "rmse_vect_10m": 2.0, "gain": 0.0,
+               "gain_ic95_bas": 0.0, "gain_ic95_haut": 0.0}]
+    lignes += [{"strategie": s, "N": n, "pire_tranche_0_1km": 1.8 - n / 1000, "rmse_vect_10m": 2.0 - n / 500,
+                "gain": n / 1800, "gain_ic95_bas": n / 2000, "gain_ic95_haut": n / 1600}
+               for s in ("glouton", "grille_reguliere") for n in (10, 25)]
+    pd.DataFrame(lignes).to_csv(d / "courbe.csv", index=False)
+    (d / "bilan.json").write_text(json.dumps({"sans_reseau": {"pire_tranche_0_1km": 1.8},
+                                              "N_minimal": {"glouton": {"N_minimal_ic95": "non atteint jusqu'a N = 400"}}}))
+    assert atom_wind.plan_aneo(run) == d / "plan_glouton.geojson"
+    r = atom_wind.reseau_aneo(run, cfg, geom, None)
+    assert r["demonstration"] is False and r["bandeau"].startswith("Plan OS4")
+    assert len(r["capteurs"]) == 12 and r["capteurs"][0]["id"] == "ANEO-001" and r["capteurs"][0]["gain_marginal"] == 0.1
+    assert r["courbe"]["actuel"]["pire_rmse_niveau_m_s"] == 1.8 and "optimise" in r["courbe"]["strategies"]
+    assert abs(r["seuil_dso1_m_s"] - 1.62) < 1e-9 and r["nombre_recommande"] is None

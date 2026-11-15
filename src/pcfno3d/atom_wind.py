@@ -249,6 +249,10 @@ def plan_aneo(run_dir: Path) -> Path | None:
         f = d / "plan_aneo.geojson"
         if f.exists():
             return f
+    for d in (run_dir.parent / NOM_OS4, run_dir.parent.parent / NOM_OS4):      # OS4 par OI (national)
+        f = d / "plan_glouton.geojson"
+        if f.exists():
+            return f
     return None
 
 
@@ -640,6 +644,7 @@ def qualite(run_dir: Path, dso, w_continuite: bool = False) -> dict:
 # erreur attendue est celle de la courbe a n_k, son gain l'ecart a la phase precedente (au reseau actuel pour
 # la premiere). Rien n'est interpole entre deux paliers.
 NOM_OS6 = "os6_reseau_aneo"
+NOM_OS4 = "os4_oi_v4_2"                  # OS4 national par interpolation optimale (regle_os4_oi_v4_2), simulation
 FICHIERS_OS6 = ("plan_aneo.csv", "plan_aneo.geojson", "courbe_test.csv", "courbe_test_par_niveau.csv",
                 "os6.json", "candidats.csv", "ordre_validation.csv", "courbe.png", "carte.png")
 INSTALLES = "os6_installes.csv"
@@ -654,7 +659,16 @@ def dossier_os6(run_dir: Path) -> Path | None:
     for d in (run_dir / NOM_OS6, run_dir.parent / NOM_OS6):
         if (d / "plan_aneo.csv").exists() or (d / "plan_aneo.geojson").exists():
             return d
+    # sinon le plan OS4 par OI (national : MyDrive/pcfno3d_national/os4_oi_v4_2, a cote de runs/)
+    for d in (run_dir.parent / NOM_OS4, run_dir.parent.parent / NOM_OS4):
+        if (d / "plan_glouton.geojson").exists():
+            return d
     return None
+
+
+def _est_os4(d: Path | None) -> bool:
+    return (d is not None and (d / "plan_glouton.geojson").exists() and not (d / "plan_aneo.csv").exists()
+            and not (d / "plan_aneo.geojson").exists())
 
 
 def _a_cote(run_dir: Path, nom: str) -> Path | None:
@@ -698,6 +712,20 @@ def lire_parametres(run_dir: Path) -> dict:
 
 
 def _courbe(d: Path, os6j: dict) -> dict | None:
+    if _est_os4(d) and (d / "courbe.csv").exists():
+        t = pd.read_csv(d / "courbe.csv")
+        strat = {}
+        for s, g in t.groupby("strategie"):
+            strat["optimise" if s == "glouton" else str(s)] = [
+                {"n": int(r["N"]), "rmse_vect_m_s": round(float(r["rmse_vect_10m"]), 4),
+                 "pire_rmse_niveau_m_s": round(float(r["pire_tranche_0_1km"]), 4),
+                 "gain": round(float(r["gain"]), 4),
+                 "gain_ic95": [round(float(r["gain_ic95_bas"]), 4), round(float(r["gain_ic95_haut"]), 4)],
+                 "seuil_respecte": bool(r["gain_ic95_bas"] >= 0.10)}
+                for _, r in g.sort_values("N").iterrows()]
+        actuel = strat.pop("sans_reseau", [None])[0]
+        return {"strategies": strat, "actuel": actuel, "tailles": sorted({p["n"] for v in strat.values() for p in v}),
+                "jeu": "test 2022, lecture unique (regle_os4_oi_v4_2) ; simulation OSSE, pas des mesures"}
     f = d / "courbe_test.csv"
     if f.exists():
         t = pd.read_csv(f)
@@ -725,7 +753,15 @@ def _nombre(v) -> float | None:
 
 def _plan_os6(d: Path, geom, georef) -> list[dict]:
     """Capteurs du plan, dans l'ordre d'installation (CSV, sinon GeoJSON)."""
-    if (d / "plan_aneo.csv").exists():
+    if _est_os4(d):
+        g = json.loads((d / "plan_glouton.geojson").read_text(encoding="utf-8"))
+        lignes = []
+        for ft in g.get("features", []):
+            p = dict(ft.get("properties") or {})
+            lo, la = ft["geometry"]["coordinates"][:2]
+            lignes.append({**p, "lat": la, "lon": lo, "ordre": p.get("priorite"), "etape": p.get("phase"),
+                           "hauteur_mat_m": p.get("hauteur_m")})
+    elif (d / "plan_aneo.csv").exists():
         lignes = pd.read_csv(d / "plan_aneo.csv").to_dict(orient="records")
     else:
         g = json.loads((d / "plan_aneo.geojson").read_text(encoding="utf-8"))
@@ -751,7 +787,8 @@ def _plan_os6(d: Path, geom, georef) -> list[dict]:
                     "altitude_sol_m": _nombre(r.get("altitude_sol_m")), "hauteur_mat_m": _nombre(r.get("hauteur_mat_m")),
                     "gain_m_s": _nombre(r.get("gain_rmse_validation_m_s")),
                     "gain_cumule_m_s": _nombre(r.get("gain_cumule_m_s")),
-                    "rmse_validation_apres_m_s": _nombre(r.get("rmse_validation_apres_m_s"))})
+                    "rmse_validation_apres_m_s": _nombre(r.get("rmse_validation_apres_m_s")),
+                    "gain_marginal": _nombre(r.get("gain_marginal"))})
     return out
 
 
@@ -853,6 +890,14 @@ def reseau_aneo(run_dir: Path, cfg, geom, georef, checkpoint="best.pt", config: 
     d = dossier_os6(run_dir)
     os6j = json.loads((d / "os6.json").read_text(encoding="utf-8")) \
         if d is not None and (d / "os6.json").exists() else {}
+    if _est_os4(d) and (d / "bilan.json").exists():
+        b = json.loads((d / "bilan.json").read_text(encoding="utf-8"))
+        nm = (b.get("N_minimal") or {}).get("glouton", {}).get("N_minimal_ic95")
+        os6j = {"seuil_rmse_m_s": round(0.9 * float(b["sans_reseau"]["pire_tranche_0_1km"]), 4),
+                "nombre_recommande": nm if isinstance(nm, int) else None,
+                "modele": "interpolation optimale 3D (OS4, simulation OSSE)", "configuration": cfg.name,
+                "limites": ("Simulation OSSE sur la verite generee (regle_os4_oi_v4_2) : capteurs simules a 25 m ; le "
+                            "seuil affiche est -10 % de l'erreur sans reseau (critere OS4), pas le DSO1.")}
     demo = d is None
     capteurs = plan_exemple(geom, georef) if demo else _plan_os6(d, geom, georef)
     courbe = None if demo else _courbe(d, os6j)
@@ -904,7 +949,7 @@ def reseau_aneo(run_dir: Path, cfg, geom, georef, checkpoint="best.pt", config: 
     return {
         "format": "atom-wind/reseau-aneo/1", "demonstration": demo,
         "bandeau": ("Démonstration : plan d'exemple" if demo else
-                    f"Plan OS6 calculé ({os6j.get('modele') or 'modèle servi'}, configuration "
+                    f"Plan {'OS4' if _est_os4(d) else 'OS6'} calculé ({os6j.get('modele') or 'modèle servi'}, configuration "
                     f"{os6j.get('configuration') or cfg.name})"),
         "domaine": {"nom": cfg.name, "largeur_km": geom.nx * geom.dx / 1000, "hauteur_km": geom.ny * geom.dy / 1000},
         "dossier": None if d is None else str(d),

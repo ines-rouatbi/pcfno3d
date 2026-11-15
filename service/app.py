@@ -1515,6 +1515,7 @@ def atom_atlas_fichier(nom: str, _: ApiKeyRecord | None = Depends(require_eolien
 @router.get("/atom-wind/reseau-aneo", tags=["atom-wind"])
 def atom_reseau(request: Request, detail: bool = Query(False, description="true : vue complete de l'onglet "
                                                        "d'administration « Reseau ANEO » (portee admin)"),
+                domaine: str | None = DOMAINE_Q,
                 _: ApiKeyRecord | None = Depends(require_read)):
     """Plan de deploiement ANEO (OS6, scripts/os6_reseau_aneo.py) en GeoJSON, s'il existe (couche ANEO de la
     page). `detail=true` (portee admin) : la vue de l'onglet « Reseau ANEO » — plan ordonne avec phases et
@@ -1524,11 +1525,11 @@ def atom_reseau(request: Request, detail: bool = Query(False, description="true 
     if detail:
         _check(request, "admin")
         try:
-            return atom_outils.reseau_aneo(model())
+            return atom_outils.reseau_aneo(modele_domaine(domaine))
         except ValueError as exc:                   # fichier depose illisible (os6_installes.csv...)
             raise HTTPException(422, str(exc)) from exc
     from pcfno3d import atom_wind
-    f = atom_wind.plan_aneo(model().cfg.paths.run_dir)
+    f = atom_wind.plan_aneo(modele_domaine(domaine).cfg.paths.run_dir)
     if f is None:
         raise HTTPException(404, "plan OS6 non calcule (scripts/os6_reseau_aneo.py)")
     return FileResponse(f, media_type="application/geo+json")

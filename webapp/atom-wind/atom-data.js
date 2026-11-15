@@ -16,7 +16,7 @@ const BASE = (P.get("api") || "").replace(/\/+$/, "");
 const KEY_STORAGE = "pcfno3d.apikey";
 // OS5 : domaine servi (Grand Tunis par defaut, « national » pour la Tunisie entiere), ?domaine=national
 const DOMAINE = P.get("domaine") || "";
-const PAR_DOMAINE = ["/atom-wind/grille", "/atom-wind/jours", "/atom-wind/jour", "/atom-wind/direct"];
+const PAR_DOMAINE = ["/atom-wind/grille", "/atom-wind/jours", "/atom-wind/jour", "/atom-wind/direct", "/atom-wind/reseau-aneo"];
 function avecDomaine(path){
   if(!DOMAINE || !PAR_DOMAINE.some(r => path === r || path.startsWith(r + "?"))) return path;
   return path + (path.includes("?") ? "&" : "?") + "domaine=" + encodeURIComponent(DOMAINE);
