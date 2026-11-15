@@ -974,29 +974,82 @@ def _gzip_json(data: dict) -> Response:
 def _atom_jours(wf: WindFieldModel) -> list[dict]:
     from pcfno3d import atom_wind
     from pcfno3d.cache import load_index
-    j = STATE.get("atom_jours")
+    par_modele = STATE.setdefault("atom_jours", {})
+    j = par_modele.get(id(wf))
     if j is None:
         try:
             j = atom_wind.jours(load_index(wf.cfg), split="test")
         except FileNotFoundError as exc:
             raise HTTPException(404, str(exc)) from exc
-        STATE["atom_jours"] = j
+        par_modele[id(wf)] = j
     return j
 
 
-@router.get("/atom-wind/grille", tags=["atom-wind"])
-def atom_grille(_: ApiKeyRecord | None = Depends(require_read)) -> Response:
-    """Relief, eau, z0 et stations sur la grille de 500 m du front-end ATOM Wind."""
+DOMAINE_Q = Query(None, description="domaine servi (voir /api/atom-wind/domaines) ; absent : le domaine principal")
+
+
+def modele_domaine(domaine: str | None) -> WindFieldModel:
+    """Le modele d'un domaine nomme (OS5 : Grand Tunis et national dans le meme service) ; None : le principal."""
+    if not domaine:
+        return model()
     from service import atom_outils
-    return _gzip_json(atom_outils.grille(model()))
+    try:
+        return atom_outils.modele_pour(domaine=domaine)
+    except KeyError as exc:
+        raise HTTPException(404, str(exc)) from exc
+
+
+@router.get("/atom-wind/domaines", tags=["atom-wind"])
+def atom_domaines(_: ApiKeyRecord | None = Depends(require_read)) -> dict:
+    """Les domaines servis par ce service (nom, emprise lat/lon, modele, couche 10 m) : le front-end choisit le
+    domaine d'une position par cette liste, ou laisse /atom-wind/point le choisir."""
+    from service import atom_outils
+    mods = atom_outils.domaines() or {model().cfg.name: model()}
+    out = []
+    for nom, wf in mods.items():
+        g = atom_outils.grille(wf)
+        out.append({"nom": nom, "libelle": atom_outils.nom_domaine(wf), "emprise": g.get("emprise"),
+                    "pas_km": g.get("pas_km"), "niveaux_asl_m": g.get("domaine", {}).get("niveaux_asl_m"),
+                    "modele": wf.checkpoint_path.name,
+                    "couche_10m": atom_outils.source_vent(wf, 10.0) if getattr(wf.cfg.inference, "couche_10m_oi", False)
+                    else None, "principal": wf is model()})
+    return {"domaines": out}
+
+
+@router.get("/atom-wind/point", tags=["atom-wind"])
+def atom_point(lat: float = Query(..., ge=-90, le=90), lon: float = Query(..., ge=-180, le=180),
+               hauteur_m: float = Query(10.0, ge=0, le=3000, description="hauteur au-dessus du sol (m)"),
+               heure: float = Query(..., ge=0, lt=24, description="heure locale de Tunis"),
+               j: int = Query(0, ge=0, le=2, description="0 aujourd'hui, 1 demain, 2 apres-demain"),
+               domaine: str | None = DOMAINE_Q,
+               _: ApiKeyRecord | None = Depends(require_read)) -> dict:
+    """« Mon vent » en un point : le domaine est choisi par la position (le plus fin qui la contient) sauf
+    `domaine` explicite ; la reponse dit le domaine et la source du vent a cette hauteur."""
+    from service import atom_outils
+    try:
+        wf = atom_outils.modele_pour(lat=lat, lon=lon, domaine=domaine, defaut=model())
+        return atom_outils.lire_point(wf, j, hauteur_m, heure, lat=lat, lon=lon)
+    except KeyError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    except Exception as exc:                    # source externe muette (GFS, METAR)
+        raise HTTPException(503, f"temps reel indisponible : {exc}") from exc
+
+
+@router.get("/atom-wind/grille", tags=["atom-wind"])
+def atom_grille(domaine: str | None = DOMAINE_Q, _: ApiKeyRecord | None = Depends(require_read)) -> Response:
+    """Relief, eau, z0 et stations sur la grille de blocs du front-end ATOM Wind (domaine choisi)."""
+    from service import atom_outils
+    return _gzip_json(atom_outils.grille(modele_domaine(domaine)))
 
 
 @router.get("/atom-wind/jours", tags=["atom-wind"])
-def atom_jours(_: ApiKeyRecord | None = Depends(require_read)) -> dict:
+def atom_jours(domaine: str | None = DOMAINE_Q, _: ApiKeyRecord | None = Depends(require_read)) -> dict:
     """Les journees servies (instants de test du cache), en heure locale de Tunis (UTC+1), et
     la journee en temps reel (`direct`) quand le modele recoit le forcage ERA5."""
     from pcfno3d import atom_wind
-    wf = model()
+    wf = modele_domaine(domaine)
     out = {"modele": wf.checkpoint_path.name, "jours": _atom_jours(wf)}
     if wf.geom.forcage is not None and wf.cfg.real.origin_lat is not None:
         out["direct"] = {"date": atom_wind.date_locale_aujourdhui(),
@@ -1008,13 +1061,14 @@ def atom_jours(_: ApiKeyRecord | None = Depends(require_read)) -> dict:
 @router.get("/atom-wind/direct", tags=["atom-wind"])
 def atom_direct(j: int = Query(0, ge=0, le=2, description="0 = aujourd'hui (temps reel), "
                                "1 = demain, 2 = apres-demain (prevision)"),
+                domaine: str | None = DOMAINE_Q,
                 _: ApiKeyRecord | None = Depends(require_read)) -> Response:
     """Le vent d'AUJOURD'HUI (heure locale de Tunis), heure par heure : grande echelle GFS
     (Open-Meteo) aux mailles et par les formules du forcage ERA5, vraies mesures des stations
     (METAR, SYNOP) pour les heures passees, prevision pour les heures a venir. Meme format que
     /atom-wind/jour, avec `temps_reel: true` et la source de chaque heure. Cache de 30 min
     (service.atom_outils, partage avec le MCP et l'assistant)."""
-    wf = model()
+    wf = modele_domaine(domaine)
     if wf.geom.forcage is None:
         raise HTTPException(409, "temps reel : modele sans forcage ERA5 (paths.forcage_era5)")
     from service import atom_outils
@@ -1026,19 +1080,21 @@ def atom_direct(j: int = Query(0, ge=0, le=2, description="0 = aujourd'hui (temp
 
 @router.get("/atom-wind/jour", tags=["atom-wind"])
 def atom_jour(date: str = Query(..., pattern=r"^\d{4}-\d{2}-\d{2}$"),
+              domaine: str | None = DOMAINE_Q,
               _: ApiKeyRecord | None = Depends(require_read)) -> Response:
-    """Vent u, v aux hauteurs AGL de chaque instant d'une journee (grille de 500 m, int16 en
+    """Vent u, v aux hauteurs AGL de chaque instant d'une journee (grille de blocs, int16 en
     cm/s, base64), + sigma de la vitesse si la fiabilite (M2) est active."""
     from pcfno3d import atom_wind
-    wf = model()
+    wf = modele_domaine(domaine)
     j = next((d for d in _atom_jours(wf) if d["date"] == date), None)
     if j is None:
         raise HTTPException(404, f"aucun instant servi le {date}")
     cache = STATE.setdefault("atom_jour", {})
-    out = cache.get(date)
+    cle = (id(wf), date)
+    out = cache.get(cle)
     if out is None:
         with _ATOM_LOCK:
-            out = cache.get(date)
+            out = cache.get(cle)
             if out is None:
                 fiab = None
                 if wf.cfg.inference.reliability is not None:
@@ -1053,7 +1109,7 @@ def atom_jour(date: str = Query(..., pattern=r"^\d{4}-\d{2}-\d{2}$"),
                 out["modele"] = wf.checkpoint_path.name
                 while len(cache) >= _ATOM_JOURS_MAX:
                     cache.pop(next(iter(cache)))
-                cache[date] = out
+                cache[cle] = out
     return _gzip_json(out)
 
 
@@ -1713,6 +1769,16 @@ def create_app() -> FastAPI:
                             device=os.environ.get("PCFNO3D_DEVICE") or None)
         STATE.update({"model": wf, "cfg": cfg, "volumes": {}, **_securite(cfg)})
         mcp_server.set_model(wf)          # le MCP reutilise le modele deja charge
+        # OS5 : un second domaine (national) servi a cote du principal, sans le remplacer
+        from service import atom_outils
+        modeles = {cfg.name: wf}
+        cfg_nat = os.environ.get("PCFNO3D_CONFIG_NATIONAL")
+        if cfg_nat:
+            c_n = Config.load(cfg_nat)
+            modeles[c_n.name] = WindFieldModel(c_n, checkpoint=os.environ.get("PCFNO3D_CHECKPOINT_NATIONAL") or None,
+                                               device=os.environ.get("PCFNO3D_DEVICE") or None)
+        atom_outils.enregistrer_domaines(modeles if len(modeles) > 1 else {})
+        STATE["modeles"] = modeles
         # alertes (lot M4) : strictement opt-in ; un seul moteur (un seul journal) pour
         # l'API et le MCP
         if cfg.alerts.enabled:

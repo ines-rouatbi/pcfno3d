@@ -304,9 +304,58 @@ def lire_point(wf, j: int, z_agl: float, h: float, lat=None, lon=None, lieu=None
     return {"lieu": nom, "date": p["date"], "heure_locale": h, "hauteur_sol_m": z_agl,
             "vitesse_m_s": round(s, 2), "vitesse_km_h": round(s * 3.6, 1), "direction_provenance_deg": _direction(u, v),
             "source": "prevision" if p.get("prevision") else "temps reel",
+            "domaine": nom_domaine(wf), "source_vent": source_vent(wf, z_agl, temps_reel=True),
             "temperature_2m_c": _arrondi(_surface(wf, p, "t2m", x, y, h)),
             "humidite_2m_pct": _arrondi(_surface(wf, p, "hr2m", x, y, h)),
             "note": "vent : ATOM Wind (PC-FNO3D) ; temperature et humidite : GFS"}
+
+
+# ---------------------------------------------------------------------- plusieurs domaines (OS5)
+_DOMAINES: dict = {}
+
+
+def enregistrer_domaines(modeles: dict) -> None:
+    """{nom: WindFieldModel} servis par le meme processus (Grand Tunis, national). Remplace l'enregistrement."""
+    _DOMAINES.clear()
+    _DOMAINES.update(modeles)
+
+
+def domaines() -> dict:
+    return dict(_DOMAINES)
+
+
+def _surface_km2(wf) -> float:
+    return float(wf.geom.nx * wf.geom.dx * wf.geom.ny * wf.geom.dy) / 1e6
+
+
+def modele_pour(lat=None, lon=None, lieu=None, domaine: str | None = None, defaut=None):
+    """Le modele qui sert une position : `domaine` explicite, sinon le PLUS PETIT domaine qui contient la position
+    (Grand Tunis avant le national : la maille la plus fine). Sans domaines enregistres : `defaut`."""
+    if domaine:
+        if domaine not in _DOMAINES:
+            raise KeyError(f"domaine inconnu : {domaine} (servis : {', '.join(_DOMAINES) or 'aucun'})")
+        return _DOMAINES[domaine]
+    if not _DOMAINES:
+        return defaut
+    erreurs = []
+    for nom, wf in sorted(_DOMAINES.items(), key=lambda kv: _surface_km2(kv[1])):
+        try:
+            position(wf, lat, lon, lieu)
+            return wf
+        except ValueError as exc:
+            erreurs.append(f"{nom} : {exc}")
+    raise ValueError("position hors des domaines servis — " + " ; ".join(erreurs))
+
+
+def source_vent(wf, z_agl: float, temps_reel: bool = False) -> str:
+    """D'ou vient le vent servi a cette hauteur (B2 de l'objectif d'Ines du 16/11)."""
+    national = (wf.geom.nx * wf.geom.dx) > 300_000
+    modele = "modele national (PC-FNO3D, C' s44)" if national else f"modele {nom_domaine(wf)} (PC-FNO3D)"
+    if not getattr(wf.cfg.inference, "couche_10m_oi", False) or z_agl >= 25:
+        return modele
+    fond = "GFS" if temps_reel else "ERA5"
+    couche = f"{fond} corrigee par les aeroports (interpolation optimale des METAR)"
+    return couche if z_agl <= 10 else f"entre {couche} a 10 m et le {modele} a 25 m"
 
 
 def _arrondi(x, nd=1):
