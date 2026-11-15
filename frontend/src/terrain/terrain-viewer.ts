@@ -3,7 +3,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { gpsToScene, sceneToGps } from './source/geo.js';
 import { loadTerrain, type Tile } from './terrain-stream';
 import { WindFlow } from './wind-flow';
-import { loadNationalForecast, type NationalForecast } from './national-forecast';
+import { loadNationalForecast, MODEL_SOURCE, type NationalForecast } from './national-forecast';
 import { LOCAL_DOMAIN,NATIONAL_DOMAIN } from './wind-domain';
 
 const mounted = new WeakMap<HTMLElement,Promise<void>>();
@@ -149,7 +149,7 @@ async function createViewer(host: HTMLElement) {
     const national=windSource==='national',time=forecast?.data.times[forecastIndex];
     const hour=national&&forecast?forecastIndex%24:state.hour;
     const date=national&&time?localDate(time,{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}):'';
-    const label=national?'Prévision GFS':state.source==='modele'?'PC-FNO3D · modèle local':'Démonstration locale';
+    const label=national?(forecast?.data.source===MODEL_SOURCE?MODEL_SOURCE:'Prévision GFS'):state.source==='modele'?'PC-FNO3D · modèle local':'Démonstration locale';
     text('terrain-wind-source',windEnabled?`${label} · ${height} m AGL · ${national?date:`${hour} h`}`:'Vent masqué');
     text('terrain-live-meta',`${label} · ${height} m du sol${national&&date?` · ${date}`:''}`);
     text('terrain-native-hour',`${hour} h`);
@@ -164,7 +164,7 @@ async function createViewer(host: HTMLElement) {
     for(const option of heightSelect.options)option.hidden=national&&![10,80].includes(+option.value);
     heightSelect.value=String(height);
     if(national&&forecast){
-      text('terrain-forecast-provenance',`NOAA GFS via Open-Meteo · grille de lecture 0,5° · récupéré le ${localDate(forecast.data.retrievedAt/1000,{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}${forecast.stale?' · cache':''}`);
+      text('terrain-forecast-provenance',forecast.data.source===MODEL_SOURCE?`Modèle national PC-FNO3D (C' s44), blocs de 4 km, journée du ${localDate(forecast.data.times[0],{day:'2-digit',month:'short'})}`:`NOAA GFS via Open-Meteo · grille de lecture 0,5° · récupéré le ${localDate(forecast.data.retrievedAt/1000,{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}${forecast.stale?' · cache':''}`);
     }else text('terrain-forecast-provenance',national?'Prévision nationale en cours de chargement.':'Champ local limité au Grand Tunis.');
     sourceSelect.querySelector<HTMLOptionElement>('[value="local"]')!.textContent=state.source==='modele'?'Grand Tunis · PC-FNO3D':'Grand Tunis · démonstration';
     queueMicrotask(playerState);updatePoint();syncView();render();

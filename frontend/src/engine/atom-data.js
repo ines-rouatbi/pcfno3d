@@ -149,6 +149,13 @@ function surfaceDe(J, arr, x, y, h){         // champ 2D par instant (t2m, hr2m)
   return isFinite(va) && isFinite(vb) ? (1-w)*va + w*vb : (isFinite(va) ? va : vb);
 }
 A.vent = (x, y, z, h) => ventDe(A.jour, x, y, z, h);
+// vent du modele servi en latitude / longitude (carte nationale de la vue 3D) ; null hors du domaine
+A.ventLatLon = (lat, lon, z, h) => {
+  const d = A.domaine(); if(!A.pret() || !d) return null;
+  const x = (lon - d.lon0) * d.kx, y = (lat - d.lat0) * d.ky;
+  if(!(x >= 0 && y >= 0 && x <= d.w && y <= d.h)) return null;
+  return ventDe(A.jour, x, y, z, h);
+};
 A.sigma = (x, y, z, h) => {
   const J = A.jour; if(!J || !J._sigma) return null;
   const [i, j] = cellule(x, y), [a, b, w] = crochets(J, h), z0 = A.z0[j*A.grille.nx + i];

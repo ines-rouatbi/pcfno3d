@@ -57,7 +57,32 @@ async function directForecast(signal:AbortSignal):Promise<NationalSnapshot>{
   }
   return validate({version:1,source:'NOAA GFS via Open-Meteo',sourceUrl:'https://open-meteo.com/en/docs/gfs-api',attribution:'Weather data by Open-Meteo.com, NOAA GFS; CC BY 4.0',retrievedAt:Date.now(),timezone:'Africa/Tunis',grid:{west:7.5,south:30,step:.5,nx:10,ny:17},heights:[10,80],times,points});
 }
+// Modele national PC-FNO3D servi (page ouverte avec ?domaine=national) : la carte lit le champ du modele (blocs de
+// 4 km, toutes les hauteurs) via window.ATOM.ventLatLon au lieu de la grille GFS a 0,5 degre.
+export const MODEL_SOURCE='PC-FNO3D · modèle national';
+export class ModelForecast extends NationalForecast {
+  sample(lon:number,lat:number,height:number,index:number){
+    const r=(window as any).ATOM?.ventLatLon?.(lat,lon,height,index%24);
+    if(!r||!Number.isFinite(r[0])||!Number.isFinite(r[1]))return null;
+    const [u,v]=r as [number,number],speed=Math.hypot(u,v),bearing=(Math.atan2(-u,-v)*180/Math.PI+360)%360;
+    const directions=['du nord','du nord-est','de l’est','du sud-est','du sud','du sud-ouest','de l’ouest','du nord-ouest'];
+    return {u,v,speed,color:windColor(speed),formatted:`${Math.round(speed*3.6)} km/h`,direction:directions[Math.round(bearing/45)%8]};
+  }
+}
+async function modelForecast(signal:AbortSignal):Promise<ModelForecast|null>{
+  if(new URLSearchParams(location.search).get('domaine')!=='national')return null;
+  const A=(window as any).ATOM,limit=Date.now()+180000;          // la journee nationale peut prendre ~1 min
+  while(!(A?.pret?.()&&A.domaine?.()?.national)){
+    if(signal.aborted||Date.now()>limit)return null;
+    await new Promise(r=>setTimeout(r,1000));
+  }
+  const [y,m,d]=String(A.jour.date).split('-').map(Number);
+  const times=Array.from({length:24},(_,h)=>Date.UTC(y,m-1,d,h-1)/1000);   // heures de Tunis (UTC+1)
+  return new ModelForecast({version:1,source:MODEL_SOURCE,sourceUrl:'',attribution:'PC-FNO3D national C\' s44 (service ATOM Wind)',
+    retrievedAt:Date.now(),timezone:'Africa/Tunis',grid:{west:7.45,south:30.15,step:.5,nx:10,ny:17},heights:[10,80],times,points:[]});
+}
 export async function loadNationalForecast(signal:AbortSignal){
+  const model=await modelForecast(signal);if(model)return model;
   let cached:NationalSnapshot|undefined;
   try{cached=validate(JSON.parse(localStorage.getItem(CACHE)||'null'));if(usable(cached,HOUR))return new NationalForecast(cached);}catch{}
   try{
