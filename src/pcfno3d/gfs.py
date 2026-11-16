@@ -6,8 +6,9 @@ ne telechargeant que les champs utiles (fichiers .idx, requetes par plages d'oct
 echeance pour 38 champs, decoupes aussitot sur les mailles du domaine puis effaces. L'API « Previous
 Runs » d'Open-Meteo n'a pas le vent prevu avant 2025 (verifie le 30/10/2026).
 
-Pour un instant de validite t et une echeance visee L (24 ou 48 h) : le run est le dernier cycle
-GFS (00, 06, 12, 18 UTC) tel que t - run >= L, donc une echeance effective L a L + 5 h, notee.
+Pour un instant de validite t et une echeance visee L (24 ou 48 h ; 0 pour l'analyse) : le run est le
+dernier cycle GFS (00, 06, 12, 18 UTC) tel que t - run >= L, donc une echeance effective L a L + 5 h,
+notee. A L = 0, f000 n'a pas le rayonnement (champ moyenne) : il n'est pas requis par le forcage.
 
 Les champs sont ramenes au format de `pcfno3d.temps_reel.telecharger_gfs` (vitesse, direction,
 geopotentiel par niveau ; 10 m ; 100 m ; T, HR a 2 m ; pression ; rayonnement) et passent par
@@ -434,10 +435,14 @@ def main() -> int:
 
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--config", required=True, help="configuration du modele (forcage ERA5 = mailles)")
-    ap.add_argument("--echeance", type=int, required=True, choices=(24, 48))
+    ap.add_argument("--echeance", type=int, required=True, choices=(0, 24, 48),
+                    help="24 ou 48 (OS7) ; 0 : l'analyse (dernier cycle a t - run >= 0 : f000 aux heures de "
+                         "cycle, f003 aux autres heures synoptiques ; regle_national_gfs_v4)")
     ap.add_argument("--sortie", required=True, help="forcage_gfs_f24.csv (le .npz est ecrit a cote)")
     ap.add_argument("--reprise", help="dossier des echeances deja telechargees (defaut : a cote)")
     ap.add_argument("--splits", default="train,val,test")
+    ap.add_argument("--synoptiques", action="store_true",
+                    help="seulement les instants synoptiques (heure pleine multiple de 3 h, ceux des DSO)")
     ap.add_argument("--max-instants", type=int, help="essai")
     ap.add_argument("--travailleurs", type=int, default=6)
     ap.add_argument("--sans-national", action="store_true",
@@ -461,6 +466,9 @@ def main() -> int:
     idx = load_index(cfg)
     idx = idx[idx["split"].isin(args.splits.split(","))]
     instants = list(pd.to_datetime(idx["timestamp"], utc=True).dt.tz_localize(None).unique())
+    if args.synoptiques:
+        from .dataset import is_synoptic
+        instants = [t for t in instants if is_synoptic(t)]
     if args.max_instants:
         instants = instants[:: max(1, math.ceil(len(instants) / args.max_instants))][:args.max_instants]
     # jusqu'a 3 passes : une echeance refusee (reseau, archive lente) est retentee ; deux instants

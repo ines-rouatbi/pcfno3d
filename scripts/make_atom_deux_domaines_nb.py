@@ -186,6 +186,12 @@ SERT = r'''from google.colab import userdata
 from service.colab import serve_public
 
 os.environ["PCFNO3D_CONFIG_NATIONAL"] = "national_v4_service"    # le national A COTE du Grand Tunis (B1)
+# verdicts de regle_national_gfs_v4 (le service n'en lit que les cases dont l'empreinte de la regle correspond) :
+# tant que le fichier manque, le temps reel et la prevision nationaux restent « experimental »
+_v = NAT / "gfs_v4_regle" / "resultat" / "verdicts_gfs_v4.json"
+if _v.exists():
+    os.environ["PCFNO3D_VERDICTS_GFS_V4"] = str(_v)
+print("verdicts regle GFS v4 :", _v if _v.exists() else "absents (national temps reel / prevision : experimental)")
 TUNNEL_ID = "e552f718-2478-4fe3-82b4-8d33a4b9eb6e"
 HOTE = "atom-origin.zelqane.com"
 CLE_NOM = "atom-worker"                      # la cle de lecture du Worker de Rayen (empreinte seulement)
