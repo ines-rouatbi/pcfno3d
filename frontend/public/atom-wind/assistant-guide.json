@@ -1,0 +1,742 @@
+{
+  "version": 1,
+  "note": "Guide des tâches d'ATOM Wind, partagé par le panneau de l'assistant (mode hors ligne) et par service/assistant.py (outil guide_application). Aucune valeur de vent ici : seulement où cliquer et quoi demander.",
+  "vues": {
+    "monvent": {
+      "nom": "Mon vent",
+      "resume": "Le vent en un lieu, heure par heure, et le verdict pour une activité (traiter, arroser, produire)."
+    },
+    "agri": {
+      "nom": "Agriculture",
+      "resume": "Votre parcelle : culture, surface, arrosage ; créneaux de traitement et besoin en eau du jour."
+    },
+    "tableau": {
+      "nom": "Vue d’ensemble",
+      "resume": "Les conditions du Grand Tunis en un coup d’œil."
+    },
+    "carte3d": {
+      "nom": "Atmosphère 3D",
+      "resume": "Le vent en 3D au-dessus du relief, à toutes les hauteurs, avec coupes et fiabilité."
+    },
+    "eolien": {
+      "nom": "Énergie éolienne",
+      "resume": "Production estimée, vent sur la hauteur du rotor et carte du gisement."
+    },
+    "fiabilite": {
+      "nom": "Données & fiabilité",
+      "resume": "Les stations de mesure, la couverture et les écarts aux vraies mesures."
+    },
+    "alertes": {
+      "nom": "Alertes",
+      "resume": "Les alertes de la journée et vos alertes personnelles."
+    },
+    "admin": {
+      "nom": "Administration",
+      "resume": "Comptes, rôles et clés d’accès."
+    },
+    "outils": {
+      "nom": "Outils de terrain",
+      "resume": "Levage à la grue, haies brise-vent, mâts autonomes."
+    },
+    "historique": {
+      "nom": "Historique",
+      "resume": "Les journées et les prévisions déjà calculées."
+    }
+  },
+  "taches": [
+    {
+      "id": "traiter",
+      "titre": "Savoir si je peux traiter mes cultures",
+      "vue": "monvent",
+      "mots_cles": [
+        "traiter",
+        "traitement",
+        "pulveriser",
+        "pulverisation",
+        "phytosanitaire",
+        "produit",
+        "derive",
+        "vigne",
+        "vignes",
+        "pesticide",
+        "spray"
+      ],
+      "etapes": [
+        "Ouvrez « Mon vent ».",
+        "Dans « Où êtes-vous ? », choisissez votre lieu ou touchez la carte à l’endroit de la parcelle.",
+        "Dans « Que voulez-vous faire ? », choisissez « Traiter mes cultures ».",
+        "Lisez « Votre journée, heure par heure » : vert = possible, orange = attention, rouge = déconseillé.",
+        "Touchez une heure pour voir le vent à 10 m et le conseil associé."
+      ],
+      "questions": [
+        "Peut-on traiter les vignes de Mornag demain matin ?",
+        "Quel est le meilleur créneau pour traiter à Grombalia aujourd’hui ?"
+      ],
+      "demo": [
+        {
+          "vue": "monvent"
+        },
+        {
+          "cible": "#town",
+          "texte": "Choisissez ici votre lieu, ou touchez la carte juste en dessous.",
+          "action": "pointer"
+        },
+        {
+          "cible": "#map1",
+          "texte": "La carte montre le vent qui souffle maintenant : touchez-la pour placer votre parcelle.",
+          "action": "pointer"
+        },
+        {
+          "cible": "#acts .act[data-a=\"spray\"]",
+          "texte": "Puis choisissez « Traiter mes cultures ».",
+          "action": "cliquer"
+        },
+        {
+          "cible": "#answer",
+          "texte": "Le verdict s'affiche ici : vert, vous pouvez ; orange, attention ; rouge, c'est déconseillé.",
+          "action": "pointer"
+        },
+        {
+          "cible": "#day1",
+          "texte": "Et voici votre journée heure par heure : touchez une heure pour la lire.",
+          "action": "pointer"
+        }
+      ]
+    },
+    {
+      "id": "parcelle",
+      "titre": "Préparer traitements et arrosage de ma parcelle",
+      "vue": "agri",
+      "mots_cles": [
+        "parcelle",
+        "culture",
+        "irrigation",
+        "arrosage",
+        "besoin en eau",
+        "goutte",
+        "fao",
+        "hectare",
+        "surface",
+        "agrumes"
+      ],
+      "etapes": [
+        "Ouvrez « Agriculture » (rôle agriculteur ou administrateur).",
+        "Dans « Votre parcelle », choisissez le lieu, la culture, la surface et le mode d’arrosage.",
+        "Choisissez le jour (aujourd’hui, demain, après-demain).",
+        "Lisez les cartes : créneaux de traitement, créneaux d’aspersion et besoin en eau du jour.",
+        "En bas, « D’où viennent les chiffres » dit la source de chaque grandeur."
+      ],
+      "questions": [
+        "Quand arroser par aspersion à Soliman demain ?",
+        "Quel besoin en eau pour 2 ha d’agrumes à Grombalia ?"
+      ],
+      "demo": [
+        {
+          "vue": "agri"
+        },
+        {
+          "cible": "#ag-place",
+          "texte": "Choisissez le lieu de votre parcelle.",
+          "action": "pointer"
+        },
+        {
+          "cible": "#ag-crop",
+          "texte": "Puis votre culture.",
+          "action": "pointer"
+        },
+        {
+          "cible": "#ag-area",
+          "texte": "La surface, en hectares.",
+          "action": "pointer"
+        },
+        {
+          "cible": "#ag-irr",
+          "texte": "Et votre mode d'arrosage.",
+          "action": "pointer"
+        },
+        {
+          "cible": "#ag-day",
+          "texte": "Choisissez le jour : aujourd'hui, demain ou après-demain.",
+          "action": "pointer"
+        },
+        {
+          "cible": "#ag-top",
+          "texte": "Ici : quand traiter, et combien d'eau apporter.",
+          "action": "pointer"
+        }
+      ]
+    },
+    {
+      "id": "arroser",
+      "titre": "Choisir le moment d’arroser par aspersion",
+      "vue": "monvent",
+      "mots_cles": [
+        "aspersion",
+        "arroser",
+        "asperseur",
+        "eau emportee",
+        "irriguer"
+      ],
+      "etapes": [
+        "Ouvrez « Mon vent » et choisissez votre lieu.",
+        "Dans « Que voulez-vous faire ? », choisissez « Arroser par aspersion ».",
+        "Repérez les heures vertes de « Votre journée, heure par heure » : le vent n’emporte pas l’eau.",
+        "Si la journée est orange ou rouge, préférez le soir ou le goutte-à-goutte."
+      ],
+      "questions": [
+        "Quand arroser par aspersion à Mornag aujourd’hui ?"
+      ],
+      "demo": [
+        {
+          "vue": "monvent"
+        },
+        {
+          "cible": "#town",
+          "texte": "Choisissez votre lieu.",
+          "action": "pointer"
+        },
+        {
+          "cible": "#acts .act[data-a=\"irr\"]",
+          "texte": "Puis « Arroser par aspersion ».",
+          "action": "cliquer"
+        },
+        {
+          "cible": "#day1",
+          "texte": "Les heures vertes sont celles où le vent n'emporte pas l'eau.",
+          "action": "pointer"
+        }
+      ]
+    },
+    {
+      "id": "eolienne",
+      "titre": "Placer une éolienne et estimer sa production",
+      "vue": "eolien",
+      "mots_cles": [
+        "eolienne",
+        "placer",
+        "production",
+        "moyeu",
+        "rotor",
+        "gisement",
+        "turbine",
+        "mw",
+        "kw",
+        "energie",
+        "site"
+      ],
+      "etapes": [
+        "Ouvrez « Énergie éolienne » (rôle exploitant éolien ou administrateur).",
+        "Dans « Placer mon éolienne », choisissez le modèle : petite (moyeu 30 m), moyenne (50 m) ou grande (80 m).",
+        "Touchez la carte pour placer l’éolienne.",
+        "Lisez la production de la journée et « Le vent sur toute la hauteur du rotor ».",
+        "Comparez les sites avec « Carte du gisement : où installer une éolienne ? »."
+      ],
+      "questions": [
+        "Quelle production pour une éolienne de 80 m à Soliman demain ?",
+        "Où le gisement est-il le meilleur près de Djebel Ressas ?"
+      ],
+      "demo": [
+        {
+          "vue": "eolien"
+        },
+        {
+          "cible": "#tm",
+          "texte": "Choisissez la taille de l'éolienne.",
+          "action": "pointer"
+        },
+        {
+          "cible": "#map4",
+          "texte": "Touchez la carte pour la placer.",
+          "action": "pointer"
+        },
+        {
+          "cible": "#myt",
+          "texte": "Ici : l'énergie de la journée et la qualité du site.",
+          "action": "pointer"
+        },
+        {
+          "cible": "#rotor",
+          "texte": "Le vent sur toute la hauteur du rotor.",
+          "action": "pointer"
+        },
+        {
+          "cible": "#gis",
+          "texte": "Et la carte du gisement, pour comparer les emplacements.",
+          "action": "pointer"
+        }
+      ]
+    },
+    {
+      "id": "maintenance",
+      "titre": "Trouver un créneau de maintenance en hauteur",
+      "vue": "eolien",
+      "mots_cles": [
+        "maintenance",
+        "nacelle",
+        "travail en hauteur",
+        "intervention",
+        "mat",
+        "creneau sur"
+      ],
+      "etapes": [
+        "Ouvrez « Énergie éolienne » et placez l’éolienne ou le mât concerné.",
+        "Lisez le vent à hauteur de moyeu heure par heure : la maintenance se fait quand l’éolienne produit peu.",
+        "Demandez à l’assistant les créneaux où le vent moyen reste sous le seuil de votre procédure."
+      ],
+      "questions": [
+        "Quels créneaux de maintenance à 80 m à Djebel Ressas demain, sous 12 m/s ?"
+      ],
+      "demo": [
+        {
+          "vue": "eolien"
+        },
+        {
+          "cible": "#prodchart",
+          "texte": "Les heures de faible production sont les bons moments pour intervenir.",
+          "action": "pointer"
+        },
+        {
+          "cible": "#map4",
+          "texte": "Placez l'éolienne ou le mât concerné ici.",
+          "action": "pointer"
+        }
+      ]
+    },
+    {
+      "id": "grue",
+      "titre": "Organiser un levage à la grue",
+      "vue": "outils",
+      "mots_cles": [
+        "grue",
+        "levage",
+        "chantier",
+        "fleche",
+        "rafale",
+        "lever",
+        "charge"
+      ],
+      "etapes": [
+        "Placez le chantier dans « Mon vent » (choisissez le lieu ou touchez la carte).",
+        "Demandez à l’assistant le vent et la rafale à la hauteur de la flèche, avec la limite de votre grue.",
+        "Vérifiez les créneaux proposés avec les abaques du constructeur : l’assistant ne remplace pas le chef de manœuvre."
+      ],
+      "questions": [
+        "Peut-on lever à 40 m à Ben Arous demain matin, limite 20 m/s en rafale ?"
+      ],
+      "demo": [
+        {
+          "vue": "outils"
+        },
+        {
+          "cible": ".tool-tabs button:nth-child(1)",
+          "texte": "Ouvrez « Levage à la grue ».",
+          "action": "cliquer"
+        },
+        {
+          "cible": ".tool-card .tool-form",
+          "texte": "Indiquez le lieu, le jour, la hauteur de flèche et la limite de votre grue.",
+          "action": "pointer"
+        },
+        {
+          "cible": ".tool-card",
+          "texte": "Les créneaux sûrs et la rafale heure par heure s'affichent ici.",
+          "action": "pointer"
+        }
+      ]
+    },
+    {
+      "id": "haies",
+      "titre": "Orienter des haies brise-vent",
+      "vue": "outils",
+      "mots_cles": [
+        "haie",
+        "haies",
+        "brise-vent",
+        "abri",
+        "protection",
+        "orientation"
+      ],
+      "etapes": [
+        "Choisissez le lieu de la parcelle dans « Mon vent ».",
+        "Demandez à l’assistant l’orientation conseillée et la zone protégée pour la hauteur de haie prévue."
+      ],
+      "questions": [
+        "Comment orienter une haie de 3 m à Mornag ?"
+      ],
+      "demo": [
+        {
+          "vue": "outils"
+        },
+        {
+          "cible": ".tool-tabs button:nth-child(2)",
+          "texte": "Ouvrez « Haies brise-vent ».",
+          "action": "cliquer"
+        },
+        {
+          "cible": ".tool-card",
+          "texte": "Choisissez le lieu et la hauteur de la haie : l'orientation conseillée s'affiche avec la zone abritée.",
+          "action": "pointer"
+        }
+      ]
+    },
+    {
+      "id": "alerte",
+      "titre": "Créer une alerte de vent",
+      "vue": "alertes",
+      "mots_cles": [
+        "alerte",
+        "avertir",
+        "notification",
+        "prevenir",
+        "sms",
+        "vent fort"
+      ],
+      "etapes": [
+        "Ouvrez « Alertes ».",
+        "Les alertes de la journée sont en haut ; touchez-en une pour la repérer sur la carte.",
+        "Dans « Mes alertes SMS », connectez-vous, puis choisissez le lieu, l’activité et votre numéro de téléphone.",
+        "Validez avec « Créer l’alerte » : vous recevrez un SMS quand elle se déclenche."
+      ],
+      "questions": [
+        "Y a-t-il du vent fort aujourd’hui sur le Grand Tunis ?"
+      ],
+      "demo": [
+        {
+          "vue": "alertes"
+        },
+        {
+          "cible": "#alertlist",
+          "texte": "Les alertes du jour sont ici, les plus urgentes en haut.",
+          "action": "pointer"
+        },
+        {
+          "cible": "#al-login-btn:not([hidden]), #al-tel",
+          "texte": "Connectez-vous, puis indiquez votre lieu, votre activité et votre numéro.",
+          "action": "pointer"
+        },
+        {
+          "cible": "#al-mine",
+          "texte": "Vos alertes SMS s'affichent ici ; vous pouvez les supprimer à tout moment.",
+          "action": "pointer"
+        }
+      ]
+    },
+    {
+      "id": "carte3d",
+      "titre": "Explorer le vent en 3D et à différentes hauteurs",
+      "vue": "carte3d",
+      "mots_cles": [
+        "3d",
+        "altitude",
+        "hauteur",
+        "relief",
+        "coupe",
+        "brise de mer",
+        "profil",
+        "atmosphere",
+        "lacher"
+      ],
+      "etapes": [
+        "Ouvrez « Atmosphère 3D ».",
+        "Réglez « Hauteur au-dessus du sol » pour lire le vent des cultures jusqu’à 1 000 m.",
+        "« Tracer une coupe » montre le vent sur une verticale ; « Voir la brise de mer » rejoue l’effet de la côte.",
+        "« Lâcher dans le vent » suit une graine, un grain de sable ou un ballon.",
+        "« Afficher la fiabilité » colore les zones où le vent est moins sûr."
+      ],
+      "questions": [
+        "Quel est le profil du vent de 10 à 1 000 m à La Marsa à 15 h ?"
+      ],
+      "demo": [
+        {
+          "vue": "carte3d"
+        },
+        {
+          "cible": "#terrain-host",
+          "texte": "Voici le vent en 3D au-dessus du relief : glissez pour tourner, molette pour zoomer.",
+          "action": "pointer"
+        },
+        {
+          "cible": "#terrain-mode-analysis",
+          "texte": "Le mode analyse donne la coupe, la fiabilité et le lâcher dans le vent.",
+          "action": "pointer"
+        }
+      ]
+    },
+    {
+      "id": "inspecter",
+      "titre": "Comprendre le vent d’un point précis",
+      "vue": "monvent",
+      "mots_cles": [
+        "pourquoi",
+        "point",
+        "inspecter",
+        "station",
+        "influence",
+        "explication",
+        "d'ou vient"
+      ],
+      "etapes": [
+        "Placez le point dans « Mon vent » ou dans la carte 3D.",
+        "Utilisez « Inspecter le point » pour ouvrir la fiche du point.",
+        "Demandez à l’assistant quelles stations ont le plus influencé la valeur."
+      ],
+      "questions": [
+        "Pourquoi ce vent à Nabeul aujourd’hui ?"
+      ],
+      "demo": [
+        {
+          "vue": "monvent"
+        },
+        {
+          "cible": "#map1",
+          "texte": "Placez d'abord votre point sur la carte.",
+          "action": "pointer"
+        },
+        {
+          "cible": ".inspect-button",
+          "texte": "Puis « Inspecter le point » ouvre sa fiche : profil vertical et explication du vent.",
+          "action": "pointer"
+        }
+      ]
+    },
+    {
+      "id": "fiabilite",
+      "titre": "Savoir si je peux me fier aux chiffres",
+      "vue": "fiabilite",
+      "mots_cles": [
+        "fiabilite",
+        "fiable",
+        "precision",
+        "incertitude",
+        "erreur",
+        "mesure",
+        "anemometre",
+        "stations",
+        "confiance"
+      ],
+      "etapes": [
+        "Ouvrez « Données & fiabilité ».",
+        "La carte « Où le vent est-il bien connu ? » montre les zones sûres (foncées) et moins sûres (pâles).",
+        "« Vérifié sur de vraies mesures » compare ATOM Wind aux anémomètres de Tunis-Carthage, Zaghouan et Nabeul."
+      ],
+      "questions": [
+        "Quelle est la fiabilité du vent près de Zaghouan ?"
+      ],
+      "demo": [
+        {
+          "vue": "fiabilite"
+        },
+        {
+          "cible": "#map2",
+          "texte": "Les zones pâles sont celles où le vent est moins sûr.",
+          "action": "pointer"
+        },
+        {
+          "cible": "#aw-val-mesures",
+          "texte": "Et ici, l'écart du modèle aux vraies mesures.",
+          "action": "pointer"
+        }
+      ]
+    },
+    {
+      "id": "preferences",
+      "titre": "Changer la langue, les unités ou le thème",
+      "vue": null,
+      "mots_cles": [
+        "langue",
+        "arabe",
+        "anglais",
+        "unite",
+        "km/h",
+        "m/s",
+        "theme",
+        "sombre",
+        "clair"
+      ],
+      "etapes": [
+        "Ouvrez les préférences (icône des réglages en haut à droite).",
+        "« Unités de vitesse » : km/h ou m/s.",
+        "« Apparence » : automatique, clair ou sombre.",
+        "« Langue » : FR, عربي ou EN (la page se recharge)."
+      ],
+      "questions": [],
+      "demo": [
+        {
+          "cible": ".workspace-preferences summary",
+          "texte": "Les préférences sont ici : unités, thème et langue.",
+          "action": "cliquer"
+        },
+        {
+          "cible": "#u-kmh",
+          "texte": "km/h ou m/s.",
+          "action": "pointer"
+        },
+        {
+          "cible": "#th-auto",
+          "texte": "Thème clair, sombre ou automatique.",
+          "action": "pointer"
+        },
+        {
+          "cible": "[data-lang=\"ar\"]",
+          "texte": "Et la langue : français, arabe ou anglais.",
+          "action": "pointer"
+        },
+        {
+          "cible": ".workspace-preferences summary",
+          "texte": "On referme.",
+          "action": "cliquer"
+        }
+      ]
+    },
+    {
+      "id": "compte",
+      "titre": "Se connecter et accéder aux espaces de mon métier",
+      "vue": null,
+      "mots_cles": [
+        "compte",
+        "connexion",
+        "connecter",
+        "inscription",
+        "role",
+        "acces",
+        "mot de passe",
+        "espace bloque"
+      ],
+      "etapes": [
+        "Ouvrez le menu utilisateur en haut à droite et connectez-vous ou créez un compte.",
+        "Le rôle ouvre les espaces : agriculteur (Agriculture), exploitant éolien (Éolien, Vue d’ensemble, Fiabilité), administrateur (tout).",
+        "« Mon vent », « Atmosphère 3D » et « Alertes » sont ouverts à tous."
+      ],
+      "questions": [],
+      "demo": [
+        {
+          "cible": "#userbox",
+          "texte": "Connectez-vous ou créez un compte ici. Votre rôle ouvre les espaces de votre métier.",
+          "action": "pointer"
+        }
+      ]
+    },
+    {
+      "id": "recherche",
+      "titre": "Trouver vite un lieu, une activité ou un espace",
+      "vue": null,
+      "mots_cles": [
+        "rechercher",
+        "recherche",
+        "trouver",
+        "raccourci",
+        "ctrl k"
+      ],
+      "etapes": [
+        "Utilisez « Rechercher » en haut, ou Ctrl K (Cmd K sur Mac).",
+        "Tapez un lieu (Mornag, Nabeul…), une activité ou un espace, puis Entrée."
+      ],
+      "questions": [],
+      "demo": [
+        {
+          "cible": "#b-search",
+          "texte": "La recherche trouve un lieu, une activité ou un espace. Raccourci : Ctrl K.",
+          "action": "pointer"
+        }
+      ]
+    },
+    {
+      "id": "visite",
+      "titre": "Faire le tour de l'application",
+      "vue": null,
+      "mots_cles": [
+        "tour",
+        "visite",
+        "les pages",
+        "presente",
+        "presenter",
+        "decouvrir",
+        "montre-moi l'application",
+        "faire le tour"
+      ],
+      "etapes": [
+        "Vue d’ensemble : le vent du moment et ce qu'il faut surveiller.",
+        "Mon vent : votre lieu et votre activité.",
+        "Alertes : ce qui demande attention.",
+        "Atmosphère 3D : le vent au-dessus du relief.",
+        "Données & fiabilité : ce que valent les chiffres.",
+        "Outils de terrain et Historique."
+      ],
+      "questions": [
+        "Comment savoir si je peux traiter mes cultures ?"
+      ],
+      "demo": [
+        {
+          "vue": "tableau"
+        },
+        {
+          "cible": ".bulletin, #tbmap",
+          "texte": "La vue d'ensemble : le vent du moment, en une phrase.",
+          "action": "pointer"
+        },
+        {
+          "vue": "monvent"
+        },
+        {
+          "cible": "#acts",
+          "texte": "Mon vent : votre lieu, votre activité, et le verdict heure par heure.",
+          "action": "pointer"
+        },
+        {
+          "vue": "alertes"
+        },
+        {
+          "cible": "#alertlist",
+          "texte": "Les alertes : quoi, où, quand et que faire.",
+          "action": "pointer"
+        },
+        {
+          "vue": "carte3d"
+        },
+        {
+          "cible": "#terrain-host",
+          "texte": "Le vent en 3D au-dessus du relief.",
+          "action": "pointer"
+        },
+        {
+          "vue": "fiabilite"
+        },
+        {
+          "cible": "#map2",
+          "texte": "Où le vent est bien connu, et l'écart aux vraies mesures.",
+          "action": "pointer"
+        },
+        {
+          "vue": "outils"
+        },
+        {
+          "cible": ".tool-tabs",
+          "texte": "Des outils pour vos chantiers : grue, haies, mâts.",
+          "action": "pointer"
+        },
+        {
+          "vue": "historique"
+        },
+        {
+          "cible": "#v-historique",
+          "texte": "Et les journées déjà calculées.",
+          "action": "pointer"
+        }
+      ]
+    }
+  ],
+  "projets": [
+    {
+      "titre": "Planifier une campagne de traitement",
+      "question": "Je veux planifier les traitements de mes vignes à Mornag cette semaine. Aide-moi à organiser ça."
+    },
+    {
+      "titre": "Choisir un site d’éolienne",
+      "question": "Je réfléchis à installer une petite éolienne près de Soliman. Par quoi commencer ?"
+    },
+    {
+      "titre": "Préparer un levage",
+      "question": "J’ai un levage à la grue à Ben Arous cette semaine. Aide-moi à préparer la décision."
+    }
+  ]
+}

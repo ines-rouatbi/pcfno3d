@@ -149,7 +149,7 @@ async function createViewer(host: HTMLElement) {
     const national=windSource==='national',time=forecast?.data.times[forecastIndex];
     const hour=national&&forecast?forecastIndex%24:state.hour;
     const date=national&&time?localDate(time,{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}):'';
-    const label=national?'Prévision GFS':state.source==='modele'?'PC-FNO3D · modèle local':'Démonstration locale';
+    const label=national?'Prévision GFS':state.source==='hors_ligne'?'Champ local indisponible':'PC-FNO3D · modèle local';
     text('terrain-wind-source',windEnabled?`${label} · ${height} m AGL · ${national?date:`${hour} h`}`:'Vent masqué');
     text('terrain-live-meta',`${label} · ${height} m du sol${national&&date?` · ${date}`:''}`);
     text('terrain-native-hour',`${hour} h`);
@@ -166,7 +166,7 @@ async function createViewer(host: HTMLElement) {
     if(national&&forecast){
       text('terrain-forecast-provenance',`NOAA GFS via Open-Meteo · grille de lecture 0,5° · récupéré le ${localDate(forecast.data.retrievedAt/1000,{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}${forecast.stale?' · cache':''}`);
     }else text('terrain-forecast-provenance',national?'Prévision nationale en cours de chargement.':'Champ local limité au Grand Tunis.');
-    sourceSelect.querySelector<HTMLOptionElement>('[value="local"]')!.textContent=state.source==='modele'?'Grand Tunis · PC-FNO3D':'Grand Tunis · démonstration';
+    sourceSelect.querySelector<HTMLOptionElement>('[value="local"]')!.textContent=state.source==='hors_ligne'?'Grand Tunis · indisponible':'Grand Tunis · PC-FNO3D';
     queueMicrotask(playerState);updatePoint();syncView();render();
   }
   async function prepareWind(){
@@ -221,7 +221,7 @@ async function createViewer(host: HTMLElement) {
     const localAvailable=window.ATOM.workspace?.terrainWind?.(selected.lon,selected.lat,height);
     button.hidden=!sample||!localAvailable;
     button.textContent=windSource==='national'?'Comparer au champ local ↗':'Ouvrir les conditions locales ↗';
-    text('terrain-point-source',windSource==='national'?'Prévision nationale · NOAA GFS':workspaceState.source==='modele'?'PC-FNO3D · Grand Tunis':'Exemple synthétique · Grand Tunis');
+    text('terrain-point-source',windSource==='national'?'Prévision nationale · NOAA GFS':workspaceState.source==='hors_ligne'?'Champ local indisponible':'PC-FNO3D · Grand Tunis');
   }
 
   async function selectPoint(lon:number,lat:number,meshHeight?:number){

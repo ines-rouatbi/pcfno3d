@@ -21,8 +21,8 @@ export default memo(function ViewAgri(){ return (
 <div className="card">
 <h3>{"D'où viennent les chiffres"}</h3>
 <ul className="agsrc">
-<li><span className="srctag atom">{"Vent : ATOM Wind"}</span>{" Vent à votre emplacement, à 2 m et à 10 m, calculé par le modèle PC-FNO3D. En service, il viendra de la prévision GFS affinée par le modèle, à 24 et 48 h. Dans ce prototype, aujourd'hui est une journée d'été d'exemple, demain et après-demain en sont des variantes simulées."}</li>
-<li><span className="srctag">{"Température, humidité : GFS"}</span>{" Ces grandeurs ne sont pas calculées par ATOM Wind ; elles viendront de la prévision GFS. Ici, valeurs d'exemple."}</li>
+<li><span className="srctag atom">{"Vent : ATOM Wind"}</span>{" Vent à votre emplacement, à 2 m et à 10 m, calculé par le modèle PC-FNO3D : en temps réel aujourd'hui, à partir de la prévision GFS affinée par le modèle pour demain et après-demain."}</li>
+<li><span className="srctag">{"Température, humidité : GFS"}</span>{" Ces grandeurs ne sont pas calculées par ATOM Wind : elles viennent de la prévision GFS, servie avec le temps réel."}</li>
 <li><span className="srctag">{"Méthode FAO-56"}</span>{" Besoin en eau calculé par la méthode de Penman-Monteith de la FAO."}</li>
 </ul>
 <p className="src" style={{"margin": "8px 0 0"} as CSSProperties}>{"Perspectives : qualité de l'air, poussière et conditions de stockage des récoltes, quand les capteurs ANEO mesureront ces grandeurs."}</p>

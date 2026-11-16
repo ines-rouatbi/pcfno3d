@@ -1,0 +1,14 @@
+PC-FNO3D / ATOM Wind - Revue locale
+Rapport : pdf/rapport-dashboard-pcfno3d-fr.pdf
+Galerie : rapport-dashboard.html (garder screenshots à côté)
+Captures : captures-interfaces.zip
+Dashboard : http://127.0.0.1:8000/app/atom-wind/
+Interface technique : http://127.0.0.1:8000/app/
+API : http://127.0.0.1:8000/api/docs
+Pour toutes les vues : Se connecter > Démonstration > Administrateur.
+Aucun compte réel créé. Mini-dataset synthétique et checkpoint de test uniquement.
+Les sources suivies par Git n'ont pas été modifiées.
+Relancer depuis le dossier pcfno3d :
+.\.venv\Scripts\python.exe -m pcfno3d -c test serve --host 127.0.0.1 --port 8000 --device cpu --insecure-open
+Visualiseur : python -m http.server 8081 --bind 127.0.0.1
+URL : http://127.0.0.1:8081/web/?src=../artifacts/mini_run/web/recon_006_000000

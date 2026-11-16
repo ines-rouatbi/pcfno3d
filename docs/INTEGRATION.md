@@ -223,6 +223,7 @@ Les résultats arrivent dans `result.content[0].text`, en JSON à parser.
 | Route | Description |
 |---|---|
 | `GET /api/health` | état du service — **publique** ; `auth` : `cle_api`, `aucune_cle` (tout est refusé) ou `ouvert` (opt-in local) |
+| | `modele_installe` : `false` quand les poids ne sont pas encore installés. Le service démarre quand même : comptes, clés, alertes des utilisateurs et administration fonctionnent ; les routes de vent répondent `503` « modele non installe sur ce service ». |
 | `GET /api/meta` | grille, niveaux ASL, conventions, domaine en mètres, `georef` |
 | `GET /api/instants?split=test&limit=100` | instants disponibles |
 | `POST /api/reconstruct` | `{stem, keep, export, stride}` → résumé de l'instant |
@@ -369,7 +370,8 @@ mention « admin ». Grille de 500 m, heures locales de Tunis (UTC+1), vent en i
 | `GET /atom-wind/atlas`, `/atlas/{fichier}` | atlas éolien annuel, couches GeoTIFF |
 | `GET /atom-wind/rapport.pdf?type=parcelle\|site\|parc` | rapport PDF |
 | `GET /exports/{instant}.nc\|.csv` | export NetCDF ou CSV des nœuds d'un instant du cache |
-| `POST /assistant` | assistant conversationnel (Claude, outils ATOM Wind ; 503 sans `ANTHROPIC_API_KEY`) |
+| `GET/POST /comptes/moi/abonnements`, `DELETE /comptes/moi/abonnements/{numero}` | alertes SMS du compte connecté (session `compte-…` obligatoire, sinon `401`) : `{numero, langue, lieu, lat, lon, activite}` avec `activite` ∈ `traiter`, `arroser`, `eolienne`, `vent_fort` ; numéros masqués en sortie ; un numéro déjà suivi par un autre compte est refusé (`409`) |
+| `POST /assistant` | assistant conversationnel : `{question, historique, contexte?}` ; `contexte` = page de l'utilisateur (`vue`, `lieu`, `heure`, `langue`, `role`, `lat_utilisateur`, `lon_utilisateur`), passé comme donnée. Réponse : `reponse`, `outils`, `modele`, `arret`, `actions` (`ouvrir_vue`, `montrer_lieu`, `choisir_activite`, `demander_position` ; `auto: true` = la page l'exécute d'elle-même, liste blanche de vues), `relances`. Fournisseur : OpenRouter (`OPENROUTER_API_KEY`, modèle `PCFNO3D_ASSISTANT_MODELE_OPENROUTER`, défaut `deepseek/deepseek-v4.1-flash`) ou Claude (`ANTHROPIC_API_KEY`) ; `PCFNO3D_ASSISTANT_FOURNISSEUR` force le choix ; 503 sans clé |
 | `POST /reconstruct/stations`, `/reconstruct/upload` | mesures envoyées : pour le modèle réel, entrée de production (GFS de l'heure + mesures à 10 m dans leur maille) ; 503 si GFS est injoignable |
 | `GET/POST/PATCH/DELETE /keys` (admin) | clés d'API (secret montré une seule fois) |
 | `POST /comptes`, `/comptes/connexion`, `/comptes/deconnexion`, `GET /comptes/moi` ; admin : `GET /comptes`, `POST /comptes/{email}/validation`, `/statut` | comptes et rôles (public, agriculteur, éolien validé, admin) ; la connexion renvoie une clé de session ; l'espace éolien est réservé aux comptes éolien ou admin |

@@ -1,0 +1,34 @@
+/* État du service quand le vent n'est pas disponible (frontend/src/service-state.tsx) */
+.instruments[data-gated] > section.view { display: none !important; }
+.service-state { display: grid; grid-template-columns: minmax(0, 300px) minmax(0, 1fr); gap: 32px; align-items: center;
+  padding: 36px 40px; border-radius: 22px; border: 1px solid var(--line);
+  background: radial-gradient(120% 140% at 0% 0%, var(--info-soft, #e8f0f7) 0%, transparent 55%), var(--surface, #fff);
+  box-shadow: 0 20px 60px #21362914; margin: 8px 0 24px; }
+.service-illustration { width: 100%; height: auto; }
+.service-hill { fill: var(--land-lo, #c9d6b6); opacity: .75; }
+.service-hill.far { fill: var(--land-hi, #9fb38c); opacity: .55; }
+.service-turbine { fill: var(--ink); opacity: .82; }
+.service-rotor { animation: service-spin 9s linear infinite; transform-origin: 0 0; }
+.service-gust { fill: none; stroke: var(--accent); stroke-width: 3; stroke-linecap: round; stroke-dasharray: 120 400; animation: service-gust 5.5s ease-in-out infinite; opacity: .7; }
+.service-gust.g2 { animation-delay: 1.4s; stroke-width: 2.4; opacity: .5; }
+.service-gust.g3 { animation-delay: 2.6s; stroke-width: 2; opacity: .35; }
+@keyframes service-spin { to { transform: rotate(360deg); } }
+@keyframes service-gust { 0% { stroke-dashoffset: 260; } 100% { stroke-dashoffset: -260; } }
+@media (prefers-reduced-motion: reduce) { .service-rotor, .service-gust { animation: none; } }
+.service-copy h2 { font-family: var(--f-display, inherit); font-size: clamp(24px, 3vw, 34px); line-height: 1.15; margin: 10px 0 10px; }
+.service-copy p { margin: 0 0 10px; font-size: 16px; line-height: 1.6; color: var(--ink); max-width: 62ch; }
+.service-detail { font-size: 13px !important; color: var(--muted) !important; font-family: var(--f-data, monospace); }
+.service-note { font-size: 13px !important; color: var(--muted) !important; margin-top: 14px !important; }
+.service-badge { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  padding: 5px 11px; border-radius: 999px; background: var(--warn-soft, #fbf1de); color: var(--ink); }
+.service-badge > span { width: 8px; height: 8px; border-radius: 50%; background: var(--warn); animation: service-pulse 1.8s ease-in-out infinite; }
+.service-badge.is-modele_absent { background: var(--info-soft, #e8f0f7); }
+.service-badge.is-modele_absent > span { background: var(--info, var(--accent)); }
+@keyframes service-pulse { 50% { opacity: .35; } }
+.service-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+.service-actions .btn { display: inline-flex; align-items: center; gap: 8px; min-height: 42px; text-decoration: none; }
+.empty-state { padding: 22px 24px; border-style: dashed; }
+@media (max-width: 760px) {
+  .service-state { grid-template-columns: 1fr; padding: 24px 20px; gap: 16px; text-align: left; }
+  .service-illustration { max-width: 260px; }
+}

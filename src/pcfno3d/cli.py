@@ -708,7 +708,8 @@ def cmd_serve(args) -> int:
         print("ATTENTION : aucune cle d'API active : toutes les requetes seront refusees "
               "(401) sauf /api/health.\n            `pcfno3d apikey create <nom>` pour en "
               "creer une (ou --insecure-open en local).")
-    print(f"application web : http://{args.host}:{args.port}/app/")
+    print(f"application web : http://{args.host}:{args.port}/app/atom-wind/")
+    print(f"laboratoire     : http://{args.host}:{args.port}/app/  (outil interne)")
     print(f"API             : http://{args.host}:{args.port}/api/docs")
     print(f"serveur MCP     : http://{args.host}:{args.port}/mcp")
     uvicorn.run("service.app:app", host=args.host, port=args.port, reload=args.reload)

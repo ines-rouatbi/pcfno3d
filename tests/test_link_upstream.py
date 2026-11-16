@@ -212,7 +212,8 @@ def test_application_web_servie_en_mode_lien(paire):
     base = paire[0]
     with urllib.request.urlopen(f"{base}/app/", timeout=30) as r:     # noqa: S310
         page = r.read().decode("utf-8")
-    assert "PC-FNO3D" in page
+        assert r.url.endswith("/app/atom-wind/")                         # /app/ redirige vers le SaaS
+    assert 'data-product="atom"' in page
 
 
 def test_amont_injoignable_donne_un_message_actionnable(cfg, tmp_path_factory, index, norm,

@@ -53,7 +53,8 @@ class Abonnes:
         tmp.replace(self.chemin)
 
     def ajouter(self, numero: str, langue: str = "fr", lieu: str | None = None,
-                lat: float | None = None, lon: float | None = None) -> dict:
+                lat: float | None = None, lon: float | None = None, compte: str | None = None,
+                activite: str | None = None) -> dict:
         if not E164.match(numero):
             raise ValueError("numero au format international E.164 (ex. +21612345678)")
         if langue not in TEXTES:
@@ -64,6 +65,10 @@ class Abonnes:
             liste = [a for a in self.lire() if a["numero"] != numero]
             a = {"numero": numero, "langue": langue, "lieu": lieu, "lat": lat, "lon": lon,
                  "depuis": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+            if compte:                     # abonnement pris par l'utilisateur lui-meme (/comptes/moi)
+                a["compte"] = compte
+            if activite:
+                a["activite"] = activite
             liste.append(a)
             self._ecrire(liste)
         return a

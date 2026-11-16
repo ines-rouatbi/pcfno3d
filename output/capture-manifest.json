@@ -1,0 +1,249 @@
+{
+  "captures": [
+    {
+      "slug": "01-pcfno3d-carte",
+      "title": "PC-FNO3D - Carte",
+      "family": "PC-FNO3D",
+      "url": "http://127.0.0.1:8000/app/",
+      "note": "",
+      "height": 900,
+      "text": "PC-FNO3D Reconstruction du champ de vent 3D — réseau ANEO, Tunisie\nbest.pt · 4 ms\nCarte\nPoint & profil\nQualité (DSO)\nIntégration\nCliquez sur la carte pour lire le vent en un point\n9.014\n9.085\nm/s\nINSTANT\n2025-01-06 00:00:00 — test\n2025-01-06 06:00:00 — test\n2025-01-06 12:00:00 — test\n2025-01-06 18:00:00 — test\nALTITUDE ASL — 200 M\n25 m\n200 m\nVARIABLE\nVitesse horizontale\nu — composante est\nv — composante nord\nw — composante verticale\nDirection (d'où vient le vent)\nRÉSOLUTION — 1 POINT SUR 4\nFlèches de direction\nDate\n2025-01-06 00:00:00\nCapteurs\n200\nInférence\n4 ms ✓ (DSO4)\nNœuds 3D\n469\nVitesse moy.\n9.035 m/s\nVitesse max\n9.169 m/s\nRelief\n30–65.6 m",
+      "details": []
+    },
+    {
+      "slug": "02-pcfno3d-point-profil",
+      "title": "PC-FNO3D - Point et profil",
+      "family": "PC-FNO3D",
+      "url": "http://127.0.0.1:8000/app/",
+      "note": "",
+      "height": 900,
+      "text": "PC-FNO3D Reconstruction du champ de vent 3D — réseau ANEO, Tunisie\nbest.pt · 4 ms\nCarte\nPoint & profil\nQualité (DSO)\nIntégration\nProfil vertical\n\n2 niveaux au-dessus du relief sur 4.\n\nX (M, VERS L'EST)\nY (M, VERS LE NORD)\nALTITUDE ASL (M)\n Interroger\nPosition\n800 ; 400 m\nRelief\n52 m\nAltitude\n200 m ASL (149 m sol)\nVitesse\n9.01 m/s\nDirection\n42.6°\nu ; v\n-6.10 ; -6.64 m/s\nw\n-0.174 m/s",
+      "details": []
+    },
+    {
+      "slug": "03-pcfno3d-qualite",
+      "title": "PC-FNO3D - Qualité DSO",
+      "family": "PC-FNO3D",
+      "url": "http://127.0.0.1:8000/app/",
+      "note": "",
+      "height": 1199,
+      "text": "PC-FNO3D Reconstruction du champ de vent 3D — réseau ANEO, Tunisie\nbest.pt · 4 ms\nCarte\nPoint & profil\nQualité (DSO)\nIntégration\nObjectifs de l'entreprise (DSO)\n\nDernière évaluation archivée par pcfno3d evaluate. Rien n'est recalculé ici : si aucune évaluation n'existe, c'est indiqué plutôt qu'estimé.\n\nOBJECTIF\tCRITÈRE\tVERDICT\nDSO1\tRMSE u, v ≤ 0,5 m/s par niveau\tNON CONFORME\nDSO1\tR² u, v ≥ 0,95 par niveau\tNON CONFORME\nDSO1\tRMSE global u = 1.722 · v = 3.431 m/s\tNON CONFORME\nDSO1 révisé (proposé)\tRMSE u, v ≤ max(0,5 m/s ; 10 % de la vitesse moyenne du niveau) — tolérance OMM sur la mesure du vent. Proposition à valider avec Tukhnanutha : elle complète le DSO1 officiel ci-dessus, elle ne le remplace pas.\tNON CONFORME\nDSO2\trésidu de masse moyen = 2.97e-4\tNON CONFORME\nDSO3\trugosité prédiction / vérité = 0.589\tNON CONFORME\nDSO4\tinférence = 1 ms, mesurée sur ce serveur\tCONFORME\nDSO5\tRMSE à 25 % de capteurs = 3.779 m/s\tNON CONFORME\n\nModèle best.pt · époque 2 · 4 instants synoptiques de test · 50 % des capteurs visibles · MAE direction 16.25°\n\nNIVEAU\tCOUVERTURE\tRMSE U\tRMSE V\tRMSE W\tR² U\tR² V\tR² W\n50 m\t34.5 %\t1.277\t3.077\t0.025\t-1.0688\t-0.6013\t-0.6883\n100 m\t100.0 %\t1.236\t3.165\t0.037\t-0.3781\t-0.0236\t-2.1758\n200 m\t100.0 %\t2.205\t3.785\t0.071\t-2.2655\t-0.0542\t-8.4192\nRobustesse au nombre de capteurs\nCAPTEURS VISIBLES\tRMSE MAX U\tRMSE MAX V\tR² MIN U\tR² MIN V\n10 %\t2.201\t3.779\t-2.2540\t-0.5925\n25 %\t2.201\t3.779\t-2.2521\t-0.5974\n50 %\t2.233\t3.950\t-2.3468\t-0.5875\n100 %\t2.234\t3.931\t-2.3525\t-0.5776\n\nL'erreur devrait baisser quand on ajoute des capteurs. Si 100 % fait moins bien que 50 %, le modèle n'a presque jamais vu tous les capteurs à l'entraînement — c'est ce que corrige mask.p_full en v8.",
+      "details": [
+        "03-pcfno3d-qualite-detail-1.png"
+      ]
+    },
+    {
+      "slug": "04-pcfno3d-integration",
+      "title": "PC-FNO3D - Intégration",
+      "family": "PC-FNO3D",
+      "url": "http://127.0.0.1:8000/app/",
+      "note": "",
+      "height": 900,
+      "text": "PC-FNO3D Reconstruction du champ de vent 3D — réseau ANEO, Tunisie\nbest.pt · 4 ms\nCarte\nPoint & profil\nQualité (DSO)\nIntégration\nConsommer ces données depuis une autre application\nServeur MCP\n\nTransport streamable HTTP. La clé d'API passe dans l'en-tête X-API-Key. Outils : grid_meta, list_instants, wind_at_point, wind_profile, wind_field_at_altitude, instant_summary, dso_report, export_instant (admin).\n\nhttp://127.0.0.1:8000/mcp\n\n# en-tête requis\nX-API-Key: pcf_…\n\n# test rapide (liste des outils)\ncurl -s http://127.0.0.1:8000/mcp \\\n  -H \"X-API-Key: pcf_…\" \\\n  -H \"Content-Type: application/json\" \\\n  -H \"Accept: application/json, text/event-stream\" \\\n  -d '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\",\"params\":{}}'\n\nClient local en stdio : pcfno3d mcp\n\nAPI JSON\ncurl -H \"X-API-Key: pcf_…\" \\\n  \"http://127.0.0.1:8000/api/point?x=5000&y=5000&z=120\"\n\nDocumentation interactive : /api/docs\n\nExport binaire\n\nPour un volume complet, POST /api/reconstruct avec export: true (portée admin) écrit manifest.json et des binaires Float32 (ordre z, y, x ; -9999 sous le relief), lisibles ensuite via /api/export/{stem}/….\n\nOublier la clé de ce navigateur",
+      "details": []
+    },
+    {
+      "slug": "05-atom-visite",
+      "title": "ATOM Wind - Visite guidée",
+      "family": "ATOM Wind",
+      "url": "http://127.0.0.1:8000/app/atom-wind/",
+      "note": "",
+      "height": 1167,
+      "text": "ATOM Wind\nLe vent du Grand Tunis, partout et à toute hauteur\nModèle : best.pt\nSe connecter\nCréer un compte\nkm/h\nm/s\nÉcouter le vent\nRechercher\nCtrl K\nAuto\nClair\nSombre\nFR\nعربي\nEN\nMon vent\nCarte 3D\nAlertes\n1\nHeure\n15 h\nRejouer la journée\nVent calculé par le modèle PC-FNO3D (best.pt) sur le Grand Tunis, journée du 06/01/2025 (jeu de test, jamais vu à l'entraînement). Sorties du modèle à 01 h, 07 h, 13 h, 19 h (heure de Tunis), interpolées heure par heure. Ce ne sont pas des mesures en direct. \n06/01/2025 (4 instants)\n Revoir la visite\n1\nOù êtes-vous ?\nChoisir ma ville ou mon lieu…\nTunis-Carthage (aéroport)\nTunis centre\nLa Marsa\nBen Arous\nHammam-Lif\nMornag (vignes)\nDjebel Ressas\nSoliman\nGrombalia (agrumes)\nKorbous\nNabeul\nZaghouan (station)\nMohamedia\nMa position sur la carte\nRelief\nVraie carte\nTouchez la carte pour placer votre position\nCalme\nTrès fort\n?\n2\nQue voulez-vous faire ?\nTraiter mes cultures\nArroser par aspersion\nProduire avec une éolienne\nMornag (vignes) · 15 h · traiter mes cultures\nNon, vent trop fort pour traiter\n\nReportez le traitement : le produit partirait chez les voisins.\n\nVent à 10 m du sol\n24 km/h\nRafales à 10 m\n35 km/h\nIl vient\ndu nord-est\nFiabilité ?\nfaible\n\nJolie brise : la poussière s'envole, les petites branches bougent.\n\nPourquoi ce vent ?\n3\nVotre journée, heure par heure\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n0\n3\n6\n9\n12\n15\n18\n21\nPossible\nAttention\nDéconseillé\nTouchez une heure pour la voir.\nAucun créneau favorable aujourd'hui\nLe vent partout, même sans capteur\n\nATOM Wind calcule le vent sur tout le Grand Tunis, du sol jusqu'à 1 000 m, à partir des stations météo et de la météo de grande échelle.\n\nPasser\nSuivant\nPoser une question",
+      "details": [
+        "05-atom-visite-detail-1.png"
+      ]
+    },
+    {
+      "slug": "06-atom-connexion",
+      "title": "ATOM Wind - Connexion",
+      "family": "ATOM Wind",
+      "url": "http://127.0.0.1:8000/app/atom-wind/",
+      "note": "",
+      "height": 1167,
+      "text": "ATOM Wind\nLe vent du Grand Tunis, partout et à toute hauteur\nModèle : best.pt\nSe connecter\nCréer un compte\nkm/h\nm/s\nÉcouter le vent\nRechercher\nCtrl K\nAuto\nClair\nSombre\nFR\nعربي\nEN\nMon vent\nCarte 3D\nAlertes\n1\nHeure\n15 h\nRejouer la journée\nVent calculé par le modèle PC-FNO3D (best.pt) sur le Grand Tunis, journée du 06/01/2025 (jeu de test, jamais vu à l'entraînement). Sorties du modèle à 01 h, 07 h, 13 h, 19 h (heure de Tunis), interpolées heure par heure. Ce ne sont pas des mesures en direct. \n06/01/2025 (4 instants)\n Revoir la visite\n1\nOù êtes-vous ?\nChoisir ma ville ou mon lieu…\nTunis-Carthage (aéroport)\nTunis centre\nLa Marsa\nBen Arous\nHammam-Lif\nMornag (vignes)\nDjebel Ressas\nSoliman\nGrombalia (agrumes)\nKorbous\nNabeul\nZaghouan (station)\nMohamedia\nMa position sur la carte\nRelief\nVraie carte\nTouchez la carte pour placer votre position\nCalme\nTrès fort\n?\n2\nQue voulez-vous faire ?\nTraiter mes cultures\nArroser par aspersion\nProduire avec une éolienne\nMornag (vignes) · 15 h · traiter mes cultures\nNon, vent trop fort pour traiter\n\nReportez le traitement : le produit partirait chez les voisins.\n\nVent à 10 m du sol\n24 km/h\nRafales à 10 m\n35 km/h\nIl vient\ndu nord-est\nFiabilité ?\nfaible\n\nJolie brise : la poussière s'envole, les petites branches bougent.\n\nPourquoi ce vent ?\n3\nVotre journée, heure par heure\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n0\n3\n6\n9\n12\n15\n18\n21\nPossible\nAttention\nDéconseillé\nTouchez une heure pour la voir.\nAucun créneau favorable aujourd'hui\nATOM Wind\n×\nSe connecter\nCréer un compte\nAdresse e-mail\nMot de passe\nSe connecter\nMot de passe oublié ?\nDémonstration : entrer directement en tant que\nAgriculteur\nExploitant éolien\nAdministrateur\n\nPrototype : les comptes sont enregistrés seulement dans ce navigateur, mot de passe chiffré (empreinte). En production, l'authentification se fait sur le serveur ATOM Wind.\n\nPoser une question",
+      "details": [
+        "06-atom-connexion-detail-1.png"
+      ]
+    },
+    {
+      "slug": "07-atom-inscription",
+      "title": "ATOM Wind - Inscription",
+      "family": "ATOM Wind",
+      "url": "http://127.0.0.1:8000/app/atom-wind/",
+      "note": "Formulaire consulté sans créer de compte.",
+      "height": 1167,
+      "text": "ATOM Wind\nLe vent du Grand Tunis, partout et à toute hauteur\nModèle : best.pt\nSe connecter\nCréer un compte\nkm/h\nm/s\nÉcouter le vent\nRechercher\nCtrl K\nAuto\nClair\nSombre\nFR\nعربي\nEN\nMon vent\nCarte 3D\nAlertes\n1\nHeure\n15 h\nRejouer la journée\nVent calculé par le modèle PC-FNO3D (best.pt) sur le Grand Tunis, journée du 06/01/2025 (jeu de test, jamais vu à l'entraînement). Sorties du modèle à 01 h, 07 h, 13 h, 19 h (heure de Tunis), interpolées heure par heure. Ce ne sont pas des mesures en direct. \n06/01/2025 (4 instants)\n Revoir la visite\n1\nOù êtes-vous ?\nChoisir ma ville ou mon lieu…\nTunis-Carthage (aéroport)\nTunis centre\nLa Marsa\nBen Arous\nHammam-Lif\nMornag (vignes)\nDjebel Ressas\nSoliman\nGrombalia (agrumes)\nKorbous\nNabeul\nZaghouan (station)\nMohamedia\nMa position sur la carte\nRelief\nVraie carte\nTouchez la carte pour placer votre position\nCalme\nTrès fort\n?\n2\nQue voulez-vous faire ?\nTraiter mes cultures\nArroser par aspersion\nProduire avec une éolienne\nMornag (vignes) · 15 h · traiter mes cultures\nNon, vent trop fort pour traiter\n\nReportez le traitement : le produit partirait chez les voisins.\n\nVent à 10 m du sol\n24 km/h\nRafales à 10 m\n35 km/h\nIl vient\ndu nord-est\nFiabilité ?\nfaible\n\nJolie brise : la poussière s'envole, les petites branches bougent.\n\nPourquoi ce vent ?\n3\nVotre journée, heure par heure\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n0\n3\n6\n9\n12\n15\n18\n21\nPossible\nAttention\nDéconseillé\nTouchez une heure pour la voir.\nAucun créneau favorable aujourd'hui\nATOM Wind\n×\nSe connecter\nCréer un compte\nNom ou raison sociale\nAdresse e-mail\nMot de passe (8 caractères au moins, dont un chiffre)\nConfirmer le mot de passe\nJe suis\nGrand public : Vent près de chez soi, alertes\nAgriculteur : Traitements, irrigation, alertes vent\nExploitant éolien : Production prévue, rotor, gisement (validation par l'équipe)\nMon lieu principal\nTunis-Carthage (aéroport)\nTunis centre\nLa Marsa\nBen Arous\nHammam-Lif\nMornag (vignes)\nDjebel Ressas\nSoliman\nGrombalia (agrumes)\nKorbous\nNabeul\nZaghouan (station)\nMohamedia\nJ'accepte les conditions d'utilisation et la politique de confidentialité d'ATOM Wind.\nCréer mon compte\n\nPrototype : les comptes sont enregistrés seulement dans ce navigateur, mot de passe chiffré (empreinte). En production, l'authentification se fait sur le serveur ATOM Wind.\n\nPoser une question",
+      "details": [
+        "07-atom-inscription-detail-1.png"
+      ]
+    },
+    {
+      "slug": "08-atom-monvent",
+      "title": "ATOM Wind - Mon vent",
+      "family": "ATOM Wind",
+      "url": "http://127.0.0.1:8000/app/atom-wind/#monvent",
+      "note": "Session de démonstration Administrateur, sans compte serveur créé.",
+      "height": 1173,
+      "text": "ATOM Wind\nLe vent du Grand Tunis, partout et à toute hauteur\nModèle : best.pt\nAA\nAdmin ATOM Wind\nAdministrateur\nkm/h\nm/s\nÉcouter le vent\nRechercher\nCtrl K\nAuto\nClair\nSombre\nFR\nعربي\nEN\nMon vent\nAgriculteur\nTableau de bord\nCarte 3D\nAlertes\n1\nÉolien\nFiabilité\nAdministration\nHeure\n15 h\nRejouer la journée\nVent calculé par le modèle PC-FNO3D (best.pt) sur le Grand Tunis, journée du 06/01/2025 (jeu de test, jamais vu à l'entraînement). Sorties du modèle à 01 h, 07 h, 13 h, 19 h (heure de Tunis), interpolées heure par heure. Ce ne sont pas des mesures en direct. \n06/01/2025 (4 instants)\n Revoir la visite\n1\nOù êtes-vous ?\nChoisir ma ville ou mon lieu…\nTunis-Carthage (aéroport)\nTunis centre\nLa Marsa\nBen Arous\nHammam-Lif\nMornag (vignes)\nDjebel Ressas\nSoliman\nGrombalia (agrumes)\nKorbous\nNabeul\nZaghouan (station)\nMohamedia\nMa position sur la carte\nRelief\nVraie carte\nTouchez la carte pour placer votre position\nCalme\nTrès fort\n?\n2\nQue voulez-vous faire ?\nTraiter mes cultures\nArroser par aspersion\nProduire avec une éolienne\nMornag (vignes) · 15 h · traiter mes cultures\nNon, vent trop fort pour traiter\n\nReportez le traitement : le produit partirait chez les voisins.\n\nVent à 10 m du sol\n24 km/h\nRafales à 10 m\n35 km/h\nIl vient\ndu nord-est\nFiabilité ?\nfaible\n\nJolie brise : la poussière s'envole, les petites branches bougent.\n\nPourquoi ce vent ?\n3\nVotre journée, heure par heure\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n0\n3\n6\n9\n12\n15\n18\n21\nPossible\nAttention\nDéconseillé\nTouchez une heure pour la voir.\nAucun créneau favorable aujourd'hui\nPoser une question",
+      "details": [
+        "08-atom-monvent-detail-1.png"
+      ]
+    },
+    {
+      "slug": "08-atom-agri",
+      "title": "ATOM Wind - Agriculteur",
+      "family": "ATOM Wind",
+      "url": "http://127.0.0.1:8000/app/atom-wind/#agri",
+      "note": "Session de démonstration Administrateur, sans compte serveur créé.",
+      "height": 1595,
+      "text": "ATOM Wind\nLe vent du Grand Tunis, partout et à toute hauteur\nModèle : best.pt\nAA\nAdmin ATOM Wind\nAdministrateur\nkm/h\nm/s\nÉcouter le vent\nRechercher\nCtrl K\nAuto\nClair\nSombre\nFR\nعربي\nEN\nMon vent\nAgriculteur\nTableau de bord\nCarte 3D\nAlertes\n1\nÉolien\nFiabilité\nAdministration\nHeure\n15 h\nRejouer la journée\nVent calculé par le modèle PC-FNO3D (best.pt) sur le Grand Tunis, journée du 06/01/2025 (jeu de test, jamais vu à l'entraînement). Sorties du modèle à 01 h, 07 h, 13 h, 19 h (heure de Tunis), interpolées heure par heure. Ce ne sont pas des mesures en direct. \n06/01/2025 (4 instants)\n Revoir la visite\nEspace agriculteur\n\nChoisissez votre lieu, votre culture et le jour : ATOM Wind vous dit quand traiter, quand et combien arroser, et vous prévient du vent fort ou du vent chaud et sec.\n\nLieu\nTunis-Carthage (aéroport)\nTunis centre\nLa Marsa\nBen Arous\nHammam-Lif\nMornag (vignes)\nDjebel Ressas\nSoliman\nGrombalia (agrumes)\nKorbous\nNabeul\nZaghouan (station)\nMohamedia\nCulture\nTomate\nPomme de terre\nPastèque, melon\nPiment, poivron\nFraise\nAgrumes\nOlivier\nVigne\nArtichaut\nPalmier dattier\nSurface (hectares)\nArrosage\nGoutte-à-goutte\nAspersion\nGravitaire (rigoles)\nJour\nAujourd'hui\nDemain\nAprès-demain\nMilieu\nPlein champ\nSerre ou tunnel\nVerger\nPas d'alerte vent pour aujourd'hui à Mornag\nNi rafales fortes, ni vent chaud et sec prévus.\nVent : ATOM Wind\nQuand traiter aujourd'hui ?\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n0\n3\n6\n9\n12\n15\n18\n21\n\nCréneaux conseillés : Aucun créneau favorable\n\nNon au-dessus de 19 km/h à 10 m ; attention entre 15 et 19 km/h, si les rafales dépassent 30 km/h, ou sous 3 km/h. Vent au niveau de la rampe (2 m) à 15 h : 16 km/h. Fiabilité ici : faible\n\nVent : ATOM Wind\nMornag · Tomate · plein champ · aujourd'hui\nApportez 95 m³ par hectare\n\nSoit 189 m³ pour vos 2,0 ha (9,5 mm d'eau).\n\nÉvaporation de référence ?\n7,4 mm\nBesoin de la culture\n8,5 mm\nVent moyen à 2 m\n18 km/h\nChaleur du jour\n20 à 33 °C\n\nLe vent compte : avec 10 km/h de vent en plus, cette parcelle aurait besoin d'environ 9 % d'eau en plus.\n\nVent : ATOM Wind\nTempérature, humidité : GFS\nMéthode FAO-56\nQuand arroser aujourd'hui ?\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n0\n3\n6\n9\n12\n15\n18\n21\n\nMeilleurs moments : 0 h – 11 h 20 h – 24 h\n\nAvec ce mode d'arrosage, l'heure compte moins ; évitez seulement les heures les plus chaudes.\n\nVent : ATOM Wind\nTempérature, humidité : GFS\nD'où viennent les chiffres\nVent : ATOM Wind Vent à votre emplacement, à 2 m et à 10 m, calculé par le modèle PC-FNO3D. En service, il viendra de la prévision GFS affinée par le modèle, à 24 et 48 h. Dans ce prototype, aujourd'hui est une journée d'été d'exemple, demain et après-demain en sont des variantes simulées.\nTempérature, humidité : GFS Ces grandeurs ne sont pas calculées par ATOM Wind ; elles viendront de la prévision GFS. Ici, valeurs d'exemple.\nMéthode FAO-56 Besoin en eau calculé par la méthode de Penman-Monteith de la FAO.\n\nPerspectives : qualité de l'air, poussière et conditions de stockage des récoltes, quand les capteurs ANEO mesureront ces grandeurs.\n\nPoser une question",
+      "details": [
+        "08-atom-agri-detail-1.png",
+        "08-atom-agri-detail-2.png"
+      ]
+    },
+    {
+      "slug": "08-atom-tableau",
+      "title": "ATOM Wind - Tableau de bord",
+      "family": "ATOM Wind",
+      "url": "http://127.0.0.1:8000/app/atom-wind/#tableau",
+      "note": "Session de démonstration Administrateur, sans compte serveur créé.",
+      "height": 2489,
+      "text": "ATOM Wind\nLe vent du Grand Tunis, partout et à toute hauteur\nModèle : best.pt\nAA\nAdmin ATOM Wind\nAdministrateur\nkm/h\nm/s\nÉcouter le vent\nRechercher\nCtrl K\nAuto\nClair\nSombre\nFR\nعربي\nEN\nMon vent\nAgriculteur\nTableau de bord\nCarte 3D\nAlertes\n1\nÉolien\nFiabilité\nAdministration\nHeure\n15 h\nRejouer la journée\nVent calculé par le modèle PC-FNO3D (best.pt) sur le Grand Tunis, journée du 06/01/2025 (jeu de test, jamais vu à l'entraînement). Sorties du modèle à 01 h, 07 h, 13 h, 19 h (heure de Tunis), interpolées heure par heure. Ce ne sont pas des mesures en direct. \n06/01/2025 (4 instants)\n Revoir la visite\nTableau de bord du Grand Tunis\n\nCe qui se passe maintenant sur la zone, la qualité du modèle et l'état du réseau de mesure. Les chiffres de qualité du modèle sont des résultats réels ; le vent de la journée est un exemple.\n\nVent moyen sur la zone, à 10 m\n24 km/h\nvient du nord-est\nRafale la plus forte\n35 km/h\nprès de Zaghouan\nProduction du parc virtuel\n2,4 MW\n40 % de la capacité\nAlertes à suivre\n1\ndanger ou attention\nZone bien couverte\n2 %\n40 % avec le réseau ANEO prévu\nTemps de reconstruction\n0,00 s\nune carte 3D par le modèle\nVent au moyeu (80 m)\n8,9 m/s\nmoyenne de la zone\nRésidu de masse\n3,0e-4\nau-dessus du seuil (test)\nLe vent de la zone, heure par heure\n0 km/h\n20 km/h\n40 km/h\n0 h\n6 h\n12 h\n18 h\n23 h\nVent moyen\nRafale la plus forte\nSurvolez la courbe pour lire les valeurs ; cliquez pour changer d'heure.\nAlertes en cours\nAttention Créneau de traitement des vignes\nMornag · pas de créneau favorable aujourd'hui\nInformation Station de Nabeul : vent mesuré plus faible que la zone\nNabeul (station de l'INM) · toute la journée\nTout va bien Bonne journée de production\nParc virtuel du djebel Ressas · pic vers 19 h (33 km/h au moyeu)\n\nVoir toutes les alertes\n\nVent au moyeu du parc virtuel (80 m), heure par heure\n0 m/s\n10 m/s\n20 m/s\n0 h\n6 h\n12 h\n18 h\n23 h\ndémarrage 3 m/s\nnominale 12 m/s\narrêt 25 m/s\n\nIntervalle non disponible : incertitude du modèle non servie et ensemble GEFS pas encore calculé. Seuils de l'éolienne de référence (générique 2 MW).\n\nComparaison avec de vraies mesures résultats réels\n\nÉcart moyen entre le vent calculé et le vent mesuré, sur des jours de 2022 jamais vus par le modèle. Plus la barre est courte, mieux c'est.\n\nAnémomètre de Nabeul\nATOM Wind\n8,7 km/h\nERA5\n9,3 km/h\nAnémomètre de Tunis-Carthage\nATOM Wind\n9,7 km/h\nERA5\n10,1 km/h\nAnémomètre de Zaghouan\nATOM Wind\n8,2 km/h\nERA5\n7,8 km/h\nBallons-sondes, 0 à 250 m\nATOM Wind\n8,0 km/h\nERA5\n8,2 km/h\n\nATOM Wind fait mieux qu'ERA5 à Nabeul, à Tunis-Carthage et sur les ballons-sondes ; un peu moins bien à Zaghouan, en bord de zone.\n\nQualité du modèle servi résultats réels\nÉcart moyen sur le champ 3D (u / v)\n1,7 / 3,4 m/s\nPart du vent expliquée (R²)\n≥ -2,27\nErreur sur la direction\n16°\nDSO1 précision : RMSE u, v ≤ 0.5 m/s à chaque niveau (au-dessus du seuil à 50, 100, 200 m)\n3,79 m/snon atteint\nDSO2 conservation de la masse ≤ 0.0001\n0,000297 kg/m³/snon atteint\nDSO3 finesse des détails (rugosité dans [0.9 ; 1.1])\n0,589non atteint\nDSO4 rapidité ≤ 1 s par carte 3D\n0,00136 satteint\nDSO5 robustesse : RMSE ≤ 0.7 m/s avec 25 % des capteurs\n3,78 m/snon atteint\nDSO6 fiabilité : couverture de l'intervalle à 80 % (pas encore mesuré)\nà mesurer\nModèle mini_run (best.pt), 4 instants du test, évaluation best.\nRéseau de mesure\nStations de l'INM dans la zone\n3\nTunis-Carthage, Zaghouan, Nabeul : vent à 10 m, toutes les 30 min à 3 h\nMesure en altitude\n1\nBallons-sondes de Tunis-Carthage, deux fois par jour\nRéseau ANEO prévu\n36 capteurs\nFiabilité bonne sur 40 % des terres, contre 2 % aujourd'hui\nPoser une question",
+      "details": [
+        "08-atom-tableau-detail-1.png",
+        "08-atom-tableau-detail-2.png",
+        "08-atom-tableau-detail-3.png"
+      ]
+    },
+    {
+      "slug": "08-atom-carte3d",
+      "title": "ATOM Wind - Carte 3D",
+      "family": "ATOM Wind",
+      "url": "http://127.0.0.1:8000/app/atom-wind/#carte3d",
+      "note": "Session de démonstration Administrateur, sans compte serveur créé.",
+      "height": 1003,
+      "text": "ATOM Wind\nLe vent du Grand Tunis, partout et à toute hauteur\nModèle : best.pt\nAA\nAdmin ATOM Wind\nAdministrateur\nkm/h\nm/s\nÉcouter le vent\nRechercher\nCtrl K\nAuto\nClair\nSombre\nFR\nعربي\nEN\nMon vent\nAgriculteur\nTableau de bord\nCarte 3D\nAlertes\n1\nÉolien\nFiabilité\nAdministration\nHeure\n15 h\nRejouer la journée\nVent calculé par le modèle PC-FNO3D (best.pt) sur le Grand Tunis, journée du 06/01/2025 (jeu de test, jamais vu à l'entraînement). Sorties du modèle à 01 h, 07 h, 13 h, 19 h (heure de Tunis), interpolées heure par heure. Ce ne sont pas des mesures en direct. \n06/01/2025 (4 instants)\n Revoir la visite\nLe vent en 3D au-dessus du relief\nFaites tourner avec la souris ou le doigt. Touchez le relief pour voir le vent à cet endroit.\nRecentrer\nAfficher la fiabilité\nTracer une coupe\nVoir la brise de mer\nGraine de pissenlit\nGrain de sable\nBallon\nLâcher dans le vent\nHauteur au-dessus du sol : 120 m · moyeu éolien\n10 m\ncultures\n30 m\nmât ANEO\n50 m\n80 m\n120 m\nmoyeu\n150 m\n300 m\n500 m\n1 000 m\n0\n62 km/h et plus\n· vitesse du vent\nTunis-Carthage\nZaghouan\nNabeul\nDjebel Ressas\nGolfe de Tunis\nTunis\nParc éolien virtuel\nAffichage 3D\nRelief exagéré : × 5\n au-dessus du sol\n altitude\nCouleur \nvitesse\nincertitude\nfiabilité\nCouches\nparticules\nlignes de courant (3 hauteurs)\ncoupe horizontale à la hauteur choisie\ncolonnes de vent par nœud\ncoupe verticale\nstations de mesure\nréseau ANEO prévu\néoliennes et moyeu\nma parcelle\nHeure : 15 h\nRejouer la journée\n25 images/s · 3 200 particules\nN\nmoyeu 120 m\nMornag\nPoser une question",
+      "details": []
+    },
+    {
+      "slug": "08-atom-alertes",
+      "title": "ATOM Wind - Alertes",
+      "family": "ATOM Wind",
+      "url": "http://127.0.0.1:8000/app/atom-wind/#alertes",
+      "note": "Session de démonstration Administrateur, sans compte serveur créé.",
+      "height": 1403,
+      "text": "ATOM Wind\nLe vent du Grand Tunis, partout et à toute hauteur\nModèle : best.pt\nAA\nAdmin ATOM Wind\nAdministrateur\nkm/h\nm/s\nÉcouter le vent\nRechercher\nCtrl K\nAuto\nClair\nSombre\nFR\nعربي\nEN\nMon vent\nAgriculteur\nTableau de bord\nCarte 3D\nAlertes\n1\nÉolien\nFiabilité\nAdministration\nHeure\n15 h\nRejouer la journée\nVent calculé par le modèle PC-FNO3D (best.pt) sur le Grand Tunis, journée du 06/01/2025 (jeu de test, jamais vu à l'entraînement). Sorties du modèle à 01 h, 07 h, 13 h, 19 h (heure de Tunis), interpolées heure par heure. Ce ne sont pas des mesures en direct. \n06/01/2025 (4 instants)\n Revoir la visite\nAlertes de la journée\n\nChaque alerte dit quoi, où, quand et que faire. Les plus urgentes sont en haut.\n\nAttention\nCréneau de traitement des vignes\nOù\nMornag\nQuand\npas de créneau favorable aujourd'hui\nPourquoi\nAu-delà, le vent dépasse 15 km/h et le produit peut dériver.\nQue faire : Traiter tôt le matin ; reprendre en fin de soirée si le vent retombe.\nPassé\nInformation\nStation de Nabeul : vent mesuré plus faible que la zone\nOù\nNabeul (station de l'INM)\nQuand\ntoute la journée\nPourquoi\nL'anémomètre est abrité en ville ; il mesure moins que le vent réel alentour.\nQue faire : Aucune action : ATOM Wind tient compte de cet écart dans la fiabilité.\nTout va bien\nBonne journée de production\nOù\nParc virtuel du djebel Ressas\nQuand\npic vers 19 h (33 km/h au moyeu)\nPourquoi\nLe vent au moyeu reste dans la plage de production.\nQue faire : Reporter la maintenance à un jour plus calme.\nDans 4 h\nLes alertes sur la carte\n\nTouchez une alerte pour la repérer sur la carte.\n\nCréer mon alerte\nOù ?\nTunis-Carthage (aéroport)\nTunis centre\nLa Marsa\nBen Arous\nHammam-Lif\nMornag (vignes)\nDjebel Ressas\nSoliman\nGrombalia (agrumes)\nKorbous\nNabeul\nZaghouan (station)\nMohamedia\nPour quelle activité ?\nTraiter mes cultures\nArroser par aspersion\nProduire avec une éolienne\nMe prévenir par\nl'application\nSMS\nWhatsApp\nCréer l'alerte\nAucune alerte personnelle pour l'instant.\n\nPrototype : l'envoi par SMS ou WhatsApp est simulé. Vos alertes restent sur cet appareil.\n\nPoser une question",
+      "details": [
+        "08-atom-alertes-detail-1.png"
+      ]
+    },
+    {
+      "slug": "08-atom-eolien",
+      "title": "ATOM Wind - Éolien",
+      "family": "ATOM Wind",
+      "url": "http://127.0.0.1:8000/app/atom-wind/#eolien",
+      "note": "Session de démonstration Administrateur, sans compte serveur créé.",
+      "height": 3136,
+      "text": "ATOM Wind\nLe vent du Grand Tunis, partout et à toute hauteur\nModèle : best.pt\nAA\nAdmin ATOM Wind\nAdministrateur\nkm/h\nm/s\nÉcouter le vent\nRechercher\nCtrl K\nAuto\nClair\nSombre\nFR\nعربي\nEN\nMon vent\nAgriculteur\nTableau de bord\nCarte 3D\nAlertes\n1\nÉolien\nFiabilité\nAdministration\nHeure\n15 h\nRejouer la journée\nVent calculé par le modèle PC-FNO3D (best.pt) sur le Grand Tunis, journée du 06/01/2025 (jeu de test, jamais vu à l'entraînement). Sorties du modèle à 01 h, 07 h, 13 h, 19 h (heure de Tunis), interpolées heure par heure. Ce ne sont pas des mesures en direct. \n06/01/2025 (4 instants)\n Revoir la visite\nEspace éolien\n\nC'est ici que la 3D sert : le vent entre 30 et 150 m, sur toute la hauteur du rotor. Exemple : parc virtuel de trois éoliennes de 2 MW sur la crête du djebel Ressas, moyeu à 80 m.\n\nJour\nAujourd'hui\nDemain\nAprès-demain\n\nJournée du 06/01/2025 (jeu de test) ; demain et après-demain restent des variantes d'exemple hors temps réel.\n\nProduction à 15 h aujourd'hui\n2,4 MW\n40 % de la capacité\nVent au moyeu (80 m)\n32 km/h\nvient du nord-est\nÉnergie prévue aujourd'hui\n58 MWh\n≈ 7264 foyers pour une journée\nÉtat du parc\n3 / 3 en service\nAucune alerte d'arrêt\nProduction du parc sur la journée\n0 MW\n2 MW\n4 MW\n6 MW\n0 h\n6 h\n12 h\n18 h\n23 h\nÉolienne E1\n803 kW sur 2 000\nVent au moyeu 32 km/h, du nord-est\nEn production\nÉolienne E2\n803 kW sur 2 000\nVent au moyeu 32 km/h, du nord-est\nEn production\nÉolienne E3\n803 kW sur 2 000\nVent au moyeu 32 km/h, du nord-est\nEn production\nPlacer mon éolienne\nModèle\nPetite : moyeu 30 m, 100 kW\nMoyenne : moyeu 50 m, 800 kW\nGrande : moyeu 80 m, 2 MW\n\nTouchez la carte pour placer l'éolienne.\n\nGrande éolienne près de Hammam-Lif, sol à 56 m\nTrès bon emplacement\nÉnergie sur la journée\n19,4 MWh\nTaux de charge\n40 %\nPar rapport à la crête du djebel Ressas\n100 %\n\nCet emplacement produit presque autant que la crête, la meilleure zone de l'exemple. Estimation pour aujourd'hui.\n\nLe vent sur toute la hauteur du rotor\nEn haut des pales (125 m)\n32 km/h\nAu moyeu (80 m)\n32 km/h\nEn bas des pales (35 m)\n30 km/h\n\nEn haut des pales, le vent est 5 % plus fort qu'en bas. Cet écart fatigue les pales : seule une carte du vent en 3D permet de le connaître.\n\nD'où vient le vent au moyeu ?\nN\nNE\nE\nSE\nS\nSO\nO\nNO\n\nAujourd'hui, au moyeu de votre éolienne, le vent vient surtout du nord-est (24 heures sur 24). La longueur indique la durée, la couleur la force. Orientez les rangées d'éoliennes face à ce vent.\n\nCarte du gisement : où installer une éolienne ?\n\nTaux de charge estimé sur la journée, à hauteur de moyeu du modèle choisi. Touchez la carte pour y placer votre éolienne.\n\nFaible\nFort\n· calculé tous les 1 km pour l'aperçu\nMeilleurs emplacements aujourd'hui : 1. près de Zaghouan · 41 %2. près de Zaghouan · 41 %3. près de Zaghouan · 41 %\nPeut-on se fier au vent en altitude ? résultats réels\n\nSeule mesure disponible en altitude : les ballons-sondes de Tunis-Carthage, deux fois par jour.\n\nErreur moyenne de 0 à 250 m, ATOM Wind\n2,22 m/s\nMême mesure, ERA5\n2,29 m/s\n\nLe gain sur ERA5 est réel mais faible, et les mesures sont rares : la validation en altitude est la limite principale de l'espace éolien. Les mâts ANEO de 30 m et un mât de mesure sur site la renforceront.\n\nPoser une question",
+      "details": [
+        "08-atom-eolien-detail-1.png",
+        "08-atom-eolien-detail-2.png",
+        "08-atom-eolien-detail-3.png",
+        "08-atom-eolien-detail-4.png"
+      ]
+    },
+    {
+      "slug": "08-atom-fiabilite",
+      "title": "ATOM Wind - Fiabilité",
+      "family": "ATOM Wind",
+      "url": "http://127.0.0.1:8000/app/atom-wind/#fiabilite",
+      "note": "Session de démonstration Administrateur, sans compte serveur créé.",
+      "height": 1131,
+      "text": "ATOM Wind\nLe vent du Grand Tunis, partout et à toute hauteur\nModèle : best.pt\nAA\nAdmin ATOM Wind\nAdministrateur\nkm/h\nm/s\nÉcouter le vent\nRechercher\nCtrl K\nAuto\nClair\nSombre\nFR\nعربي\nEN\nMon vent\nAgriculteur\nTableau de bord\nCarte 3D\nAlertes\n1\nÉolien\nFiabilité\nAdministration\nHeure\n15 h\nRejouer la journée\nVent calculé par le modèle PC-FNO3D (best.pt) sur le Grand Tunis, journée du 06/01/2025 (jeu de test, jamais vu à l'entraînement). Sorties du modèle à 01 h, 07 h, 13 h, 19 h (heure de Tunis), interpolées heure par heure. Ce ne sont pas des mesures en direct. \n06/01/2025 (4 instants)\n Revoir la visite\nOù le vent est-il bien connu ?\nAujourd'hui : 3 stations\nAvec le réseau ANEO prévu\nFiabilité bonne\nMoyenne\nFaible\nLes zones pâles sont moins sûres.\n\nFiabilité indicative, selon la distance au capteur le plus proche (incertitude calibrée du modèle non servie). Réseau ANEO : disposition d'exemple (plan OS6 pas encore calculé).\n\nAujourd'hui, avec 3 stations\n2 %\ndes terres avec une fiabilité bonne\n\nAvec le réseau ANEO prévu (36 capteurs, points orange), ce chiffre passerait à 40 %. Le plan de déploiement place chaque capteur là où il apporte le plus.\n\nVérifié sur de vraies mesures\n\nTest sur des jours de 2022 jamais vus par le modèle. Chaque station a été cachée au modèle, qui a dû la retrouver. Écart moyen entre le vent calculé et le vent mesuré (plus c'est petit, mieux c'est).\n\nMesure réelle\tATOM Wind\tERA5\nAnémomètre de Nabeul\t8,7 km/h\t9,3 km/h\nAnémomètre de Tunis-Carthage\t9,7 km/h\t10,1 km/h\nAnémomètre de Zaghouan\t8,2 km/h\t7,8 km/h\nBallons-sondes de Tunis, 0 à 250 m\t8,0 km/h\t8,3 km/h\n\nATOM Wind fait mieux que la réanalyse ERA5 à Nabeul, à Tunis-Carthage et sur les ballons-sondes, et un peu moins bien à Zaghouan, en bord de zone. Une mesure ponctuelle et une valeur calculée sur 100 m diffèrent toujours de quelques km/h.\n\nPoser une question",
+      "details": []
+    },
+    {
+      "slug": "08-atom-admin",
+      "title": "ATOM Wind - Administration",
+      "family": "ATOM Wind",
+      "url": "http://127.0.0.1:8000/app/atom-wind/#admin",
+      "note": "Session de démonstration Administrateur, sans compte serveur créé.",
+      "height": 2009,
+      "text": "ATOM Wind\nLe vent du Grand Tunis, partout et à toute hauteur\nModèle : best.pt\nAA\nAdmin ATOM Wind\nAdministrateur\nkm/h\nm/s\nÉcouter le vent\nRechercher\nCtrl K\nAuto\nClair\nSombre\nFR\nعربي\nEN\nMon vent\nAgriculteur\nTableau de bord\nCarte 3D\nAlertes\n1\nÉolien\nFiabilité\nAdministration\nHeure\n15 h\nRejouer la journée\nVent calculé par le modèle PC-FNO3D (best.pt) sur le Grand Tunis, journée du 06/01/2025 (jeu de test, jamais vu à l'entraînement). Sorties du modèle à 01 h, 07 h, 13 h, 19 h (heure de Tunis), interpolées heure par heure. Ce ne sont pas des mesures en direct. \n06/01/2025 (4 instants)\n Revoir la visite\nAdministration\n\nValidez les comptes, attribuez les rôles et gérez les clés d'accès à l'API. Réservé aux administrateurs.\n\nComptes\n4\nActifs\n3\nEn attente de validation\n1\nClés d'API actives\n0\nUtilisateurs\nNom\tE-mail\tRôle\tStatut\tActions\nAdmin ATOM Wind\ncréé le 2026-10-01\tadmin@demo.atomwind.tn\t\nGrand public\nAgriculteur\nExploitant éolien\nAdministrateur\n\tactif\t\nvous\n\nHédi, agriculteur à Mornag\ncréé le 2026-10-05\tagri@demo.atomwind.tn\t\nGrand public\nAgriculteur\nExploitant éolien\nAdministrateur\n\tactif\t\nDésactiver\n\nSociété Vent du Cap\ncréé le 2026-10-08\teolien@demo.atomwind.tn\t\nGrand public\nAgriculteur\nExploitant éolien\nAdministrateur\n\tactif\t\nDésactiver\n\nDomaine de Grombalia\ncréé le 2026-10-20\tgrombalia@demo.atomwind.tn\t\nGrand public\nAgriculteur\nExploitant éolien\nAdministrateur\n\ndemande : Exploitant éolien\ten attente\t\nValider\nDésactiver\nRôles et accès\nRôle\tMon vent\tCarte 3D\tAlertes\tAgriculteur\tTableau de bord\tÉolien\tFiabilité\tAdministration\nVisiteur (sans compte)\toui\toui\toui\t—\t—\t—\t—\t—\nGrand public\toui\toui\toui\t—\t—\t—\t—\t—\nAgriculteur\toui\toui\toui\toui\t—\t—\t—\t—\nExploitant éolien\toui\toui\toui\t—\toui\toui\toui\t—\nAdministrateur\toui\toui\toui\toui\toui\toui\toui\toui\nClés d'API\n\nUne clé permet à un logiciel partenaire de lire le vent en temps réel. Elle n'est affichée qu'une seule fois.\n\nNom de la clé\nAccès\nLecture du vent\nLecture et simulations (R&D)\nAdministration\nCréer la clé\nAucune clé pour l'instant.\nClés d'API du service\n\nLes vraies clés du service PC-FNO3D (le reste de cette page est une démonstration locale). Seule une empreinte est gardée ; un secret ne s'affiche qu'à la création.\n\nNom\tPortée\tQuota / min\tQuota / jour\tDernier usage\t\nlecture\nadmin\nCréer la clé\nComptes du service\n\nComptes enregistrés sur le serveur ; un accès éolien demandé attend votre validation.\n\nCompte\tRôle\tDemande\tStatut\t\nSupervision du service\n\nModèle best.pt · état du 03/11 23:25\n\naucune journée calculée depuis le démarrage\n\nAccès sur 24 h : 67 requêtes, 6 refus, 0 erreurs serveur, 0 clé(s) active(s) ; durée médiane 2.9 ms.\n\nHistorique : 0 journée(s), 0 Mo. Notifications déjà envoyées : 0.\n\nÉcart du modèle aux stations aujourd'hui (contrôle de cohérence) : indisponible.\n\nPoser une question",
+      "details": [
+        "08-atom-admin-detail-1.png",
+        "08-atom-admin-detail-2.png"
+      ]
+    },
+    {
+      "slug": "08-atom-assistant",
+      "title": "ATOM Wind - Assistant",
+      "family": "ATOM Wind",
+      "url": "http://127.0.0.1:8000/app/atom-wind/#monvent",
+      "note": "Panneau consulté sans envoyer de requête à un fournisseur externe.",
+      "height": 1173,
+      "text": "ATOM Wind\nLe vent du Grand Tunis, partout et à toute hauteur\nModèle : best.pt\nAA\nAdmin ATOM Wind\nAdministrateur\nkm/h\nm/s\nÉcouter le vent\nRechercher\nCtrl K\nAuto\nClair\nSombre\nFR\nعربي\nEN\nMon vent\nAgriculteur\nTableau de bord\nCarte 3D\nAlertes\n1\nÉolien\nFiabilité\nAdministration\nHeure\n15 h\nRejouer la journée\nVent calculé par le modèle PC-FNO3D (best.pt) sur le Grand Tunis, journée du 06/01/2025 (jeu de test, jamais vu à l'entraînement). Sorties du modèle à 01 h, 07 h, 13 h, 19 h (heure de Tunis), interpolées heure par heure. Ce ne sont pas des mesures en direct. \n06/01/2025 (4 instants)\n Revoir la visite\n1\nOù êtes-vous ?\nChoisir ma ville ou mon lieu…\nTunis-Carthage (aéroport)\nTunis centre\nLa Marsa\nBen Arous\nHammam-Lif\nMornag (vignes)\nDjebel Ressas\nSoliman\nGrombalia (agrumes)\nKorbous\nNabeul\nZaghouan (station)\nMohamedia\nMa position sur la carte\nRelief\nVraie carte\nTouchez la carte pour placer votre position\nCalme\nTrès fort\n?\n2\nQue voulez-vous faire ?\nTraiter mes cultures\nArroser par aspersion\nProduire avec une éolienne\nMornag (vignes) · 15 h · traiter mes cultures\nNon, vent trop fort pour traiter\n\nReportez le traitement : le produit partirait chez les voisins.\n\nVent à 10 m du sol\n24 km/h\nRafales à 10 m\n35 km/h\nIl vient\ndu nord-est\nFiabilité ?\nfaible\n\nJolie brise : la poussière s'envole, les petites branches bougent.\n\nPourquoi ce vent ?\n3\nVotre journée, heure par heure\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n0\n3\n6\n9\n12\n15\n18\n21\nPossible\nAttention\nDéconseillé\nTouchez une heure pour la voir.\nAucun créneau favorable aujourd'hui\nPoser une question\nAssistant ATOM Wind\n×\n\nExemples : « Peut-on traiter les vignes de Mornag demain matin ? », « Quelle production pour une éolienne à Soliman demain ? »\n\nEnvoyer\n\nRéponses générées par Claude à partir des données d'ATOM Wind ; vérifiez avant une décision importante.",
+      "details": [
+        "08-atom-assistant-detail-1.png"
+      ]
+    },
+    {
+      "slug": "08-atom-recherche",
+      "title": "ATOM Wind - Recherche",
+      "family": "ATOM Wind",
+      "url": "http://127.0.0.1:8000/app/atom-wind/#monvent",
+      "note": "",
+      "height": 1173,
+      "text": "ATOM Wind\nLe vent du Grand Tunis, partout et à toute hauteur\nModèle : best.pt\nAA\nAdmin ATOM Wind\nAdministrateur\nkm/h\nm/s\nÉcouter le vent\nRechercher\nCtrl K\nAuto\nClair\nSombre\nFR\nعربي\nEN\nMon vent\nAgriculteur\nTableau de bord\nCarte 3D\nAlertes\n1\nÉolien\nFiabilité\nAdministration\nHeure\n15 h\nRejouer la journée\nVent calculé par le modèle PC-FNO3D (best.pt) sur le Grand Tunis, journée du 06/01/2025 (jeu de test, jamais vu à l'entraînement). Sorties du modèle à 01 h, 07 h, 13 h, 19 h (heure de Tunis), interpolées heure par heure. Ce ne sont pas des mesures en direct. \n06/01/2025 (4 instants)\n Revoir la visite\n1\nOù êtes-vous ?\nChoisir ma ville ou mon lieu…\nTunis-Carthage (aéroport)\nTunis centre\nLa Marsa\nBen Arous\nHammam-Lif\nMornag (vignes)\nDjebel Ressas\nSoliman\nGrombalia (agrumes)\nKorbous\nNabeul\nZaghouan (station)\nMohamedia\nMa position sur la carte\nRelief\nVraie carte\nTouchez la carte pour placer votre position\nCalme\nTrès fort\n?\n2\nQue voulez-vous faire ?\nTraiter mes cultures\nArroser par aspersion\nProduire avec une éolienne\nMornag (vignes) · 15 h · traiter mes cultures\nNon, vent trop fort pour traiter\n\nReportez le traitement : le produit partirait chez les voisins.\n\nVent à 10 m du sol\n24 km/h\nRafales à 10 m\n35 km/h\nIl vient\ndu nord-est\nFiabilité ?\nfaible\n\nJolie brise : la poussière s'envole, les petites branches bougent.\n\nPourquoi ce vent ?\n3\nVotre journée, heure par heure\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n0\n3\n6\n9\n12\n15\n18\n21\nPossible\nAttention\nDéconseillé\nTouchez une heure pour la voir.\nAucun créneau favorable aujourd'hui\nTunis-Carthage (aéroport)\nLieu\nTunis centre\nLieu\nLa Marsa\nLieu\nBen Arous\nLieu\nHammam-Lif\nLieu\nMornag (vignes)\nLieu\nDjebel Ressas\nLieu\nSoliman\nLieu\nGrombalia (agrumes)\nLieu\nKorbous\nLieu\nNabeul\nLieu\nZaghouan (station)\nLieu\nMohamedia\nLieu\nTraiter mes cultures\nActivité\nArroser par aspersion\nActivité\nProduire avec une éolienne\nActivité\nMon vent\nEspace\nCarte 3D\nEspace\nAlertes\nEspace\nAgriculteur\nEspace\nTableau de bord\nEspace\nÉolien\nEspace\nFiabilité\nEspace\nAdministration\nEspace\nVoir la brise de mer en 3D\nAction\nRejouer la journée\nAction\nThème sombre\nAction\nThème clair\nAction\nSe déconnecter\nCompte\nFlèches pour choisir, Entrée pour ouvrir, Échap pour fermer\nPoser une question",
+      "details": [
+        "08-atom-recherche-detail-1.png"
+      ]
+    },
+    {
+      "slug": "08-atom-compte",
+      "title": "ATOM Wind - Menu du compte",
+      "family": "ATOM Wind",
+      "url": "http://127.0.0.1:8000/app/atom-wind/#monvent",
+      "note": "",
+      "height": 1173,
+      "text": "ATOM Wind\nLe vent du Grand Tunis, partout et à toute hauteur\nModèle : best.pt\nAA\nAdmin ATOM Wind\nAdministrateur\nAdmin ATOM Wind\nadmin@demo.atomwind.tn\nAdministrateur\nAccès : Mon vent, Carte 3D, Alertes, Agriculteur, Tableau de bord, Éolien, Fiabilité, Administration\nSe déconnecter\nkm/h\nm/s\nÉcouter le vent\nRechercher\nCtrl K\nAuto\nClair\nSombre\nFR\nعربي\nEN\nMon vent\nAgriculteur\nTableau de bord\nCarte 3D\nAlertes\n1\nÉolien\nFiabilité\nAdministration\nHeure\n15 h\nRejouer la journée\nVent calculé par le modèle PC-FNO3D (best.pt) sur le Grand Tunis, journée du 06/01/2025 (jeu de test, jamais vu à l'entraînement). Sorties du modèle à 01 h, 07 h, 13 h, 19 h (heure de Tunis), interpolées heure par heure. Ce ne sont pas des mesures en direct. \n06/01/2025 (4 instants)\n Revoir la visite\n1\nOù êtes-vous ?\nChoisir ma ville ou mon lieu…\nTunis-Carthage (aéroport)\nTunis centre\nLa Marsa\nBen Arous\nHammam-Lif\nMornag (vignes)\nDjebel Ressas\nSoliman\nGrombalia (agrumes)\nKorbous\nNabeul\nZaghouan (station)\nMohamedia\nMa position sur la carte\nRelief\nVraie carte\nTouchez la carte pour placer votre position\nCalme\nTrès fort\n?\n2\nQue voulez-vous faire ?\nTraiter mes cultures\nArroser par aspersion\nProduire avec une éolienne\nMornag (vignes) · 15 h · traiter mes cultures\nNon, vent trop fort pour traiter\n\nReportez le traitement : le produit partirait chez les voisins.\n\nVent à 10 m du sol\n24 km/h\nRafales à 10 m\n35 km/h\nIl vient\ndu nord-est\nFiabilité ?\nfaible\n\nJolie brise : la poussière s'envole, les petites branches bougent.\n\nPourquoi ce vent ?\n3\nVotre journée, heure par heure\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n​\n0\n3\n6\n9\n12\n15\n18\n21\nPossible\nAttention\nDéconseillé\nTouchez une heure pour la voir.\nAucun créneau favorable aujourd'hui\nPoser une question",
+      "details": [
+        "08-atom-compte-detail-1.png"
+      ]
+    },
+    {
+      "slug": "09-api-documentation",
+      "title": "Documentation de l'API",
+      "family": "Intégration",
+      "url": "http://127.0.0.1:8000/api/docs",
+      "note": "",
+      "height": 4757,
+      "text": "PC-FNO3D — champ de vent 3D\n 0.1.0 \nOAS 3.1\n/api/openapi.json\n\nReconstruction du vent (u, v, w) de 25 a 1000 m a partir du reseau ANEO. Authentification par cle d'API : en-tete X-API-Key.\n\nAuthorize\nservice\nGET\n/api/health\nHealth\nGET\n/api/meta\nMeta\nGET\n/api/supervision\nSupervision\nGET\n/api/keys\nList Keys\nPOST\n/api/keys\nCreate Key\nDELETE\n/api/keys/{nom}\nRevoke Key\nPATCH\n/api/keys/{nom}\nQuota Key\ndonnees\nGET\n/api/instants\nInstants\nPOST\n/api/reconstruct\nReconstruct\nPOST\n/api/reconstruct/upload\nReconstruct Upload\nPOST\n/api/reconstruct/stations\nReconstruct Stations\nGET\n/api/field\nField\nGET\n/api/point\nPoint\nGET\n/api/profile\nProfile\nGET\n/api/exports/{stem}.{fmt}\nExport Instant Fichier\nGET\n/api/export/{stem}/manifest.json\nExport Manifest\nGET\n/api/export/{stem}/{name}\nExport File\nqualite\nGET\n/api/reliability/{stem}\nReliability State\nGET\n/api/alerts\nAlerts\nGET\n/api/dso\nDso\neolien\nGET\n/api/wind-farm\nWind Farm\natom-wind\nGET\n/api/atom-wind/grille\nAtom Grille\nGET\n/api/atom-wind/jours\nAtom Jours\nGET\n/api/atom-wind/direct\nAtom Direct\nGET\n/api/atom-wind/jour\nAtom Jour\nGET\n/api/atom-wind/ensemble\nAtom Ensemble\nGET\n/api/atom-wind/maintenance\nAtom Maintenance\nGET\n/api/atom-wind/variations\nAtom Variations\nGET\n/api/atom-wind/valeur-stations\nAtom Valeur Stations\nGET\n/api/atom-wind/explication\nAtom Explication\nGET\n/api/atom-wind/dimensionnement\nAtom Dimensionnement\nGET\n/api/atom-wind/porteurs\nAtom Porteurs\nGET\n/api/atom-wind/grue\nAtom Grue\nGET\n/api/atom-wind/haies\nAtom Haies\nGET\n/api/atom-wind/rapport.pdf\nAtom Rapport\nGET\n/api/atom-wind/qualite\nAtom Qualite\nGET\n/api/atom-wind/agricole\nAtom Agricole\nGET\n/api/atom-wind/production\nAtom Production\nGET\n/api/atom-wind/historique\nAtom Historique\nGET\n/api/atom-wind/historique/{nom}\nAtom Historique Jour\nPOST\n/api/assistant\nAssistant\nGET\n/api/atom-wind/scenario\nAtom Scenario\nGET\n/api/atom-wind/alertes\nAtom Alertes\nPOST\n/api/notifications/envoyer\nNotifications Envoyer\nGET\n/api/atom-wind/atlas\nAtom Atlas\nGET\n/api/atom-wind/atlas/{nom}\nAtom Atlas Fichier\nGET\n/api/atom-wind/reseau-aneo\nAtom Reseau\nsms\nGET\n/api/sms/abonnes\nSms Abonnes\nPOST\n/api/sms/abonnes\nSms Abonner\nDELETE\n/api/sms/abonnes/{numero}\nSms Desabonner\nPOST\n/api/sms/envoyer\nSms Envoyer\ncomptes\nGET\n/api/comptes\nComptes Liste\nPOST\n/api/comptes\nCompte Creer\nPOST\n/api/comptes/connexion\nCompte Connexion\nGET\n/api/comptes/moi\nCompte Moi\nPOST\n/api/comptes/deconnexion\nCompte Deconnexion\nPOST\n/api/comptes/{email}/validation\nCompte Validation\nPOST\n/api/comptes/{email}/statut\nCompte Statut\nSchemas\nAbonneSmsExpand allobject\nBody_reconstruct_upload_api_reconstruct_upload_postExpand allobject\nConnexionExpand allobject\nHTTPValidationErrorExpand allobject\nInscriptionExpand allobject\nNouvelleCleExpand allobject\nQuestionAssistantExpand allobject\nQuotasCleExpand allobject\nReconstructRequestExpand allobject\nStationObsExpand allobject\nStationsRequestExpand allobject\nValidationErrorExpand allobject",
+      "details": [
+        "09-api-documentation-detail-1.png",
+        "09-api-documentation-detail-2.png",
+        "09-api-documentation-detail-3.png",
+        "09-api-documentation-detail-4.png",
+        "09-api-documentation-detail-5.png",
+        "09-api-documentation-detail-6.png"
+      ]
+    },
+    {
+      "slug": "10-visualiseur-autonome",
+      "title": "Visualiseur autonome des exports",
+      "family": "Exports",
+      "url": "http://127.0.0.1:8081/web/?src=../artifacts/mini_run/web/recon_006_000000",
+      "note": "",
+      "height": 2517,
+      "text": "Reconstruction du vent 3D — réseau ANEO\nu, v, w, speed — 4 niveaux (25–200 m ASL)\n9.0\n9.1\nm/s\nCoupe verticale, ligne 5 — 25 m (bas) à 200 m ASL (haut)\nEXPORT (DOSSIER)\nALTITUDE ASL — 100 M\nVARIABLE\nVitesse horizontale\nu (vers l'est)\nv (vers le nord)\nw (vertical)\nLIGNE DE LA COUPE — 5\nINSTANT\nDate\n2025-01-06 00:00:00\nGrille\n4 × 10 × 20\nPas\n100 m\nCapteurs\n200\nInférence\n4 ms",
+      "details": [
+        "10-visualiseur-autonome-detail-1.png",
+        "10-visualiseur-autonome-detail-2.png",
+        "10-visualiseur-autonome-detail-3.png"
+      ]
+    }
+  ],
+  "page_errors": []
+}

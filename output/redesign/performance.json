@@ -1,0 +1,15 @@
+{
+  "viewport": "1440×1050",
+  "browser": "Chrome headless, local machine",
+  "measuredFps": 35.613931908845416,
+  "renderer": {
+    "time": 7742.79999999702,
+    "frames": 114,
+    "renderMs": 3,
+    "drawCalls": 25,
+    "triangles": 74176,
+    "geometries": 21,
+    "textures": 2,
+    "pixelRatio": 1
+  }
+}

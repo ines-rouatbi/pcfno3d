@@ -45,7 +45,8 @@ def forcage(tmp_path_factory, index):
     h, la, lo = np.meshgrid(HAUTEURS, LAT_E, LON_E, indexing="ij")
     u, v = vent(h, la, lo)
     n = len(temps)
-    np.savez(d / "forcage_era5.npz", temps=(temps.astype("int64") // 10 ** 9).to_numpy(),
+    # secondes UTC quelle que soit la resolution de pandas (ns avant pandas 3, s ou us ensuite)
+    np.savez(d / "forcage_era5.npz", temps=temps.as_unit("s").astype("int64").to_numpy(),
              lat=LAT_E, lon=LON_E, hauteurs_sol=HAUTEURS,
              u=np.broadcast_to(u, (n,) + u.shape).astype(np.float32),
              v=np.broadcast_to(v, (n,) + v.shape).astype(np.float32))

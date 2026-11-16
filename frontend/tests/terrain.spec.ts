@@ -54,7 +54,7 @@ test('national forecasts cover southern Tunisia and stay distinct from the local
   await page.locator('#terrain-hour').fill('14');await page.locator('#terrain-hour').dispatchEvent('input');
   const changed=await page.evaluate(()=>window.ATOM.terrainStats());expect(changed.forecastTime).toBeGreaterThan(stats.forecastTime);
   await page.locator('#terrain-source').selectOption('local');
-  await expect(page.locator('#terrain-live-meta')).toContainText('Démonstration locale');
+  await expect(page.locator('#terrain-live-meta')).toContainText('PC-FNO3D');
   await expect(page.locator('.rail-territory b')).toHaveText('Grand Tunis');
   await page.waitForFunction(()=>window.ATOM.terrainStats().windReady);
   expect(await page.evaluate(()=>window.ATOM.terrainExplore.sample(8.13,33.92))).toBeNull();
@@ -71,7 +71,7 @@ test('wind remains within its domain and selection opens the same geographic poi
   expect(await page.evaluate(()=>window.ATOM.workspace!.terrainWind!(9,34,80))).toBeNull();
   await expect(page.locator('#terrain-wind')).toHaveAttribute('aria-pressed','true');
   await expect.poll(()=>page.evaluate(()=>window.ATOM.terrainStats().windVectors),{timeout:45000}).toBeGreaterThan(30);
-  await expect(page.locator('#terrain-wind-source')).toContainText(/démonstration/i);
+  await expect(page.locator('#terrain-wind-source')).toContainText(/PC-FNO3D/);
   await page.evaluate(()=>window.ATOM.terrainExplore.select(10.29,36.68));
   await expect(page.locator('#terrain-elevation')).toContainText('Sol DEM');
   await expect(page.locator('#terrain-wind-reading')).toContainText('80 m du sol');

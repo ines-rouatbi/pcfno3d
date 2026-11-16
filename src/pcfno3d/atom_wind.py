@@ -534,6 +534,15 @@ def qualite(run_dir: Path, dso, w_continuite: bool = False) -> dict:
             par = dict(zip(g["source"], g["rmse_vect"]))
             stations.append({"station": nom, "modele_m_s": round(float(par["modele"]), 2) if "modele" in par else None,
                              "era5_m_s": round(float(par["era5"]), 2) if "era5" in par else None})
+    # ballons-sondes (seule mesure en altitude) : erreur vectorielle par tranche de hauteur
+    radiosondages = []
+    rs = run_dir / "validation_reelle" / "test" / "radiosondages_bilan.csv"
+    if rs.exists():
+        for _, r in pd.read_csv(rs).iterrows():
+            radiosondages.append({
+                "site": r.get("site"), "tranche_m": str(r["tranche_m"]), "n": int(r["n"]),
+                "modele_m_s": round(float(r["rmse_vect_modele"]), 2) if "rmse_vect_modele" in r else None,
+                "era5_m_s": round(float(r["rmse_vect_era5"]), 2) if "rmse_vect_era5" in r else None})
     decision = None
     for dd in (run_dir / "decision_v4.json", run_dir.parent / "decision_v4.json"):
         if dd.exists():
@@ -547,5 +556,5 @@ def qualite(run_dir: Path, dso, w_continuite: bool = False) -> dict:
             "rmse_global_u_m_s": s.get("dso1_rmse_global_u"), "rmse_global_v_m_s": s.get("dso1_rmse_global_v"),
             "r2_min_uv": min((min(r["r2_u"], r["r2_v"]) for r in niv), default=None),
             "mae_direction_deg": s.get("mae_direction_deg"), "w_continuite": w_continuite,
-            "dso": lignes, "stations": stations, "decision": decision,
+            "dso": lignes, "stations": stations, "radiosondages": radiosondages, "decision": decision,
             "jeu": "test (jours jamais vus a l'entrainement)"}
