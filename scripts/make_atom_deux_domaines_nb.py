@@ -227,6 +227,9 @@ with urllib.request.urlopen(req, timeout=120) as r:
     sante = json.loads(r.read().decode())
 assert sante["status"] == "ok", sante
 store = ApiKeyStore(PROD / "api_keys.json")
+# une cle temporaire d'un run interrompu (jamais affichee) est d'abord revoquee, sinon create refuse le nom
+if store.revoke("demo-os5"):
+    print("cle temporaire demo-os5 d'un run precedent revoquee")
 secret, _ = store.create("demo-os5", scope="read")
 def api(chemin, **q):
     u = f"http://127.0.0.1:8000/api/{chemin}?" + urllib.parse.urlencode(q)

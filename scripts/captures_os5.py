@@ -57,6 +57,8 @@ def main() -> int:
     sortie = Path(a.sortie)
     sortie.mkdir(parents=True, exist_ok=True)
     store = ApiKeyStore(Path(a.cles))
+    for nom in ("captures-os5", "captures-os5-admin"):      # restes d'un run interrompu (jamais affiches)
+        store.revoke(nom)
     secret, _ = store.create("captures-os5", scope="read")
     # onglet « Reseau ANEO » : /atom-wind/reseau-aneo?detail=true demande la portee admin (cle temporaire, revoquee)
     secret_admin, _ = store.create("captures-os5-admin", scope="admin")
