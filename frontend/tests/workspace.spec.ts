@@ -85,21 +85,16 @@ test('3D picking, cameras, layers, static rendering, and resource stability',asy
   await route(page,'monvent');const hidden=await page.evaluate(()=>window.ATOM.sceneStats().frames);await page.waitForTimeout(600);expect(await page.evaluate(()=>window.ATOM.sceneStats().frames)).toBe(hidden);
 });
 
-test('scientific field, vertical profile, DSO, integration, and export viewer',async({page})=>{
+test('export viewer reads a service export, and /app/ goes to ATOM Wind',async({page})=>{
   const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
-  // outil interne : une vraie clé (session de l'administrateur de test), jamais d'accès anonyme
+  await page.goto('/app/');await expect(page).toHaveURL(/\/app\/atom-wind\/$/);
+  // une vraie clé (session de l'administrateur de test), jamais d'accès anonyme
   const r=await page.request.post('/api/comptes/connexion',{data:{email:ADMIN_EMAIL,mot_de_passe:ADMIN_MDP}});expect(r.ok()).toBe(true);
   const cle=(await r.json()).cle;await page.addInitScript(k=>localStorage.setItem('pcfno3d.apikey',k),cle);
-  await page.goto('/app/');await expect(page.locator('#app')).toBeVisible();await expect(page.locator('#instant option')).not.toHaveCount(0);
-  await page.locator('#map').click({position:{x:200,y:100}});await expect(page.locator('#pointInfo')).not.toBeEmpty();
-  await page.locator('[data-tab="point"]').click();await expect(page.locator('#profile')).toBeVisible();await page.screenshot({path:`${directory}/science-profile.png`,fullPage:true});
-  await page.locator('[data-tab="qualite"]').click();await expect(page.locator('#dso')).not.toBeEmpty();await page.screenshot({path:`${directory}/science-quality.png`,fullPage:true});
-  await page.locator('[data-tab="integration"]').click();await expect(page.locator('#mcpUrl')).toContainText('/mcp');
   // l'export est produit par le service (portée admin), puis lu par la visionneuse
   const ex=await page.request.post('/api/reconstruct',{data:{stem:'006_000000',export:true},headers:{'X-API-Key':cle}});expect(ex.ok()).toBe(true);
   await page.goto('/app/export/?src=/api/export/006_000000');await expect(page.locator('#status')).not.toContainText('introuvable');
   await expect(page.locator('#info')).toContainText('Grille');await page.locator('#variable').selectOption('u');await page.screenshot({path:`${directory}/export-viewer.png`,fullPage:true});
-  await page.setViewportSize({width:390,height:844});await page.goto('/app/');await expect(page.locator('#app')).toBeVisible();expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)).toBe(true);await page.screenshot({path:`${directory}/science-mobile.png`,fullPage:true});
   expect(errors).toEqual([]);
 });
 

@@ -243,9 +243,12 @@ def test_carte_et_point(client):
 
 
 def test_application_web_servie(client):
-    page = client.get("/app/")
+    for chemin in ("/app", "/app/"):                               # plus de page /app/ : le SaaS
+        r = client.get(chemin, follow_redirects=False)
+        assert r.status_code in (307, 302) and r.headers["location"] == "/app/atom-wind/"
+    page = client.get("/app/atom-wind/")
     assert page.status_code == 200
-    assert 'data-product="science"' in page.text and 'id="root"' in page.text
+    assert 'data-product="atom"' in page.text
     import re
     assets = re.findall(r'(?:src|href)="(/app/assets/[^\"]+)"', page.text)
     assert assets

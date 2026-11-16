@@ -14,7 +14,7 @@ async function visit(name) {
   const text=await readFile(`${assets}/${name}`,'utf8');
   for(const match of text.matchAll(/(?:\.\/|assets\/)([^/"'()\s]+\.(?:js|css|woff2?|png))/g))await visit(match[1]);
 }
-for(const entry of ['webapp/index.html','webapp/atom-wind/index.html','webapp/export/index.html']){
+for(const entry of ['webapp/atom-wind/index.html','webapp/export/index.html']){
   const html=await readFile(entry,'utf8');
   for(const match of html.matchAll(/\/app\/assets\/([^"']+)/g))await visit(match[1]);
 }

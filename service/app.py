@@ -518,11 +518,14 @@ def monter_webapp(app: FastAPI) -> None:
         @app.get("/app/terrain/{chemin:path}", include_in_schema=False)
         def terrain_absent(chemin: str):
             return JSONResponse({"detail": TERRAIN_ABSENT}, status_code=404)
-    app.mount("/app", StaticFiles(directory=WEBAPP_DIR, html=True), name="webapp")
-
     @app.get("/", include_in_schema=False)
+    @app.get("/app", include_in_schema=False)
+    @app.get("/app/", include_in_schema=False)
     def index():
+        """Le SaaS est la seule application servie : plus de page /app/ (laboratoire retire)."""
         return RedirectResponse("/app/atom-wind/")
+
+    app.mount("/app", StaticFiles(directory=WEBAPP_DIR, html=True), name="webapp")
 
 
 @router.get("/health", tags=["service"])
