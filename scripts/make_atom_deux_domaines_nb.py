@@ -199,6 +199,15 @@ try:
     os.environ["ANTHROPIC_API_KEY"] = userdata.get("ANTHROPIC_API_KEY")
 except Exception:
     print("assistant : pas de secret ANTHROPIC_API_KEY (assistant desactive)")
+# compte ADMINISTRATEUR de l'application : e-mail et mot de passe dans les secrets Colab (jamais dans le code)
+try:
+    _env = dict(os.environ, PCFNO3D_MOT_DE_PASSE_ADMIN=userdata.get("PCFNO3D_MOT_DE_PASSE_ADMIN"))
+    _r = subprocess.run([sys.executable, "-m", "pcfno3d", "-c", "grand_tunis_v2_service_colab", "compte-admin",
+                         userdata.get("PCFNO3D_ADMIN_EMAIL")], cwd=str(CODE), env=_env, capture_output=True, text=True)
+    print("compte admin :", (_r.stdout or _r.stderr).strip()[-300:])
+    del _env
+except Exception:
+    print("compte admin : secrets PCFNO3D_ADMIN_EMAIL / PCFNO3D_MOT_DE_PASSE_ADMIN absents (pas d'admin cree)")
 info = serve_public(config="grand_tunis_v2_service_colab", key_name=CLE_NOM, scope="read", key_hash=CLE_EMPREINTE,
                     quota_minute=1200, named_tunnel={"id": TUNNEL_ID, "hostname": HOTE, "credentials": identifiants})
 del identifiants
