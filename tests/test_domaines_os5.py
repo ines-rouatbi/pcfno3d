@@ -85,3 +85,33 @@ def test_onglet_aneo_lit_le_plan_os4(tmp_path, cfg, geom):
     assert len(r["capteurs"]) == 12 and r["capteurs"][0]["id"] == "ANEO-001" and r["capteurs"][0]["gain_marginal"] == 0.1
     assert r["courbe"]["actuel"]["pire_rmse_niveau_m_s"] == 1.8 and "optimise" in r["courbe"]["strategies"]
     assert abs(r["seuil_dso1_m_s"] - 1.62) < 1e-9 and r["nombre_recommande"] is None
+
+
+def test_annoter_mode_date_statut_par_heure():
+    """Chaque heure servie dit son mode, sa date et son statut ; hors du Grand Tunis le temps reel est
+    « experimental » tant que regle_national_gfs_v4 n'est pas passee (demande d'Ines du 16/11)."""
+    nat = _wf("nat", 828, 1000.0, couche=True)
+    nat.cfg.paths = SimpleNamespace(run_dir="runs/national_1km_v4_Cp_s44")
+    p = {"date": "2026-11-16", "instants": [
+        {"heure_locale": 9.0, "source": "temps reel", "timestamp_utc": "2026-11-16T08:00:00Z"},
+        {"heure_locale": 15.0, "source": "prevision", "timestamp_utc": "2026-11-16T14:00:00Z"}]}
+    atom_outils.annoter(nat, p, j=0)
+    assert [i["mode"] for i in p["instants"]] == ["temps reel", "prevision"]
+    assert all(i["statut"] == "experimental" for i in p["instants"])
+    assert p["instants"][0]["date_donnee"] == "2026-11-16T08:00:00Z"
+    assert p["statut"] == "experimental" and p["statut_couche_10m"] == "experimental"
+    a = {"date": "2022-07-01", "instants": [{"heure_locale": 13.0, "timestamp_utc": "2022-07-01T12:00:00Z"}]}
+    atom_outils.annoter(nat, a, analyse=True)
+    assert a["mode"] == "analyse" and a["statut"] == "valide" and a["statut_couche_10m"] == "valide"
+    gt = _wf("gt", 680, 100.0)
+    gt.cfg.paths = SimpleNamespace(run_dir="runs/grand_tunis_v9_production")
+    g = {"date": "2026-11-17", "instants": [{"heure_locale": 9.0, "source": "prevision"}]}
+    assert atom_outils.annoter(gt, g, j=1)["statut"] == "experimental"      # v4 nourri par GFS
+    gt.cfg.paths = SimpleNamespace(run_dir="runs/grand_tunis_v5_gfs")
+    g = {"date": "2026-11-17", "instants": [{"heure_locale": 9.0, "source": "prevision"}]}
+    assert atom_outils.annoter(gt, g, j=1)["statut"] == "valide"            # v5 : PREV1 conforme
+
+
+def test_source_10m_en_prevision_dit_gfs_brut():
+    nat = _wf("nat", 828, 1000.0, couche=True)
+    assert "GFS brut" in atom_outils.source_vent(nat, 10.0, temps_reel=True, mode="prevision")

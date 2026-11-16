@@ -1902,5 +1902,12 @@
   "· relief et erreur d'exemple": "· تضاريس وخطأ على سبيل المثال",
   "· vent": "· الريح",
   "à obtenir avant toute campagne": "يجب الحصول عليه قبل أي حملة",
-  "Étiquettes": "التسميات"
+  "Étiquettes": "التسميات",
+  "Analyse (ERA5)": "تحليل (ERA5)",
+  "Démonstration : données d'exemple": "عرض توضيحي: بيانات مثال",
+  "Expérimental": "تجريبي",
+  "Statut non fourni": "الحالة غير متوفرة",
+  "Validé": "مُعتمَد",
+  "Journée d'été simulée, relief schématique du Grand Tunis. Ni observations météo, ni prévisions opérationnelles. La fiabilité affichée est indicative et non calibrée.{0}": "يوم صيفي محاكى، تضاريس تخطيطية لتونس الكبرى. ليست أرصادًا جوية ولا توقعات تشغيلية. الموثوقية المعروضة إرشادية وغير معايرة.{0}",
+  "{0} {1} · donnée du {2}{3}": "{0} {1} · بيانات {2}{3}"
 }

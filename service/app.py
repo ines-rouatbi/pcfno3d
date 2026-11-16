@@ -1150,6 +1150,8 @@ def atom_jour(date: str = Query(..., pattern=r"^\d{4}-\d{2}-\d{2}$"),
                         return couche_service(wf.geom, *wf.fond_et_mesures(stem))
                 out = atom_wind.jour(wf.predict_stem, wf.geom, j, fiab, couche10=c10)
                 out["modele"] = wf.checkpoint_path.name
+                from service import atom_outils
+                atom_outils.annoter(wf, out, analyse=True)     # mode « analyse » (ERA5), date, statut
                 while len(cache) >= _ATOM_JOURS_MAX:
                     cache.pop(next(iter(cache)))
                 cache[cle] = out

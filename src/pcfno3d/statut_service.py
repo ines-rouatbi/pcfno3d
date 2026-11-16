@@ -1,0 +1,95 @@
+"""Mode, date et statut de chaque donnee servie (demande d'Ines du 16/11/2026).
+
+Chaque reponse de « Mon vent » et de l'API dit :
+- le MODE : « analyse » (journee calculee sur l'ERA5), « temps reel » (heure passee d'aujourd'hui : GFS +
+  mesures des stations) ou « prevision » (heure a venir : GFS seul) ;
+- la DATE de la donnee ;
+- un STATUT : « valide » seulement quand une regle d'acceptation fixee avant le calcul a ete passee pour CE
+  domaine, CE mode et CETTE couche ; sinon « experimental ». La preuve (ou l'absence de preuve) accompagne le
+  statut.
+
+Ce qui est valide aujourd'hui (preuves dans docs/resultats/) :
+- national, analyse : C' s44 nourri par l'ERA5, DSO1-DSO6 conformes sur le test 2022 ; couche 10 m ERA5 +
+  aeroports, -3,7 % contre l'ERA5 sur 2023-2024 (regle_produit_vent10m_v4) ;
+- Grand Tunis, analyse : v4 livre par la regle decision_v4 (test 2022) ;
+- Grand Tunis, prevision J+1 / J+2 : seulement si le modele servi est v5 (OS7 : PREV1 et PREV2 conformes) ;
+- national, temps reel et prevision : seulement les cases ACCEPTEES de regle_national_gfs_v4, lues dans un
+  fichier de verdicts qui porte l'empreinte hachee de cette regle ; tant qu'elle n'est pas passee : experimental.
+Le temps reel du Grand Tunis (v4 nourri par GFS + stations) n'a pas de regle a courte echeance : experimental.
+"""
+from __future__ import annotations
+
+import json
+import os
+from pathlib import Path
+
+VALIDE, EXPERIMENTAL = "valide", "experimental"
+ANALYSE, TEMPS_REEL, PREVISION = "analyse", "temps reel", "prevision"
+REGLE_GFS = Path(__file__).resolve().parents[2] / "configs" / "national" / "regle_national_gfs_v4.json"
+
+
+def verdicts_gfs_v4(chemin: str | Path | None = None) -> dict[str, bool]:
+    """Cases de regle_national_gfs_v4 ACCEPTEES. Vide tant que la regle n'est pas hachee (accord d'Ines), que le
+    fichier de verdicts (PCFNO3D_VERDICTS_GFS_V4) manque ou qu'il ne porte pas l'empreinte de la regle."""
+    sha_f = REGLE_GFS.with_name(REGLE_GFS.name + ".sha256")
+    chemin = chemin or os.environ.get("PCFNO3D_VERDICTS_GFS_V4")
+    if not sha_f.exists() or not chemin or not Path(chemin).exists():
+        return {}
+    try:
+        v = json.loads(Path(chemin).read_text(encoding="utf-8"))
+        sha = sha_f.read_text(encoding="utf-8").split()[0]
+    except (OSError, ValueError, IndexError):
+        return {}
+    if v.get("regle_sha256") != sha:
+        return {}
+    return {str(k): x is True or x == "accepte" for k, x in (v.get("cases") or {}).items()}
+
+
+def mode_instant(source: str | None, archive_era5: bool = False) -> str:
+    """Mode d'un instant servi : `source` des instants de /atom-wind/direct (« temps reel » / « prevision »)."""
+    if archive_era5:
+        return ANALYSE
+    return PREVISION if source == PREVISION else TEMPS_REEL
+
+
+def statut(national: bool, mode: str, couche_10m: bool = False, j: int = 0,
+           prevision_os7: bool = False, verdicts: dict[str, bool] | None = None) -> dict:
+    """{"statut", "preuve"} d'une donnee. `couche_10m` : la valeur lue a 10 m vient de la couche fond + aeroports ;
+    `j` : 0 aujourd'hui, 1 demain, 2 apres-demain ; `prevision_os7` : le modele Grand Tunis servi est v5 (OS7)."""
+    verdicts = verdicts or {}
+    if mode == ANALYSE:
+        if national and couche_10m:
+            return {"statut": VALIDE, "preuve": "couche 10 m ERA5 + aeroports : -3,7 % contre l'ERA5 aux aeroports "
+                                                "sur 2023-2024, periode jamais utilisee (regle_produit_vent10m_v4)"}
+        if national:
+            return {"statut": VALIDE, "preuve": "modele national C' s44 nourri par l'ERA5 : DSO1-DSO6 conformes sur "
+                                                "le test 2022 (decision_v4_national)"}
+        return {"statut": VALIDE, "preuve": "modele Grand Tunis v4 nourri par l'ERA5 : livre par la regle decision_v4 "
+                                            "(test 2022)"}
+    if national:
+        if mode == TEMPS_REEL:
+            cle = "b / analyse" if couche_10m else "a / analyse"
+        elif couche_10m:
+            return {"statut": EXPERIMENTAL, "preuve": "prevision : aucune mesure de l'heure visee, la couche 10 m vaut "
+                                                      "GFS brut, sans correction"}
+        else:
+            cle = "a / +48 h" if j >= 2 else "a / +24 h"
+        if verdicts.get(cle):
+            return {"statut": VALIDE, "preuve": f"regle_national_gfs_v4, case « {cle} » acceptee"}
+        return {"statut": EXPERIMENTAL, "preuve": f"nourri par GFS : regle_national_gfs_v4 (case « {cle} ») pas encore "
+                                                  "passee"}
+    if mode == PREVISION and j >= 1 and prevision_os7:
+        return {"statut": VALIDE, "preuve": "modele Grand Tunis v5 nourri par GFS : PREV1 (+24 h) et PREV2 (+48 h) "
+                                            "conformes (OS7, 2022)"}
+    if mode == PREVISION:
+        return {"statut": EXPERIMENTAL,
+                "preuve": "prevision par v5 a moins de 24 h non jugee (PREV1/PREV2 a +24 h et +48 h)" if prevision_os7
+                else "modele Grand Tunis v4 nourri par GFS sans affinage : non conforme a l'OS7 (moins bon que GFS brut "
+                     "a Zaghouan) ; le modele valide en prevision est v5"}
+    return {"statut": EXPERIMENTAL, "preuve": "temps reel (GFS + stations) : aucune regle de validation a courte "
+                                              "echeance"}
+
+
+def resume(statuts: list[dict]) -> str:
+    """Statut d'une journee entiere : « valide » seulement si toutes ses heures le sont."""
+    return VALIDE if statuts and all(s.get("statut") == VALIDE for s in statuts) else EXPERIMENTAL

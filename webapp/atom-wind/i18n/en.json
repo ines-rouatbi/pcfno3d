@@ -1909,5 +1909,12 @@
   "· relief et erreur d'exemple": "· example terrain and error",
   "· vent": "· wind",
   "à obtenir avant toute campagne": "to obtain before any campaign",
-  "Étiquettes": "Labels"
+  "Étiquettes": "Labels",
+  "Analyse (ERA5)": "Analysis (ERA5)",
+  "Démonstration : données d'exemple": "Demo: example data",
+  "Expérimental": "Experimental",
+  "Statut non fourni": "Status not provided",
+  "Validé": "Validated",
+  "Journée d'été simulée, relief schématique du Grand Tunis. Ni observations météo, ni prévisions opérationnelles. La fiabilité affichée est indicative et non calibrée.{0}": "Simulated summer day, schematic Greater Tunis terrain. Neither weather observations nor operational forecasts. The reliability shown is indicative and not calibrated.{0}",
+  "{0} {1} · donnée du {2}{3}": "{0} {1} · data of {2}{3}"
 }

@@ -173,7 +173,46 @@ def jour(wf, j: int) -> dict:
     # incertitude en temps reel (BF8) : PCFNO3D_SIGMA_DIRECT=1 et un modele calibre (inference.reliability)
     fiab = os.environ.get("PCFNO3D_SIGMA_DIRECT", "0") == "1"
     return _avec_cache("direct", wf, date, TTL_DIRECT_S,
-                       lambda: archiver(wf, j, atom_wind.jour_direct(wf, source(wf), date, fiabilite=fiab)))
+                       lambda: archiver(wf, j, annoter(wf, atom_wind.jour_direct(wf, source(wf), date, fiabilite=fiab),
+                                                        j=j)))
+
+
+# ---------------------------------------------------------------------- mode, date et statut (16/11)
+def est_national(wf) -> bool:
+    return max(wf.geom.nx * wf.geom.dx, wf.geom.ny * wf.geom.dy) > 300_000
+
+
+def prevision_os7(wf) -> bool:
+    """Le modele Grand Tunis servi est-il v5 (affine sur GFS, PREV1/PREV2 conformes) ?"""
+    return "v5_gfs" in Path(str(wf.cfg.paths.run_dir)).name or "v5_gfs" in str(wf.cfg.name)
+
+
+def statut_de(wf, mode: str, couche_10m: bool = False, j: int = 0) -> dict:
+    from pcfno3d import statut_service as st
+    return st.statut(est_national(wf), mode, couche_10m=couche_10m, j=j, prevision_os7=prevision_os7(wf),
+                     verdicts=st.verdicts_gfs_v4())
+
+
+def annoter(wf, payload: dict, j: int = 0, analyse: bool = False) -> dict:
+    """Ajoute a une journee servie le mode, la date et le statut de chaque heure (et de la couche 10 m)."""
+    from pcfno3d import statut_service as st
+    couche = bool(getattr(wf.cfg.inference, "couche_10m_oi", False))
+    for i in payload.get("instants", []):
+        m = st.mode_instant(i.get("source"), archive_era5=analyse)
+        s = statut_de(wf, m, j=j)
+        i.update({"mode": m, "statut": s["statut"], "date_donnee": i.get("timestamp_utc")})
+        if couche:
+            i["statut_couche_10m"] = statut_de(wf, m, couche_10m=True, j=j)["statut"]
+    modes = sorted({i["mode"] for i in payload.get("instants", [])})
+    sts = [statut_de(wf, m, j=j) for m in modes]
+    payload.update({"mode": modes[0] if len(modes) == 1 else " / ".join(modes), "modes": modes,
+                    "date_donnee": payload.get("date"),
+                    "statut": st.resume(sts), "statut_preuve": " ; ".join(dict.fromkeys(s["preuve"] for s in sts))})
+    if couche:
+        sc = [statut_de(wf, m, couche_10m=True, j=j) for m in modes]
+        payload.update({"statut_couche_10m": st.resume(sc),
+                        "statut_couche_10m_preuve": " ; ".join(dict.fromkeys(s["preuve"] for s in sc))})
+    return payload
 
 
 def ensemble(wf, j: int) -> dict:
@@ -301,10 +340,16 @@ def lire_point(wf, j: int, z_agl: float, h: float, lat=None, lon=None, lieu=None
     p = jour(wf, j)
     u, v = vent(wf, p, x, y, z_agl, h)
     s = math.hypot(u, v)
+    inst = min(p.get("instants") or [{}], key=lambda i: abs(float(i.get("heure_locale", h)) - h))
+    from pcfno3d import statut_service as st
+    mode = st.mode_instant(inst.get("source") or ("prevision" if p.get("prevision") else "temps reel"))
+    couche = bool(getattr(wf.cfg.inference, "couche_10m_oi", False)) and z_agl < 25
+    sta = statut_de(wf, mode, couche_10m=couche and z_agl <= 10, j=j)
     return {"lieu": nom, "date": p["date"], "heure_locale": h, "hauteur_sol_m": z_agl,
             "vitesse_m_s": round(s, 2), "vitesse_km_h": round(s * 3.6, 1), "direction_provenance_deg": _direction(u, v),
-            "source": "prevision" if p.get("prevision") else "temps reel",
-            "domaine": nom_domaine(wf), "source_vent": source_vent(wf, z_agl, temps_reel=True),
+            "source": mode, "mode": mode, "date_donnee": inst.get("timestamp_utc") or p["date"],
+            "statut": sta["statut"], "statut_preuve": sta["preuve"],
+            "domaine": nom_domaine(wf), "source_vent": source_vent(wf, z_agl, temps_reel=True, mode=mode),
             "temperature_2m_c": _arrondi(_surface(wf, p, "t2m", x, y, h)),
             "humidite_2m_pct": _arrondi(_surface(wf, p, "hr2m", x, y, h)),
             "note": "vent : ATOM Wind (PC-FNO3D) ; temperature et humidite : GFS"}
@@ -347,14 +392,16 @@ def modele_pour(lat=None, lon=None, lieu=None, domaine: str | None = None, defau
     raise ValueError("position hors des domaines servis — " + " ; ".join(erreurs))
 
 
-def source_vent(wf, z_agl: float, temps_reel: bool = False) -> str:
-    """D'ou vient le vent servi a cette hauteur (B2 de l'objectif d'Ines du 16/11)."""
+def source_vent(wf, z_agl: float, temps_reel: bool = False, mode: str | None = None) -> str:
+    """D'ou vient le vent servi a cette hauteur (B2 de l'objectif d'Ines du 16/11). En prevision, aucune mesure
+    de l'heure visee : la couche 10 m vaut le fond GFS, sans correction."""
     national = (wf.geom.nx * wf.geom.dx) > 300_000
     modele = "modele national (PC-FNO3D, C' s44)" if national else f"modele {nom_domaine(wf)} (PC-FNO3D)"
     if not getattr(wf.cfg.inference, "couche_10m_oi", False) or z_agl >= 25:
         return modele
     fond = "GFS" if temps_reel else "ERA5"
-    couche = f"{fond} corrigee par les aeroports (interpolation optimale des METAR)"
+    couche = ("GFS brut, sans correction (prevision : aucune mesure de l'heure visee)" if mode == "prevision"
+              else f"{fond} corrigee par les aeroports (interpolation optimale des METAR)")
     return couche if z_agl <= 10 else f"entre {couche} a 10 m et le {modele} a 25 m"
 
 

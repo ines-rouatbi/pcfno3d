@@ -35,12 +35,34 @@ function entetes(){
   return s ? { "X-API-Key": s, "X-ATOM-Session": s } : k ? { "X-API-Key": k } : {};
 }
 
+// Dernier état réel connu, gardé AUSSI par le navigateur (cahier v12, 17.1 ; demande d'Ines du 16/11) : chaque
+// réponse réelle des routes ci-dessous est gardée (Cache Storage) avec sa date de réception ; si le service ne
+// répond plus (Colab arrêté, tunnel coupé) et que la passerelle n'a rien servi, la page la ressert avec sa date
+// au lieu de passer en démonstration. La démonstration ne reste qu'en dernier recours.
+const ETAT_CACHE = "atom-dernier-etat-v1";
+const ETAT_ROUTES = /^\/atom-wind\/(grille|jours|jour|direct|domaines|reseau-aneo)(\?|$)/;
+async function garderEtat(url, texte){
+  try {
+    if(!("caches" in window)) return;
+    const c = await caches.open(ETAT_CACHE);
+    await c.put(url, new Response(texte, { headers: { "content-type": "application/json", "x-atom-recu-le": new Date().toISOString() } }));
+  } catch(e) {}
+}
+async function lireEtat(url){
+  try {
+    if(!("caches" in window)) return null;
+    const r = await (await caches.open(ETAT_CACHE)).match(url);
+    return r ? { recu: r.headers.get("x-atom-recu-le"), json: await r.json() } : null;
+  } catch(e) { return null; }
+}
+
 async function get(path, ms = 90000){
   const h = {}; Object.assign(h, entetes());
   const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), ms);
   const debut = performance.now();
+  const url = `${BASE}/api${avecDomaine(path)}`;
   try {
-    const r = await fetch(`${BASE}/api${avecDomaine(path)}`, { headers: h, signal: ctl.signal });
+    const r = await fetch(url, { headers: h, signal: ctl.signal });
     if(A.mesureRequete) A.mesureRequete(path, performance.now() - debut);
     if(r.status === 401 || r.status === 403){ const e = new Error("clé d'API refusée ou absente"); e.auth = true; throw e; }
     if(!r.ok){
@@ -51,8 +73,14 @@ async function get(path, ms = 90000){
     // Worker atom.zelqane.com : service hors ligne, dernier état réel connu (cahier v12, 17.1)
     const de = r.headers.get("x-atom-dernier-etat");
     if(de !== null) A.dernierEtat = de || "date inconnue";
-    return await r.json();
+    const texte = await r.text();
+    if(de === null && ETAT_ROUTES.test(path)) garderEtat(url, texte);
+    return JSON.parse(texte);
   } catch(e){
+    if(!e.auth && ETAT_ROUTES.test(path)){
+      const s = await lireEtat(url);
+      if(s){ A.dernierEtat = s.recu || "date inconnue"; A.dernierEtatNavigateur = true; return s.json; }
+    }
     if(e.name === "AbortError") throw new Error("le service PC-FNO3D ne répond pas (Colab endormi ?)");
     throw e;
   } finally { clearTimeout(t); }
@@ -75,6 +103,29 @@ window.ATOM = A;
 
 A.pret = () => !!(A.grille && A.jour && A.jour._vent);
 A.aSigma = () => !!(A.pret() && A.jour._sigma);
+// mode (analyse, temps réel, prévision), date et statut (validé / expérimental) de l'heure affichée, tels que le
+// service les donne (service.atom_outils.annoter) ; à 10 m, le statut de la couche 10 m quand elle existe
+const MODES_FR = { "analyse": "Analyse (ERA5)", "temps reel": "Temps réel", "prevision": "Prévision" };
+function pillStatut(s){
+  return s === "valide" ? `<span class="pill good">Validé</span>` : s === "experimental" ? `<span class="pill mid">Expérimental</span>`
+    : `<span class="pill">Statut non fourni</span>`;
+}
+A.statutHeure = (h, z = 10) => {
+  if(!A.pret() || !(A.jour.instants || []).length) return null;
+  const I = A.jour.instants, i = I.reduce((b, x) => Math.abs(x.heure_locale - h) < Math.abs(b.heure_locale - h) ? x : b, I[0]);
+  const mode = i.mode || (A.jour.temps_reel ? (i.source === "prevision" ? "prevision" : "temps reel") : "analyse");
+  const c10 = z <= 10 && i.statut_couche_10m;
+  return { mode, statut: c10 ? i.statut_couche_10m : (i.statut || null), date: i.date_donnee || i.timestamp_utc || A.jour.date,
+           preuve: (c10 ? A.jour.statut_couche_10m_preuve : A.jour.statut_preuve) || "" };
+};
+A.donneeHtml = (h, z = 10) => {
+  const s = A.statutHeure(h, z);
+  if(!s) return `<p class="aw-donnee"><span class="pill bad">Démonstration : données d'exemple</span></p>`;
+  const quand = /T/.test(String(s.date)) ? fmtInstant(s.date) : fmtDate(s.date);
+  const hors = A.dernierEtat ? ` · <b>Service hors ligne</b> : dernier état réel connu, reçu le ${fmtInstant(A.dernierEtat)}.` : "";
+  return `<p class="aw-donnee">${pillStatut(s.statut)} ${MODES_FR[s.mode] || s.mode} · donnée du ${quand}${hors}`
+    + (s.preuve ? ` <span class="muted">(${s.preuve})</span>` : "") + `</p>`;
+};
 
 // ------------------------------------------------------------------ domaine servi (phase 8 nationale)
 // La page garde la géographie de la maquette (Grand Tunis, 68 × 56 km, blocs de 500 m) quand le modèle
@@ -250,6 +301,7 @@ function banniere(){
       if(fr) fr.textContent = `Modèle : ${modele}`;
     }
     if(A.jour.couche_10m) src.insertAdjacentHTML("beforeend", ` <span class="muted">Vent à 10 m : ${A.jour.couche_10m}.</span>`);
+    if(A.jour.statut) src.insertAdjacentHTML("beforeend", ` <span class="aw-statut">${pillStatut(A.jour.statut)} <span class="muted">${A.jour.statut_preuve || ""}</span></span>`);
     if((A.domaines || []).length > 1){
       const nat = !!(A.domaine() && A.domaine().national);
       src.insertAdjacentHTML("beforeend", ` <span class="aw-domaines">Zone : `
@@ -271,8 +323,8 @@ function banniere(){
     }
   } else {
     const raison = A.erreur ? ` <span class="muted">(API PC-FNO3D non jointe : ${A.erreur.message})</span>` : "";
-    if(fr) fr.textContent = "Démonstration · exemple synthétique";
-    src.innerHTML = `<b>Démonstration</b> : journée d'été simulée, relief schématique du Grand Tunis. Ni observations météo, ni prévisions opérationnelles. La fiabilité affichée est indicative et non calibrée.${raison}`;
+    if(fr) fr.textContent = "Démonstration : données d'exemple";
+    src.innerHTML = `<span class="pill bad">Démonstration : données d'exemple</span> Journée d'été simulée, relief schématique du Grand Tunis. Ni observations météo, ni prévisions opérationnelles. La fiabilité affichée est indicative et non calibrée.${raison}`;
     if(A.erreur && A.erreur.auth){
       src.insertAdjacentHTML("beforeend", ` <form id="aw-cle" style="display:inline-flex;gap:6px;align-items:center"><input type="password" placeholder="Clé d'API (pcf_…)" autocomplete="off" style="font-size:13px;padding:2px 6px"><button class="btn" style="padding:2px 10px;font-size:13px">Se connecter</button></form>`);
       document.getElementById("aw-cle").onsubmit = e => { e.preventDefault(); poserCle(e.target.querySelector("input").value.trim()); location.reload(); };

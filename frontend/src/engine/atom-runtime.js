@@ -213,6 +213,7 @@ function renderAnswer(){
       <div class="fact"><div class="k">Fiabilité <span class="tip" tabindex="0" data-tip="Valeur calculée par ATOM Wind à partir de ${STATIONS.length} stations et de la météo de grande échelle. La station la plus proche (${rel.who}) est à ${Math.round(rel.d)} km. Erreur probable : ± ${Math.round(kmh(rel.s))} km/h.">?</span></div><div class="v" style="font-size:17px"><span class="pill ${rc}">${rl}</span></div></div>
     </div>
     <p class="muted" style="font-size:15px">${beaufort(kmh(r.sp))}</p>
+    ${window.ATOM?.donneeHtml ? window.ATOM.donneeHtml(state.hour, a.z) : ""}
     <button class="btn whybtn" id="whybtn" aria-expanded="${whyOpen}">Pourquoi ce vent ?</button>
     <div id="whybox" ${whyOpen?"":"hidden"}>${explainHtml(x,y,a.z,state.hour)}</div>
   </div>`;

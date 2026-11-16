@@ -1,0 +1,50 @@
+{
+  "fixee_le": "2026-11-16, AVANT tout telechargement GFS, tout passage du modele national sur GFS et toute lecture des mesures pour ce jugement ; aucune regle deja hachee n'est modifiee",
+  "statut": "PROPOSITION soumise a l'accord ecrit d'Ines (demande du 16/11 : « ecrire d'abord une regle datee et hachee, puis me l'envoyer avant tout calcul ») ; l'empreinte .sha256 est ecrite au moment de l'accord, sur ce texte exact ; si un point change, nouvelle version datee, l'ancienne est gardee",
+  "objet": "valider ou non ce que le service sert AUJOURD'HUI hors du Grand Tunis en temps reel et en prevision, sans aucun reentrainement : (a) le champ du modele national C' s44 nourri par GFS au lieu d'ERA5, (b) la couche 10 m « GFS corrigee par les aeroports » (la couche validee, regle_produit_vent10m_v4, est « ERA5 corrigee par les aeroports » : avec un fond GFS elle n'a jamais ete verifiee)",
+  "modele": "C' s44 tel que livre (regle_choix_v4_Cp_s44, w servi = w_continuite + 0,75 (w_net - w_continuite), regle_w_servi_v4) ; poids, normalisation et configuration national_v4_service inchanges ; aucun affinage, aucun parametre choisi",
+  "donnees_gfs": {
+    "source": "archive NOAA sur AWS (noaa-gfs-bdp-pds), pgrb2.0p25, plages d'octets via .idx (pcfno3d.gfs, Herbie) ; memes champs, memes mailles 0,25 deg et memes hauteurs au-dessus du sol que le forcage ERA5 national ; formules pcfno3d.temps_reel.forcage_gfs (celles du service temps reel)",
+    "echeances": {
+      "analyse": "dernier cycle GFS (00, 06, 12, 18 UTC) tel que t - run >= 0 : echeance effective 0 a 5 h (f000 aux heures de cycle, f003 aux autres heures synoptiques), notee dans run_utc / echeance_h",
+      "+24 h": "dernier cycle tel que t - run >= 24 h (effective 24 a 29 h), pcfno3d.gfs.run_pour",
+      "+48 h": "dernier cycle tel que t - run >= 48 h (effective 48 a 53 h)"
+    },
+    "reutilisation": "les fichiers *_tn.npz deja ecrits par l'OS7 du Grand Tunis sont relus sans y rien ecrire ; le reste (boite nationale seule, ~90 Ko par echeance gardes, GRIB partiel efface aussitot) est telecharge dans un dossier neuf MyDrive/pcfno3d_national/gfs_v4_regle/",
+    "controle": "forcage de meme forme que le forcage ERA5 national, sinon arret ; au plus 2 % d'echeances absentes de l'archive apres 3 passes (instants retires pour TOUTES les sources et notes), sinon arret sans verdict"
+  },
+  "instants": "les 180 instants synoptiques du test national 2022 (ceux du DSO7 de v4_test_2022.md) ; mesure METAR a 30 min au plus, la plus proche ; vent calme garde (u = v = 0) ; memes exclusions que stations_reelles (EXCLUSIONS, mois de panne)",
+  "mesures": "METAR des 12 aeroports de l'entree du modele (configs/national/stations_metar.csv), memes fichiers que le DSO7 ; ce sont les seules MESURES ; GFS et ERA5 sont des previsions / reanalyses, jamais appelees mesures",
+  "lecture_deja_faite": "ces mesures 2022 ont deja ete lues UNE fois pour C' s44 nourri par ERA5 (DSO7, 2,844 contre 2,857 m/s) ; ce jugement compare d'autres sources (GFS) sans rien choisir ni regler sur elles : il est publie comme une seconde lecture de la periode, pas comme un jugement independant",
+  "station_retiree": "chaque aeroport est retire quand il est juge : absent de l'entree du modele (a) et des innovations de l'OI (b), comme valider_grand_tunis_reel.py au national",
+  "sources_jugees": {
+    "gfs_brut": "REFERENCE : vent GFS 10 m de l'echeance, interpole (bilineaire) a la cellule de l'aeroport, exactement le fond utilise par (b)",
+    "a_national_gfs": "C' s44 nourri par le forcage GFS de l'echeance ; entree = pseudo-capteurs GFS 10 m (mask.e_source: forcage) + a l'analyse les 11 AUTRES aeroports mesures a l'instant (temps_reel.entree), aux echeances +24 h et +48 h aucun aeroport (comme le service : heures a venir sans station) ; vent a 10 m au-dessus du sol a la cellule de l'aeroport (placement du DSO7)",
+    "b_gfs_oi_10m": "fond GFS 10 m + OI des innovations des 11 AUTRES aeroports mesures a l'instant, pcfno3d.vent10m_oi.couche_service, L 150 km, lambda 4, biais 2015-2020 (configs/national/biais_innovations_aeroports_2015_2020.json) : exactement les parametres de regle_produit_vent10m_v4, rien n'est reajuste"
+  },
+  "b_aux_echeances_futures": "a +24 h et +48 h, le service n'a aucune mesure de l'heure visee : (b) y vaut GFS brut a l'identique (ecart nul par construction). (b) n'est donc JUGE qu'a l'analyse ; a +24 h et +48 h la page dit « GFS brut, sans correction » et ne revendique aucun gain",
+  "metrique": "RMSE vectoriel a 10 m par aeroport sur les instants ou l'aeroport est mesure ; moyenne des 12 aeroports ; ecart = moyenne(source) - moyenne(gfs_brut) ; IC 95 % par bootstrap des JOURS (2000 tirages, graine 2030, memes tirages pour toutes les sources et echeances)",
+  "critere": {
+    "par_source_et_echeance": "ACCEPTE si (1) la borne haute de l'IC 95 % de l'ecart est <= 0 ET (2) aucun aeroport degrade de plus de 5 % (RMSE source / RMSE gfs_brut - 1 <= 0,05 a chacun des 12) ; sinon REFUSE",
+    "cases_jugees": ["a / analyse", "a / +24 h", "a / +48 h", "b / analyse"],
+    "rapporte_sans_verdict": "ERA5 10 m aux memes instants (pour situer, deja lue au DSO7), direction MAE, biais de vitesse, nombre d'instants par aeroport"
+  },
+  "consequences": {
+    "a / analyse accepte": "temps reel national (champ 3D hors du Grand Tunis) : statut « valide »",
+    "a / +24 h accepte": "prevision J+1 nationale : statut « valide »",
+    "a / +48 h accepte": "prevision J+2 nationale : statut « valide »",
+    "b / analyse accepte": "couche 10 m temps reel hors du Grand Tunis (GFS + aeroports) : statut « valide »",
+    "case refusee ou non jugee": "statut « experimental » garde ; si a / analyse est refuse, le national est servi en mode « analyse » sur la derniere ERA5 disponible (date affichee) et le temps reel et la prevision restent sur le Grand Tunis",
+    "tout accepte": "selon la demande d'Ines du 16/11, le national peut devenir le modele temps reel et prevision de toute la Tunisie, Grand Tunis compris ; ce basculement du Grand Tunis reste une decision d'Ines apres lecture des resultats (la regle ne compare pas le national au modele du Grand Tunis aux 3 stations du Grand Tunis)"
+  },
+  "cout_estime": "telechargement GFS sur Colab CPU (~180 x 3 echeances, une partie deja dans l'archive OS7) ; passes du modele : 180 x 12 a l'analyse + 180 x 2 aux echeances, ~0,25 s chacune sur A100, ~1 s sur L4 ; moins de 10 unites Colab prevues, sinon demande avant",
+  "lecture": "une seule lecture ; resultats publies tels quels (tableau par aeroport, par source et par echeance, ecarts et IC) dans docs/resultats/national/gfs_v4.md et MyDrive/pcfno3d_national/gfs_v4_regle/ ; verdicts par un script qui verifie l'empreinte de cette regle",
+  "interdits": [
+    "aucun reentrainement, aucun parametre choisi sur ces donnees",
+    "aucun bruit ajoute aux predictions",
+    "GFS, ERA5 et la verite generee jamais appeles mesures",
+    "aucun seuil de DSO change",
+    "rien n'est supprime ni ecrase ; dossiers de sortie neufs",
+    "aucun secret dans le code, le carnet ou les journaux"
+  ]
+}
