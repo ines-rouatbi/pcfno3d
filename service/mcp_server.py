@@ -76,6 +76,21 @@ def get_model() -> WindFieldModel:
     return _MODEL
 
 
+def _modele_requete(lat: float | None = None, lon: float | None = None, lieu: str | None = None,
+                    domaine: str | None = None):
+    """Le modele d'un outil : `domaine` explicite (« national », nom de /api/atom-wind/domaines) ; sinon le domaine
+    le plus fin qui contient la position ou le lieu (Grand Tunis, puis la Tunisie entiere) ; sinon le principal."""
+    from service import atom_outils
+    if domaine:
+        return atom_outils.modele_pour(domaine=domaine)
+    if lieu or (lat is not None and lon is not None):
+        try:
+            return atom_outils.modele_pour(lat=lat, lon=lon, lieu=lieu, defaut=get_model())
+        except ValueError:
+            pass
+    return get_model()
+
+
 def set_model(model: WindFieldModel) -> None:
     """Partage le modele deja charge par l'API HTTP (une seule copie en memoire)."""
     global _MODEL
@@ -497,7 +512,7 @@ def domaines_servis() -> dict:
 
 @mcp.tool()
 def decision_agricole(jour: int, lieu: str | None = None, lat: float | None = None,
-                      lon: float | None = None) -> dict:
+                      lon: float | None = None, domaine: str | None = None) -> dict:
     """Creneaux de traitement et d'aspersion d'une parcelle pour un jour (cahier v12) : regle de l'application
     (traitement oui de 3 a 15 km/h a 10 m), heure par heure, et probabilite GEFS de pouvoir traiter si elle
     est calculee.
@@ -507,12 +522,12 @@ def decision_agricole(jour: int, lieu: str | None = None, lat: float | None = No
         lieu: lieu de l'application, ou lat / lon.
     """
     from service import atom_outils
-    return atom_outils.decision_agricole(get_model(), int(jour), lat=lat, lon=lon, lieu=lieu)
+    return atom_outils.decision_agricole(_modele_requete(lat, lon, lieu, domaine), int(jour), lat=lat, lon=lon, lieu=lieu)
 
 
 @mcp.tool()
 def fenetres_maintenance(jour: int, hauteur_m: float = 80.0, seuil_m_s: float = 12.0, lieu: str | None = None,
-                         lat: float | None = None, lon: float | None = None) -> dict:
+                         lat: float | None = None, lon: float | None = None, domaine: str | None = None) -> dict:
     """Creneaux surs pour le travail en hauteur sur une eolienne ou un mat (cahier v12, E7) : heures ou le
     vent moyen a la hauteur donnee reste sous le seuil (12 m/s par defaut ; vent moyen, sans rafales).
 
@@ -523,12 +538,12 @@ def fenetres_maintenance(jour: int, hauteur_m: float = 80.0, seuil_m_s: float = 
         lieu: lieu de l'application (parc virtuel de Djebel Ressas si rien n'est donne), ou lat / lon.
     """
     from service import atom_outils
-    return atom_outils.fenetres_maintenance(get_model(), int(jour), float(hauteur_m), float(seuil_m_s),
+    return atom_outils.fenetres_maintenance(_modele_requete(lat, lon, lieu, domaine), int(jour), float(hauteur_m), float(seuil_m_s),
                                             lat=lat, lon=lon, lieu=lieu)
 
 
 @mcp.tool()
-def variations_production(jour: int, seuil_pct: float = 20.0) -> dict:
+def variations_production(jour: int, seuil_pct: float = 20.0, domaine: str | None = None) -> dict:
     """Hausses et chutes rapides de production du parc virtuel (cahier v12, E13) : puissance heure par heure
     et rampes d'au moins `seuil_pct` % de la puissance installee d'une heure a l'autre.
 
@@ -537,22 +552,22 @@ def variations_production(jour: int, seuil_pct: float = 20.0) -> dict:
         seuil_pct: rampe minimale signalee, en % de la puissance installee par heure.
     """
     from service import atom_outils
-    return atom_outils.variations_production(get_model(), int(jour), seuil_pct=float(seuil_pct))
+    return atom_outils.variations_production(_modele_requete(domaine=domaine), int(jour), seuil_pct=float(seuil_pct))
 
 
 @mcp.tool()
-def valeur_stations() -> dict:
+def valeur_stations(domaine: str | None = None) -> dict:
     """Valeur de chaque station de mesure aujourd'hui (cahier v12, E11) et aire de son influence (E10) : le
     modele est relance sans chaque station ; erreur a son emplacement sans elle (faible = redondante)."""
     from service import atom_outils
-    d = dict(atom_outils.valeur_stations(get_model()))
+    d = dict(atom_outils.valeur_stations(_modele_requete(domaine=domaine)))
     for k in ("influence", "_influence"):
         d.pop(k, None)
     return d
 
 
 @mcp.tool()
-def explication_point(lieu: str | None = None, lat: float | None = None, lon: float | None = None) -> dict:
+def explication_point(lieu: str | None = None, lat: float | None = None, lon: float | None = None, domaine: str | None = None) -> dict:
     """Pourquoi ce vent ici (cahier v12, E10) : les stations qui ont le plus influence la valeur du point
     aujourd'hui, a 10 m.
 
@@ -560,12 +575,12 @@ def explication_point(lieu: str | None = None, lat: float | None = None, lon: fl
         lieu: lieu de l'application (Mornag, Nabeul, Soliman...), ou lat / lon.
     """
     from service import atom_outils
-    return atom_outils.explication_point(get_model(), lat=lat, lon=lon, lieu=lieu)
+    return atom_outils.explication_point(_modele_requete(lat, lon, lieu, domaine), lat=lat, lon=lon, lieu=lieu)
 
 
 @mcp.tool()
 def dimensionnement_mat(lieu: str | None = None, lat: float | None = None, lon: float | None = None,
-                        hauteur_m: float = 30.0, conso_w: float = 5.0, autonomie_j: float = 3.0) -> dict:
+                        hauteur_m: float = 30.0, conso_w: float = 5.0, autonomie_j: float = 3.0, domaine: str | None = None) -> dict:
     """Dimensionnement energetique d'un mat de mesure (cahier v12, E18) : production d'une micro-eolienne a la
     hauteur du mat, couverture de la consommation et taille de batterie (aujourd'hui a apres-demain).
 
@@ -576,23 +591,23 @@ def dimensionnement_mat(lieu: str | None = None, lat: float | None = None, lon: 
         autonomie_j: jours d'autonomie minimale sans vent.
     """
     from service import atom_outils
-    d = atom_outils.dimensionnement_mat(get_model(), lat=lat, lon=lon, lieu=lieu, hauteur_m=float(hauteur_m),
+    d = atom_outils.dimensionnement_mat(_modele_requete(lat, lon, lieu, domaine), lat=lat, lon=lon, lieu=lieu, hauteur_m=float(hauteur_m),
                                         conso_w=float(conso_w), autonomie_j=float(autonomie_j))
     d.pop("production_w", None)
     return d
 
 
 @mcp.tool()
-def historique_atom_wind() -> dict:
+def historique_atom_wind(domaine: str | None = None) -> dict:
     """Historique des journees calculees par ATOM Wind (cahier v12, HIS1) : temps reel et previsions deja
     servies, avec leur date, leur type, leur date d'emission et leur taille. Le contenu d'une journee se lit
     par l'API (/api/atom-wind/historique/<nom>)."""
     from service import atom_outils
-    return {"journees": atom_outils.historique(get_model())}
+    return {"journees": atom_outils.historique(_modele_requete(domaine=domaine))}
 
 
 @mcp.tool()
-def simuler_panne(heure: float, stations: list[str]) -> dict:
+def simuler_panne(heure: float, stations: list[str], domaine: str | None = None) -> dict:
     """Scenario de panne (cahier v12, BF88, espace R&D) : recalcule une heure deja mesuree d'aujourd'hui
     SANS les stations donnees et dit ce que cela change sur le domaine et aux stations.
 
@@ -601,11 +616,11 @@ def simuler_panne(heure: float, stations: list[str]) -> dict:
         stations: stations a retirer (Tunis-Carthage, Zaghouan, Nabeul ou leurs codes DTTA, INM60729, INM60728).
     """
     from service import atom_outils
-    return atom_outils.scenario_panne(get_model(), float(heure), list(stations))
+    return atom_outils.scenario_panne(_modele_requete(domaine=domaine), float(heure), list(stations))
 
 
 @mcp.tool()
-def sites_porteurs(hauteur_m: int = 20, n: int = 10, eolienne_w: float = 400.0) -> dict:
+def sites_porteurs(hauteur_m: int = 20, n: int = 10, eolienne_w: float = 400.0, domaine: str | None = None) -> dict:
     """Espace holding (cahier v12, BF85) : emplacements recommandes pour les mats Porteur (15, 20, 25 ou 30 m),
     classes par la production de leur eolienne a la hauteur du mat ; capteurs du plan ANEO classes de meme.
 
@@ -615,12 +630,12 @@ def sites_porteurs(hauteur_m: int = 20, n: int = 10, eolienne_w: float = 400.0) 
         eolienne_w: puissance nominale de l'eolienne du mat (W).
     """
     from service import atom_outils
-    return atom_outils.sites_porteurs(get_model(), hauteur_m=int(hauteur_m), n=int(n), eolienne_w=float(eolienne_w))
+    return atom_outils.sites_porteurs(_modele_requete(domaine=domaine), hauteur_m=int(hauteur_m), n=int(n), eolienne_w=float(eolienne_w))
 
 
 @mcp.tool()
 def vent_grue(jour: int, hauteur_m: float = 40.0, limite_rafale_m_s: float = 20.0, surface_charge_m2: float = 0.0,
-              lieu: str | None = None, lat: float | None = None, lon: float | None = None) -> dict:
+              lieu: str | None = None, lat: float | None = None, lon: float | None = None, domaine: str | None = None) -> dict:
     """Espace chantier (cahier v12, BF86) : vent et rafale a la hauteur de la fleche d'une grue, heure par heure,
     creneaux de levage sous la limite et effort du vent sur la charge.
 
@@ -632,7 +647,7 @@ def vent_grue(jour: int, hauteur_m: float = 40.0, limite_rafale_m_s: float = 20.
         lieu: lieu de l'application, ou lat / lon.
     """
     from service import atom_outils
-    d = atom_outils.vent_grue(get_model(), int(jour), float(hauteur_m), float(limite_rafale_m_s),
+    d = atom_outils.vent_grue(_modele_requete(lat, lon, lieu, domaine), int(jour), float(hauteur_m), float(limite_rafale_m_s),
                               float(surface_charge_m2), lat=lat, lon=lon, lieu=lieu)
     d["heures"] = [h for h in d["heures"] if 5 <= h["heure"] <= 20]
     return d
@@ -640,7 +655,7 @@ def vent_grue(jour: int, hauteur_m: float = 40.0, limite_rafale_m_s: float = 20.
 
 @mcp.tool()
 def plan_haies(lieu: str | None = None, lat: float | None = None, lon: float | None = None,
-               hauteur_haie_m: float = 3.0, longueur_m: float = 200.0) -> dict:
+               hauteur_haie_m: float = 3.0, longueur_m: float = 200.0, domaine: str | None = None) -> dict:
     """Espace environnement (cahier v12, BF87) : vent dominant au point, orientation des haies brise-vent et
     zone protegee.
 
@@ -650,7 +665,7 @@ def plan_haies(lieu: str | None = None, lat: float | None = None, lon: float | N
         longueur_m: longueur de la haie (m).
     """
     from service import atom_outils
-    d = atom_outils.plan_haies(get_model(), float(hauteur_haie_m), float(longueur_m), lat=lat, lon=lon, lieu=lieu)
+    d = atom_outils.plan_haies(_modele_requete(lat, lon, lieu, domaine), float(hauteur_haie_m), float(longueur_m), lat=lat, lon=lon, lieu=lieu)
     d.pop("geojson", None)
     return d
 

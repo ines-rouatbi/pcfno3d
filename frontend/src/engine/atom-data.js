@@ -16,9 +16,11 @@ const BASE = (P.get("api") || "").replace(/\/+$/, "");
 const KEY_STORAGE = "pcfno3d.apikey";
 // OS5 : domaine servi (Grand Tunis par defaut, « national » pour la Tunisie entiere), ?domaine=national
 const DOMAINE = P.get("domaine") || "";
-const PAR_DOMAINE = ["/atom-wind/grille", "/atom-wind/jours", "/atom-wind/jour", "/atom-wind/direct", "/atom-wind/reseau-aneo"];
+// toutes les routes ATOM Wind répondent pour le domaine de la page (agriculture, éolien, outils, alertes,
+// historique, réseau ANEO…) ; /domaines liste les domaines, /point choisit le sien par la position
+const SANS_DOMAINE = /^\/atom-wind\/(domaines|point)(\?|$)/;
 function avecDomaine(path){
-  if(!DOMAINE || !PAR_DOMAINE.some(r => path === r || path.startsWith(r + "?"))) return path;
+  if(!DOMAINE || !path.startsWith("/atom-wind/") || SANS_DOMAINE.test(path) || /[?&]domaine=/.test(path)) return path;
   return path + (path.includes("?") ? "&" : "?") + "domaine=" + encodeURIComponent(DOMAINE);
 }
 const NODATA = -32768;
@@ -102,6 +104,7 @@ function decoder(b64){
 const A = Object.assign(window.ATOM || {}, { grille: null, jours: [], jour: null, plan: null,
                                              erreur: null, rafraichir: null });
 window.ATOM = A;
+A.avecDomaine = avecDomaine;           // api.ts (vues React) : même domaine que la page
 
 A.pret = () => !!(A.grille && A.jour && A.jour._vent);
 // état lu par l'interface : « pret », « dernier_etat » (Worker, service endormi), « modele_absent »,

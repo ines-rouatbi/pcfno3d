@@ -1051,6 +1051,24 @@ def modele_domaine(domaine: str | None) -> WindFieldModel:
         raise HTTPException(404, str(exc)) from exc
 
 
+def modele_requete(domaine: str | None = None, lat: float | None = None, lon: float | None = None,
+                   lieu: str | None = None) -> WindFieldModel:
+    """Le modele qui repond a une requete ATOM Wind : `domaine` explicite (?domaine=national) ; sinon, avec une
+    position ou un lieu, le domaine le PLUS FIN qui la contient (Grand Tunis, puis la Tunisie entiere) ; sinon le
+    domaine principal. Une position hors de tout domaine retombe sur le principal, qui dit alors « hors du domaine »."""
+    if domaine:
+        return modele_domaine(domaine)
+    if lieu or (lat is not None and lon is not None):
+        from service import atom_outils
+        try:
+            wf = atom_outils.modele_pour(lat=lat, lon=lon, lieu=lieu, defaut=None)
+        except ValueError:
+            wf = None
+        if wf is not None:
+            return wf
+    return model()
+
+
 @router.get("/atom-wind/domaines", tags=["atom-wind"])
 def atom_domaines(_: ApiKeyRecord | None = Depends(require_read)) -> dict:
     """Les domaines servis par ce service (nom, emprise lat/lon, modele, couche 10 m) : le front-end choisit le
@@ -1169,11 +1187,11 @@ def atom_jour(date: str = Query(..., pattern=r"^\d{4}-\d{2}-\d{2}$"),
 
 @router.get("/atom-wind/ensemble", tags=["atom-wind"])
 def atom_ensemble(j: int = Query(0, ge=0, le=2, description="0 = aujourd'hui, 1 = demain, 2 = apres-demain"),
-                  _: ApiKeyRecord | None = Depends(require_read)) -> Response:
+                  domaine: str | None = DOMAINE_Q, _: ApiKeyRecord | None = Depends(require_read)) -> Response:
     """Prevision PROBABILISTE (cahier v12, E19) : le modele sur les 31 membres GEFS (ensemble partiel),
     probabilite de pouvoir traiter et quantiles 10 / 50 / 90 % du vent a 10 m et 100 m, aux heures de
     traitement (6, 9, 12, 15, 18 h), grille de 500 m. Cache de 6 h (rythme de GEFS)."""
-    wf = model()
+    wf = modele_requete(domaine)
     if wf.geom.forcage is None:
         raise HTTPException(409, "ensemble : modele sans forcage (paths.forcage_era5)")
     from service import atom_outils
@@ -1188,12 +1206,12 @@ def atom_maintenance(j: int = Query(0, ge=0, le=2, description="0 = aujourd'hui,
                      lieu: str | None = Query(None, max_length=80), lat: float | None = None, lon: float | None = None,
                      hauteur_m: float = Query(80.0, ge=2, le=1000), seuil_m_s: float = Query(12.0, gt=0, le=40),
                      duree_min_h: int = Query(2, ge=1, le=12),
-                     _: ApiKeyRecord | None = Depends(require_eolien)) -> dict:
+                     domaine: str | None = DOMAINE_Q, _: ApiKeyRecord | None = Depends(require_eolien)) -> dict:
     """Creneaux surs pour le travail en hauteur (cahier v12, E7) : vent moyen a la nacelle ou au mat sous
     le seuil du site, en plages d'au moins `duree_min_h` heures (parc virtuel par defaut)."""
     from service import atom_outils
     try:
-        return atom_outils.fenetres_maintenance(model(), j, hauteur_m, seuil_m_s, duree_min_h, lat=lat, lon=lon, lieu=lieu)
+        return atom_outils.fenetres_maintenance(modele_requete(domaine, lat, lon, lieu), j, hauteur_m, seuil_m_s, duree_min_h, lat=lat, lon=lon, lieu=lieu)
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
 
@@ -1201,21 +1219,21 @@ def atom_maintenance(j: int = Query(0, ge=0, le=2, description="0 = aujourd'hui,
 @router.get("/atom-wind/variations", tags=["atom-wind"])
 def atom_variations(j: int = Query(0, ge=0, le=2, description="0 = aujourd'hui, 1 = demain, 2 = apres-demain"),
                     moyeu_m: float = Query(80.0, ge=30, le=200), seuil_pct: float = Query(20.0, gt=0, le=100),
-                    _: ApiKeyRecord | None = Depends(require_eolien)) -> dict:
+                    domaine: str | None = DOMAINE_Q, _: ApiKeyRecord | None = Depends(require_eolien)) -> dict:
     """Variations brusques de production du parc virtuel (cahier v12, E13) : puissance heure par heure et
     rampes d'au moins `seuil_pct` % de la puissance installee par heure."""
     from service import atom_outils
     try:
-        return atom_outils.variations_production(model(), j, moyeu_m, seuil_pct)
+        return atom_outils.variations_production(modele_requete(domaine), j, moyeu_m, seuil_pct)
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
 
 
 @router.get("/atom-wind/valeur-stations", tags=["atom-wind"])
-def atom_valeur_stations(_: ApiKeyRecord | None = Depends(require_read)) -> Response:
+def atom_valeur_stations(domaine: str | None = DOMAINE_Q, _: ApiKeyRecord | None = Depends(require_read)) -> Response:
     """Valeur de chaque station et son influence (cahier v12, E10 et E11), aujourd'hui : le modele est relance
     sans chaque station aux heures mesurees (toutes les 3 h). Cache de 30 min."""
-    wf = model()
+    wf = modele_requete(domaine)
     if wf.geom.forcage is None:
         raise HTTPException(409, "valeur des stations : modele sans forcage (paths.forcage_era5)")
     from service import atom_outils
@@ -1227,11 +1245,11 @@ def atom_valeur_stations(_: ApiKeyRecord | None = Depends(require_read)) -> Resp
 
 @router.get("/atom-wind/explication", tags=["atom-wind"])
 def atom_explication(lieu: str | None = Query(None, max_length=80), lat: float | None = None,
-                     lon: float | None = None, _: ApiKeyRecord | None = Depends(require_read)) -> dict:
+                     lon: float | None = None, domaine: str | None = DOMAINE_Q, _: ApiKeyRecord | None = Depends(require_read)) -> dict:
     """Pourquoi ce vent ici (cahier v12, E10) : influence de chaque station sur le point aujourd'hui."""
     from service import atom_outils
     try:
-        return atom_outils.explication_point(model(), lat=lat, lon=lon, lieu=lieu)
+        return atom_outils.explication_point(modele_requete(domaine, lat, lon, lieu), lat=lat, lon=lon, lieu=lieu)
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
 
@@ -1240,12 +1258,12 @@ def atom_explication(lieu: str | None = Query(None, max_length=80), lat: float |
 def atom_dimensionnement(lieu: str | None = Query(None, max_length=80), lat: float | None = None,
                          lon: float | None = None, hauteur_m: float = Query(30.0, ge=2, le=150),
                          conso_w: float = Query(5.0, gt=0, le=2000), autonomie_j: float = Query(3.0, ge=0, le=30),
-                         _: ApiKeyRecord | None = Depends(require_read)) -> dict:
+                         domaine: str | None = DOMAINE_Q, _: ApiKeyRecord | None = Depends(require_read)) -> dict:
     """Dimensionnement energetique d'un mat de mesure (cahier v12, E18) : micro-eolienne a la hauteur du mat,
     bilan avec la consommation de la station et taille de batterie, sur aujourd'hui a apres-demain."""
     from service import atom_outils
     try:
-        return atom_outils.dimensionnement_mat(model(), lat=lat, lon=lon, lieu=lieu, hauteur_m=hauteur_m,
+        return atom_outils.dimensionnement_mat(modele_requete(domaine, lat, lon, lieu), lat=lat, lon=lon, lieu=lieu, hauteur_m=hauteur_m,
                                                conso_w=conso_w, autonomie_j=autonomie_j)
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
@@ -1255,12 +1273,12 @@ def atom_dimensionnement(lieu: str | None = Query(None, max_length=80), lat: flo
 def atom_porteurs(hauteur_m: int = Query(20, description="hauteur du mat Porteur : 15, 20, 25 ou 30 m"),
                   n: int = Query(10, ge=1, le=50), eolienne_w: float = Query(400.0, gt=0, le=5000),
                   conso_w: float = Query(5.0, gt=0, le=2000), ecart_km: float = Query(2.0, ge=0, le=20),
-                  _: ApiKeyRecord | None = Depends(require_read)) -> dict:
+                  domaine: str | None = DOMAINE_Q, _: ApiKeyRecord | None = Depends(require_read)) -> dict:
     """Espace holding (cahier v12, BF85) : emplacements recommandes pour les mats Porteur, classes par la
     production de leur eolienne a la hauteur du mat, et capteurs du plan OS6 classes de la meme facon."""
     from service import atom_outils
     try:
-        return atom_outils.sites_porteurs(model(), hauteur_m=hauteur_m, n=n, eolienne_w=eolienne_w, conso_w=conso_w,
+        return atom_outils.sites_porteurs(modele_requete(domaine), hauteur_m=hauteur_m, n=n, eolienne_w=eolienne_w, conso_w=conso_w,
                                           ecart_km=ecart_km)
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
@@ -1271,12 +1289,12 @@ def atom_grue(j: int = Query(0, ge=0, le=2, description="0 = aujourd'hui, 1 = de
               lieu: str | None = Query(None, max_length=80), lat: float | None = None, lon: float | None = None,
               hauteur_m: float = Query(40.0, ge=5, le=300), limite_rafale_m_s: float = Query(20.0, gt=0, le=60),
               surface_charge_m2: float = Query(0.0, ge=0, le=500),
-              _: ApiKeyRecord | None = Depends(require_read)) -> dict:
+              domaine: str | None = DOMAINE_Q, _: ApiKeyRecord | None = Depends(require_read)) -> dict:
     """Espace chantier (cahier v12, BF86) : vent et rafale a la hauteur de la fleche heure par heure, creneaux
     de levage sous la limite de la grue, effort du vent sur la charge."""
     from service import atom_outils
     try:
-        return atom_outils.vent_grue(model(), j, hauteur_m, limite_rafale_m_s, surface_charge_m2,
+        return atom_outils.vent_grue(modele_requete(domaine, lat, lon, lieu), j, hauteur_m, limite_rafale_m_s, surface_charge_m2,
                                      lat=lat, lon=lon, lieu=lieu)
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
@@ -1286,12 +1304,12 @@ def atom_grue(j: int = Query(0, ge=0, le=2, description="0 = aujourd'hui, 1 = de
 def atom_haies(lieu: str | None = Query(None, max_length=80), lat: float | None = None, lon: float | None = None,
                hauteur_haie_m: float = Query(3.0, gt=0, le=30), longueur_m: float = Query(200.0, gt=0, le=5000),
                seuil_m_s: float = Query(5.0, ge=0, le=30),
-               _: ApiKeyRecord | None = Depends(require_read)) -> dict:
+               domaine: str | None = DOMAINE_Q, _: ApiKeyRecord | None = Depends(require_read)) -> dict:
     """Espace environnement (cahier v12, BF87) : vent dominant, orientation des haies brise-vent et zone
     protegee (GeoJSON)."""
     from service import atom_outils
     try:
-        return atom_outils.plan_haies(model(), hauteur_haie_m, longueur_m, seuil_m_s, lat=lat, lon=lon, lieu=lieu)
+        return atom_outils.plan_haies(modele_requete(domaine, lat, lon, lieu), hauteur_haie_m, longueur_m, seuil_m_s, lat=lat, lon=lon, lieu=lieu)
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
 
@@ -1300,7 +1318,7 @@ def atom_haies(lieu: str | None = Query(None, max_length=80), lat: float | None 
 def atom_rapport(type: str = Query("parcelle", pattern="^(parcelle|site|parc)$"),
                  lieu: str | None = Query(None, max_length=80), lat: float | None = None, lon: float | None = None,
                  moyeu_m: float = Query(80.0, ge=30, le=200),
-                 _: ApiKeyRecord | None = Depends(require_read)) -> Response:
+                 domaine: str | None = DOMAINE_Q, _: ApiKeyRecord | None = Depends(require_read)) -> Response:
     """Rapport PDF automatique (cahier v12, E9) d'une parcelle, d'un site ou du parc virtuel : vent, rose des
     vents, production, alertes, recommandations et fiabilite, d'aujourd'hui a apres-demain."""
     from service import rapport_pdf
@@ -1309,7 +1327,7 @@ def atom_rapport(type: str = Query("parcelle", pattern="^(parcelle|site|parc)$")
     if type != "parcelle" and compte is not None and compte["role"] not in ESPACE_EOLIEN:
         raise HTTPException(403, "rapport du site ou du parc : espace eolien reserve")
     try:
-        pdf = rapport_pdf.construire(model(), type, lat=lat, lon=lon, lieu=lieu, moyeu_m=moyeu_m)
+        pdf = rapport_pdf.construire(modele_requete(domaine, lat, lon, lieu), type, lat=lat, lon=lon, lieu=lieu, moyeu_m=moyeu_m)
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
     nom = rapport_pdf.nom_fichier(type, lieu, lat, lon)
@@ -1318,10 +1336,10 @@ def atom_rapport(type: str = Query("parcelle", pattern="^(parcelle|site|parc)$")
 
 
 @router.get("/atom-wind/qualite", tags=["atom-wind"])
-def atom_qualite(_: ApiKeyRecord | None = Depends(require_read)) -> dict:
+def atom_qualite(domaine: str | None = DOMAINE_Q, _: ApiKeyRecord | None = Depends(require_read)) -> dict:
     """Qualite du modele servi (cahier v12, TB5) : verdicts DSO1 a DSO6 sur le test, ecart aux vraies
     stations et decision de livraison, lus dans son run_dir (rien n'est recalcule)."""
-    wf = model()
+    wf = modele_requete(domaine)
     from pcfno3d import atom_wind
     try:
         return atom_wind.qualite(wf.cfg.paths.run_dir, wf.cfg.dso, bool(wf.cfg.inference.w_continuite))
@@ -1332,12 +1350,12 @@ def atom_qualite(_: ApiKeyRecord | None = Depends(require_read)) -> dict:
 @router.get("/atom-wind/agricole", tags=["atom-wind"])
 def atom_agricole(j: int = Query(0, ge=0, le=2, description="0 = aujourd'hui, 1 = demain, 2 = apres-demain"),
                   lieu: str | None = Query(None, max_length=80), lat: float | None = None, lon: float | None = None,
-                  _: ApiKeyRecord | None = Depends(require_read)) -> dict:
+                  domaine: str | None = DOMAINE_Q, _: ApiKeyRecord | None = Depends(require_read)) -> dict:
     """Decision agricole d'une parcelle (cahier v12, S16) : creneaux de traitement et d'aspersion heure par
     heure (regle de l'application, vent a 10 m) et probabilite GEFS si elle est calculee."""
     from service import atom_outils
     try:
-        return atom_outils.decision_agricole(model(), j, lat=lat, lon=lon, lieu=lieu)
+        return atom_outils.decision_agricole(modele_requete(domaine, lat, lon, lieu), j, lat=lat, lon=lon, lieu=lieu)
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
 
@@ -1346,31 +1364,31 @@ def atom_agricole(j: int = Query(0, ge=0, le=2, description="0 = aujourd'hui, 1 
 def atom_production(j: int = Query(0, ge=0, le=2, description="0 = aujourd'hui, 1 = demain, 2 = apres-demain"),
                     moyeu_m: float = Query(80.0, ge=30, le=200), lieu: str | None = Query(None, max_length=80),
                     lat: float | None = None, lon: float | None = None,
-                    _: ApiKeyRecord | None = Depends(require_eolien)) -> dict:
+                    domaine: str | None = DOMAINE_Q, _: ApiKeyRecord | None = Depends(require_eolien)) -> dict:
     """Production prevue d'une eolienne de reference en un point (cahier v12, S16), heure par heure."""
     from service import atom_outils
     if lieu is None and (lat is None or lon is None):
         lieu = "djebel ressas"
     try:
-        return atom_outils.production_eolienne(model(), j, moyeu_m, lat=lat, lon=lon, lieu=lieu)
+        return atom_outils.production_eolienne(modele_requete(domaine, lat, lon, lieu), j, moyeu_m, lat=lat, lon=lon, lieu=lieu)
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
 
 
 @router.get("/atom-wind/historique", tags=["atom-wind"])
-def atom_historique(_: ApiKeyRecord | None = Depends(require_read)) -> dict:
+def atom_historique(domaine: str | None = DOMAINE_Q, _: ApiKeyRecord | None = Depends(require_read)) -> dict:
     """Historique (cahier v12, BF40, HIS1) : journees temps reel et previsions deja calculees, gardees par
     le service avec leurs indicateurs (une prevision se compare ensuite au temps reel du meme jour)."""
     from service import atom_outils
-    return {"journees": atom_outils.historique(model())}
+    return {"journees": atom_outils.historique(modele_requete(domaine))}
 
 
 @router.get("/atom-wind/historique/{nom}", tags=["atom-wind"])
-def atom_historique_jour(nom: str, _: ApiKeyRecord | None = Depends(require_read)) -> Response:
+def atom_historique_jour(nom: str, domaine: str | None = DOMAINE_Q, _: ApiKeyRecord | None = Depends(require_read)) -> Response:
     """Une journee archivee, au format de /atom-wind/direct (gzip)."""
     from service import atom_outils
     try:
-        corps = atom_outils.lire_historique(model(), nom)
+        corps = atom_outils.lire_historique(modele_requete(domaine), nom)
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
     except FileNotFoundError as exc:
@@ -1554,22 +1572,22 @@ def supervision(_: ApiKeyRecord | None = Depends(require_admin)) -> dict:
 @router.get("/atom-wind/scenario", tags=["atom-wind"])
 def atom_scenario(heure: float = Query(..., ge=0, le=23), retirer: str = Query(..., max_length=200,
                   description="stations retirees, separees par des virgules (Tunis-Carthage, Zaghouan, Nabeul)"),
-                  _: ApiKeyRecord | None = Depends(require_read)) -> dict:
+                  domaine: str | None = DOMAINE_Q, _: ApiKeyRecord | None = Depends(require_read)) -> dict:
     """Scenario de panne (cahier v12, BF88) : une heure deja mesuree d'aujourd'hui recalculee sans des
     stations, et ce que cela change (domaine, stations)."""
     from service import atom_outils
     try:
-        return atom_outils.scenario_panne(model(), heure, retirer.split(","))
+        return atom_outils.scenario_panne(modele_requete(domaine), heure, retirer.split(","))
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
 
 
 @router.get("/atom-wind/alertes", tags=["atom-wind"])
-def atom_alertes(_: ApiKeyRecord | None = Depends(require_read)) -> dict:
+def atom_alertes(domaine: str | None = DOMAINE_Q, _: ApiKeyRecord | None = Depends(require_read)) -> dict:
     """Alertes du service temps reel (cahier v12, BF22, BF27) : station muette, residu de masse, vent fort
     aujourd'hui et demain ; identifiant stable par jour."""
     from service import atom_outils
-    return {"alertes": atom_outils.alertes_service(model())}
+    return {"alertes": atom_outils.alertes_service(modele_requete(domaine))}
 
 
 @router.post("/notifications/envoyer", tags=["atom-wind"])
@@ -1589,13 +1607,13 @@ def _atlas_dossier(wf: WindFieldModel) -> Path | None:
 
 
 @router.get("/atom-wind/atlas", tags=["atom-wind"])
-def atom_atlas(_: ApiKeyRecord | None = Depends(require_eolien)) -> Response:
+def atom_atlas(domaine: str | None = DOMAINE_Q, _: ApiKeyRecord | None = Depends(require_eolien)) -> Response:
     """Atlas eolien (cahier v12, E8 ; scripts/atlas_eolien.py) : resume, trois meilleurs sites, et la
     vitesse moyenne et le facteur de charge au moyeu sur la grille de 500 m du front-end."""
     import json as _json
 
     from pcfno3d import atom_wind
-    wf = model()
+    wf = modele_requete(domaine)
     d = _atlas_dossier(wf)
     if d is None:
         raise HTTPException(404, "atlas eolien non calcule (scripts/atlas_eolien.py)")
@@ -1612,9 +1630,9 @@ def atom_atlas(_: ApiKeyRecord | None = Depends(require_eolien)) -> Response:
 
 
 @router.get("/atom-wind/atlas/{nom}", tags=["atom-wind"])
-def atom_atlas_fichier(nom: str, _: ApiKeyRecord | None = Depends(require_eolien)):
+def atom_atlas_fichier(nom: str, domaine: str | None = DOMAINE_Q, _: ApiKeyRecord | None = Depends(require_eolien)):
     """atlas.png, ou une couche GeoTIFF (export SIG, E15) : atlas_<couche>.tif."""
-    wf = model()
+    wf = modele_requete(domaine)
     d = _atlas_dossier(wf)
     if d is None:
         raise HTTPException(404, "atlas eolien non calcule")

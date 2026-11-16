@@ -115,3 +115,39 @@ def test_annoter_mode_date_statut_par_heure():
 def test_source_10m_en_prevision_dit_gfs_brut():
     nat = _wf("nat", 828, 1000.0, couche=True)
     assert "GFS brut" in atom_outils.source_vent(nat, 10.0, temps_reel=True, mode="prevision")
+
+
+def test_toutes_les_routes_et_outils_choisissent_le_domaine(monkeypatch):
+    """Agriculture, éolien, outils, alertes, historique… : chaque route et chaque outil MCP prend le modèle du
+    domaine demandé (?domaine=national), sinon celui qui contient la position, sinon le principal."""
+    from service import app as appmod, mcp_server
+    gt, nat = _wf("gt", 680, 100.0), _wf("national", 828, 1000.0, couche=True)
+    dedans = {id(gt): lambda lat, lon: 36.4 <= lat <= 36.9 and 10.0 <= lon <= 10.8,
+              id(nat): lambda lat, lon: 30.1 <= lat <= 37.6 and 7.4 <= lon <= 11.7}
+
+    def position(wf, lat=None, lon=None, lieu=None):
+        if lieu:
+            lat, lon = {"sfax": (34.72, 10.69), "tunis": (36.80, 10.18)}[lieu.lower()]
+        if not dedans[id(wf)](lat, lon):
+            raise ValueError("hors du domaine")
+        return 0.0, 0.0, "x"
+    monkeypatch.setattr(atom_outils, "position", position)
+    monkeypatch.setattr(appmod, "model", lambda: gt)
+    monkeypatch.setattr(mcp_server, "get_model", lambda: gt)
+    atom_outils.enregistrer_domaines({"gt": gt, "national": nat})
+    try:
+        for choisir in (appmod.modele_requete, lambda d=None, la=None, lo=None, li=None: mcp_server._modele_requete(la, lo, li, d)):
+            assert choisir() is gt                                   # rien : le principal
+            assert choisir("national") is nat                        # ?domaine=national
+            assert choisir(None, 34.74, 10.76) is nat                # Sfax : seul le national la contient
+            assert choisir(None, 36.85, 10.23) is gt                 # Tunis : la maille fine
+            assert choisir(None, None, None, "Sfax") is nat          # un lieu
+            assert choisir(None, 45.0, 2.0) is gt                    # hors de tout : le principal le dira
+    finally:
+        atom_outils.enregistrer_domaines({})
+    # chaque route ATOM Wind qui sert du vent accepte ?domaine=
+    import inspect
+    for nom in ("atom_agricole", "atom_production", "atom_maintenance", "atom_variations", "atom_grue", "atom_haies",
+                "atom_porteurs", "atom_dimensionnement", "atom_explication", "atom_alertes", "atom_historique",
+                "atom_qualite", "atom_ensemble", "atom_scenario", "atom_valeur_stations", "atom_rapport", "atom_atlas"):
+        assert "domaine" in inspect.signature(getattr(appmod, nom)).parameters, nom

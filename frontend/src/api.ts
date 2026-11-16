@@ -16,7 +16,7 @@ export async function api<T = any>(chemin: string, init: RequestInit = {}, ms = 
   const entetes: Record<string, string> = { ...(window.ATOM?.entetes?.() ?? {}) };
   if (init.body) entetes['Content-Type'] = 'application/json';
   try {
-    const r = await fetch(`${window.ATOM?.apiBase ?? ''}/api${chemin}`, { ...init, headers: { ...entetes, ...(init.headers as any) }, signal: ctl.signal });
+    const r = await fetch(`${window.ATOM?.apiBase ?? ''}/api${window.ATOM?.avecDomaine?.(chemin) ?? chemin}`, { ...init, headers: { ...entetes, ...(init.headers as any) }, signal: ctl.signal });
     const d = await r.json().catch(() => ({}));
     if (!r.ok) {
       const m = typeof d.detail === 'string' ? d.detail : d.message || `erreur ${r.status}`;

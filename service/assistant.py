@@ -314,7 +314,10 @@ def action_interface(wf, nom: str, entree: dict) -> dict:
             if cle is None:
                 raise ValueError(f"lieu inconnu : {lieu} (lieux connus : {', '.join(sorted(ao.LIEUX))})")
             lat, lon = ao.LIEUX[cle]
-        ao.position(wf, lat=float(lat), lon=float(lon))             # hors du domaine : ValueError
+        if ao.domaines():                                           # hors de TOUS les domaines servis : ValueError
+            ao.modele_pour(lat=float(lat), lon=float(lon))
+        else:
+            ao.position(wf, lat=float(lat), lon=float(lon))         # hors du domaine : ValueError
         return {"type": "montrer_lieu", "lat": round(float(lat), 5), "lon": round(float(lon), 5),
                 "nom": str(lieu or "").strip()[:80] or None, "auto": True}
     raise ValueError(f"outil d'interface inconnu : {nom}")
@@ -335,6 +338,13 @@ def executer(wf, nom: str, entree: dict) -> dict:
     from service import atom_outils as ao
     lieu = {k: entree.get(k) for k in ("lieu", "lat", "lon")}
     j = int(entree.get("jour", 0))
+    # Grand Tunis et Tunisie entiere servis ensemble : le domaine le plus fin qui contient le lieu (Sfax : national)
+    if lieu["lieu"] or (lieu["lat"] is not None and lieu["lon"] is not None):
+        try:
+            wf = ao.modele_pour(lat=None if lieu["lat"] is None else float(lieu["lat"]),
+                                lon=None if lieu["lon"] is None else float(lieu["lon"]), lieu=lieu["lieu"], defaut=wf)
+        except ValueError:
+            pass                                    # hors de tout domaine : le principal le dira
     if nom == "vent_au_point":
         return ao.lire_point(wf, j, float(entree["hauteur_m"]), float(entree["heure"]), **lieu)
     if nom == "profil_vertical":
