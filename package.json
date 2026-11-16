@@ -9,7 +9,8 @@
     "prebuild": "node scripts/copy_frontend_vendor.mjs",
     "build": "tsc --noEmit && node scripts/extract_frontend_markup.mjs && vite build && node scripts/finalize_frontend.mjs",
     "preview": "vite preview --host 127.0.0.1",
-    "test:browser": "playwright test"
+    "test:browser": "playwright test",
+    "dev:passerelle": "vite --config vite.passerelle.config.mts --host 127.0.0.1 --port 5181"
   },
   "dependencies": {
     "@fontsource-variable/fraunces": "^5.3.0",
