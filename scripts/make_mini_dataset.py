@@ -29,6 +29,7 @@ DX_S = DY_S = 50.0
 STRIDE = 2
 Z_LEVELS = [25.0, 50.0, 100.0, 200.0]
 HOURS = [0, 6, 12, 18]
+PENTE = 12.0          # m de relief par km vers l'est
 N_DAYS = 6
 START = pd.Timestamp("2025-01-01")
 
@@ -48,7 +49,7 @@ def build_grid(rng: np.random.Generator) -> tuple[pd.DataFrame, dict]:
     # que plusieurs niveaux soient au-dessus du sol, comme dans le dataset reel.
     xk = ix_s * DX_S / 1000.0
     yk = iy_s * DY_S / 1000.0
-    zt = 30.0 + 18.0 * np.sin(xk / 0.8) * np.cos(yk / 0.6) + 12.0 * xk
+    zt = 30.0 + 18.0 * np.sin(xk / 0.8) * np.cos(yk / 0.6) + PENTE * xk
     slope = np.abs(np.gradient(zt)) * 2.0
     surf = pd.DataFrame({
         "point_id": np.arange(1, NX_S * NY_S + 1),
@@ -164,11 +165,18 @@ def build_day(day: int, grid: pd.DataFrame, meta: dict, rng: np.random.Generator
 
 
 def main() -> int:
+    global NX_S, NY_S, DX_S, DY_S, PENTE
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("out", nargs="?", default="artifacts/mini", help="dossier de sortie")
     ap.add_argument("--seed", type=int, default=0)
+    # taille de la grille de surface (scripts/dev_service.py : la zone du Grand Tunis a 500 m)
+    ap.add_argument("--nx", type=int, default=NX_S, help="capteurs en x (pair)")
+    ap.add_argument("--ny", type=int, default=NY_S, help="capteurs en y (pair)")
+    ap.add_argument("--dx", type=float, default=DX_S, help="pas de la grille de surface (m)")
+    ap.add_argument("--pente", type=float, default=PENTE, help="relief : m par km vers l'est")
     args = ap.parse_args()
+    NX_S, NY_S, DX_S, DY_S, PENTE = args.nx, args.ny, args.dx, args.dx, args.pente
 
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)

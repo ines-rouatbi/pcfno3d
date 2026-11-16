@@ -1,9 +1,9 @@
-/* ATOM Wind — couche de données : branche la maquette sur l'API PC-FNO3D.
+/* ATOM Wind — couche de données : branche l'interface sur l'API PC-FNO3D.
  *
  * Charge, avant le script de la page, le relief réel, les journées servies et le champ du
  * modèle (GET /api/atom-wind/grille, /jours, /jour?date=…, /reseau-aneo), puis lance le
- * script de la page (<script type="text/plain" id="atom-main">). Si l'API est injoignable,
- * la page tourne sur sa journée d'exemple et le bandeau le dit.
+ * moteur de la page. Si l'API est injoignable ou si le modèle n'est pas installé, aucune valeur
+ * n'est affichée : l'interface montre l'état du service (jamais de données inventées).
  *
  * Adresse de l'API : même origine par défaut ; ?api=https://… pour une autre. La clé d'API
  * (si le service en demande une) est saisie dans le bandeau et gardée dans ce navigateur
@@ -38,7 +38,7 @@ function entetes(){
 // Dernier état réel connu, gardé AUSSI par le navigateur (cahier v12, 17.1 ; demande d'Ines du 16/11) : chaque
 // réponse réelle des routes ci-dessous est gardée (Cache Storage) avec sa date de réception ; si le service ne
 // répond plus (Colab arrêté, tunnel coupé) et que la passerelle n'a rien servi, la page la ressert avec sa date
-// au lieu de passer en démonstration. La démonstration ne reste qu'en dernier recours.
+// au lieu de n'afficher aucune valeur. Sans rien de réel, la page dit l'état du service (aucune donnée d'exemple).
 const ETAT_CACHE = "atom-dernier-etat-v1";
 const ETAT_ROUTES = /^\/atom-wind\/(grille|jours|jour|direct|domaines|reseau-aneo)(\?|$)/;
 async function garderEtat(url, texte){
@@ -64,11 +64,12 @@ async function get(path, ms = 90000){
   try {
     const r = await fetch(url, { headers: h, signal: ctl.signal });
     if(A.mesureRequete) A.mesureRequete(path, performance.now() - debut);
-    if(r.status === 401 || r.status === 403){ const e = new Error("clé d'API refusée ou absente"); e.auth = true; throw e; }
+    if(r.status === 401 || r.status === 403){ const e = new Error("clé d'API refusée ou absente"); e.auth = true; e.statut = r.status; throw e; }
     if(!r.ok){
       // 503 du Worker atom.zelqane.com quand le Colab dort : {error, message, detail}
       let d = ""; try { const j = await r.json(); d = j.message || j.detail || ""; } catch(e) {}
-      throw new Error(r.status === 503 && d ? d : `${path} : ${r.status} ${d}`);
+      const e = new Error(r.status === 503 && d ? d : `${path} : ${r.status} ${d}`);
+      e.statut = r.status; e.modeleAbsent = r.status === 503 && /non install/.test(d); throw e;
     }
     // Worker atom.zelqane.com : service hors ligne, dernier état réel connu (cahier v12, 17.1)
     const de = r.headers.get("x-atom-dernier-etat");
@@ -81,7 +82,8 @@ async function get(path, ms = 90000){
       const s = await lireEtat(url);
       if(s){ A.dernierEtat = s.recu || "date inconnue"; A.dernierEtatNavigateur = true; return s.json; }
     }
-    if(e.name === "AbortError") throw new Error("le service PC-FNO3D ne répond pas (Colab endormi ?)");
+    if(e.name === "AbortError") throw new Error("le service PC-FNO3D ne répond pas");
+    if(e instanceof TypeError){ const r = new Error("le service PC-FNO3D est injoignable"); r.reseau = true; throw r; }
     throw e;
   } finally { clearTimeout(t); }
 }
@@ -102,6 +104,13 @@ const A = Object.assign(window.ATOM || {}, { grille: null, jours: [], jour: null
 window.ATOM = A;
 
 A.pret = () => !!(A.grille && A.jour && A.jour._vent);
+// état lu par l'interface : « pret », « dernier_etat » (Worker, service endormi), « modele_absent »,
+// « cle » (clé refusée), « hors_ligne » (rien ne répond) ; jamais de valeurs de remplacement
+A.etatService = () => {
+  if(A.pret()) return { etat: A.dernierEtat ? "dernier_etat" : "pret", depuis: A.dernierEtat || null };
+  const e = A.erreur || {};
+  return { etat: e.modeleAbsent ? "modele_absent" : e.auth ? "cle" : "hors_ligne", detail: e.message || null };
+};
 A.aSigma = () => !!(A.pret() && A.jour._sigma);
 // mode (analyse, temps réel, prévision), date et statut (validé / expérimental) de l'heure affichée, tels que le
 // service les donne (service.atom_outils.annoter) ; à 10 m, le statut de la couche 10 m quand elle existe
@@ -120,7 +129,7 @@ A.statutHeure = (h, z = 10) => {
 };
 A.donneeHtml = (h, z = 10) => {
   const s = A.statutHeure(h, z);
-  if(!s) return `<p class="aw-donnee"><span class="pill bad">Démonstration : données d'exemple</span></p>`;
+  if(!s) return "";                      // aucune donnée servie : la page montre l'état du service, jamais d'exemple
   const quand = /T/.test(String(s.date)) ? fmtInstant(s.date) : fmtDate(s.date);
   const hors = A.dernierEtat ? ` · <b>Service hors ligne</b> : dernier état réel connu, reçu le ${fmtInstant(A.dernierEtat)}.` : "";
   return `<p class="aw-donnee">${pillStatut(s.statut)} ${MODES_FR[s.mode] || s.mode} · donnée du ${quand}${hors}`
@@ -215,7 +224,7 @@ A.sigma = (x, y, z, h) => {
   return (1-w)*sa + w*sb;
 };
 // espace agriculteur, jour d = 0 (aujourd'hui), 1 (demain), 2 (après-demain) : seulement en temps
-// réel ; sinon la page garde ses valeurs d'exemple (et le dit)
+// réel ; sinon ces jours ne sont pas disponibles (et l'interface le dit)
 A.trois = {};
 A.pretJour = d => !!(A.grille && A.jour && A.jour.temps_reel && A.trois[d] && A.trois[d]._vent);
 A.ventJour = (d, x, y, z, h) => ventDe(A.trois[d], x, y, z, h);
@@ -235,10 +244,10 @@ A.doyJour = d => {
 
 // ------------------------------------------------------------------ relief réel
 A.appliquerGrille = ({ NX, NY, G, elev, wat, z0, LAKES }) => {
-  const g = A.grille; if(!g) return;
-  if(g.nx !== NX || g.ny !== NY){ console.warn("ATOM Wind : grille de l'API", g.nx, g.ny, "≠ page", NX, NY); }
+  const g = A.grille; if(!g){ appliquerRelief(NX, NY, G, elev, wat, z0); return; }
+  // la page est en mailles de 1/G km ; la grille du modèle peut avoir un autre pas : lecture par position
   for(let j = 0; j < NY; j++) for(let i = 0; i < NX; i++){
-    const k = j*NX + i, gi = Math.min(g.nx-1, i), gj = Math.min(g.ny-1, j);
+    const k = j*NX + i, gi = Math.min(g.nx-1, Math.floor((i+.5)/G/g.pas_km)), gj = Math.min(g.ny-1, Math.floor((j+.5)/G/g.pas_km));
     const eau = g.eau[gj][gi] === 1;
     if(eau){
       const x = (i+.5)/G, y = (j+.5)/G;
@@ -250,12 +259,52 @@ A.appliquerGrille = ({ NX, NY, G, elev, wat, z0, LAKES }) => {
     }
     z0[k] = g.z0_m[gj][gi];
   }
+  // relief fin (DEM Copernicus 125 m) quand il est là : plus précis que la grille du modèle pour l'affichage
+  if(A.relief && A.relief.pas_km < g.pas_km){ const z = Float32Array.from(z0); appliquerRelief(NX, NY, G, elev, wat, z0);
+    for(let k = 0; k < NX*NY; k++) if(!wat[k]) z0[k] = z[k]; }
 };
+// ------------------------------------------------------------------ relief réel local (sans API)
+// Grille 125 m tirée du DEM Copernicus GLO-30 et des couches d'eau (scripts/build_grand_tunis_relief.mjs).
+// Sert le relief de la page (plus fin que la grille du modèle) et le maillage de la vue 3D.
+A.relief = null;
+async function chargerRelief(){
+  try {
+    const base = new URL("relief/", location.href.replace(/[#?].*$/, "").replace(/[^/]*$/, ""));
+    const h = await (await fetch(new URL("grand-tunis.json", base))).json();
+    const r = await fetch(new URL(h.fichier, base)); if(!r.ok) throw new Error(`relief ${r.status}`);
+    let buf = await r.arrayBuffer(); const b = new Uint8Array(buf);
+    if(b[0] === 0x1f && b[1] === 0x8b) buf = await new Response(new Blob([buf]).stream().pipeThrough(new DecompressionStream("gzip"))).arrayBuffer();
+    const n = h.nx * h.ny; if(buf.byteLength !== n * 3) throw new Error("relief : taille inattendue");
+    const dm = new Int16Array(buf, 0, n), alt = new Float32Array(n); for(let k = 0; k < n; k++) alt[k] = dm[k] / 10;
+    const eau = new Uint8Array(buf, n * 2, n), p = h.pas_km;
+    const lire = (x, y) => [Math.min(h.nx - 1.001, Math.max(0, x / p - .5)), Math.min(h.ny - 1.001, Math.max(0, y / p - .5))];
+    A.relief = { ...h, alt, eau,
+      // altitude bilinéaire (m) et nature du sol au point (x, y) en km du domaine
+      hauteur(x, y){ const [fx, fy] = lire(x, y), i = fx | 0, j = fy | 0, u = fx - i, v = fy - j, k = j * h.nx + i;
+        return (alt[k] * (1 - u) + alt[k + 1] * u) * (1 - v) + (alt[k + h.nx] * (1 - u) + alt[k + h.nx + 1] * u) * v; },
+      eauA(x, y){ const [fx, fy] = lire(x, y); return eau[Math.round(fy) * h.nx + Math.round(fx)]; } };
+  } catch(e){ console.info("ATOM Wind : relief réel local absent (relief de la grille du modèle seulement)", e.message); }
+}
+function appliquerRelief(NX, NY, G, elev, wat, z0){
+  const R = A.relief; if(!R) return;
+  const f = Math.round(1 / (G * R.pas_km));               // cellules fines par cellule de la page
+  for(let j = 0; j < NY; j++) for(let i = 0; i < NX; i++){
+    let s = 0, c = 0, mer = 0, lac = 0;
+    for(let b = 0; b < f; b++) for(let a = 0; a < f; a++){
+      const kk = (j*f + b) * R.nx + i*f + a, e = R.eau[kk];
+      if(e === 1) mer++; else if(e === 2) lac++; else { s += R.alt[kk]; c++; } }
+    const k = j*NX + i, n = f*f;
+    wat[k] = mer * 2 >= n ? 1 : (mer + lac) * 2 >= n ? 2 : 0;
+    elev[k] = wat[k] ? 0 : Math.max(1, c ? s / c : 0);
+    if(wat[k]) z0[k] = wat[k] === 1 ? .0002 : .001;         // rugosité de la page conservée sur terre
+  }
+}
+
 A.noteFiabilite = () => {
   const f = A.aSigma() ? "Fiabilité du réseau actuel : incertitude calibrée du modèle (ensemble par masquage, DSO6)."
-    : "Fiabilité indicative, selon la distance au capteur le plus proche (incertitude calibrée du modèle non servie).";
+    : "Fiabilité estimée selon la distance à la station la plus proche : l'incertitude calibrée du modèle n'est pas servie.";
   const r = (A.plan && A.plan.length) ? ` Réseau ANEO : plan de déploiement OS6 (${A.plan.length} capteurs, placés là où l'erreur du modèle baissait le plus).`
-    : " Réseau ANEO : disposition d'exemple (plan OS6 pas encore calculé).";
+    : " Réseau ANEO : plan de déploiement pas encore calculé pour ce modèle.";
   return `<p class="muted" style="font-size:13px;margin-top:0">${f}${r}</p>`;
 };
 A.planXY = xy => (A.plan && A.plan.length) ? A.plan.map(p => xy(p.lat, p.lon)) : null;
@@ -322,9 +371,12 @@ function banniere(){
       sel.hidden = false;
     }
   } else {
-    const raison = A.erreur ? ` <span class="muted">(API PC-FNO3D non jointe : ${A.erreur.message})</span>` : "";
-    if(fr) fr.textContent = "Démonstration : données d'exemple";
-    src.innerHTML = `<span class="pill bad">Démonstration : données d'exemple</span> Journée d'été simulée, relief schématique du Grand Tunis. Ni observations météo, ni prévisions opérationnelles. La fiabilité affichée est indicative et non calibrée.${raison}`;
+    const e = A.etatService();
+    if(fr) fr.textContent = e.etat === "modele_absent" ? "Modèle en installation" : e.etat === "cle" ? "Accès requis" : "Service hors ligne";
+    src.innerHTML = e.etat === "modele_absent"
+      ? `<b>Modèle en cours d'installation</b> : le service répond, mais le modèle PC-FNO3D n'est pas encore installé. Aucune valeur de vent n'est affichée.`
+      : e.etat === "cle" ? `<b>Accès requis</b> : ce service demande une connexion ou une clé d'accès.`
+      : `<b>Service de calcul hors ligne</b> : aucune valeur de vent n'est affichée tant qu'il ne répond pas.${A.erreur ? ` <span class="muted">(${A.erreur.message})</span>` : ""}`;
     if(A.erreur && A.erreur.auth){
       src.insertAdjacentHTML("beforeend", ` <form id="aw-cle" style="display:inline-flex;gap:6px;align-items:center"><input type="password" placeholder="Clé d'API (pcf_…)" autocomplete="off" style="font-size:13px;padding:2px 6px"><button class="btn" style="padding:2px 10px;font-size:13px">Se connecter</button></form>`);
       document.getElementById("aw-cle").onsubmit = e => { e.preventDefault(); poserCle(e.target.querySelector("input").value.trim()); location.reload(); };
@@ -488,22 +540,45 @@ function installerRapports(){
 A.installerRapports = installerRapports;
 
 // ------------------------------------------------------------------ qualité du modèle servi (TB5)
-// Le tableau DSO du tableau de bord suit le modèle réellement servi (mis à jour à chaque version).
-async function chargerQualite(){
-  const bloc = document.querySelector("#v-tableau .dsos"); if(!bloc) return;
-  let q; try { q = await get("/atom-wind/qualite", 20000); } catch(e){ return; }     // page : valeurs de la maquette
-  A.qualite = q; if(A.rafraichir) A.rafraichir();               // le bandeau TB1 reprend le résidu de masse
+// Tout chiffre de qualité vient de l'évaluation du modèle réellement servi (/atom-wind/qualite) : tableau
+// de bord (objectifs DSO), Données & fiabilité (stations) et espace éolien (ballons-sondes). Absente, elle
+// est dite absente.
+const kmhTxt = ms => `${(ms * 3.6).toFixed(1).replace(".", ",")} km/h`;
+function rendreQualite(q){
   const nb = (v, n = 2) => v === null || v === undefined ? "—" : Number(v).toLocaleString("fr-FR", { maximumSignificantDigits: n });
   const pill = c => c === null ? `<span class="pill m">à mesurer</span>` : `<span class="pill ${c ? "good" : "mid"}">${c ? "atteint" : "non atteint"}</span>`;
-  const titre = bloc.closest(".card") && bloc.closest(".card").querySelector("h3");
-  if(titre) titre.innerHTML = `Qualité du modèle servi <span class="pill m">résultats réels</span>`;
-  bloc.innerHTML = `<div><span>Écart moyen sur le champ 3D (u / v)</span><b>${nb(q.rmse_global_u_m_s)} / ${nb(q.rmse_global_v_m_s)} m/s</b></div>`
+  const vide = t => `<p class="muted" style="margin:0">${t}</p>`;
+  const bloc = document.querySelector("#v-tableau .dsos");
+  if(bloc) bloc.innerHTML = !q ? vide("Évaluation du modèle servi pas encore disponible.")
+    : `<div><span>Écart moyen sur le champ 3D (u / v)</span><b>${nb(q.rmse_global_u_m_s)} / ${nb(q.rmse_global_v_m_s)} m/s</b></div>`
     + (q.r2_min_uv !== null ? `<div><span>Part du vent expliquée (R²)</span><b>≥ ${nb(q.r2_min_uv, 3)}</b></div>` : "")
     + (q.mae_direction_deg ? `<div><span>Erreur sur la direction</span><b>${nb(q.mae_direction_deg)}°</b></div>` : "")
     + q.dso.map(l => `<div><span>${l.code} ${l.libelle}${l.note ? ` <span class="muted" style="font-size:12px">(${l.note})</span>` : ""}</span>`
       + `<span>${l.valeur !== null ? `<b style="margin-right:6px">${nb(l.valeur, 3)}${l.unite ? " " + l.unite : ""}</b>` : ""}${pill(l.conforme)}</span></div>`).join("")
-    + `<div class="muted" style="font-size:12px">Modèle ${q.run} (${q.modele}), ${q.instants_synoptiques} instants du test, évaluation ${q.evaluation}`
-    + `${q.decision ? ` · ${q.decision.texte}` : ""}.</div>`;
+    + `<div class="muted" style="font-size:12px">Modèle ${echapper(q.run)} (${echapper(q.modele || "")}), ${q.instants_synoptiques} instants du test, évaluation ${echapper(q.evaluation)}`
+    + `${q.decision && q.decision.texte ? ` · ${echapper(q.decision.texte)}` : ""}.</div>`;
+  // Données & fiabilité : écart aux vrais anémomètres et aux ballons-sondes
+  const t = document.getElementById("aw-val-mesures");
+  if(t){
+    const L = q ? [...(q.stations || []).map(x => [`Anémomètre de ${x.station}`, x.modele_m_s, x.era5_m_s]),
+                   ...(q.radiosondages || []).map(r => [`Ballons-sondes, ${r.tranche_m.replace(/[(\]]/g, "").replace(", ", " à ")} m`, r.modele_m_s, r.era5_m_s])] : [];
+    t.innerHTML = !L.length ? vide("Pas encore de validation sur de vraies mesures pour le modèle servi.")
+      : `<div class="tblwrap"><table class="t"><thead><tr><th>Mesure réelle</th><th style="text-align:right">ATOM Wind</th><th style="text-align:right">ERA5</th></tr></thead><tbody>`
+      + L.map(([n, a, b]) => `<tr><td>${echapper(n)}</td><td class="n">${a == null ? "—" : (b == null || a <= b ? `<b>${kmhTxt(a)}</b>` : kmhTxt(a))}</td><td class="n">${b == null ? "—" : (a != null && b < a ? `<b>${kmhTxt(b)}</b>` : kmhTxt(b))}</td></tr>`).join("")
+      + `</tbody></table></div><p class="muted" style="margin:8px 0 0;font-size:14px">Erreur vectorielle moyenne sur des jours jamais vus à l'entraînement, chaque station cachée au modèle quand elle est jugée. Une mesure ponctuelle et une valeur calculée sur une maille diffèrent toujours de quelques km/h.</p>`;
+  }
+  // espace éolien : seule mesure en altitude
+  const e = document.getElementById("aw-val-sondes");
+  if(e){
+    const R = q ? (q.radiosondages || []).filter(r => r.modele_m_s != null) : [];
+    e.innerHTML = !R.length ? vide("Pas encore de validation en altitude pour le modèle servi.")
+      : `<div class="dsos">` + R.map(r => `<div><span>${echapper(r.tranche_m.replace(/[(\]]/g, "").replace(", ", " à "))} m · ${r.n} mesures</span><b>${String(r.modele_m_s).replace(".", ",")} m/s${r.era5_m_s != null ? ` <span class="muted">(ERA5 ${String(r.era5_m_s).replace(".", ",")})</span>` : ""}</b></div>`).join("") + `</div>`;
+  }
+}
+async function chargerQualite(){
+  let q = null; try { q = await get("/atom-wind/qualite", 20000); } catch(e){ q = null; }
+  A.qualite = q; rendreQualite(q);
+  if(q && A.rafraichir) A.rafraichir();                         // le bandeau TB1 reprend le résidu de masse
 }
 A.chargerQualite = chargerQualite;
 
@@ -532,9 +607,12 @@ async function installerClesService(){
   carte.className = "card"; carte.id = "aw-cles";
   vue.appendChild(carte);
   const rendre = async () => {
-    const l = (await get("/keys", 15000)).cles;
+    // les sessions des comptes (clés « compte-… ») se gèrent avec les comptes : seules les clés de service ici
+    const tout = (await get("/keys", 15000)).cles, sessions = tout.filter(c => c.name.startsWith("compte-") && !c.revoked).length;
+    const l = tout.filter(c => !c.name.startsWith("compte-"));
     carte.innerHTML = `<h3>Clés d'API du service</h3>`
-      + `<p class="muted" style="font-size:14px;margin:0 0 8px">Les vraies clés du service PC-FNO3D (le reste de cette page est une démonstration locale). Seule une empreinte est gardée ; un secret ne s'affiche qu'à la création.</p>`
+      + `<p class="muted" style="font-size:14px;margin:0 0 8px">Une clé permet à un logiciel partenaire de lire le vent. Seule une empreinte est gardée sur le serveur ; le secret ne s'affiche qu'à la création.</p>`
+      + `<p class="muted" style="font-size:13px;margin:0 0 8px">${sessions} session(s) de compte ouverte(s), gérée(s) avec les comptes.</p>`
       + `<div class="tblwrap"><table class="t"><thead><tr><th>Nom</th><th>Portée</th><th>Quota / min</th><th>Quota / jour</th><th>Dernier usage</th><th></th></tr></thead><tbody>`
       + l.map(c => `<tr><td>${echapper(c.name)}</td><td>${c.scope}</td><td class="n">${c.quota_minute ?? "défaut"}</td><td class="n">${c.quota_jour ?? "défaut"}</td>`
         + `<td>${c.last_used_at ? fmtInstant(c.last_used_at) : "—"}</td><td>${c.revoked ? `<span class="pill mid">révoquée</span>`
@@ -678,16 +756,32 @@ async function installerSupervision(){
 }
 A.installerSupervision = installerSupervision;
 
+// ------------------------------------------------------------------ abonnés aux alertes SMS (E12), admin
+async function installerAbonnesService(){
+  const vue = document.getElementById("v-admin"); if(!vue || document.getElementById("aw-abonnes")) return;
+  let l; try { l = (await get("/sms/abonnes", 15000)).abonnes; } catch(e){ return; }
+  const carte = document.createElement("div"); carte.className = "card"; carte.id = "aw-abonnes";
+  carte.innerHTML = `<h3>Abonnés aux alertes SMS</h3><p class="muted" style="font-size:14px;margin:0 0 8px">Numéros masqués. Chaque utilisateur gère ses alertes depuis l'espace Alertes.</p>`
+    + (l.length ? `<div class="tblwrap"><table class="t"><thead><tr><th>Numéro</th><th>Lieu</th><th>Alerte</th><th>Langue</th><th>Depuis</th></tr></thead><tbody>`
+      + l.map(a => `<tr><td>${echapper(a.numero)}</td><td>${echapper(a.lieu || `${a.lat}, ${a.lon}`)}</td><td>${echapper(a.activite || "vent du jour")}</td><td>${a.langue}</td><td>${a.depuis ? fmtInstant(a.depuis) : "—"}</td></tr>`).join("")
+      + `</tbody></table></div>` : `<p class="muted" style="margin:0">Aucun abonné pour l'instant.</p>`);
+  vue.appendChild(carte);
+}
+A.installerAbonnesService = installerAbonnesService;
+
 // ------------------------------------------------------------------ comptes du service (BF19, BF43)
 // Quand le service repond, la connexion et l'inscription de la page passent par ses comptes (mot de passe
 // verifie et garde par le serveur, role relu a chaque requete) ; sinon la page garde ses comptes locaux.
-A.comptesServeur = () => A.pret();
-async function postJSON(chemin, corps){
+A.comptesServeur = () => true;
+async function requeteJSON(methode, chemin, corps){
   const h = { "Content-Type": "application/json", ...entetes() };
-  const r = await fetch(`${BASE}/api${chemin}`, { method: "POST", headers: h, body: JSON.stringify(corps || {}) });
+  let r;
+  try { r = await fetch(`${BASE}/api${chemin}`, { method: methode, headers: h, body: corps ? JSON.stringify(corps) : undefined }); }
+  catch(e){ return { erreur: "Le service ATOM Wind ne répond pas. Réessayez dans un instant." }; }
   const d = await r.json().catch(() => ({}));
   return r.ok ? d : { erreur: typeof d.detail === "string" ? d.detail : `erreur ${r.status}` };
 }
+const postJSON = (chemin, corps) => requeteJSON("POST", chemin, corps || {});
 // accès à l'API pour les onglets chargés à part (reseau-aneo-plan.js, services-atom.js) : même adresse, même clé ou session
 A.api = { get: (chemin, ms) => get(chemin, ms), post: postJSON, blob };
 const MESSAGES_COMPTE = {
@@ -708,6 +802,21 @@ A.inscriptionServeur = async (nom, email, mdp, role) => {
   return d.erreur ? { erreur: message(d.erreur) } : d;
 };
 A.deconnexionServeur = () => { if(session()){ postJSON("/comptes/deconnexion").catch(() => {}); poserSession(null); } };
+// session gardée dans ce navigateur : le compte est relu sur le serveur au démarrage
+A.compteCourant = async () => {
+  if(!session()) return null;
+  try { const d = await get("/comptes/moi", 15000); if(!d.compte) poserSession(null); return d.compte || null; }
+  catch(e){ if(e.auth) poserSession(null); return null; }
+};
+// alertes SMS du compte connecté (/api/comptes/moi/abonnements)
+const MESSAGES_ALERTE = {
+  "numero au format international E.164 (ex. +21612345678)": "Numéro au format international, par exemple +216 12 345 678.",
+  "ce numero recoit deja les alertes d'un autre compte": "Ce numéro reçoit déjà les alertes d'un autre compte.",
+  "connectez-vous a un compte ATOM Wind pour gerer vos alertes": "Connectez-vous pour gérer vos alertes.",
+};
+A.mesAbonnements = async () => { const d = await requeteJSON("GET", "/comptes/moi/abonnements"); return d.erreur ? [] : d.abonnements; };
+A.ajouterAbonnement = async o => { const d = await postJSON("/comptes/moi/abonnements", o); return d.erreur ? { erreur: MESSAGES_ALERTE[d.erreur] || d.erreur } : d; };
+A.retirerAbonnement = async numero => { const d = await requeteJSON("DELETE", `/comptes/moi/abonnements/${encodeURIComponent(numero)}`); return d.erreur ? { erreur: MESSAGES_ALERTE[d.erreur] || d.erreur } : d; };
 // le compte du serveur dans la liste locale de la page (sans mot de passe : seul le serveur le connait)
 A.utilisateurLocal = (c, USERS) => {
   let u = USERS.find(x => x.email === c.email);
@@ -855,56 +964,15 @@ function sourceEolien(){
   const el = document.getElementById("aw-eol-src"); if(!el || !A.pret()) return;
   el.textContent = A.jour.temps_reel
     ? "Aujourd'hui : vent en temps réel (GFS et anémomètres) ; demain et après-demain : prévision GFS affinée par ATOM Wind."
-    : `Journée du ${fmtDate(A.jour.date)} (jeu de test) ; demain et après-demain restent des variantes d'exemple hors temps réel.`;
+    : `Journée du ${fmtDate(A.jour.date)} (archive du modèle) ; les prévisions de demain et d'après-demain viennent avec le temps réel.`;
 }
 A.sourceEolien = sourceEolien;
 
-// ------------------------------------------------------------------ assistant intégré (E6)
-// Une question en langage naturel ; le service répond avec Claude et les outils d'ATOM Wind.
-const NOMS_OUTILS = { vent_au_point: "vent en un point", profil_vertical: "profil vertical",
-  decision_agricole: "décision agricole", production_eolienne: "production éolienne", alertes_vent: "alertes de vent" };
 function echapper(t){ return String(t).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
-function installerAssistant(){
-  if(document.getElementById("aw-asst-btn")) return;
-  const bt = document.createElement("button");
-  bt.id = "aw-asst-btn"; bt.className = "btn primary"; bt.textContent = "Poser une question";
-  bt.style.cssText = "position:fixed;right:16px;bottom:16px;z-index:60;border-radius:999px;padding:10px 16px;box-shadow:0 4px 16px rgba(0,0,0,.2)";
-  const pan = document.createElement("aside");
-  pan.id = "aw-asst"; pan.className = "card"; pan.hidden = true;
-  pan.setAttribute("aria-label", "Assistant ATOM Wind");
-  pan.style.cssText = "position:fixed;right:16px;bottom:72px;z-index:61;width:min(420px,calc(100vw - 32px));max-height:min(70vh,560px);display:flex;flex-direction:column;gap:8px";
-  pan.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center"><b>Assistant ATOM Wind</b>`
-    + `<button class="x" aria-label="Fermer" id="aw-asst-x" style="font-size:20px;background:none;border:0;cursor:pointer">×</button></div>`
-    + `<div id="aw-asst-fil" aria-live="polite" style="overflow:auto;flex:1;display:flex;flex-direction:column;gap:8px;font-size:14px">`
-    + `<p class="muted" style="margin:0">Exemples : « Peut-on traiter les vignes de Mornag demain matin ? », « Quelle production pour une éolienne à Soliman demain ? »</p></div>`
-    + `<form id="aw-asst-f" style="display:flex;gap:6px"><input id="aw-asst-q" class="inp" style="flex:1" maxlength="2000" placeholder="Votre question sur le vent" autocomplete="off">`
-    + `<button class="btn primary" type="submit">Envoyer</button></form>`
-    + `<p class="muted" style="font-size:11px;margin:0">Réponses générées par Claude à partir des données d'ATOM Wind ; vérifiez avant une décision importante.</p>`;
-  document.body.append(bt, pan);
-  const fil = pan.querySelector("#aw-asst-fil"), hist = [];
-  const ajouter = (html, cls) => { const d = document.createElement("div"); d.className = cls;
-    d.style.cssText = cls === "q" ? "align-self:flex-end;background:var(--accent,#1E6FB8);color:#fff;padding:6px 10px;border-radius:10px;max-width:85%"
-      : "align-self:flex-start;background:var(--panel2,#f1f4f6);padding:6px 10px;border-radius:10px;max-width:92%;white-space:pre-wrap";
-    d.innerHTML = html; fil.appendChild(d); fil.scrollTop = fil.scrollHeight; return d; };
-  bt.onclick = () => { pan.hidden = !pan.hidden; if(!pan.hidden) pan.querySelector("#aw-asst-q").focus(); };
-  pan.querySelector("#aw-asst-x").onclick = () => { pan.hidden = true; };
-  pan.querySelector("#aw-asst-f").onsubmit = async e => {
-    e.preventDefault();
-    const inp = pan.querySelector("#aw-asst-q"), q = inp.value.trim(); if(!q) return;
-    inp.value = ""; ajouter(echapper(q), "q");
-    const att = ajouter("…", "r");
-    try {
-      const h = { "Content-Type": "application/json" }; Object.assign(h, entetes());
-      const r = await fetch(`${BASE}/api/assistant`, { method: "POST", headers: h, body: JSON.stringify({ question: q, historique: hist.slice(-10) }) });
-      const d = await r.json().catch(() => ({}));
-      if(!r.ok) throw new Error(d.detail || d.message || `erreur ${r.status}`);
-      const outils = [...new Set((d.outils || []).map(o => NOMS_OUTILS[o.nom] || o.nom))];
-      att.innerHTML = echapper(d.reponse) + (outils.length ? `<div class="muted" style="font-size:11px;margin-top:4px">Sources : ${outils.join(", ")} (ATOM Wind)</div>` : "");
-      hist.push({ role: "user", contenu: q }, { role: "assistant", contenu: d.reponse });
-    } catch(err){ att.innerHTML = `<span class="muted">Assistant indisponible : ${echapper(err.message)}</span>`; }
-  };
-}
-A.installerAssistant = installerAssistant;
+
+// le panneau React de l'assistant (frontend/src/assistant) appelle l'API avec les mêmes en-têtes
+A.entetes = entetes;
+A.apiBase = BASE;
 A.probaTraitement = (d, x, y) => {
   const e = A.ensembles[d]; if(!e || !A.grille) return null;
   const g = A.grille, [i, j] = cellule(x, y), n = g.nx * g.ny;
@@ -936,10 +1004,9 @@ A.choisirJour = async date => {
 function journeeParDefaut(){
   const P2 = P.get("jour");
   if(P2 && A.jours.some(d => d.date === P2)) return P2;
-  // une journée d'été complète, comme la journée d'exemple de la maquette
-  const ete = A.jours.filter(d => /-0[78]-/.test(d.date));
-  const pool = ete.length ? ete : A.jours;
-  return pool.slice().sort((a, b) => b.instants.length - a.instants.length)[0].date;
+  // la journée archivée la plus récente parmi les plus complètes
+  const max = Math.max(...A.jours.map(d => d.instants.length));
+  return A.jours.filter(d => d.instants.length === max).map(d => d.date).sort().pop();
 }
 
 function chargement(msg){
@@ -963,7 +1030,9 @@ function lancerPage(){
   if(sel) sel.onchange = () => A.choisirJour(sel.value);
   if(A.pret() && A.jour.temps_reel && !A.jour.prevision && A.setHour) A.setHour(heureLocale());
   if(A.pret() && A.jour.temps_reel) chargerTrois().then(chargerEnsembles);
-  if(A.pret()){ chargerAtlas(); sourceEolien(); installerAssistant(); installerValeurStations(); installerRapports(); chargerQualite(); installerClesService(); installerComptesService(); installerSupervision(); }
+  if(A.pret()){ chargerAtlas(); sourceEolien(); installerValeurStations(); installerRapports(); }
+  chargerQualite();
+  window.addEventListener("atom:retry", () => location.reload());
   // temps réel : nouvelles mesures et nouvelle échéance toutes les 30 min
   setInterval(() => {
     if(!A.jour || !A.jour.temps_reel || A.jour.archive) return;
@@ -972,14 +1041,15 @@ function lancerPage(){
   }, 30 * 60 * 1000);
 }
 function heureLocale(){
-  // fr-FR formate « 16 h » : Number() donnait NaN (curseur « NaN h », reponse figee) ; on lit la seule partie heure
-  const h = new Intl.DateTimeFormat("fr-FR", { hour: "numeric", hourCycle: "h23", timeZone: "Africa/Tunis" })
-    .formatToParts(new Date()).find(p => p.type === "hour");
-  return Number(h ? h.value : new Date().getUTCHours() + 1) % 24;
+  // « fr-FR » formate « 15 h » (NaN une fois converti) : l'heure est lue sur ses parties, sans texte
+  const h = new Intl.DateTimeFormat("en-GB", { hour: "numeric", hourCycle: "h23", timeZone: "Africa/Tunis" })
+    .formatToParts(new Date()).find(x => x.type === "hour");
+  return h ? Number(h.value) % 24 : new Date().getUTCHours();
 }
 
 async function demarrer(){
   chargement("Connexion au modèle PC-FNO3D…");
+  const relief = chargerRelief();
   try {
     try { A.domaines = (await get("/atom-wind/domaines", 15000)).domaines || []; } catch(e){ A.domaines = []; }
     A.grille = await get("/atom-wind/grille", 20000);
@@ -1009,9 +1079,10 @@ async function demarrer(){
       await chargerJour(jd);
     }
   } catch(e){
-    A.erreur = e; A.grille = null; A.jour = null;   // tout ou rien : journée d'exemple
-    console.warn("ATOM Wind : API PC-FNO3D indisponible, journée d'exemple", e);
+    A.erreur = e; A.grille = null; A.jour = null;   // tout ou rien : l'interface montre l'état du service
+    console.warn("ATOM Wind : données de vent indisponibles", e);
   }
+  await relief;
   lancerPage();
 }
 if(document.readyState === "loading") document.addEventListener("DOMContentLoaded", demarrer); else demarrer();

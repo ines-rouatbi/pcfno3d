@@ -1,0 +1,35 @@
+{
+ "version": 1,
+ "nx": 544,
+ "ny": 448,
+ "pas_km": 0.125,
+ "origine": {
+  "lat": 36.395,
+  "lon": 10.04
+ },
+ "km_par_degre": {
+  "lon": 89.42,
+  "lat": 110.97
+ },
+ "rangees": "du sud au nord",
+ "altitude": {
+  "type": "Int16LE",
+  "unite": "dm",
+  "reference": "EGM2008"
+ },
+ "eau": {
+  "type": "Uint8",
+  "codes": {
+   "0": "terre",
+   "1": "mer",
+   "2": "lac"
+  }
+ },
+ "fichier": "grand-tunis.bin.gz",
+ "sources": [
+  "Copernicus DEM GLO-30 (moyenne par cellule de 125 m)",
+  "Natural Earth / geoBoundaries (trait de côte)",
+  "ESA WorldCover 2021 classe 80 (lacs)"
+ ],
+ "attribution": "produced using Copernicus WorldDEM-30 © DLR e.V. 2010-2014 and © Airbus Defence and Space GmbH 2014-2018 provided under COPERNICUS by the European Union and ESA; © ESA WorldCover project 2021; Natural Earth; geoBoundaries"
+}

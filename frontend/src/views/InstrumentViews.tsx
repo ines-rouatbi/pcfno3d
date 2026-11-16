@@ -8,4 +8,6 @@ import ViewEolien from "./ViewEolien";
 import ViewAdmin from "./ViewAdmin";
 import ViewFiabilite from "./ViewFiabilite";
 import ViewReseauAneo from "./ViewReseauAneo";
-export default memo(function InstrumentViews(){ return <><ViewMonvent/><ViewAgri/><ViewTableau/><ViewCarte3D/><ViewAlertes/><ViewEolien/><ViewAdmin/><ViewReseauAneo/><ViewFiabilite/></>; });
+import ViewOutils from "./ViewOutils";
+import ViewHistorique from "./ViewHistorique";
+export default memo(function InstrumentViews(){ return <><ViewMonvent/><ViewAgri/><ViewTableau/><ViewCarte3D/><ViewAlertes/><ViewEolien/><ViewAdmin/><ViewReseauAneo/><ViewFiabilite/><ViewOutils/><ViewHistorique/></>; });

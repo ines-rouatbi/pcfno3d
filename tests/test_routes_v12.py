@@ -155,3 +155,13 @@ def test_supervision(client, jeu, monkeypatch):  # noqa: F811
     assert d["temps_reel"] and d["historique"]["journees"] >= 1
     assert "requetes" in d["acces_24h"] and admin not in r.text
     assert "stations" in d["ecart_modele_stations"] or "erreur" in d["ecart_modele_stations"]
+
+
+def test_journee_servie_apres_les_outils():
+    """Les outils gardent leurs tableaux decodes dans la journee en cache : /atom-wind/direct doit
+    toujours la servir (avant correction : 503 « ndarray is not JSON serializable »)."""
+    import numpy as np
+    from service.app import _gzip_json
+    r = _gzip_json({"date": "2026-11-07", "_vent": np.zeros(3)})
+    import gzip, json
+    assert json.loads(gzip.decompress(r.body)) == {"date": "2026-11-07"}

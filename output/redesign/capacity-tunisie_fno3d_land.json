@@ -1,0 +1,17 @@
+{
+  "configuration": "tunisie_fno3d_land",
+  "device": "cpu",
+  "threads": 4,
+  "batch": 1,
+  "shape": [
+    25,
+    78,
+    45
+  ],
+  "parameters_real_equivalent": 37870179,
+  "weight_bytes": 151480716,
+  "median_step_seconds": 3.250201200018637,
+  "peak_working_set_gib": 1.2761688232421875,
+  "peak_commit_gib": 1.8980064392089844,
+  "limitations": "Synthetic model + MSE + AdamW + EMA. Excludes real data, physics losses, validation and checkpoint I/O. CPU memory is not GPU VRAM."
+}

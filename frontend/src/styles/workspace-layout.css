@@ -87,3 +87,9 @@ nav.workspace-navigation .count{margin-inline-start:auto;font:9px var(--f-data);
 }
 :root[dir="rtl"] .workspace-rail{inset:0 0 0 auto;border-right:0;border-left:1px solid var(--line)}:root[dir="rtl"] .rail-bottom{margin:30px 0 0}:root[dir="rtl"] .breadcrumb{padding:0;border:0}:root[dir="rtl"] nav.workspace-navigation a[aria-current="page"]{box-shadow:inset -3px 0 var(--accent)}:root[dir="rtl"] .model-instrument{padding-right:22px;padding-left:0;border-right:1px solid var(--line);border-left:0}
 @media(max-width:900px){:root[dir="rtl"] .model-instrument{padding:20px 0 0;border-right:0}}
+/* la barre de journée n'a de sens que là où l'on lit le vent d'une heure */
+.workspace-main[data-gated] .timebar,
+.workspace-main[data-view="outils"] .timebar,
+.workspace-main[data-view="historique"] .timebar,
+.workspace-main[data-view="admin"] .timebar { display: none; }
+.workspace-main[data-view="admin"] .data-context { display: none; }

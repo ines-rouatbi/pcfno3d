@@ -1,15 +1,9 @@
 import { test, expect, type Page } from '@playwright/test';
+import { start, admin } from './helpers';
 
 async function dashboard(page: Page) {
-  await page.addInitScript(() => {
-    localStorage.setItem('aw-tour', '1');
-    localStorage.setItem('aw-theme', JSON.stringify('light'));
-  });
-  await page.goto('/app/atom-wind/');
-  await page.waitForFunction(() => window.ATOM?.workspace);
-  await page.locator('#b-login').click();
-  await page.locator('[data-demo="admin"]').click();
-  await expect(page.locator('#toast')).toBeHidden();
+  await start(page);
+  await admin(page);
   await page.evaluate(() => window.ATOM.workspace!.navigate('tableau'));
 }
 
@@ -48,7 +42,7 @@ test('territory selection carries the place into local conditions and agricultur
 
 test('a dashboard alert opens its corresponding detail', async ({ page }) => {
   await dashboard(page);
-  const alert = page.locator('[data-tb-alert="1"]');
+  const alert = page.locator('[data-tb-alert]').first();
   const title = await alert.locator('b').innerText();
   await alert.click();
   await expect(page.locator('#v-alertes')).toHaveClass(/on/);

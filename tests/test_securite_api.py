@@ -108,7 +108,7 @@ def test_sans_aucune_cle_tout_est_refuse_sauf_health(env):
         assert client.get("/api/meta", headers={"X-API-Key": generate_key()}).status_code == 401
 
         # l'interface et la documentation restent servies : aucune donnee dedans
-        assert client.get("/app/").status_code == 200
+        assert client.get("/app/atom-wind/").status_code == 200
         assert client.get("/api/openapi.json").status_code == 200
 
 

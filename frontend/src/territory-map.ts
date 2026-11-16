@@ -4,6 +4,7 @@ type Territory = {
   water: Point[][];
   lakes: number[][];
   hills: number[][];
+  relief?: string;   // image du relief réel (DEM ou grille du modèle), à la place des collines dessinées
   places: Place[];
   selected: Point;
   sample: (x: number, y: number) => Point;
@@ -51,7 +52,8 @@ export function renderTerritory(container: HTMLElement, data: Territory) {
     <g clip-path="url(#territory-clip)">
       ${lines(width).map(x=>`<path d="M${project([x,0])[0]},${top}V${top+height*scale}" stroke="var(--map-grid)" stroke-width=".6"/>`).join('')}
       ${lines(height).map(y=>`<path d="M${left},${project([0,y])[1]}H${left+width*scale}" stroke="var(--map-grid)" stroke-width=".6"/>`).join('')}
-      ${data.hills.map(([x,y,height,radius])=>[1,1.65,2.3].map((factor,i)=>{const [cx,cy]=project([x,y]);return `<ellipse cx="${cx}" cy="${cy}" rx="${radius*scale*factor}" ry="${radius*scale*factor*.78}" fill="${i===0?'var(--map-relief)':'none'}" fill-opacity=".35" stroke="var(--map-contour)" stroke-width=".7"/>`;}).join('')).join('')}
+      ${data.relief ? `<image href="${data.relief}" x="${left}" y="${top}" width="${width*scale}" height="${height*scale}" preserveAspectRatio="none" opacity=".9"/>` : ''}
+      ${data.relief ? '' : data.hills.map(([x,y,height,radius])=>[1,1.65,2.3].map((factor,i)=>{const [cx,cy]=project([x,y]);return `<ellipse cx="${cx}" cy="${cy}" rx="${radius*scale*factor}" ry="${radius*scale*factor*.78}" fill="${i===0?'var(--map-relief)':'none'}" fill-opacity=".35" stroke="var(--map-contour)" stroke-width=".7"/>`;}).join('')).join('')}
       ${data.water.map(p=>`<polygon points="${points(p)}" fill="var(--map-water)" stroke="var(--map-coast)" stroke-width="1.2"/>`).join('')}
       ${data.lakes.map(([x,y,rx,ry])=>{const [cx,cy]=project([x,y]);return `<ellipse cx="${cx}" cy="${cy}" rx="${rx*scale}" ry="${ry*scale}" fill="var(--map-water)" stroke="var(--map-coast)" stroke-width=".6"/>`;}).join('')}
       ${arrows.join('')}

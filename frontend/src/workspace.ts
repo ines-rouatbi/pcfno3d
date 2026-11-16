@@ -10,14 +10,16 @@ export type WorkspaceState = {
   direction: string;
   altitude: number;
   heightReference?: 'agl' | 'asl';
-  source: 'demonstration' | 'modele';
+  // modele : données du modèle ; dernier_etat : service endormi, dernier état réel (Worker) ; hors_ligne : rien
+  source: 'modele' | 'dernier_etat' | 'hors_ligne';
+  service?: { etat: 'pret' | 'dernier_etat' | 'modele_absent' | 'cle' | 'hors_ligne'; detail?: string | null; depuis?: string | null } | null;
   sceneMode?: 'terrain' | 'analysis';
   terrainSource?: 'national' | 'local';
 };
 
 export const initialWorkspace: WorkspaceState = {
-  ready: false, view: 'monvent', hour: 15, location: 'Grand Tunis',
-  speed: '—', direction: '—', altitude: 10, source: 'demonstration',
+  ready: false, view: 'tableau', hour: 15, location: 'Grand Tunis',
+  speed: '—', direction: '—', altitude: 10, source: 'hors_ligne', service: null,
 };
 
 declare global {
@@ -30,6 +32,13 @@ declare global {
         snapshot: () => WorkspaceState;
         terrainWind?: (longitude: number, latitude: number, height: number) => {u:number;v:number;speed:number;formatted:string;direction:string;color:number[]}|null;
         terrainPoint?: (longitude: number, latitude: number) => void;
+        // assistant (frontend/src/assistant) : droits, point placé, activité de « Mon vent », lieux connus
+        allowed?: (view: string) => boolean;
+        role?: () => string;
+        placer?: (latitude: number, longitude: number) => string | null;
+        activite?: (activity: string) => boolean;
+        lieux?: () => { nom: string; lat: number; lon: number }[];
+        bulletin?: () => any;
       };
     };
     THREE: any;

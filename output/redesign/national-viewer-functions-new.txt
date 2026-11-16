@@ -1,0 +1,102 @@
+  const sourceSelect=document.getElementById('terrain-source') as HTMLSelectElement;
+  const daySelect=document.getElementById('terrain-day') as HTMLSelectElement;
+  const localDate=(epoch:number,options:Intl.DateTimeFormatOptions)=>new Intl.DateTimeFormat(document.documentElement.lang||'fr',{timeZone:'Africa/Tunis',...options}).format(new Date(epoch*1000));
+  function fieldSample(lon:number,lat:number,z:number){
+    if(!sourceReady)return null;
+    const result=windSource==='national'?forecast?.sample(lon,lat,z,forecastIndex):window.ATOM.workspace?.terrainWind?.(lon,lat,z);
+    if(!result)return null;
+    return {...result,formatted:workspaceState.speed.includes('m/s')?`${result.speed.toFixed(1).replace('.',',')} m/s`:`${Math.round(result.speed*3.6)} km/h`};
+  }
+  function playerState(){
+    const globalPlay=document.getElementById('play');
+    const localPlaying=(window.ATOM.texteFr?.(globalPlay)??globalPlay?.textContent)==='Pause';
+    document.getElementById('terrain-replay')?.setAttribute('aria-pressed',String(windSource==='national'?!!nationalReplay:localPlaying));
+  }
+  function stopReplay(){if(nationalReplay){clearInterval(nationalReplay);nationalReplay=null;}playerState();}
+  function updateVectors(){
+    const state=workspaceState,position=sceneToGps(controls.target.toArray());
+    const distanceKm=camera.position.distanceTo(controls.target)/1000;
+    const viewKey=windSource==='national'?`${Math.round(position.longitude*100)}/${Math.round(position.latitude*100)}/${Math.round(distanceKm)}/${camera.aspect.toFixed(2)}`:'';
+    const key=`${windSource}/${height}/${windSource==='national'?forecast?.data.times[forecastIndex]:state.hour}/${state.source}/${quality.value}/${viewKey}`;
+    if(windEnabled&&sourceReady&&flow.ready&&key!==lastWindKey){
+      flow.rebuild(height,matchMedia('(max-width:700px)').matches||quality.value==='low',fieldSample,{longitude:position.longitude,latitude:position.latitude,distanceKm,aspect:camera.aspect});
+      lastWindKey=key;
+    }
+    flow.root.visible=windEnabled&&sourceReady;
+    outline.visible=windSource==='local';
+    const national=windSource==='national',time=forecast?.data.times[forecastIndex];
+    const hour=national&&forecast?forecastIndex%24:state.hour;
+    const date=national&&time?localDate(time,{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}):'';
+    const label=national?'Prévision GFS':state.source==='modele'?'PC-FNO3D · modèle local':'Démonstration locale';
+    text('terrain-wind-source',windEnabled?`${label} · ${height} m AGL · ${national?date:`${hour} h`}`:'Vent masqué');
+    text('terrain-live-meta',`${label} · ${height} m du sol${national&&date?` · ${date}`:''}`);
+    text('terrain-native-hour',`${hour} h`);
+    (document.getElementById('terrain-hour') as HTMLInputElement).value=String(hour);
+    daySelect.hidden=!national||!forecast;
+    if(national&&forecast)daySelect.value=String(Math.floor(forecastIndex/24));
+    const metres=state.speed.includes('m/s');text('terrain-legend-max',metres?'17,2 m/s et plus':'62 km/h et plus');
+    document.getElementById('terrain-wind-legend')!.hidden=!windEnabled;
+    document.getElementById('terrain-wind')!.setAttribute('aria-pressed',String(windEnabled));
+    const heightSelect=document.getElementById('terrain-height') as HTMLSelectElement;
+    heightSelect.disabled=!windEnabled;
+    for(const option of heightSelect.options)option.hidden=national&&![10,80].includes(+option.value);
+    heightSelect.value=String(height);
+    if(national&&forecast){
+      text('terrain-forecast-provenance',`NOAA GFS via Open-Meteo · grille de lecture 0,5° · récupéré le ${localDate(forecast.data.retrievedAt/1000,{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}${forecast.stale?' · cache':''}`);
+    }else text('terrain-forecast-provenance',national?'Prévision nationale en cours de chargement.':'Champ local limité au Grand Tunis.');
+    sourceSelect.querySelector<HTMLOptionElement>('[value="local"]')!.textContent=state.source==='modele'?'Local · PC-FNO3D':'Local · démonstration';
+    queueMicrotask(playerState);updatePoint();syncView();render();
+  }
+  async function prepareWind(){
+    if(!terrain)return;
+    const revision=++sourceRevision,source=windSource,domain=source==='national'?NATIONAL_DOMAIN:LOCAL_DOMAIN;
+    windLoading=true;sourceReady=false;flow.root.visible=false;
+    text('terrain-flow-state',source==='national'?'Chargement des prévisions nationales…':'Préparation du champ local…');
+    document.getElementById('terrain-forecast-retry')!.hidden=true;
+    try{
+      const [nextForecast]=await Promise.all([
+        source==='national'?loadNationalForecast(lifetime.signal):Promise.resolve(undefined),
+        flow.prepare(terrain,lifetime.signal,domain),
+      ]);
+      if(disposed||revision!==sourceRevision)return;
+      if(nextForecast){
+        const previousTime=forecast?.data.times[forecastIndex];forecast=nextForecast;
+        const previous=previousTime?forecast.data.times.indexOf(previousTime):-1;forecastIndex=previous>=0?previous:forecast.nearestHour;
+        daySelect.replaceChildren();
+        for(let day=0;day*24<forecast.data.times.length;day++){const option=document.createElement('option');option.value=String(day);option.textContent=localDate(forecast.data.times[day*24],{day:'2-digit',month:'short'});daySelect.appendChild(option);}
+      }
+      flow.activate(domain);sourceReady=true;lastWindKey='';updateVectors();text('terrain-flow-state','');
+    }catch(error){if(!lifetime.signal.aborted&&revision===sourceRevision){
+      text('terrain-flow-state',source==='national'?'Prévision nationale indisponible. Aucune météo de remplacement n’est affichée.':'Champ local indisponible. Réessayez le chargement.');
+      document.getElementById('terrain-forecast-retry')!.hidden=false;console.error(error);
+    }}finally{if(revision===sourceRevision)windLoading=false;}
+  }
+  function toggleWind(){windEnabled=!windEnabled;if(windEnabled&&!sourceReady)void prepareWind();updateVectors();}
+  sourceSelect.onchange=()=>{
+    stopReplay();windSource=sourceSelect.value==='local'?'local':'national';
+    if(windSource==='national'&&![10,80].includes(height))height=80;
+    if(windSource==='national')country();else local();
+    void prepareWind();updateVectors();
+  };
+  daySelect.onchange=()=>{stopReplay();forecastIndex=+daySelect.value*24+forecastIndex%24;updateVectors();};
+  document.getElementById('terrain-forecast-retry')!.onclick=()=>void prepareWind();
+  function changeHour(value:number){
+    if(windSource==='national'){forecastIndex=Math.floor(forecastIndex/24)*24+value;updateVectors();}
+    else window.ATOM.setHour(value);
+  }
+  function replay(){
+    if(windSource==='local'){document.getElementById('play')!.click();updateVectors();return;}
+    if(nationalReplay){stopReplay();return;}
+    if(!forecast||!sourceReady)return;
+    changeHour(0);nationalReplay=setInterval(()=>{const next=forecastIndex%24+1;if(next>=24){stopReplay();return;}changeHour(next);},700);playerState();
+  }
+  function updatePoint(){
+    const button=document.getElementById('terrain-open-point') as HTMLButtonElement;
+    if(!selected){button.hidden=true;return;}
+    const sample=fieldSample(selected.lon,selected.lat,height);
+    text('terrain-wind-reading',sample?`${sample.formatted} · ${sample.direction} · ${height} m du sol`:windSource==='national'?'Prévision indisponible à ce point':'Hors du champ de vent Grand Tunis');
+    const localAvailable=window.ATOM.workspace?.terrainWind?.(selected.lon,selected.lat,height);
+    button.hidden=!sample||!localAvailable;
+    button.textContent=windSource==='national'?'Comparer au champ local ↗':'Ouvrir les conditions locales ↗';
+    text('terrain-point-source',windSource==='national'?'Prévision nationale · NOAA GFS':workspaceState.source==='modele'?'PC-FNO3D · Grand Tunis':'Exemple synthétique · Grand Tunis');
+  }
