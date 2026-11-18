@@ -111,6 +111,12 @@ try:
                 if Path(m).name in voulus and not (CACHE / m).exists():
                     zf.extract(m, CACHE)
     print(len(test), "instants synoptiques du test,", sum(1 for _ in CACHE.rglob("*_S.npy")), "fichiers _S extraits")
+    JEU = Path("/content/national/jeu")              # paths.data_dir : meta.json, stations.json, grille (verite v3)
+    if not (JEU / "meta.json").exists():
+        JEU.mkdir(parents=True, exist_ok=True)
+        with zipfile.ZipFile(NAT / "jeu_v3.zip") as zf:
+            zf.extractall(JEU)
+    print("jeu v3 :", sorted(p.name for p in JEU.iterdir())[:12])
     RUN = NAT / "runs" / "national_1km_v4_Cp_s44"      # entrainement fixe par regle_choix_v4_Cp_s44
     c = yaml.safe_load(open(CODE / "configs" / "national_1km_colab.yaml"))
     c["name"] = "national_v4_eval"
