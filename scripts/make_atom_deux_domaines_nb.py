@@ -249,7 +249,8 @@ try:
     (OS5 / "demo_points.json").write_text(json.dumps({"domaines": doms, "points": demo}, indent=2, ensure_ascii=False))
 finally:
     store.revoke("demo-os5")
-print(f"\nEN LIGNE : https://{HOTE}/app/atom-wind/ — Grand Tunis ET Tunisie entiere (choix par la position).")
+print("\nEN LIGNE : https://atom.zelqane.com/ (passerelle, avec la cle du Worker) — Grand Tunis ET Tunisie entiere.")
+print(f"(ne pas ouvrir https://{HOTE}/ : sans la passerelle, la connexion repond « cle d'API absente ou invalide »)")
 # captures de la page (Chromium headless, cle temporaire revoquee) -> NAT/os5/captures, a copier dans docs/demo/
 !pip install -q playwright 2>&1 | tail -1; playwright install --with-deps chromium 2>&1 | tail -1
 !cd /content/PFE && PYTHONPATH=/content/PFE:/content/PFE/src python scripts/captures_os5.py --cles {PROD}/api_keys.json --sortie {NAT}/os5/captures 2>&1 | tail -12
