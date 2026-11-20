@@ -29,9 +29,19 @@ function cle(){ try { return localStorage.getItem(KEY_STORAGE); } catch(e) { ret
 function poserCle(k){ try { if(k) localStorage.setItem(KEY_STORAGE, k); else localStorage.removeItem(KEY_STORAGE); } catch(e) {} }
 // session d'un compte ATOM Wind (BF43) : prime sur la cle d'API ; derriere le Worker d'atom.zelqane.com elle
 // voyage dans X-ATOM-Session (le Worker remplace sinon toute cle par sa cle de lecture)
+// gardée pour CET onglet seulement (sessionStorage) : fermer le navigateur oblige à redonner son mot de passe ;
+// le serveur fait de toute façon expirer la session au bout de 8 h
 const SESSION_STORAGE = "aw-session-cle";
-function session(){ try { return localStorage.getItem(SESSION_STORAGE); } catch(e) { return null; } }
-function poserSession(k){ try { if(k) localStorage.setItem(SESSION_STORAGE, k); else localStorage.removeItem(SESSION_STORAGE); } catch(e) {} }
+try { localStorage.removeItem(SESSION_STORAGE); } catch(e) {}         // ancienne session gardée sans fin : effacée
+function session(){ try { return sessionStorage.getItem(SESSION_STORAGE); } catch(e) { return null; } }
+function poserSession(k){ try { if(k) sessionStorage.setItem(SESSION_STORAGE, k); else sessionStorage.removeItem(SESSION_STORAGE); } catch(e) {} }
+// 401 alors qu'une session était présentée : expirée, fermée par un changement de mot de passe ou un compte
+// désactivé ; la page se déconnecte et redemande le mot de passe (atom-runtime.js, « atom:session-expiree »)
+function sessionRefusee(statut){
+  if(statut !== 401 || !session()) return;
+  poserSession(null);
+  try { document.dispatchEvent(new Event("atom:session-expiree")); } catch(e) {}
+}
 function entetes(){
   const s = session(), k = cle();
   return s ? { "X-API-Key": s, "X-ATOM-Session": s } : k ? { "X-API-Key": k } : {};
@@ -66,7 +76,7 @@ async function get(path, ms = 90000){
   try {
     const r = await fetch(url, { headers: h, signal: ctl.signal });
     if(A.mesureRequete) A.mesureRequete(path, performance.now() - debut);
-    if(r.status === 401 || r.status === 403){ const e = new Error("clé d'API refusée ou absente"); e.auth = true; e.statut = r.status; throw e; }
+    if(r.status === 401 || r.status === 403){ sessionRefusee(r.status); const e = new Error("clé d'API refusée ou absente"); e.auth = true; e.statut = r.status; throw e; }
     if(!r.ok){
       // 503 du Worker atom.zelqane.com quand le Colab dort : {error, message, detail}
       let d = ""; try { const j = await r.json(); d = j.message || j.detail || ""; } catch(e) {}
@@ -445,7 +455,7 @@ A.chargerEnsembles = chargerEnsembles;
 async function blob(path){
   const h = {}; Object.assign(h, entetes());
   const r = await fetch(`${BASE}/api${path}`, { headers: h });
-  if(!r.ok) throw new Error(`${path} : ${r.status}`);
+  if(!r.ok){ sessionRefusee(r.status); throw new Error(`${path} : ${r.status}`); }
   return URL.createObjectURL(await r.blob());
 }
 async function chargerAtlas(){
@@ -479,6 +489,8 @@ function lectureStation(st){
 }
 function installerValeurStations(){
   const el = document.getElementById("aw-valeur"); if(!el || !A.pret() || !A.jour.temps_reel) return;
+  // valeur de chaque station du réseau : outil d'exploitation du réseau, réservé à l'administrateur
+  if(!(A.workspace && A.workspace.role && A.workspace.role() === "admin")){ el.hidden = true; el.innerHTML = ""; return; }
   el.innerHTML = `<h3>Valeur de chaque station aujourd'hui</h3>`
     + `<p class="muted" style="font-size:14px;margin:0 0 8px">Le modèle est relancé sans chaque station, aux heures déjà mesurées : `
     + `on voit ce que les autres stations et GFS savent deviner sans elle, et jusqu'où elle change le vent.</p>`
@@ -600,7 +612,7 @@ async function envoyer(methode, chemin, corps){
   const h = { "Content-Type": "application/json" }; Object.assign(h, entetes());
   const r = await fetch(`${BASE}/api${chemin}`, { method: methode, headers: h, body: corps ? JSON.stringify(corps) : undefined });
   const d = await r.json().catch(() => ({}));
-  if(!r.ok) throw new Error(d.detail ? (typeof d.detail === "string" ? d.detail : JSON.stringify(d.detail)) : `erreur ${r.status}`);
+  if(!r.ok){ sessionRefusee(r.status); throw new Error(d.detail ? (typeof d.detail === "string" ? d.detail : JSON.stringify(d.detail)) : `erreur ${r.status}`); }
   return d;
 }
 async function installerClesService(){
@@ -645,33 +657,64 @@ async function installerClesService(){
 A.installerClesService = installerClesService;
 
 // ------------------------------------------------------------------ comptes du service (BF43), admin
-// Les vrais comptes : validation des demandes d'accès éolien, désactivation et réactivation.
+// Gestion des comptes : adresse confirmée ou non, rôle, validation des demandes d'accès éolien, renvoi du lien
+// de confirmation, confirmation de l'adresse par l'administrateur, désactivation et réactivation.
 const NOMS_ROLES = { public: "Grand public", agri: "Agriculteur", eolien: "Exploitant éolien", admin: "Administrateur" };
 async function installerComptesService(){
   const vue = document.getElementById("v-admin"); if(!vue || document.getElementById("aw-comptes")) return;
   try { await get("/comptes", 15000); } catch(e){ return; }                     // pas admin : rien
   const carte = document.createElement("div"); carte.className = "card"; carte.id = "aw-comptes";
   vue.appendChild(carte);
+  let filtre = "";
+  const petit = 'style="padding:2px 10px;font-size:13px"';
   const rendre = async () => {
-    const l = (await get("/comptes", 15000)).comptes;
-    carte.innerHTML = `<h3>Comptes du service</h3>`
-      + `<p class="muted" style="font-size:14px;margin:0 0 8px">Comptes enregistrés sur le serveur ; un accès éolien demandé attend votre validation.</p>`
-      + `<div class="tblwrap"><table class="t"><thead><tr><th>Compte</th><th>Rôle</th><th>Demande</th><th>Statut</th><th></th></tr></thead><tbody>`
-      + l.map(c => `<tr><td>${echapper(c.nom || "")}<br><span class="muted" style="font-size:12px">${echapper(c.email)}</span></td>`
-        + `<td>${NOMS_ROLES[c.role] || c.role}</td><td>${c.demande_role ? NOMS_ROLES[c.demande_role] || c.demande_role : "—"}</td>`
-        + `<td>${c.statut === "actif" ? "actif" : `<span class="pill mid">désactivé</span>`}</td><td style="white-space:nowrap">`
-        + (c.demande_role ? `<button class="btn primary" data-val="${echapper(c.email)}" style="padding:2px 10px;font-size:13px">Valider</button> `
-          + `<button class="btn" data-ref="${echapper(c.email)}" style="padding:2px 10px;font-size:13px">Refuser</button> ` : "")
-        + (c.role === "admin" ? "" : `<button class="btn" data-st="${echapper(c.email)}" data-actif="${c.statut === "actif" ? "0" : "1"}" style="padding:2px 10px;font-size:13px">`
-          + `${c.statut === "actif" ? "Désactiver" : "Réactiver"}</button>`) + `</td></tr>`).join("")
-      + `</tbody></table></div><div id="aw-comptes-res" class="muted" style="font-size:13px;margin-top:6px"></div>`;
+    const tous = (await get("/comptes", 15000)).comptes;
+    const l = tous.filter(c => !filtre || (c.email + " " + (c.nom || "")).toLowerCase().includes(filtre));
+    const n = k => tous.filter(k).length;
+    carte.innerHTML = `<h3>Gestion des comptes</h3>`
+      + `<p class="muted" style="font-size:14px;margin:0 0 8px">${tous.length} compte(s) · ${n(c => c.email_verifie === false)} adresse(s) à confirmer · `
+      + `${n(c => c.demande_role)} demande(s) d'accès · ${n(c => c.statut !== "actif")} désactivé(s). Chaque espace (Agriculture, Énergie éolienne, `
+      + `Administration) n'est ouvert qu'à son rôle ; une connexion exige une adresse confirmée et le mot de passe, et dure 8 h.</p>`
+      + `<input class="inp" id="aw-comptes-f" placeholder="Rechercher un nom ou une adresse" value="${echapper(filtre)}" style="margin-bottom:8px;max-width:340px">`
+      + `<div class="tblwrap"><table class="t"><thead><tr><th>Compte</th><th>Adresse</th><th>Rôle</th><th>Demande</th><th>Statut</th><th>Dernière connexion</th><th></th></tr></thead><tbody>`
+      + l.map(c => { const e = echapper(c.email), adm = c.role === "admin";
+        return `<tr><td>${echapper(c.nom || "")}<br><span class="muted" style="font-size:12px">${e}</span></td>`
+        + `<td>${c.email_verifie === false ? `<span class="pill mid">à confirmer</span>` : `<span class="pill good">confirmée</span>`}</td>`
+        + `<td>${adm ? NOMS_ROLES.admin : `<select class="inp" data-role="${e}" aria-label="Rôle de ${e}" style="padding:2px 6px;font-size:13px;min-width:160px">`
+          + ["public", "agri", "eolien"].map(r => `<option value="${r}"${r === c.role ? " selected" : ""}>${NOMS_ROLES[r]}</option>`).join("") + `</select>`}</td>`
+        + `<td>${c.demande_role ? NOMS_ROLES[c.demande_role] || c.demande_role : "—"}</td>`
+        + `<td>${c.statut === "actif" ? "actif" : `<span class="pill mid">désactivé</span>`}</td>`
+        + `<td>${c.connecte_le ? fmtInstant(c.connecte_le) : "—"}</td><td style="white-space:nowrap">`
+        + (c.demande_role ? `<button class="btn primary" data-val="${e}" ${petit}>Valider</button> <button class="btn" data-ref="${e}" ${petit}>Refuser</button> ` : "")
+        + (c.email_verifie === false ? `<button class="btn" data-renv="${e}" ${petit}>Renvoyer le lien</button> <button class="btn" data-conf="${e}" ${petit}>Confirmer l'adresse</button> ` : "")
+        + (adm ? "" : `<button class="btn" data-st="${e}" data-actif="${c.statut === "actif" ? "0" : "1"}" ${petit}>${c.statut === "actif" ? "Désactiver" : "Réactiver"}</button>`
+          + ` <button class="btn" data-sup="${e}" style="padding:2px 10px;font-size:13px;color:var(--stop);border-color:var(--stop)">Supprimer</button>`)
+        + `</td></tr>`; }).join("")
+      + `</tbody></table></div><div id="aw-comptes-res" class="muted" role="status" style="font-size:13px;margin-top:6px"></div>`;
     const res = carte.querySelector("#aw-comptes-res");
-    const agir = async (chemin) => { try { await envoyer("POST", chemin); await rendre(); } catch(err){ res.textContent = err.message; } };
-    carte.querySelectorAll("[data-val]").forEach(b => b.onclick = () => agir(`/comptes/${encodeURIComponent(b.dataset.val)}/validation?accepter=true`));
-    carte.querySelectorAll("[data-ref]").forEach(b => b.onclick = () => agir(`/comptes/${encodeURIComponent(b.dataset.ref)}/validation?accepter=false`));
+    const agir = async (chemin, ok) => { try { await envoyer("POST", chemin); await rendre(); if(ok) carte.querySelector("#aw-comptes-res").textContent = ok; } catch(err){ res.textContent = err.message; } };
+    const f = carte.querySelector("#aw-comptes-f");
+    f.oninput = () => { filtre = f.value.trim().toLowerCase(); clearTimeout(f._t); f._t = setTimeout(async () => { await rendre(); const g = carte.querySelector("#aw-comptes-f"); g.focus(); g.setSelectionRange(g.value.length, g.value.length); }, 250); };
+    const url = (e, suite) => `/comptes/${encodeURIComponent(e)}/${suite}`;
+    carte.querySelectorAll("[data-val]").forEach(b => b.onclick = () => agir(url(b.dataset.val, "validation?accepter=true"), "Accès validé."));
+    carte.querySelectorAll("[data-ref]").forEach(b => b.onclick = () => agir(url(b.dataset.ref, "validation?accepter=false"), "Demande refusée."));
+    carte.querySelectorAll("[data-renv]").forEach(b => b.onclick = () => agir(url(b.dataset.renv, "verification/renvoi"), "Lien de confirmation renvoyé (au plus un par minute)."));
+    carte.querySelectorAll("[data-conf]").forEach(b => b.onclick = () => {
+      if(b.dataset.ok !== "1"){ b.dataset.ok = "1"; b.textContent = "Confirmer (adresse connue)"; return; }
+      agir(url(b.dataset.conf, "email-verifie"), "Adresse confirmée par l'administrateur.");
+    });
+    carte.querySelectorAll("[data-role]").forEach(sel => sel.onchange = () => agir(url(sel.dataset.role, `role?role=${sel.value}`), `Rôle changé : ${NOMS_ROLES[sel.value]}.`));
+    // suppression : irréversible, donc deux clics (le second confirme) ; la session et les alertes SMS du compte partent aussi
+    carte.querySelectorAll("[data-sup]").forEach(b => b.onclick = async () => {
+      if(b.dataset.ok !== "1"){ b.dataset.ok = "1"; b.textContent = "Confirmer la suppression définitive";
+        setTimeout(() => { if(b.isConnected && b.dataset.ok === "1"){ b.dataset.ok = ""; b.textContent = "Supprimer"; } }, 6000); return; }
+      try { const d = await envoyer("DELETE", `/comptes/${encodeURIComponent(b.dataset.sup)}`); await rendre();
+        carte.querySelector("#aw-comptes-res").textContent = `Compte ${d.email} supprimé${d.alertes_sms_retirees ? ` (et ${d.alertes_sms_retirees} alerte(s) SMS)` : ""}. La personne devra se réinscrire.`; }
+      catch(err){ res.textContent = err.message; }
+    });
     carte.querySelectorAll("[data-st]").forEach(b => b.onclick = () => {
       if(b.dataset.actif === "0" && b.dataset.ok !== "1"){ b.dataset.ok = "1"; b.textContent = "Confirmer"; return; }
-      agir(`/comptes/${encodeURIComponent(b.dataset.st)}/statut?actif=${b.dataset.actif === "1"}`);
+      agir(url(b.dataset.st, `statut?actif=${b.dataset.actif === "1"}`), b.dataset.actif === "1" ? "Compte réactivé." : "Compte désactivé : sa session est fermée.");
     });
   };
   try { await rendre(); } catch(e){ carte.remove(); }
@@ -782,7 +825,8 @@ async function requeteJSON(methode, chemin, corps){
   try { r = await fetch(`${BASE}/api${chemin}`, { method: methode, headers: h, body: corps ? JSON.stringify(corps) : undefined }); }
   catch(e){ return { erreur: "Le service ATOM Wind ne répond pas. Réessayez dans un instant." }; }
   const d = await r.json().catch(() => ({}));
-  return r.ok ? d : { erreur: typeof d.detail === "string" ? d.detail : `erreur ${r.status}` };
+  if(!r.ok) sessionRefusee(r.status);
+  return r.ok ? d : { erreur: typeof d.detail === "string" ? d.detail : `erreur ${r.status}`, statut: r.status };
 }
 const postJSON = (chemin, corps) => requeteJSON("POST", chemin, corps || {});
 // accès à l'API pour les onglets chargés à part (reseau-aneo-plan.js, services-atom.js) : même adresse, même clé ou session
@@ -791,12 +835,16 @@ const MESSAGES_COMPTE = {
   "adresse ou mot de passe incorrect, ou compte desactive": "E-mail ou mot de passe incorrect, ou compte désactivé.",
   "trop d'essais : reessayer dans 15 minutes": "Trop d'essais : réessayez dans 15 minutes.",
   "un compte existe deja pour cette adresse": "Un compte existe déjà avec cette adresse. Connectez-vous.",
+  "adresse e-mail non verifiee : ouvrez le lien recu par e-mail": "Adresse e-mail pas encore confirmée : ouvrez le lien reçu par e-mail (pensez aux courriers indésirables).",
+  "lien invalide ou deja utilise": "Ce lien n'est pas valable ou a déjà servi. Demandez-en un nouveau.",
+  "lien expire : demandez un nouveau lien": "Ce lien a expiré. Demandez-en un nouveau.",
+  "mot de passe : 8 caracteres au moins, dont un chiffre": "Le mot de passe doit faire 8 caractères au moins, dont un chiffre.",
 };
 const message = e => MESSAGES_COMPTE[e] || e;
 A.connexionServeur = async (email, mdp) => {
   poserSession(null);
   const d = await postJSON("/comptes/connexion", { email, mot_de_passe: mdp });
-  if(d.erreur) return { erreur: message(d.erreur) };
+  if(d.erreur) return { erreur: message(d.erreur), nonVerifie: d.statut === 403 };
   poserSession(d.cle);
   return d;
 };
@@ -804,6 +852,10 @@ A.inscriptionServeur = async (nom, email, mdp, role) => {
   const d = await postJSON("/comptes", { email, mot_de_passe: mdp, nom, role: ["public", "agri", "eolien"].includes(role) ? role : "public" });
   return d.erreur ? { erreur: message(d.erreur) } : d;
 };
+A.verifierEmail = async jeton => { const d = await postJSON("/comptes/verification", { jeton }); return d.erreur ? { erreur: message(d.erreur) } : d; };
+A.renvoyerVerification = async email => { const d = await postJSON("/comptes/verification/renvoi", { email }); return d.erreur ? { erreur: message(d.erreur) } : d; };
+A.motDePasseOublie = async email => { const d = await postJSON("/comptes/mot-de-passe/oubli", { email }); return d.erreur ? { erreur: message(d.erreur) } : d; };
+A.nouveauMotDePasse = async (jeton, mdp) => { const d = await postJSON("/comptes/mot-de-passe/reinitialisation", { jeton, mot_de_passe: mdp }); return d.erreur ? { erreur: message(d.erreur) } : d; };
 A.deconnexionServeur = () => { if(session()){ postJSON("/comptes/deconnexion").catch(() => {}); poserSession(null); } };
 // session gardée dans ce navigateur : le compte est relu sur le serveur au démarrage
 A.compteCourant = async () => {
@@ -836,6 +888,9 @@ A.utilisateurLocal = (c, USERS) => {
 const SEUILS_EOL = [[3, "démarrage 3 m/s"], [12, "nominale 12 m/s"], [25, "arrêt 25 m/s"]];
 function rendreSerieMoyeu(xy){
   const vue = document.getElementById("v-tableau"); if(!vue || !A.pret()) return;
+  // vent au moyeu du parc virtuel : propre à l'exploitant éolien (espace réservé à son rôle)
+  const roleCourant = A.workspace && A.workspace.role ? A.workspace.role() : "visiteur";
+  if(roleCourant !== "eolien"){ const c = document.getElementById("aw-moyeu"); if(c) c.remove(); return; }
   let carte = document.getElementById("aw-moyeu");
   if(!carte){
     carte = document.createElement("div"); carte.className = "card"; carte.id = "aw-moyeu";

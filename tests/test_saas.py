@@ -43,7 +43,9 @@ def test_alertes_de_l_utilisateur(client_sans_modele):
     for email in ("a@exemple.tn", "b@exemple.tn"):
         assert c.post("/api/comptes", json={"email": email, "mot_de_passe": "motdepasse1", "nom": email,
                                              "role": "agri"}).status_code == 200
-    sa = c.post("/api/comptes/connexion", json={"email": "a@exemple.tn", "mot_de_passe": "motdepasse1"}).json()["cle"]
+        from service.app import comptes
+        comptes().marquer_verifie(email)          # adresse confirmee (ici sans le lien recu par e-mail)
+    sa =c.post("/api/comptes/connexion", json={"email": "a@exemple.tn", "mot_de_passe": "motdepasse1"}).json()["cle"]
     sb = c.post("/api/comptes/connexion", json={"email": "b@exemple.tn", "mot_de_passe": "motdepasse1"}).json()["cle"]
     ha, hb = {"X-API-Key": sa}, {"X-API-Key": sb}
 

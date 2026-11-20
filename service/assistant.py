@@ -24,6 +24,7 @@ import json
 import os
 import re
 import unicodedata
+from contextvars import ContextVar
 from functools import lru_cache
 from pathlib import Path
 
@@ -323,7 +324,22 @@ def action_interface(wf, nom: str, entree: dict) -> dict:
     raise ValueError(f"outil d'interface inconnu : {nom}")
 
 
+# Outils de donnees reserves a un role, comme les routes et les espaces de la page (demande d'Ines, 20/11/2026) :
+# le role vient du SERVEUR (la session presentee), jamais du contexte envoye par la page.
+OUTILS_PAR_ROLE = {"decision_agricole": "agri", "plan_haies": "agri",
+                   "production_eolienne": "eolien", "fenetres_maintenance": "eolien",
+                   "variations_production": "eolien"}
+NOMS_ROLES = {"agri": "agriculteur", "eolien": "exploitant eolien"}
+# role de la requete en cours : "agri", "eolien", "admin", "public", "visiteur" ou "technique" (cle de service admin)
+ROLE_SERVEUR: ContextVar[str] = ContextVar("role_serveur", default="technique")
+
+
 def executer(wf, nom: str, entree: dict) -> dict:
+    exige = OUTILS_PAR_ROLE.get(nom)
+    role = ROLE_SERVEUR.get()
+    if exige and role not in (exige, "technique"):
+        return {"refuse": True, "raison": f"reserve aux comptes {NOMS_ROLES[exige]} : dis-le a l'utilisateur, sans "
+                                          "donner de chiffre, et propose-lui de se connecter avec un tel compte"}
     if nom in OUTILS_INTERFACE:
         a = action_interface(wf, nom, entree)
         return {"fait": True, "action": a["type"], "note": "l'application de l'utilisateur execute cette action"}

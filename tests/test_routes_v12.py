@@ -36,8 +36,25 @@ def client(jeu, monkeypatch):  # noqa: F811
         yield c
 
 
-def test_routes_metier(client):
+def technique(client, jeu):  # noqa: F811
+    """Client avec une cle de service de portee admin (acces technique aux espaces reserves, comme la CLI)."""
+    from fastapi.testclient import TestClient
+
+    from service.auth import ApiKeyStore, default_store_path
+    import secrets
+    cle, _ = ApiKeyStore(default_store_path(jeu.paths.run_dir)).create(f"tech-{secrets.token_hex(4)}", scope="admin")
+    return TestClient(client.app, headers={"X-API-Key": cle})
+
+
+def test_routes_metier(client, jeu):  # noqa: F811
     pt = {"lat": LAT, "lon": LON}
+    # espaces reserves (agriculteur, exploitant eolien) : la cle de lecture du Worker ne les ouvre pas
+    for route, q in (("agricole", {"j": 1, **pt}), ("production", {"j": 1, **pt}), ("haies", pt),
+                     ("porteurs", {"hauteur_m": 20}), ("dimensionnement", pt), ("variations", {"j": 1}),
+                     ("maintenance", {"j": 1, **pt}), ("scenario", {"heure": 1, "retirer": "x"}),
+                     ("valeur-stations", {}), ("rapport.pdf", {"type": "parcelle", **pt})):
+        assert client.get(f"/api/atom-wind/{route}", params=q).status_code == 403, route
+    client = technique(client, jeu)
     a = client.get("/api/atom-wind/agricole", params={"j": 1, **pt})
     assert a.status_code == 200 and len(a.json()["heures"]) == 24
     p = client.get("/api/atom-wind/production", params={"j": 1, "moyeu_m": 80, **pt})
@@ -78,7 +95,7 @@ def test_historique(client, jeu, monkeypatch):  # noqa: F811
     """BF40 / HIS1 : chaque journee calculee est archivee et se relit par l'API, nom verifie."""
     from pcfno3d import atom_wind
     monkeypatch.setenv("PCFNO3D_HISTORIQUE", "1")
-    assert client.get("/api/atom-wind/agricole", params={"j": 1, "lat": LAT, "lon": LON}).status_code == 200
+    assert technique(client, jeu).get("/api/atom-wind/agricole", params={"j": 1, "lat": LAT, "lon": LON}).status_code == 200
     h = client.get("/api/atom-wind/historique").json()["journees"]
     j1 = [r for r in h if r["type"] == "prevision" and r["echeance_j"] == 1]       # d'autres tests en ont ecrit
     assert j1 and j1[0]["emise_le"] == atom_wind.date_locale_aujourdhui(0)
@@ -148,7 +165,8 @@ def test_supervision(client, jeu, monkeypatch):  # noqa: F811
     from service.auth import ApiKeyStore, default_store_path
     admin, _ = ApiKeyStore(default_store_path(jeu.paths.run_dir)).create("sup-admin", scope="admin")
     assert client.get("/api/supervision").status_code == 403                   # cle de lecture
-    client.get("/api/atom-wind/agricole", params={"j": 0, "lat": LAT, "lon": LON})
+    TestClient(client.app).get("/api/atom-wind/agricole", params={"j": 0, "lat": LAT, "lon": LON},
+                               headers={"X-API-Key": admin})
     r = TestClient(client.app).get("/api/supervision", headers={"X-API-Key": admin})
     assert r.status_code == 200, r.text
     d = r.json()

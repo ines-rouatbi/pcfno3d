@@ -107,6 +107,8 @@ class ApiKeyRecord:
     # quotas propres a cette cle ; None = valeur par defaut du service, 0 = illimite
     quota_minute: int | None = None
     quota_jour: int | None = None
+    # expiration (UTC, ISO 8601) : posee pour les sessions des comptes ; None = la cle n'expire pas
+    expires_at: str | None = None
 
     @classmethod
     def from_dict(cls, data: dict) -> "ApiKeyRecord":
@@ -124,7 +126,19 @@ class ApiKeyRecord:
             out["quota_minute"] = self.quota_minute
         if self.quota_jour is not None:
             out["quota_jour"] = self.quota_jour
+        if self.expires_at is not None:
+            out["expires_at"] = self.expires_at
         return out
+
+    def expired(self, now: float | None = None) -> bool:
+        """Vrai si la cle porte une date d'expiration deja passee."""
+        if not self.expires_at:
+            return False
+        try:
+            fin = datetime.strptime(self.expires_at, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc).timestamp()
+        except ValueError:
+            return True                   # date illisible : la cle ne vaut plus rien (defaut ferme)
+        return (time.time() if now is None else now) >= fin
 
     @property
     def empreinte(self) -> str:
@@ -136,7 +150,8 @@ class ApiKeyRecord:
         return {"name": self.name, "scope": self.scope, "created_at": self.created_at,
                 "last_used_at": self.last_used_at, "revoked": self.revoked,
                 "empreinte": self.key_hash[:12],
-                "quota_minute": self.quota_minute, "quota_jour": self.quota_jour}
+                "quota_minute": self.quota_minute, "quota_jour": self.quota_jour,
+                "expires_at": self.expires_at}
 
 
 def _quota(value: int | None, nom: str) -> int | None:
@@ -230,13 +245,16 @@ class ApiKeyStore:
 
     # ------------------------------------------------------------------ gestion
     def create(self, name: str, scope: str = "read", quota_minute: int | None = None,
-               quota_jour: int | None = None) -> tuple[str, ApiKeyRecord]:
-        """Renvoie (secret en clair, enregistrement). Le secret n'est plus jamais lisible."""
+               quota_jour: int | None = None, duree_s: int | None = None) -> tuple[str, ApiKeyRecord]:
+        """Renvoie (secret en clair, enregistrement). Le secret n'est plus jamais lisible.
+        `duree_s` : la cle expire apres ce delai (sessions des comptes) ; None = pas d'expiration."""
         if scope not in SCOPES:
             raise ValueError(f"portee inconnue : {scope} (attendu {SCOPES})")
+        expire = (time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() + int(duree_s)))
+                  if duree_s else None)
         record = ApiKeyRecord(name=name, key_hash="", scope=scope,
                               quota_minute=_quota(quota_minute, "quota_minute"),
-                              quota_jour=_quota(quota_jour, "quota_jour"))
+                              quota_jour=_quota(quota_jour, "quota_jour"), expires_at=expire)
         with self._lock:
             self.refresh()
             if any(r.name == name and not r.revoked for r in self.records):
@@ -383,6 +401,8 @@ class ApiKeyStore:
         for r in self.active_records():
             # comparaison a temps constant sur le hash : pas de fuite par le temps
             if secrets.compare_digest(r.key_hash, h):
+                if r.expired():
+                    return None           # session expiree : il faut se reconnecter avec son mot de passe
                 self._mark_used(r)
                 return r
         return None

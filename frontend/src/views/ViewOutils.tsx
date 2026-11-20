@@ -136,28 +136,32 @@ function Panne({ actif }: { actif: boolean }) {
   </div>;
 }
 
-const OUTILS: { id: Outil; nom: string; texte: string; icone: ReactNode; admin?: boolean }[] = [
+// chaque outil est montré au seul rôle qu'il concerne (le serveur refuse aussi les autres) : haies pour
+// l'agriculteur, mât autonome pour l'exploitant éolien, panne d'une station pour l'administrateur
+const OUTILS: { id: Outil; nom: string; texte: string; icone: ReactNode; roles?: string[] }[] = [
   { id: 'grue', nom: 'Levage à la grue', texte: 'Rafale à hauteur de flèche et créneaux sûrs.', icone: <Construction size={20}/> },
-  { id: 'haies', nom: 'Haies brise-vent', texte: 'Orientation et zone abritée.', icone: <Fence size={20}/> },
-  { id: 'porteurs', nom: 'Mât autonome', texte: 'Où une petite éolienne alimente un mât.', icone: <RadioTower size={20}/> },
-  { id: 'panne', nom: 'Panne d’une station', texte: 'Ce que le réseau perd sans elle.', icone: <Unplug size={20}/>, admin: true },
+  { id: 'haies', nom: 'Haies brise-vent', texte: 'Orientation et zone abritée.', icone: <Fence size={20}/>, roles: ['agri'] },
+  { id: 'porteurs', nom: 'Mât autonome', texte: 'Où une petite éolienne alimente un mât.', icone: <RadioTower size={20}/>, roles: ['eolien'] },
+  { id: 'panne', nom: 'Panne d’une station', texte: 'Ce que le réseau perd sans elle.', icone: <Unplug size={20}/>, roles: ['admin'] },
 ];
 
 export default memo(function ViewOutils() {
   const page = useEtatPage();
-  const [outil, setOutil] = useState<Outil>('grue');
+  const [choix, setOutil] = useState<Outil>('grue');
   const ouverte = page?.view === 'outils' && page.source !== 'hors_ligne';
-  const admin = typeof window !== 'undefined' && window.ATOM?.workspace?.role?.() === 'admin';
+  const role = (typeof window !== 'undefined' && window.ATOM?.workspace?.role?.()) || 'visiteur';
+  const visibles = OUTILS.filter(o => !o.roles || o.roles.includes(role));
+  const outil: Outil = visibles.some(o => o.id === choix) ? choix : 'grue';
   return <section className="view" id="v-outils">
     <div className="tool-tabs" role="tablist" aria-label="Outils de terrain">
-      {OUTILS.filter(o => !o.admin || admin).map(o => <button key={o.id} role="tab" aria-selected={outil === o.id} className={outil === o.id ? 'on' : ''} onClick={() => setOutil(o.id)}>
+      {visibles.map(o => <button key={o.id} role="tab" aria-selected={outil === o.id} className={outil === o.id ? 'on' : ''} onClick={() => setOutil(o.id)}>
         <span className="tool-icon">{o.icone}</span><span><b>{o.nom}</b><small>{o.texte}</small></span></button>)}
     </div>
     <div className="card tool-card" role="tabpanel">
       {outil === 'grue' && <Grue actif={ouverte}/>}
       {outil === 'haies' && <Haies actif={ouverte}/>}
       {outil === 'porteurs' && <Porteurs actif={ouverte}/>}
-      {outil === 'panne' && admin && <Panne actif={ouverte}/>}
+      {outil === 'panne' && <Panne actif={ouverte}/>}
     </div>
   </section>;
 });

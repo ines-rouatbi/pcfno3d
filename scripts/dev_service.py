@@ -205,6 +205,10 @@ def servir(cfg, port: int) -> None:
     os.environ.pop("PCFNO3D_INSECURE_OPEN", None)
     os.environ["PCFNO3D_PORT"] = str(port)
     os.environ.setdefault("PCFNO3D_DEVICE", "cpu")
+    # e-mails des comptes (lien de verification, mot de passe oublie) : sans SMTP, ecrits dans
+    # <dossier>/run/courriels_locaux/*.eml ; les liens pointent vers le front local (vite, port 5190)
+    os.environ.setdefault("PCFNO3D_COURRIELS_LOCAUX", "1")
+    os.environ.setdefault("PCFNO3D_URL_APP", "http://127.0.0.1:5190/app/atom-wind/")
     print(f"\nATOM Wind (service local, donnees simulees) : http://127.0.0.1:{port}/app/atom-wind/")
     uvicorn.run(comme_le_worker(appmod.create_app(), cle_visiteur(cfg)), host="127.0.0.1", port=port,
                 log_level="warning")

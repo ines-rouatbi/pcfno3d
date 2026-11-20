@@ -181,7 +181,7 @@ def service(trained, monkeypatch, tmp_path):
     path = default_store_path(trained.paths.run_dir)
     backup = path.read_bytes() if path.exists() else None
     path.unlink(missing_ok=True)
-    cle, _ = ApiKeyStore(path).create("tests-m45", scope="read")
+    cle, _ = ApiKeyStore(path).create("tests-m45", scope="admin")
     try:
         yield lancer, cle
     finally:

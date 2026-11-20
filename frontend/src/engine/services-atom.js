@@ -21,7 +21,9 @@
 const A = window.ATOM = window.ATOM || {};
 const BASE = (new URLSearchParams(location.search).get("api") || "").replace(/\/+$/, "");
 const TTL = 3 * 60 * 1000;                      // cache court des réponses (par chemin)
-const ROLE_EOLIEN = "Réservé aux rôles exploitant éolien et administrateur : connectez-vous avec un tel compte.";
+const ROLE_EOLIEN = "Réservé aux exploitants éoliens : connectez-vous avec un compte exploitant éolien validé.";
+const ROLE_AGRI = "Réservé aux agriculteurs : connectez-vous avec un compte agriculteur.";
+const roleCourant = () => (A.workspace && A.workspace.role) ? A.workspace.role() : "visiteur";
 const ROLE_ADMIN = "Réservé aux administrateurs du service : connectez-vous avec un compte administrateur.";
 const ROLE_LECTURE = "Accès refusé par le service : connectez-vous ou enregistrez une clé d'API.";
 const JOURS = [[0, "Aujourd'hui"], [1, "Demain"], [2, "Après-demain"]];
@@ -263,7 +265,7 @@ function dimensionnement(){
             ["Batterie conseillée", `${entier(d.batterie_wh)} Wh`, `${entier(d.batterie_ah_12v)} Ah sous 12 V`],
             ["Plus grand déficit", `${entier(d.plus_grand_deficit_wh)} Wh`, "sur la période"]])
     + `<p class="muted sv-note">Hypothèses : ${num(d.hypotheses.conso_w, 1)} W en continu, ${num(d.hypotheses.autonomie_j, 1)} jour(s) d'autonomie, décharge à ${entier(d.hypotheses.profondeur_decharge * 100)} %, rendement ${entier(d.hypotheses.rendement * 100)} %.</p>`
-    + note(d.limite));
+    + note(d.limite), { role: ROLE_EOLIEN });
 }
 function porteurs(){
   const q = `/atom-wind/porteurs?hauteur_m=${val("sv-port-h", 20)}&n=${val("sv-port-n", 10)}&eolienne_w=${val("sv-port-w", 400)}&conso_w=${val("sv-port-conso", 5)}&ecart_km=${val("sv-port-ecart", 2)}`;
@@ -279,7 +281,7 @@ function porteurs(){
           + tableau(["Ordre OS6", "Position", "Altitude", "Vent moyen", "Production", "Couverture"], d.plan_aneo.map(s => [ok(s.ordre_os6) ? String(s.ordre_os6) : "—", ...ligne(s)])) : "")
       + `<p class="muted sv-note">Règles : terre ferme, altitude au plus ${entier(d.regles.altitude_max_m)} m, ${num(d.regles.marge_bord_km, 1)} km du bord, sites espacés d'au moins ${num(d.regles.ecart_min_km, 1)} km ; couverture d'une consommation de ${num(d.regles.conso_w, 1)} W.</p>`
       + note(d.limite);
-  }, { attente: "Classement des emplacements par le service (journées disponibles et historique)…" });
+  }, { role: ROLE_EOLIEN, attente: "Classement des emplacements par le service (journées disponibles et historique)…" });
 }
 
 // ================================================================== Alertes
@@ -495,7 +497,7 @@ function haies(){
       + tableau(["Secteur", "Fréquence", "Part des vents forts"], rose.map(r => [esc(r.secteur), `${num(r.frequence_pct, 1)} %`, `${num(r.part_vents_forts_pct, 1)} %`]))
       + `<button class="btn" id="sv-haies-geo" style="margin-top:8px">Télécharger le plan en GeoJSON</button></div></div>`
       + note(d.critere) + note(d.limite);
-  }, { attente: "Calcul du vent dominant par le service (journées disponibles et historique)…" });
+  }, { role: ROLE_AGRI, attente: "Calcul du vent dominant par le service (journées disponibles et historique)…" });
 }
 
 // ================================================================== Fiabilité
@@ -505,17 +507,21 @@ function stationsDomaine(){
 }
 function vueFiabilite(){
   const h0 = Math.max(0, heureTunis() - 1);
+  // le scénario de panne d'une station est un outil d'administration du réseau : carte absente pour les autres rôles
+  const admin = roleCourant() === "admin";
+  const panneLa = !!document.getElementById("sv-panne");
+  if(panneLa !== admin) delete montees["svc-fiabilite"];      // le rôle a changé : la vue se remonte
   const neuf = monter("svc-fiabilite",
-    carte("sv-panne", "Et si une station tombait en panne ?",
+    (admin ? carte("sv-panne", "Et si une station tombait en panne ?",
       "Une heure déjà mesurée aujourd'hui, recalculée par le modèle sans les stations choisies : ce que la panne change dans le champ, et ce que le reste du réseau devine sans elles.",
       `<div class="sv-form">${champ("sv-panne-h", "Heure (Tunis)", h0, 0, 23)}`
       + `<fieldset style="border:0;padding:0;margin:0;display:flex;flex-wrap:wrap;gap:4px 12px"><legend style="font-size:13px;font-weight:700">Stations retirées</legend>`
       + stationsDomaine().map((n, i) => `<label style="display:flex;gap:6px;align-items:center;font-weight:400"><input type="checkbox" data-sv-station="${esc(n)}"${i === 0 ? " checked" : ""}> ${esc(n)}</label>`).join("")
-      + `</fieldset>${bouton("sv-panne-go", "Recalculer sans ces stations")}</div>`)
+      + `</fieldset>${bouton("sv-panne-go", "Recalculer sans ces stations")}</div>`) : "")
     + carte("sv-hist", "Journées archivées par le service",
       "Chaque journée en temps réel et chaque prévision déjà calculées sont gardées par le service ; une prévision se compare ensuite au temps réel du même jour."));
   if(!enLigne()){ poser("sv-panne", absent()); poser("sv-hist", absent()); return; }
-  if(neuf){
+  if(neuf && admin){
     document.getElementById("sv-panne-go").onclick = panne;
     poser("sv-panne", `<p class="muted sv-note">Choisissez une heure et les stations à retirer, puis lancez le calcul.</p>`);
   }

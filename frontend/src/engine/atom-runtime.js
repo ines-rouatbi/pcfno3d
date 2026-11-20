@@ -517,8 +517,9 @@ document.getElementById("cutclose").onclick=()=>{ document.getElementById("cutca
 const CROPS = { tomate:["Tomate",1.15], pdt:["Pomme de terre",1.15], pasteque:["Pastèque, melon",1.0], piment:["Piment, poivron",1.05], fraise:["Fraise",0.85], agrumes:["Agrumes",0.65], olivier:["Olivier",0.7], vigne:["Vigne",0.7], artichaut:["Artichaut",1.0], palmier:["Palmier dattier",0.95] };
 const MILIEUX = { champ:"Plein champ", serre:"Serre ou tunnel", verger:"Verger" };
 const AGDAYS = ["Aujourd'hui","Demain","Après-demain"];
-const ag = { place:5, crop:"tomate", area:2, eff:.9, milieu:"champ", day:0 };
-const agP = () => { const q=PLACES[ag.place]; return xy(q[1],q[2]); };
+// lieu par défaut : Mornag (n° 5) au Grand Tunis ; le premier lieu d'un domaine qui en a moins
+const ag = { place:PLACES[5]?5:0, crop:"tomate", area:2, eff:.9, milieu:"champ", day:0 };
+const agP = () => { const q=PLACES[ag.place]||PLACES[0]; return xy(q[1],q[2]); };
 // J0 : la journée affichée ; J+1 et J+2 : prévisions GFS affinées par ATOM Wind (temps réel), sinon rien.
 const jourDispo = d => (window.ATOM && ATOM.pretJour(d)) || (d===0 && PRET());
 function windD(x,y,z,h,d){ if(window.ATOM && ATOM.pretJour(d)) return ATOM.ventJour(d,x,y,z,h); return d===0 ? wind(x,y,z,h) : [NaN,NaN]; }
@@ -552,7 +553,7 @@ function renderAgri(){
   const SRC_ATOM = '<span class="srctag atom">Vent : ATOM Wind</span>';
   const hasT = !!(window.ATOM && ATOM.aT(ag.day));
   const SRC_GFS = hasT ? '<span class="srctag">Température, humidité : GFS</span>' : '';
-  const [x,y]=agP(), d=ag.day, c=CROPS[ag.crop], jour=AGDAYS[d].toLowerCase(), fmt1=v=>v.toFixed(1).replace(".",","), place=PLACES[ag.place][0].split(" (")[0];
+  const [x,y]=agP(), d=ag.day, c=CROPS[ag.crop], jour=AGDAYS[d].toLowerCase(), fmt1=v=>v.toFixed(1).replace(".",","), place=(PLACES[ag.place]||PLACES[0])[0].split(" (")[0];
   const H=[]; for(let h=0;h<24;h++){ const [u,v]=windD(x,y,10,h,d), [u2,v2]=windD(x,y,2,h,d), k=kmh(Math.hypot(u,v)); H.push({u,v,k:Math.round(k), k2:Math.round(kmh(Math.hypot(u2,v2))), g:Math.round(k*gustF(x,y,10)), T:Tair(h,x,y,d), RH:RHair(h,x,y,d)}); }
   const rel=sigma(x,y), [rc,rl]=relClass(rel.s);
   // ---- alertes du jour
@@ -813,9 +814,12 @@ const ROLES = {
   public:{n:"Grand public", auto:true, home:"tableau", d:"Vent près de chez soi, alertes"},
   agri:{n:"Agriculteur", auto:true, home:"agri", d:"Traitements, irrigation, alertes vent"},
   eolien:{n:"Exploitant éolien", auto:false, home:"eolien", d:"Production prévue, rotor, gisement"},
-  admin:{n:"Administrateur", auto:false, home:"tableau", d:"Comptes, rôles, clés d'API"}
+  admin:{n:"Administrateur", auto:false, home:"admin", d:"Comptes, rôles, clés d'API"}
 };
-const ACCESS = { tableau:"*", monvent:"*", carte3d:"*", alertes:"*", fiabilite:"*", outils:"*", historique:"*", agri:["agri","admin"], eolien:["eolien","admin"], admin:["admin"], reseau:["admin"] };
+// chaque espace est réservé à SON rôle (demande d'Ines, 20/11/2026) : l'agriculteur seul voit l'espace
+// Agriculture, l'exploitant éolien seul l'espace Énergie éolienne, l'administrateur seul l'Administration et le
+// Réseau ANEO ; le serveur applique la même règle à ses routes (service/app.py, exiger_role)
+const ACCESS = { tableau:"*", monvent:"*", carte3d:"*", alertes:"*", fiabilite:"*", outils:"*", historique:"*", agri:["agri"], eolien:["eolien"], admin:["admin"], reseau:["admin"] };
 const TABNAME = { tableau:"Vue d’ensemble", monvent:"Mon vent", agri:"Agriculture", carte3d:"Atmosphère 3D", alertes:"Alertes", eolien:"Énergie éolienne", fiabilite:"Données & fiabilité", outils:"Outils de terrain", historique:"Historique", admin:"Administration", reseau:"Réseau ANEO" };
 const store = { get(k,d){ try{ const v=localStorage.getItem(k); return v?JSON.parse(v):d; }catch(e){ return d; } }, set(k,v){ try{ localStorage.setItem(k,JSON.stringify(v)); }catch(e){} } };
 // comptes : uniquement ceux du serveur (/api/comptes) ; la session est une clé gardée par atom-data.js
@@ -840,22 +844,30 @@ function renderUserBox(){ const ub=document.getElementById("userbox");
   bu.onclick=e=>{ e.stopPropagation(); mn.hidden=!mn.hidden; bu.setAttribute("aria-expanded",!mn.hidden); };
   document.addEventListener("click",e=>{ if(!e.target.closest("#userbox")) mn.hidden=true; },{once:true});
   document.getElementById("b-out").onclick=logout; }
-function login(u, msg){ me=u; applyAccess(); closeAuth(); const home=(ROLES[u.role]||ROLES.public).home; navigate(home,true); loadMy(); toast(msg||`Bienvenue, ${u.name.split(",")[0]}`); }
-function logout(){ if(window.ATOM && ATOM.deconnexionServeur) ATOM.deconnexionServeur(); me=null; MY=[]; applyAccess(); navigate("tableau",true); renderAlerts(); toast("Vous êtes déconnecté."); }
+function login(u, msg){ me=u; applyAccess(); closeAuth();
+  const pl=store.get("aw-lieu-"+u.email,null); if(u.role==="agri" && pl!==null && PLACES[pl]){ ag.place=pl; const ps=document.getElementById("ag-place"); if(ps) ps.value=String(pl); renderAgri(); }
+  const home=(ROLES[u.role]||ROLES.public).home; navigate(home,true); loadMy(); toast(msg||`Bienvenue, ${u.name.split(",")[0]}`); }
+function logout(msg){ if(window.ATOM && ATOM.deconnexionServeur) ATOM.deconnexionServeur(); me=null; MY=[]; applyAccess(); navigate("tableau",true); renderAlerts(); toast(msg||"Vous êtes déconnecté."); }
+// session refusée par le serveur (expirée au bout de 8 h, compte désactivé, mot de passe changé) : on se
+// déconnecte et on redemande le mot de passe
+document.addEventListener("atom:session-expiree",()=>{ if(!me) return; logout("Votre session a expiré : reconnectez-vous avec votre mot de passe."); openAuth("login"); });
 const authEl=document.getElementById("authm");
 function closeAuth(){ authEl.hidden=true; }
-function openAuth(mode){
+// Fenêtre de compte : connexion (mot de passe exigé à chaque fois, session de 8 h), création de compte (adresse
+// e-mail vérifiée par un lien de 24 h avant toute connexion), mot de passe oublié (lien d'1 h), nouveau mot de passe.
+function openAuth(mode, opts={}){
   const roleOpts = Object.entries(ROLES).filter(([k])=>k!=="admin").map(([k,r])=>`<option value="${k}">${r.n} : ${r.d}${r.auto?"":" (validation par l'équipe)"}</option>`).join("");
-  authEl.innerHTML = `<div class="card authcard" role="dialog" aria-modal="true" aria-label="Connexion à ATOM Wind">
-    <div class="row" style="justify-content:space-between"><div class="brand" style="margin:0"><svg width="30" height="30" viewBox="0 0 38 38" aria-hidden="true"><circle cx="19" cy="19" r="18" fill="var(--accent)"/><path d="M8 15c6-4 11 3 18-1M8 21c7-4 12 3 22-1M10 27c5-3 9 2 14-1" stroke="var(--accent-ink)" stroke-width="2.4" fill="none" stroke-linecap="round"/></svg><b>ATOM Wind</b></div><button class="x" id="a-close" aria-label="Fermer">×</button></div>
-    <div class="tabs2"><button id="t-login" aria-pressed="${mode==="login"}">Se connecter</button><button id="t-reg" aria-pressed="${mode==="register"}">Créer un compte</button></div>
-    ${mode==="login" ? `<form class="form" id="f-login" novalidate>
-      <label for="l-mail">Adresse e-mail<input class="inp" id="l-mail" type="email" autocomplete="username" required></label>
+  const info = opts.info ? `<div class="auth-info" role="status" style="background:var(--go-soft);color:var(--go);border-radius:8px;padding:8px 10px;font-size:14px">${esc(opts.info)}</div>` : "";
+  const onglets = mode==="login"||mode==="register";
+  let corps;
+  if(mode==="login") corps = `<form class="form" id="f-login" novalidate>${info}
+      <label for="l-mail">Adresse e-mail<input class="inp" id="l-mail" type="email" autocomplete="username" required value="${esc(opts.email||"")}"></label>
       <label for="l-pw">Mot de passe<input class="inp" id="l-pw" type="password" autocomplete="current-password" required></label>
       <div class="err" id="l-err" role="alert"></div>
+      <div id="l-renvoi"></div>
       <button class="btn primary" type="submit">Se connecter</button>
-      <button class="btn" type="button" id="l-forgot">Mot de passe oublié ?</button></form>`
-    : `<form class="form" id="f-reg" novalidate>
+      <button class="btn" type="button" id="l-forgot">Mot de passe oublié ?</button></form>`;
+  else if(mode==="register") corps = `<form class="form" id="f-reg" novalidate>
       <label for="r-name">Nom ou raison sociale<input class="inp" id="r-name" autocomplete="name" required></label>
       <label for="r-mail">Adresse e-mail<input class="inp" id="r-mail" type="email" autocomplete="email" required></label>
       <label for="r-pw">Mot de passe (8 caractères au moins, dont un chiffre)<input class="inp" id="r-pw" type="password" autocomplete="new-password" required></label>
@@ -864,21 +876,50 @@ function openAuth(mode){
       <label for="r-place">Mon lieu principal<select class="inp" id="r-place">${PLACES.map((p,i)=>`<option value="${i}">${p[0]}</option>`).join("")}</select></label>
       <label class="check" for="r-ok"><input type="checkbox" id="r-ok"> J'accepte les conditions d'utilisation et la politique de confidentialité d'ATOM Wind.</label>
       <div class="err" id="r-err" role="alert"></div>
-      <button class="btn primary" type="submit">Créer mon compte</button></form>`}
-    <p class="muted" style="font-size:12px;margin:0">Votre compte est gardé sur le serveur ATOM Wind ; le mot de passe n'est jamais stocké dans ce navigateur.</p></div>`;
+      <button class="btn primary" type="submit">Créer mon compte</button></form>`;
+  else if(mode==="verifier") corps = `<div class="form"><h3 style="margin:0">Vérifiez votre adresse e-mail</h3>
+      <p style="margin:0">Un lien de confirmation a été envoyé à <b>${esc(opts.email||"")}</b>. Ouvrez-le pour activer votre compte : il ne sert qu'une fois et expire dans ${opts.heures||24} heures.</p>
+      <p class="muted" style="margin:0;font-size:14px">Vous pourrez ensuite vous connecter avec votre adresse et votre mot de passe.${opts.demande?` Votre accès « ${ROLES[opts.demande].n} » sera en plus validé par l'équipe.`:""}</p>
+      ${opts.nonEnvoye?`<p class="err" style="margin:0">L'e-mail n'a pas pu être envoyé. Réessayez dans une minute, ou demandez à l'administrateur de confirmer votre adresse.</p>`:""}
+      <div class="err" id="v-err" role="status"></div>
+      <button class="btn" type="button" id="v-renvoi">Renvoyer le lien</button>
+      <button class="btn primary" type="button" id="v-login">J'ai confirmé, me connecter</button></div>`;
+  else if(mode==="forgot") corps = `<form class="form" id="f-forgot" novalidate><h3 style="margin:0">Mot de passe oublié</h3>
+      <p class="muted" style="margin:0;font-size:14px">Indiquez votre adresse : si un compte existe, vous recevrez un lien pour choisir un nouveau mot de passe. Le lien expire dans 1 heure.</p>
+      <label for="f-mail">Adresse e-mail<input class="inp" id="f-mail" type="email" autocomplete="username" required value="${esc(opts.email||"")}"></label>
+      <div class="err" id="f-err" role="status"></div>
+      <button class="btn primary" type="submit">Recevoir le lien</button>
+      <button class="btn" type="button" id="f-back">Retour à la connexion</button></form>`;
+  else corps = `<form class="form" id="f-reset" novalidate><h3 style="margin:0">Choisir un nouveau mot de passe</h3>
+      <label for="n-pw">Nouveau mot de passe (8 caractères au moins, dont un chiffre)<input class="inp" id="n-pw" type="password" autocomplete="new-password" required></label>
+      <label for="n-pw2">Confirmer le mot de passe<input class="inp" id="n-pw2" type="password" autocomplete="new-password" required></label>
+      <div class="err" id="n-err" role="alert"></div>
+      <button class="btn primary" type="submit">Enregistrer le mot de passe</button></form>`;
+  authEl.innerHTML = `<div class="card authcard" role="dialog" aria-modal="true" aria-label="Compte ATOM Wind">
+    <div class="row" style="justify-content:space-between"><div class="brand" style="margin:0"><svg width="30" height="30" viewBox="0 0 38 38" aria-hidden="true"><circle cx="19" cy="19" r="18" fill="var(--accent)"/><path d="M8 15c6-4 11 3 18-1M8 21c7-4 12 3 22-1M10 27c5-3 9 2 14-1" stroke="var(--accent-ink)" stroke-width="2.4" fill="none" stroke-linecap="round"/></svg><b>ATOM Wind</b></div><button class="x" id="a-close" aria-label="Fermer">×</button></div>
+    ${onglets?`<div class="tabs2"><button id="t-login" aria-pressed="${mode==="login"}">Se connecter</button><button id="t-reg" aria-pressed="${mode==="register"}">Créer un compte</button></div>`:""}
+    ${corps}
+    <p class="muted" style="font-size:12px;margin:0">Votre compte est gardé sur le serveur ATOM Wind ; le mot de passe n'est jamais stocké dans ce navigateur. Une session dure 8 heures ; il faut ensuite redonner son mot de passe.</p></div>`;
   authEl.hidden=false;
-  document.getElementById("a-close").onclick=closeAuth;
-  document.getElementById("t-login").onclick=()=>openAuth("login"); document.getElementById("t-reg").onclick=()=>openAuth("register");
+  const g=id=>document.getElementById(id);
+  g("a-close").onclick=closeAuth;
+  if(onglets){ g("t-login").onclick=()=>openAuth("login"); g("t-reg").onclick=()=>openAuth("register"); }
+  const renvoyer = async (mail, out) => { out.textContent="Envoi…"; const r=await ATOM.renvoyerVerification(mail);
+    out.textContent = r.erreur || "Si un compte non vérifié existe pour cette adresse, un nouveau lien vient d'être envoyé (l'ancien ne marche plus)."; };
   if(mode==="login"){
-    document.getElementById("l-mail").focus();
-    document.getElementById("l-forgot").onclick=()=>{ document.getElementById("l-err").textContent="Demandez à l'administrateur ATOM Wind de votre organisation de réinitialiser votre accès."; };
-    document.getElementById("f-login").onsubmit=async e=>{ e.preventDefault(); const mail=document.getElementById("l-mail").value.trim().toLowerCase(), pw=document.getElementById("l-pw").value, err=document.getElementById("l-err");
+    (opts.email?g("l-pw"):g("l-mail")).focus();
+    g("l-forgot").onclick=()=>openAuth("forgot",{email:g("l-mail").value.trim()});
+    g("f-login").onsubmit=async e=>{ e.preventDefault(); const mail=g("l-mail").value.trim().toLowerCase(), pw=g("l-pw").value, err=g("l-err"), rv=g("l-renvoi");
+      err.textContent=""; rv.innerHTML="";
       if(!mail||!pw){ err.textContent="Saisissez votre e-mail et votre mot de passe."; return; }
-      const r=await ATOM.connexionServeur(mail,pw); if(r.erreur){ err.textContent=r.erreur; return; }
+      const r=await ATOM.connexionServeur(mail,pw); g("l-pw").value="";
+      if(r.nonVerifie){ err.textContent=r.erreur; rv.innerHTML=`<button class="btn" type="button" id="l-rv">Renvoyer le lien de confirmation</button><div class="muted" id="l-rv-out" role="status" style="font-size:13px"></div>`;
+        g("l-rv").onclick=()=>renvoyer(mail,g("l-rv-out")); return; }
+      if(r.erreur){ err.textContent=r.erreur; return; }
       login(ATOM.utilisateurLocal(r.compte,USERS)); };
-  } else {
-    document.getElementById("r-name").focus();
-    document.getElementById("f-reg").onsubmit=async e=>{ e.preventDefault(); const g=id=>document.getElementById(id), err=g("r-err");
+  } else if(mode==="register"){
+    g("r-name").focus();
+    g("f-reg").onsubmit=async e=>{ e.preventDefault(); const err=g("r-err");
       const name=g("r-name").value.trim(), mail=g("r-mail").value.trim().toLowerCase(), pw=g("r-pw").value, pw2=g("r-pw2").value, role=g("r-role").value;
       if(name.length<2){ err.textContent="Indiquez votre nom."; return; }
       if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(mail)){ err.textContent="Cette adresse e-mail n'est pas valide."; return; }
@@ -886,11 +927,40 @@ function openAuth(mode){
       if(pw!==pw2){ err.textContent="Les deux mots de passe ne sont pas identiques."; return; }
       if(!g("r-ok").checked){ err.textContent="Acceptez les conditions d'utilisation pour continuer."; return; }
       const r=await ATOM.inscriptionServeur(name,mail,pw,role); if(r.erreur){ err.textContent=r.erreur; return; }
-      const c=await ATOM.connexionServeur(mail,pw); if(c.erreur){ err.textContent=c.erreur; return; }
-      const su=ATOM.utilisateurLocal(c.compte,USERS); su.place=+g("r-place").value;
-      if(su.role==="agri"){ ag.place=su.place; const ps=document.getElementById("ag-place"); if(ps) ps.value=String(su.place); renderAgri(); }
-      login(su, su.requested ? `Compte créé. Votre accès « ${ROLES[role].n} » sera validé par l'équipe ; en attendant, vous avez l'accès Grand public.` : "Compte créé. Bienvenue sur ATOM Wind !"); };
+      try{ store.set("aw-lieu-"+mail, +g("r-place").value); }catch(_){}
+      // pas de connexion automatique : l'adresse doit d'abord être vérifiée, puis le mot de passe redonné
+      openAuth("verifier",{email:mail, heures:(r.verification&&r.verification.expire_h)||24, demande:r.demande_role||null,
+                           nonEnvoye:!(r.verification&&r.verification.envoye)}); };
+  } else if(mode==="verifier"){
+    g("v-renvoi").onclick=()=>renvoyer(opts.email||"",g("v-err"));
+    g("v-login").onclick=()=>openAuth("login",{email:opts.email||""});
+  } else if(mode==="forgot"){
+    g("f-mail").focus();
+    g("f-back").onclick=()=>openAuth("login",{email:g("f-mail").value.trim()});
+    g("f-forgot").onsubmit=async e=>{ e.preventDefault(); const mail=g("f-mail").value.trim().toLowerCase(), out=g("f-err");
+      if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(mail)){ out.textContent="Cette adresse e-mail n'est pas valide."; return; }
+      out.textContent="Envoi…"; const r=await ATOM.motDePasseOublie(mail);
+      out.textContent = r.erreur || "Si un compte actif existe pour cette adresse, un lien vient d'être envoyé. Il expire dans 1 heure."; };
+  } else {
+    g("n-pw").focus();
+    g("f-reset").onsubmit=async e=>{ e.preventDefault(); const pw=g("n-pw").value, pw2=g("n-pw2").value, err=g("n-err");
+      if(pw.length<8 || !/\d/.test(pw)){ err.textContent="Le mot de passe doit faire 8 caractères au moins, dont un chiffre."; return; }
+      if(pw!==pw2){ err.textContent="Les deux mots de passe ne sont pas identiques."; return; }
+      const r=await ATOM.nouveauMotDePasse(opts.jeton,pw); if(r.erreur){ err.textContent=r.erreur; return; }
+      openAuth("login",{email:r.email||"", info:"Mot de passe changé. Connectez-vous avec le nouveau mot de passe."}); };
   }
+}
+// liens reçus par e-mail : #verifier-email=<jeton> et #nouveau-mot-de-passe=<jeton>. Le jeton est retiré de
+// l'adresse et de l'historique du navigateur dès la lecture ; le lien ne connecte jamais : il faut ensuite le mot de passe.
+function lienCompte(){
+  const m=/^#(verifier-email|nouveau-mot-de-passe)=([A-Za-z0-9_\-]{10,200})$/.exec(location.hash);
+  if(!m) return false;
+  try{ history.replaceState(null,"",location.pathname+location.search+"#tableau"); }catch(_){}
+  if(m[1]==="nouveau-mot-de-passe"){ openAuth("reset",{jeton:m[2]}); return true; }
+  ATOM.verifierEmail(m[2]).then(r=>{
+    if(r.erreur){ openAuth("login",{}); const e=document.getElementById("l-err"); if(e) e.textContent=r.erreur; return; }
+    openAuth("login",{email:r.email||"", info:`Adresse confirmée. Connectez-vous avec votre mot de passe.${r.demande_role?` Votre accès « ${ROLES[r.demande_role].n} » attend encore la validation de l'équipe.`:""}`}); });
+  return true;
 }
 
 // ---------------- administration : comptes, clés, abonnés et supervision du serveur ----------------
@@ -913,7 +983,7 @@ function navigate(v,replace=false){
   try{if(location.hash!=="#"+currentView)history[replace?"replaceState":"pushState"](null,"","#"+currentView);}catch(_){}
   window.scrollTo({top:0,behavior:matchMedia("(prefers-reduced-motion: reduce)").matches?"instant":"smooth"});
 }
-addEventListener("hashchange",()=>{show(location.hash.slice(1));try{if(location.hash!=="#"+currentView)history.replaceState(null,"","#"+currentView);}catch(_){} });
+addEventListener("hashchange",()=>{if(lienCompte())return;show(location.hash.slice(1));try{if(location.hash!=="#"+currentView)history.replaceState(null,"","#"+currentView);}catch(_){} });
 // les liens internes sont gérés par la page elle-même : la visionneuse ne transmet pas toujours le changement d'ancre
 document.addEventListener("click", e => { if(e.defaultPrevented||e.button!==0||e.metaKey||e.ctrlKey||e.shiftKey||e.altKey)return;const a=e.target.closest('a[href^="#"]'); if(!a) return; const v=a.getAttribute("href").slice(1); if(!document.getElementById("v-"+v)) return; e.preventDefault();navigate(v); });
 
@@ -1115,9 +1185,10 @@ applyAccess();
 const th0=store.get("aw-theme","light"); if(th0!=="auto") setTheme(th0);
 if(window.ATOM) ATOM.rafraichir = () => { for(const k in DSTAT) delete DSTAT[k]; MAPS.forEach(m=>m.redraw()); setHour(state.hour); renderRel(); }; if(window.ATOM) ATOM.setHour = setHour;
 renderAlerts(); setHour(15); renderRel();
-navigate(location.hash.slice(1)||"tableau",true);
-// session d'un compte du serveur (clé gardée par atom-data.js) : rôle et alertes rechargés au démarrage
+const LIEN_COMPTE=lienCompte();
+navigate(LIEN_COMPTE?"tableau":(location.hash.slice(1)||"tableau"),true);
+// session d''un compte du serveur (clé gardée par atom-data.js) : rôle et alertes rechargés au démarrage
 if(window.ATOM?.compteCourant) ATOM.compteCourant().then(c=>{ if(!c) return; me=ATOM.utilisateurLocal(c,USERS); applyAccess(); loadMy(); if(!location.hash) navigate((ROLES[me.role]||ROLES.public).home,true); });
 let seen=false; try{ seen=localStorage.getItem("aw-tour")==="1"; }catch(e){}
-if(!seen) tour(0);
+if(!seen && !LIEN_COMPTE) tour(0);
 }

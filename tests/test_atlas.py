@@ -82,7 +82,7 @@ def test_route_atlas(jeu, monkeypatch):  # noqa: F811
     from service.auth import ApiKeyStore, default_store_path
     chemin = default_store_path(jeu.paths.run_dir)
     chemin.unlink(missing_ok=True)
-    cle, _ = ApiKeyStore(chemin).create("tests-atlas", scope="read")
+    cle, _ = ApiKeyStore(chemin).create("tests-atlas", scope="admin")
     from service.app import create_app
     with TestClient(create_app(), headers={"X-API-Key": cle}) as c:
         r = c.get("/api/atom-wind/atlas")
