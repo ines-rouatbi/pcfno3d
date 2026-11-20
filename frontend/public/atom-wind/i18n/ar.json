@@ -2306,5 +2306,19 @@
  "Votre accès « {0} » sera en plus validé par l'équipe.": "سيوافق الفريق أيضًا على وصولك « {0} ».",
  "Vous pourrez ensuite vous connecter avec votre adresse et votre mot de passe.{0}": "يمكنك بعدها تسجيل الدخول بعنوانك وكلمة المرور.{0}",
  "{0} compte(s) · {1} adresse(s) à confirmer ·": "{0} حساب · {1} عنوان بانتظار التأكيد ·",
- "{0} demande(s) d'accès · {1} désactivé(s). Chaque espace (Agriculture, Énergie éolienne,": "{0} طلب وصول · {1} معطَّل. كل فضاء (الزراعة، طاقة الرياح،"
+ "{0} demande(s) d'accès · {1} désactivé(s). Chaque espace (Agriculture, Énergie éolienne,": "{0} طلب وصول · {1} معطَّل. كل فضاء (الزراعة، طاقة الرياح،",
+ "Ariana": "أريانة",
+ "Bizerte": "بنزرت",
+ "Gafsa": "قفصة",
+ "Jendouba": "جندوبة",
+ "Kairouan": "القيروان",
+ "Kasserine": "القصرين",
+ "Mahdia": "المهدية",
+ "Manouba": "منوبة",
+ "Monastir": "المنستير",
+ "Sfax": "صفاقس",
+ "Siliana": "سليانة",
+ "Sousse": "سوسة",
+ "Tataouine": "تطاوين",
+ "Tozeur": "توزر"
 }

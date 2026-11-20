@@ -33,6 +33,34 @@ LIEUX = {
     "grombalia": (36.60, 10.50), "korbous": (36.82, 10.57), "nabeul": (36.455, 10.715),
     "zaghouan": (36.4333, 10.0833), "mohamedia": (36.68, 10.16),
 }
+# chefs-lieux des 24 gouvernorats (demande d'Ines, 20/11/2026) : servis par le modele national ; un nom deja connu
+# au Grand Tunis (Tunis, Ben Arous, Nabeul, Zaghouan) garde le lieu du Grand Tunis
+GOUVERNORATS = {
+    "ariana": (36.8625, 10.1956),
+    "béja": (36.7256, 9.1817),
+    "ben arous": (36.7531, 10.2189),
+    "bizerte": (37.2744, 9.8739),
+    "gabès": (33.8815, 10.0982),
+    "gafsa": (34.425, 8.7842),
+    "jendouba": (36.5011, 8.7802),
+    "kairouan": (35.6781, 10.0963),
+    "kasserine": (35.1676, 8.8365),
+    "kébili": (33.7044, 8.969),
+    "le kef": (36.1742, 8.7049),
+    "mahdia": (35.5047, 11.0622),
+    "manouba": (36.8101, 10.0863),
+    "médenine": (33.3549, 10.5055),
+    "monastir": (35.7643, 10.8113),
+    "nabeul": (36.4561, 10.7376),
+    "sfax": (34.7406, 10.7603),
+    "sidi bouzid": (35.0382, 9.4849),
+    "siliana": (36.0849, 9.3708),
+    "sousse": (35.8256, 10.6084),
+    "tataouine": (32.9297, 10.4518),
+    "tozeur": (33.9197, 8.1335),
+    "tunis": (36.8065, 10.1815),
+    "zaghouan": (36.4029, 10.1429),
+}
 
 
 def _cle(wf, nom: str) -> tuple:
@@ -245,11 +273,13 @@ def _tableau(payload: dict, cle: str, forme_cle: str = "forme") -> np.ndarray:
 
 
 def position(wf, lat: float | None = None, lon: float | None = None, lieu: str | None = None) -> tuple[float, float, str]:
-    """(x_km, y_km, nom) depuis lat/lon ou un nom de lieu de l'application (lieux du Grand Tunis, puis
-    stations du domaine servi : les 12 aeroports sur le domaine national)."""
+    """(x_km, y_km, nom) depuis lat/lon ou un nom de lieu de l'application (lieux du Grand Tunis, chefs-lieux des
+    24 gouvernorats, puis stations du domaine servi : les 12 aeroports sur le domaine national)."""
     g = grille(wf)
     if lieu:
         lieux = dict(LIEUX)
+        for k, v in GOUVERNORATS.items():
+            lieux.setdefault(k, v)
         for st in g["stations"]:
             if st.get("lat") is not None:
                 lieux.setdefault(str(st["nom"]).lower(), (st["lat"], st["lon"]))

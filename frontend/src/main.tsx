@@ -25,8 +25,10 @@ function App() {
   const [menu, setMenu] = useState(false);
   // sans données de vent, les vues qui en dépendent cèdent la place à l'état du service
   const gated = state.ready && state.source === 'hors_ligne' && VUES_DONNEES.has(state.view);
-  // OS5 : la page ouverte sur le domaine national (?domaine=national) est nationale dans toutes les vues
-  const domaineNational = new URLSearchParams(location.search).get('domaine') === 'national';
+  // OS5 : la page est nationale dans toutes les vues quand le domaine servi est la Tunisie entière (par défaut dès
+  // que le service sert le modèle national ; ?domaine=national l'impose)
+  const q = new URLSearchParams(location.search).get('domaine');
+  const domaineNational = q === 'national' || (q === null && !!(window as any).ATOM?.domaine?.()?.national);
   const national = domaineNational || (state.view === 'carte3d' && state.sceneMode !== 'analysis' && state.terrainSource !== 'local');
   useEffect(() => {
     const close = (event: KeyboardEvent) => { if (event.key === 'Escape') setMenu(false); };

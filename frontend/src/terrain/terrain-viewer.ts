@@ -5,6 +5,7 @@ import { loadTerrain, type Tile } from './terrain-stream';
 import { WindFlow } from './wind-flow';
 import { loadNationalForecast, MODEL_SOURCE, type NationalForecast } from './national-forecast';
 import { LOCAL_DOMAIN,NATIONAL_DOMAIN } from './wind-domain';
+import { gouvernoratDe } from './gouvernorats';
 
 const mounted = new WeakMap<HTMLElement,Promise<void>>();
 const BASE = `${import.meta.env.BASE_URL}terrain/tunisia/`;
@@ -216,6 +217,13 @@ async function createViewer(host: HTMLElement) {
   function updatePoint(){
     const button=document.getElementById('terrain-open-point') as HTMLButtonElement;
     if(!selected){button.hidden=true;return;}
+    // gouvernorat du point et moment affiché (heure du curseur, jour choisi) : demande d'Ines, 20/11/2026
+    const gv=gouvernoratDe(selected.lon,selected.lat);
+    text('terrain-region',gv?`Gouvernorat de ${gv.nom}`:'Hors de Tunisie');
+    const national=windSource==='national',t=forecast?.data.times[forecastIndex];
+    const jourLocal=(window.ATOM as any).jour?.date as string|undefined;
+    text('terrain-time',national&&t?localDate(t,{weekday:'long',day:'numeric',month:'long',hour:'2-digit',minute:'2-digit'})
+      :`${jourLocal?new Intl.DateTimeFormat(document.documentElement.lang||'fr',{weekday:'long',day:'numeric',month:'long'}).format(new Date(jourLocal+'T12:00:00'))+' · ':''}${workspaceState.hour} h`);
     const sample=fieldSample(selected.lon,selected.lat,height);
     text('terrain-wind-reading',sample?`${sample.formatted} · ${sample.direction} · ${height} m du sol`:windSource==='national'?'Prévision indisponible à ce point':'Hors du champ de vent Grand Tunis');
     const localAvailable=window.ATOM.workspace?.terrainWind?.(selected.lon,selected.lat,height);

@@ -2313,5 +2313,19 @@
  "Votre accès « {0} » sera en plus validé par l'équipe.": "Your « {0} » access will also be approved by the team.",
  "Vous pourrez ensuite vous connecter avec votre adresse et votre mot de passe.{0}": "You can then sign in with your address and your password.{0}",
  "{0} compte(s) · {1} adresse(s) à confirmer ·": "{0} account(s) · {1} address(es) to confirm ·",
- "{0} demande(s) d'accès · {1} désactivé(s). Chaque espace (Agriculture, Énergie éolienne,": "{0} access request(s) · {1} deactivated. Each space (Agriculture, Wind energy,"
+ "{0} demande(s) d'accès · {1} désactivé(s). Chaque espace (Agriculture, Énergie éolienne,": "{0} access request(s) · {1} deactivated. Each space (Agriculture, Wind energy,",
+ "Ariana": "Ariana",
+ "Bizerte": "Bizerte",
+ "Gafsa": "Gafsa",
+ "Jendouba": "Jendouba",
+ "Kairouan": "Kairouan",
+ "Kasserine": "Kasserine",
+ "Mahdia": "Mahdia",
+ "Manouba": "Manouba",
+ "Monastir": "Monastir",
+ "Sfax": "Sfax",
+ "Siliana": "Siliana",
+ "Sousse": "Sousse",
+ "Tataouine": "Tataouine",
+ "Tozeur": "Tozeur"
 }

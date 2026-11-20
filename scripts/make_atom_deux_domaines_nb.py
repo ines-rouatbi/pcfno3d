@@ -214,6 +214,29 @@ try:
     del _env
 except Exception:
     print("compte admin : secrets PCFNO3D_ADMIN_EMAIL / PCFNO3D_MOT_DE_PASSE_ADMIN absents (pas d'admin cree)")
+# e-mails des comptes (lien d'activation 24 h, mot de passe oublie 1 h) : serveur SMTP (Brevo) dans les secrets Colab ;
+# sans eux, aucun e-mail ne part et l'administrateur confirme les adresses depuis la page Administration
+_smtp = []
+for _k in ("PCFNO3D_SMTP_HOTE", "PCFNO3D_SMTP_PORT", "PCFNO3D_SMTP_UTILISATEUR", "PCFNO3D_SMTP_MOT_DE_PASSE",
+           "PCFNO3D_SMTP_DE"):
+    try:
+        os.environ[_k] = userdata.get(_k)
+        _smtp.append(_k)
+    except Exception:
+        pass
+print("e-mails des comptes :", "SMTP configure" if len(_smtp) == 5 else
+      f"SMTP incomplet ({len(_smtp)}/5 secrets) : pas d'envoi, confirmation par l'administrateur")
+# adresse publique de l'application dans les liens envoyes (Worker « atomwind », compte Cloudflare d'Ines)
+os.environ["PCFNO3D_URL_APP"] = "https://atomwind.tukhnanutha.workers.dev/app/atom-wind/?domaine=national"
+# cle de lecture du Worker atomwind (visiteurs sans compte) : son EMPREINTE seulement (dev/cle_lecture_atomwind.mjs)
+from service.auth import ApiKeyStore
+_e = CODE / "configs" / "worker_atomwind_cle.sha256"
+if _e.exists():
+    ApiKeyStore(PROD / "api_keys.json").register_hash("atomwind-worker", _e.read_text().split()[0], scope="read",
+                                                      quota_minute=1200)
+    print("cle de lecture du Worker atomwind : enregistree (empreinte)")
+else:
+    print("cle de lecture du Worker atomwind : absente (visiteurs sans compte refuses sur atomwind.tukhnanutha.workers.dev)")
 info = serve_public(config="grand_tunis_v2_service_colab", key_name=CLE_NOM, scope="read", key_hash=CLE_EMPREINTE,
                     quota_minute=1200, named_tunnel={"id": TUNNEL_ID, "hostname": HOTE, "credentials": identifiants})
 del identifiants

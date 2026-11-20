@@ -57,7 +57,7 @@ async function directForecast(signal:AbortSignal):Promise<NationalSnapshot>{
   }
   return validate({version:1,source:'NOAA GFS via Open-Meteo',sourceUrl:'https://open-meteo.com/en/docs/gfs-api',attribution:'Weather data by Open-Meteo.com, NOAA GFS; CC BY 4.0',retrievedAt:Date.now(),timezone:'Africa/Tunis',grid:{west:7.5,south:30,step:.5,nx:10,ny:17},heights:[10,80],times,points});
 }
-// Modele national PC-FNO3D servi (page ouverte avec ?domaine=national) : la carte lit le champ du modele (blocs de
+// Modele national PC-FNO3D servi (domaine par defaut de la page des que le service le sert) : la carte lit le champ du modele (blocs de
 // 4 km, toutes les hauteurs) via window.ATOM.ventLatLon au lieu de la grille GFS a 0,5 degre.
 export const MODEL_SOURCE='PC-FNO3D · modèle national';
 export class ModelForecast extends NationalForecast {
@@ -70,12 +70,14 @@ export class ModelForecast extends NationalForecast {
   }
 }
 async function modelForecast(signal:AbortSignal):Promise<ModelForecast|null>{
-  if(new URLSearchParams(location.search).get('domaine')!=='national')return null;
+  const q=new URLSearchParams(location.search).get('domaine');
+  if(q!==null&&q!=='national')return null;                        // zoom Grand Tunis demande
   const A=(window as any).ATOM,limit=Date.now()+180000;          // la journee nationale peut prendre ~1 min
-  while(!(A?.pret?.()&&A.domaine?.()?.national)){
+  while(!A?.pret?.()){
     if(signal.aborted||Date.now()>limit)return null;
     await new Promise(r=>setTimeout(r,1000));
   }
+  if(!A.domaine?.()?.national)return null;                        // service sans modele national : GFS
   const [y,m,d]=String(A.jour.date).split('-').map(Number);
   const times=Array.from({length:24},(_,h)=>Date.UTC(y,m-1,d,h-1)/1000);   // heures de Tunis (UTC+1)
   return new ModelForecast({version:1,source:MODEL_SOURCE,sourceUrl:'',attribution:'PC-FNO3D national C\' s44 (service ATOM Wind)',

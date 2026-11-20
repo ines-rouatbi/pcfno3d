@@ -103,8 +103,13 @@ const ACTS = {
 const ALERT_ACTS = { vent_fort:{n:"Vent fort", z:10, kind:"gust", rule:k => k>=70 ? ["stop","Danger : rafales très fortes"] : k>=50 ? ["warn","Attention : rafales fortes"] : ["go","Pas de vent fort"],
   todo:{go:"Rien à signaler.", warn:"Arrimez ce qui peut s'envoler et reportez les travaux en hauteur.", stop:"Restez à l'abri ; fermez serres et tunnels, reportez tous les travaux en extérieur."}} };
 const ACT_SERVEUR = { traiter:"spray", arroser:"irr", eolienne:"turbine", vent_fort:"vent_fort" };
-// lieux : ceux du Grand Tunis, ou les stations du domaine servi (national : les 12 aéroports)
-const PLACES = DOM ? (DOM.stations.length ? DOM.stations.map(s => [s.nom, s.lat, s.lon]) : [[`${ZONE} (centre)`, LAT0 + H/2/KY, LON0 + W/2/KX]]) : [["Tunis-Carthage (aéroport)",36.8504,10.2156],["Tunis centre",36.80,10.18],["La Marsa",36.878,10.325],["Ben Arous",36.75,10.23],["Hammam-Lif",36.728,10.34],["Mornag (vignes)",36.68,10.29],["Djebel Ressas",36.61,10.33],["Soliman",36.69,10.49],["Grombalia (agrumes)",36.60,10.50],["Korbous",36.82,10.57],["Nabeul",36.455,10.715],["Zaghouan (station)",36.4333,10.0833],["Mohamedia",36.68,10.16]];
+// lieux : ceux du Grand Tunis ; sur un autre domaine (national), UNIQUEMENT les 24 gouvernorats de Tunisie
+// (chef-lieu de chacun, comme un site de météo ; demande d'Ines, 20/11/2026). Les stations de mesure restent des
+// entrées du modèle, pas des lieux à choisir.
+const GOUVERNORATS = [["Ariana",36.8625,10.1956],["Béja",36.7256,9.1817],["Ben Arous",36.7531,10.2189],["Bizerte",37.2744,9.8739],["Gabès",33.8815,10.0982],["Gafsa",34.425,8.7842],["Jendouba",36.5011,8.7802],["Kairouan",35.6781,10.0963],["Kasserine",35.1676,8.8365],["Kébili",33.7044,8.969],["Le Kef",36.1742,8.7049],["Mahdia",35.5047,11.0622],["Manouba",36.8101,10.0863],["Médenine",33.3549,10.5055],["Monastir",35.7643,10.8113],["Nabeul",36.4561,10.7376],["Sfax",34.7406,10.7603],["Sidi Bouzid",35.0382,9.4849],["Siliana",36.0849,9.3708],["Sousse",35.8256,10.6084],["Tataouine",32.9297,10.4518],["Tozeur",33.9197,8.1335],["Tunis",36.8065,10.1815],["Zaghouan",36.4029,10.1429]];
+const DANS_DOM = (la,lo) => { const [x,y]=xy(la,lo); return x>=0 && x<=W && y>=0 && y<=H; };
+const PLACES = DOM ? (GOUVERNORATS.some(g => DANS_DOM(g[1],g[2])) ? GOUVERNORATS.filter(g => DANS_DOM(g[1],g[2]))
+    : [[`${ZONE} (centre)`, LAT0 + H/2/KY, LON0 + W/2/KX]]) : [["Tunis-Carthage (aéroport)",36.8504,10.2156],["Tunis centre",36.80,10.18],["La Marsa",36.878,10.325],["Ben Arous",36.75,10.23],["Hammam-Lif",36.728,10.34],["Mornag (vignes)",36.68,10.29],["Djebel Ressas",36.61,10.33],["Soliman",36.69,10.49],["Grombalia (agrumes)",36.60,10.50],["Korbous",36.82,10.57],["Nabeul",36.455,10.715],["Zaghouan (station)",36.4333,10.0833],["Mohamedia",36.68,10.16]];
 
 const P0 = DOM ? (PLACES.find(p => /Tunis/.test(p[0])) || PLACES[0]) : null;
 const state = { hour:15, act:"spray", pin: P0 ? xy(P0[1],P0[2]) : xy(36.68,10.29), pinName: P0 ? P0[0] : "Mornag (vignes)" };

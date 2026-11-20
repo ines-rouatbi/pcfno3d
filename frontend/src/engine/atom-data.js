@@ -14,8 +14,9 @@
 const P = new URLSearchParams(location.search);
 const BASE = (P.get("api") || "").replace(/\/+$/, "");
 const KEY_STORAGE = "pcfno3d.apikey";
-// OS5 : domaine servi (Grand Tunis par defaut, « national » pour la Tunisie entiere), ?domaine=national
-const DOMAINE = P.get("domaine") || "";
+// OS5 : domaine servi. Par défaut la TUNISIE ENTIÈRE (modèle national) dès que le service la sert (demande d'Ines,
+// 20/11/2026) ; le Grand Tunis reste un zoom (?domaine=<nom du domaine Grand Tunis>). Fixé au démarrage (demarrer).
+let DOMAINE = P.get("domaine");
 // toutes les routes ATOM Wind répondent pour le domaine de la page (agriculture, éolien, outils, alertes,
 // historique, réseau ANEO…) ; /domaines liste les domaines, /point choisit le sien par la position
 const SANS_DOMAINE = /^\/atom-wind\/(domaines|point)(\?|$)/;
@@ -367,7 +368,8 @@ function banniere(){
     if((A.domaines || []).length > 1){
       const nat = !!(A.domaine() && A.domaine().national);
       src.insertAdjacentHTML("beforeend", ` <span class="aw-domaines">Zone : `
-        + (nat ? `<a href="?">Grand Tunis</a> · <b>Tunisie entière</b>` : `<b>Grand Tunis</b> · <a href="?domaine=national">Tunisie entière</a>`)
+        + (nat ? `<b>Tunisie entière</b> · <a href="?domaine=${encodeURIComponent((A.domaines.find(d => d.nom !== "national") || {}).nom || "")}">zoom Grand Tunis</a>`
+               : `<a href="?domaine=national">Tunisie entière</a> · <b>Grand Tunis</b>`)
         + `</span>`);
     }
     if(sel){
@@ -1110,6 +1112,7 @@ async function demarrer(){
   const relief = chargerRelief();
   try {
     try { A.domaines = (await get("/atom-wind/domaines", 15000)).domaines || []; } catch(e){ A.domaines = []; }
+    if(DOMAINE === null) DOMAINE = A.domaines.some(d => d.nom === "national") ? "national" : "";
     A.grille = await get("/atom-wind/grille", 20000);
     // Grand Tunis à 500 m (géographie de la maquette) ou domaine géoréférencé (national) ; un mini-jeu
     // synthétique sans ancrage géographique reste servi au laboratoire seulement

@@ -26,7 +26,7 @@ URL_APP_DEFAUT = "https://atom.zelqane.com/app/atom-wind/"
 
 def url_app() -> str:
     u = os.environ.get("PCFNO3D_URL_APP", "").strip() or URL_APP_DEFAUT
-    return u if u.endswith("/") else u + "/"
+    return u if (u.endswith("/") or "?" in u) else u + "/"      # ?domaine=national garde tel quel
 
 
 def lien(sorte: str, jeton: str) -> str:

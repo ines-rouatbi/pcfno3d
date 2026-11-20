@@ -151,3 +151,13 @@ def test_toutes_les_routes_et_outils_choisissent_le_domaine(monkeypatch):
                 "atom_porteurs", "atom_dimensionnement", "atom_explication", "atom_alertes", "atom_historique",
                 "atom_qualite", "atom_ensemble", "atom_scenario", "atom_valeur_stations", "atom_rapport", "atom_atlas"):
         assert "domaine" in inspect.signature(getattr(appmod, nom)).parameters, nom
+
+
+def test_les_24_gouvernorats_sont_dans_le_domaine_national():
+    """Les chefs-lieux des 24 gouvernorats (lieux de l'application en national) tombent tous dans l'emprise du
+    domaine national (30.15-37.615 N, 7.45-11.644 E), et un nom du Grand Tunis garde son lieu du Grand Tunis."""
+    from service import atom_outils
+    G = atom_outils.GOUVERNORATS
+    assert len(G) == 24 and {"sfax", "gafsa", "tozeur", "bizerte", "tataouine", "le kef"} <= set(G)
+    assert all(30.15 <= la <= 37.615 and 7.45 <= lo <= 11.644 for la, lo in G.values())
+    assert atom_outils.LIEUX["nabeul"] == (36.455, 10.715)
