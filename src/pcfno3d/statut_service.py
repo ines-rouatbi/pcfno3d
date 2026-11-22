@@ -14,7 +14,12 @@ Ce qui est valide aujourd'hui (preuves dans docs/resultats/) :
 - Grand Tunis, analyse : v4 livre par la regle decision_v4 (test 2022) ;
 - Grand Tunis, prevision J+1 / J+2 : seulement si le modele servi est v5 (OS7 : PREV1 et PREV2 conformes) ;
 - national, temps reel et prevision : seulement les cases ACCEPTEES de regle_national_gfs_v4, lues dans un
-  fichier de verdicts qui porte l'empreinte hachee de cette regle ; tant qu'elle n'est pas passee : experimental.
+  fichier de verdicts qui porte l'empreinte hachee de cette regle ; tant qu'elle n'est pas passee : experimental ;
+- champ 3D national, temps reel / J+1 / J+2 : aussi les cases ACCEPTEES de regle_national_gfs_v5_1 (variable
+  PCFNO3D_VERDICTS_GFS_V5, fichier portant l'empreinte de CETTE regle). Ces cases valident le CANDIDAT RETENU par
+  la regle (nomme dans le fichier) : la variable ne se renseigne que lorsque le service sert ce candidat (decision
+  d'Ines apres lecture des resultats, regle_national_gfs_v5_1 « consequences »). Les verdicts gfs_v4 sont lus a part,
+  inchanges.
 Le temps reel du Grand Tunis (v4 nourri par GFS + stations) n'a pas de regle a courte echeance : experimental.
 """
 from __future__ import annotations
@@ -26,6 +31,10 @@ from pathlib import Path
 VALIDE, EXPERIMENTAL = "valide", "experimental"
 ANALYSE, TEMPS_REEL, PREVISION = "analyse", "temps reel", "prevision"
 REGLE_GFS = Path(__file__).resolve().parents[2] / "configs" / "national" / "regle_national_gfs_v4.json"
+# regle executee : la v5.1 (la v5, jamais executee, est archivee et n'est jamais lue ici)
+REGLE_GFS_V5 = Path(__file__).resolve().parents[2] / "configs" / "national" / "regle_national_gfs_v5_1.json"
+# cases jugees par regle_national_gfs_v5_1 (critere.cases_jugees) -> echeance servie
+CASES_V5 = {"national 3D / analyse": 0, "national 3D / +24 h": 1, "national 3D / +48 h": 2}
 
 
 def verdicts_gfs_v4(chemin: str | Path | None = None) -> dict[str, bool]:
@@ -45,6 +54,23 @@ def verdicts_gfs_v4(chemin: str | Path | None = None) -> dict[str, bool]:
     return {str(k): x is True or x == "accepte" for k, x in (v.get("cases") or {}).items()}
 
 
+def verdicts_gfs_v5(chemin: str | Path | None = None) -> dict[str, bool]:
+    """Cases de regle_national_gfs_v5_1 ACCEPTEES (cles de CASES_V5). Vide si le fichier (PCFNO3D_VERDICTS_GFS_V5)
+    manque, si la regle n'a pas d'empreinte ou si le fichier ne porte pas l'empreinte de CETTE regle."""
+    sha_f = REGLE_GFS_V5.with_name(REGLE_GFS_V5.name + ".sha256")
+    chemin = chemin or os.environ.get("PCFNO3D_VERDICTS_GFS_V5")
+    if not sha_f.exists() or not chemin or not Path(chemin).exists():
+        return {}
+    try:
+        v = json.loads(Path(chemin).read_text(encoding="utf-8"))
+        sha = sha_f.read_text(encoding="utf-8").split()[0]
+    except (OSError, ValueError, IndexError):
+        return {}
+    if v.get("regle_sha256") != sha:
+        return {}
+    return {str(k): x is True or x == "accepte" for k, x in (v.get("cases") or {}).items() if k in CASES_V5}
+
+
 def mode_instant(source: str | None, archive_era5: bool = False) -> str:
     """Mode d'un instant servi : `source` des instants de /atom-wind/direct (« temps reel » / « prevision »)."""
     if archive_era5:
@@ -53,10 +79,14 @@ def mode_instant(source: str | None, archive_era5: bool = False) -> str:
 
 
 def statut(national: bool, mode: str, couche_10m: bool = False, j: int = 0,
-           prevision_os7: bool = False, verdicts: dict[str, bool] | None = None) -> dict:
+           prevision_os7: bool = False, verdicts: dict[str, bool] | None = None,
+           verdicts_v5: dict[str, bool] | None = None) -> dict:
     """{"statut", "preuve"} d'une donnee. `couche_10m` : la valeur lue a 10 m vient de la couche fond + aeroports ;
-    `j` : 0 aujourd'hui, 1 demain, 2 apres-demain ; `prevision_os7` : le modele Grand Tunis servi est v5 (OS7)."""
+    `j` : 0 aujourd'hui, 1 demain, 2 apres-demain ; `prevision_os7` : le modele Grand Tunis servi est v5 (OS7) ;
+    `verdicts` : cases acceptees de regle_national_gfs_v4 ; `verdicts_v5` : celles de regle_national_gfs_v5_1 (champ
+    3D national seulement)."""
     verdicts = verdicts or {}
+    verdicts_v5 = verdicts_v5 or {}
     if mode == ANALYSE:
         if national and couche_10m:
             return {"statut": VALIDE, "preuve": "couche 10 m ERA5 + aeroports : -3,7 % contre l'ERA5 aux aeroports "
@@ -76,6 +106,12 @@ def statut(national: bool, mode: str, couche_10m: bool = False, j: int = 0,
             cle = "a / +48 h" if j >= 2 else "a / +24 h"
         if verdicts.get(cle):
             return {"statut": VALIDE, "preuve": f"regle_national_gfs_v4, case « {cle} » acceptee"}
+        if not couche_10m:
+            cle5 = "national 3D / analyse" if mode == TEMPS_REEL else (
+                "national 3D / +48 h" if j >= 2 else "national 3D / +24 h")
+            if verdicts_v5.get(cle5):
+                return {"statut": VALIDE, "preuve": f"regle_national_gfs_v5_1, case « {cle5} » acceptee (candidat "
+                                                    "retenu sur la validation 2021, juge sur 2026)"}
         return {"statut": EXPERIMENTAL, "preuve": f"nourri par GFS : regle_national_gfs_v4 (case « {cle} ») pas encore "
                                                   "passee"}
     if mode == PREVISION and j >= 1 and prevision_os7:

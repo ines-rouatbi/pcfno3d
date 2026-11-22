@@ -326,6 +326,56 @@ def trouver_national(t: pd.Timestamp, echeance_h: int, dossiers) -> Path | None:
     return None
 
 
+def lire_national(instants, echeance_h: int, lat, lon, dossiers) -> tuple[dict, dict, list]:
+    """Les champs GFS nationaux deja telecharges (fichiers `*_f<L>_tn.npz` du premier dossier qui les a),
+    decoupes aux mailles (lat, lon) du forcage et empiles sur le temps : (champs « Open-Meteo » comme
+    `assembler`, {instant (s) : (run_utc, echeance effective)}, instants absents). Rien n'est telecharge :
+    c'est la lecture de `construire_national` (memes champs, memes mailles, meme ordre), reutilisee par
+    l'entree de production de regle_national_gfs_v5_1 (`temps_reel.forcage_gfs` puis `temps_reel.entree`)."""
+    dossiers = [Path(d) for d in dossiers]
+    iy, ix = indices_boite(lat, lon)
+    lat_tn, lon_tn = grille_tunisie()
+    instants_ok, echeances, absents = [], {}, []
+    for t in sorted(set(pd.Timestamp(x) for x in instants)):
+        f = trouver_national(t, echeance_h, dossiers)
+        if f is None:
+            absents.append(t)
+            continue
+        with np.load(f) as d:
+            if d["lat"].shape != lat_tn.shape or d["lon"].shape != lon_tn.shape \
+                    or not (np.allclose(d["lat"], lat_tn) and np.allclose(d["lon"], lon_tn)):
+                raise ValueError(f"{f} : grille differente de la boite nationale")
+            c = {k: d[k] for k in d.files}
+        echeances[int(t.value // 10 ** 9)] = (str(c["run_utc"]), int(c["echeance_h"]))
+        instants_ok.append((t, decouper(c, iy, ix)))
+    if not instants_ok:
+        raise RuntimeError("aucune echeance GFS nationale disponible")
+    # champs presents a tous les instants (un fichier d'une autre archive peut en avoir un de plus)
+    communs = set.intersection(*(set(c) for _, c in instants_ok))
+    manque = [k for k in REQUIS if k not in communs]
+    if manque:
+        raise ValueError(f"champs GFS absents de certains instants : {manque}")
+    c = assembler([(t, {k: v for k, v in x.items() if k in communs}) for t, x in instants_ok])
+    return c, echeances, absents
+
+
+def instants_periode(debut: str, fin: str, pas_h: int = 3) -> list[pd.Timestamp]:
+    """Instants de validite de `debut` a `fin` inclus (UTC), toutes les `pas_h` heures (3 : les instants
+    synoptiques) : la periode de jugement 2026 de regle_national_gfs_v5_1, qui n'a pas de cache."""
+    return list(pd.date_range(pd.Timestamp(debut), pd.Timestamp(fin), freq=f"{int(pas_h)}h"))
+
+
+def instants_echantillon(debut: str, fin: str, heures=(0, 6, 12, 18), jours_impairs: bool = True) -> list[pd.Timestamp]:
+    """Echantillon fixe d'une periode : les jours de `debut` a `fin` (inclus) dont le jour de l'annee est impair
+    (1er, 3, 5 janvier...) si `jours_impairs`, aux `heures` UTC (defaut : les heures de cycle GFS, ou l'analyse
+    est toujours f000). regle_national_gfs_v5_1 : 2026-01-01 -> 2026-10-31, ~608 instants."""
+    jours = pd.date_range(pd.Timestamp(debut).normalize(), pd.Timestamp(fin).normalize(), freq="D")
+    if jours_impairs:
+        jours = jours[jours.dayofyear % 2 == 1]
+    out = [j + pd.Timedelta(hours=int(h)) for j in jours for h in sorted(int(x) for x in heures)]
+    return [t for t in out if pd.Timestamp(debut) <= t <= pd.Timestamp(fin)]
+
+
 def construire_national(instants: list[pd.Timestamp], echeance_h: int, lat, lon, hauteurs,
                         chemin_csv: Path, reprise: Path, lecture=(), travailleurs: int = 6,
                         verbose: bool = True) -> pd.DataFrame:
@@ -357,26 +407,10 @@ def construire_national(instants: list[pd.Timestamp], echeance_h: int, lat, lon,
         return t
 
     erreurs = _en_parallele(tache, a_faire, travailleurs, verbose)
-    instants_ok, echeances = [], {}
-    for t in tous:
-        f = trouver_national(t, echeance_h, dossiers)
-        if f is None:
-            continue
-        with np.load(f) as d:
-            if d["lat"].shape != lat_tn.shape or d["lon"].shape != lon_tn.shape \
-                    or not (np.allclose(d["lat"], lat_tn) and np.allclose(d["lon"], lon_tn)):
-                raise ValueError(f"{f} : grille differente de la boite nationale")
-            c = {k: d[k] for k in d.files}
-        echeances[int(t.value // 10 ** 9)] = (str(c["run_utc"]), int(c["echeance_h"]))
-        instants_ok.append((t, decouper(c, iy, ix)))
-    if not instants_ok:
-        raise RuntimeError(f"aucune echeance GFS nationale disponible ; erreurs : {erreurs[:3]}")
-    # champs presents a tous les instants (un fichier d'une autre archive peut en avoir un de plus)
-    communs = set.intersection(*(set(c) for _, c in instants_ok))
-    manque = [k for k in REQUIS if k not in communs]
-    if manque:
-        raise ValueError(f"champs GFS absents de certains instants : {manque}")
-    c = assembler([(t, {k: v for k, v in x.items() if k in communs}) for t, x in instants_ok])
+    try:
+        c, echeances, _ = lire_national(tous, echeance_h, lat, lon, dossiers)
+    except RuntimeError as exc:
+        raise RuntimeError(f"{exc} ; erreurs : {erreurs[:3]}") from None
     df = ecrire_forcage(c, hauteurs, lat, lon, chemin_csv, echeances)
     _ecrire_erreurs(chemin_csv, erreurs)
     if verbose:
@@ -443,6 +477,12 @@ def main() -> int:
     ap.add_argument("--splits", default="train,val,test")
     ap.add_argument("--synoptiques", action="store_true",
                     help="seulement les instants synoptiques (heure pleine multiple de 3 h, ceux des DSO)")
+    ap.add_argument("--periode", metavar="DEBUT,FIN",
+                    help="instants toutes les 3 h de DEBUT a FIN inclus (UTC, ex. 2026-01-01T00:00,2026-10-31T21:00) "
+                         "au lieu de l'index du cache (periode sans cache : jugement de regle_national_gfs_v5_1)")
+    ap.add_argument("--jours-impairs", action="store_true",
+                    help="avec --periode : seulement les jours de l'annee impairs (echantillon de regle_national_gfs_v5_1)")
+    ap.add_argument("--heures", help="avec --periode : heures UTC gardees, ex. 0,6,12,18 (defaut : toutes les 3 h)")
     ap.add_argument("--max-instants", type=int, help="essai")
     ap.add_argument("--travailleurs", type=int, default=6)
     ap.add_argument("--sans-national", action="store_true",
@@ -463,9 +503,17 @@ def main() -> int:
         return 0
     cfg = Config.load(args.config)
     ref = ForcageERA5(cfg.paths.forcage_era5)                         # mailles et hauteurs
-    idx = load_index(cfg)
-    idx = idx[idx["split"].isin(args.splits.split(","))]
-    instants = list(pd.to_datetime(idx["timestamp"], utc=True).dt.tz_localize(None).unique())
+    if args.periode:
+        debut, fin = (x.strip() for x in args.periode.split(","))
+        if args.jours_impairs or args.heures:
+            heures = [int(h) for h in args.heures.split(",")] if args.heures else range(0, 24, 3)
+            instants = instants_echantillon(debut, fin, heures, jours_impairs=args.jours_impairs)
+        else:
+            instants = instants_periode(debut, fin)
+    else:
+        idx = load_index(cfg)
+        idx = idx[idx["split"].isin(args.splits.split(","))]
+        instants = list(pd.to_datetime(idx["timestamp"], utc=True).dt.tz_localize(None).unique())
     if args.synoptiques:
         from .dataset import is_synoptic
         instants = [t for t in instants if is_synoptic(t)]

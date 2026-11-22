@@ -219,7 +219,7 @@ def prevision_os7(wf) -> bool:
 def statut_de(wf, mode: str, couche_10m: bool = False, j: int = 0) -> dict:
     from pcfno3d import statut_service as st
     return st.statut(est_national(wf), mode, couche_10m=couche_10m, j=j, prevision_os7=prevision_os7(wf),
-                     verdicts=st.verdicts_gfs_v4())
+                     verdicts=st.verdicts_gfs_v4(), verdicts_v5=st.verdicts_gfs_v5())
 
 
 def annoter(wf, payload: dict, j: int = 0, analyse: bool = False) -> dict:

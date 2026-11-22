@@ -118,16 +118,18 @@ class ForcageERA5:
         return np.stack(out).astype(np.float32)
 
 
-def charger_e(geom, chemin_e) -> np.ndarray:
+def charger_e(geom, chemin_e, forcage: "ForcageERA5 | None" = None) -> np.ndarray:
     """Vent a 10 m du reseau regulier, (2, ny, nx) float32 : le `_E.npy` du cache, ou, avec
     `mask.e_source: forcage`, les cellules du forcage de l'instant (ERA5 ou prevision GFS) a
-    10 m au-dessus du sol, interpolees en bilineaire aux colonnes (memes poids qu'InterpERA5)."""
+    10 m au-dessus du sol, interpolees en bilineaire aux colonnes (memes poids qu'InterpERA5).
+    `forcage` : un autre forcage de memes mailles que celui de la geometrie (echeance tiree,
+    paths.forcages_echeances) ; None = geom.forcage."""
     if geom.cfg.mask.e_source != "forcage":
         return np.load(chemin_e).astype(np.float32)
     if geom.forcage is None or geom.interp_era5 is None:
         raise ValueError("mask.e_source: forcage demande paths.forcage_era5")
     stem = Path(chemin_e).name[:-len("_E.npy")]
-    return geom.forcage.e_10m(horodatage(geom, stem), geom.interp_era5)
+    return (forcage or geom.forcage).e_10m(horodatage(geom, stem), geom.interp_era5)
 
 
 class InterpERA5:

@@ -173,6 +173,14 @@ def _avec_forcage(cfg: Config, index: pd.DataFrame) -> pd.DataFrame:
     chemin = getattr(cfg.paths, "forcage_era5", None)
     if not chemin or not Path(chemin).exists() or "timestamp" not in index.columns:
         return index
+    # regle_national_gfs_v5_1 (C1) : un instant doit avoir une echeance de CHAQUE forcage tire
+    for autre in (getattr(cfg.paths, "forcages_echeances", None) or {}).values():
+        if Path(autre).exists() and Path(autre) != Path(chemin):
+            index = _ecarter_sans_forcage(index, Path(autre))
+    return _ecarter_sans_forcage(index, Path(chemin))
+
+
+def _ecarter_sans_forcage(index: pd.DataFrame, chemin: Path) -> pd.DataFrame:
     from .forcage import ECART_MAX_S
 
     f = np.sort(pd.to_datetime(pd.read_csv(chemin, usecols=["timestamp_utc"])["timestamp_utc"], utc=True)

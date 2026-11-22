@@ -1,0 +1,84 @@
+{
+  "fixee_le": "2026-11-22 (soir), AVANT tout telechargement, tout affinage, toute passe de modele et toute lecture de mesures ; remplace regle_national_gfs_v5 (hachee 519ebd64..., approuvee le 22/11, jamais executee, GARDEE telle quelle) sur trois points seulement : controle d'entree de l'etape 4, echantillon 2026 fixe a l'avance, budget Colab ; tout le reste est recopie a l'identique",
+  "statut": "PROPOSITION soumise a l'accord ecrit d'Ines ; l'empreinte .sha256 est ecrite au moment de l'accord, sur ce texte exact",
+  "objet": "rendre valides, par des corrections etudiees et jugees honnetement, les trois cases refusees le 18/11 par regle_national_gfs_v4 : le champ 3D national nourri par GFS a l'analyse (temps reel), a +24 h et a +48 h. Le 18/11, C' s44 + GFS battait GFS brut en moyenne (ecart -0,203 / -0,217 / -0,219 m/s, IC 95 % entierement negatifs) mais degradait Tabarka de 13 a 14 % (> 5 %)",
+  "ce_qui_ne_change_pas": [
+    "C' s44, ses poids, son run_dir et tous ses resultats (DSO 2022, DSO7, gfs_v4) ; la couche 10 m GFS + aeroports ACCEPTEE le 18/11 (b / analyse) reste servie telle quelle",
+    "le fichier MyDrive/pcfno3d_national/gfs_v4_regle/resultat/verdicts_gfs_v4.json n'est jamais reecrit",
+    "le critere : celui de regle_national_gfs_v4, recopie a l'identique (aucun seuil assoupli, aucun aeroport retire)"
+  ],
+  "periodes": {
+    "entrainement": "2023-2025 (decoupage national inchange, verite d'entrainement v3)",
+    "validation": "2021 : SEULE periode ou l'on regarde, compare et choisit (diagnostic, reglages, choix du candidat)",
+    "test_2022": "NON utilise : deja lu deux fois (DSO7 puis gfs_v4)",
+    "test_2023_2024": "NON utilise pour le modele 3D : ce sont des annees d'entrainement du national",
+    "jugement": "echantillon fixe AVANT toute lecture : du 2026-01-01 au 2026-10-31, un jour sur deux (1er, 3, 5 janvier... : jours de l'annee impairs), aux heures 00, 06, 12 et 18 UTC (heures de cycle GFS : l'analyse est toujours l'echeance f000, comme pour les instants d'entrainement et de validation) ; ~608 instants ; periode jamais utilisee par aucun modele, aucun reglage, aucune validation ni aucun test du projet ; lue UNE fois, pour le seul candidat retenu ; limite rapportee : les heures intermediaires (f003 du service a 03, 09, 15, 21 UTC) ne sont pas jugees"
+  },
+  "etape_1_diagnostic_validation_2021": {
+    "but": "comprendre la degradation de Tabarka AVANT de choisir quoi que ce soit, sans relire 2022",
+    "calcul": "C' s44 tel que livre, nourri par GFS (f0-f5, f24, f48) aux instants synoptiques de la validation 2021, aux 12 aeroports retires a tour de role (memes regles d'entree que gfs_v4 : 11 autres aeroports a l'analyse, aucun aux echeances) ; GFS brut a la cellule de l'aeroport",
+    "rapporte": "RMSE vectoriel par aeroport et par echeance ; a Tabarka : biais de vitesse, erreur de direction, ecart par secteur de vent (8 secteurs), par heure (jour / nuit), par saison, et profil du modele de 10 a 300 m",
+    "regle": "rien n'est choisi a cette etape ; si Tabarka n'est PAS degrade sur 2021, c'est rapporte tel quel et les etapes suivantes restent identiques"
+  },
+  "etape_2_candidats": {
+    "C1_v5_gfs": {
+      "nom": "national_1km_v5_gfs (run_dir neuf runs/national_1km_v5_gfs, rien n'est ecrase)",
+      "pourquoi": "le national a ete entraine avec l'ERA5 en entree et sert avec GFS ; au Grand Tunis, le meme modele nourri par GFS sans affinage etait pire que GFS a Zaghouan, et l'affinage sur GFS (v5, OS7, 07/11) l'a rendu meilleur que GFS aux 3 stations (2,64 contre 2,89 m/s a +24 h)",
+      "depart": "C' s44 (poids lus seulement)",
+      "entrainement": "affinage 12 epoques, lr 5e-5, reglages de perte de la v4 ; entree = forcage GFS de l'instant avec, pour chaque echantillon, une echeance tiree au hasard parmi f0, f24, f48 (un seul modele pour les trois cases) ; aeroports en entree seulement quand l'echeance est f0 (comme le service), avec le masquage aleatoire de stations de l'entrainement de C' ; sortie = verite d'entrainement v3 inchangee ; jours d'entrainement 2023-2025 seulement",
+      "choix_de_l_epoque": "sur la validation 2021 seulement, par le critere DSO de la v4 (dso1_rmse, dso2_masse, dso3_rugosite)"
+    },
+    "C2_ancrage_gfs": {
+      "nom": "post-traitement de C' s44, sans entrainement",
+      "pourquoi": "a Tabarka GFS brut (3,11) faisait mieux que le modele (3,55) : pres du sol, rapprocher le modele de GFS la ou le relief le trompe",
+      "formule": "a une hauteur h au-dessus du sol : u = u_gfs + a(h) (u_modele - u_gfs), meme chose pour v ; a(h) = a0 a 10 m, croit lineairement jusqu'a 1 a la hauteur H, vaut 1 au-dessus (le champ 3D n'est pas touche au-dessus de H) ; w recalcule par continuite comme le service",
+      "grille": "a0 dans {0,25 ; 0,5 ; 0,75}, H dans {100 m ; 300 m} : 6 reglages, choisis sur la validation 2021 seulement"
+    },
+    "C3_v5_plus_ancrage": "C1 suivi de C2, meme grille de 6 reglages, choisis sur la validation 2021 seulement",
+    "interdit": "aucune correction apprise a un aeroport et appliquee a ce meme aeroport (chaque aeroport juge reste retire de l'entree), aucun facteur propre a Tabarka"
+  },
+  "etape_3_choix_sur_validation_2021": {
+    "calcul": "pour chaque candidat et chaque reglage (1 + 6 + 6 = 13 variantes), les trois cases (analyse, +24 h, +48 h) aux 12 aeroports retires, instants synoptiques 2021, avec le critere de la regle (ci-dessous)",
+    "retenu": "parmi les variantes qui passent le critere dans les TROIS cases sur 2021, celle dont le RMSE vectoriel moyen (moyenne des trois cases) est le plus bas ; ex aequo a 0,005 m/s pres : la plus simple (C2, puis C1, puis C3)",
+    "si_aucune_ne_passe": "ARRET : la periode 2026 n'est pas lue ; resultats de validation publies tels quels ; toute nouvelle tentative = nouvelle regle datee, hachee et approuvee"
+  },
+  "etape_4_jugement_2026": {
+    "entree": "construite exactement comme le service temps reel (pcfno3d.temps_reel : forcage GFS de l'echeance aux memes mailles, hauteurs et formules ; METAR des 11 AUTRES aeroports a l'analyse, aucun aux echeances) a partir de l'archive GFS NOAA (AWS) et des METAR IEM ; il n'y a pas de cache pour 2026",
+    "sources": "le candidat retenu ; GFS brut (reference) ; rapporte sans verdict : C' s44 + GFS sans correction (passe seulement si le budget restant le permet, sinon note « non calcule faute de budget »)",
+    "lecture": "une seule ; resultats publies tels quels dans MyDrive/pcfno3d_national/gfs_v5_regle/resultat/ (dossier neuf) et docs/resultats/national/gfs_v5.md",
+    "controle_prealable": "sur des instants de VALIDATION 2021, AVANT toute lecture de 2026 : les parties VENT de l'entree construite comme le service doivent etre identiques (ecart max <= 1e-5) a celles du chemin par le cache de gfs_v4 : vecteur de forcage (scalaires et cellules), reseau GFS 10 m (pseudo-capteurs), carte et valeurs des stations ; sinon arret sans lecture de 2026. Les canaux de surface T, rho, HR, p et les 4 traits geostrophique / vent thermique qui en derivent sont ATTENDUS differents (verite generee contre GFS) : leurs ecarts (moyenne, max) sont rapportes dans controle_entree.json, sans arret",
+    "gpu": "L4 (inference seulement, le national tient sur L4 en service) ; seul l'affinage C1 demande une A100"
+  },
+  "metrique": "recopiee de regle_national_gfs_v4 : RMSE vectoriel a 10 m par aeroport sur les instants ou il est mesure (METAR a 30 min au plus, la plus proche ; calme garde ; exclusions et mois de panne de stations_reelles) ; moyenne des 12 ; ecart = moyenne(candidat) - moyenne(gfs_brut) ; IC 95 % par bootstrap des JOURS, 2000 tirages, graine 2030, memes tirages pour toutes les sources et echeances",
+  "critere": {
+    "par_case": "ACCEPTE si (1) la borne haute de l'IC 95 % de l'ecart est <= 0 ET (2) aucun aeroport degrade de plus de 5 % (RMSE candidat / RMSE gfs_brut - 1 <= 0,05 a chacun des 12) ; sinon REFUSE",
+    "cases_jugees": [
+      "national 3D / analyse",
+      "national 3D / +24 h",
+      "national 3D / +48 h"
+    ],
+    "controle_d_echeances": "au plus 2 % d'echeances GFS absentes de l'archive apres 3 passes (instants retires pour toutes les sources et notes), sinon arret sans verdict"
+  },
+  "consequences": {
+    "case acceptee": "statut « valide » pour ce produit, lu par le service dans un fichier de verdicts neuf portant l'empreinte de cette regle (variable PCFNO3D_VERDICTS_GFS_V5)",
+    "case refusee": "statut « experimental » garde ; chiffres publies tels quels",
+    "service": "servir le candidat retenu a la place de C' s44 + GFS reste une decision d'Ines apres lecture des resultats"
+  },
+  "cout_estime": "partie A (Colab CPU, telechargements GFS : instants d'entrainement 2023-2025 et de validation 2021 x f0/f24/f48, puis l'echantillon 2026 x 3 echeances) ~1 unite ; partie B1 (A100 : affinage C1, etapes 1 et 3) ~25-40 unites ; partie B2 (L4 : controle puis jugement 2026, ~608 instants x 14 passes par modele) ~12-25 unites ; total estime ~40-65 unites",
+  "risque_annonce_avant": "rien ne garantit que les trois cases passeront : si aucune variante ne passe sur 2021, 2026 n'est pas lu ; si le candidat retenu echoue sur 2026, l'echec est publie tel quel",
+  "interdits": [
+    "aucun reglage choisi sur 2022 ni sur 2026",
+    "aucune relecture de 2022",
+    "aucun seuil change, aucun aeroport ecarte",
+    "aucun bruit ajoute aux predictions",
+    "GFS, ERA5 et la verite generee jamais appeles mesures ; les METAR sont les mesures",
+    "rien n'est supprime ni ecrase sur le Drive ni dans runs/ ; dossiers de sortie neufs",
+    "aucun secret dans le code, le carnet ou les journaux",
+    "aucune ecriture dans les dossiers du Grand Tunis (fige)"
+  ],
+  "pourquoi_v5_1": {
+    "controle_d_entree": "la regle v5 exigeait que l'entree 2026 (construite comme le service) soit identique a 1e-5 a l'entree du cache de gfs_v4 ; c'est impossible : dans le cache, la temperature, la densite, l'humidite et la pression au sol viennent de la verite d'entrainement generee, alors que le service les tire de GFS. Le controle v5 aurait arrete l'etape 4 a coup sur, sans que 2026 soit jamais lu (constate sur la fixture de test, avant tout calcul reel)",
+    "budget": "Ines dispose de 90 unites Colab au plus (22/11) ; le jugement 2026 de la v5 (tous les instants synoptiques de janvier a octobre, ~34 000 passes par modele) depassait ce budget"
+  },
+  "budget": "PLAFOND 90 unites Colab pour toute la regle (A + B1 + B2) ; avant chaque partie, le solde est verifie ; si une partie risque de faire depasser 90 unites : arret et demande a Ines, rien n'est lance"
+}

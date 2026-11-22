@@ -1,0 +1,103 @@
+# PC-FNO3D reel NATIONAL, candidat C1 de la regle configs/national/regle_national_gfs_v5_1.json (approuvee par Ines
+# le 22/11/2026, sha256 570713841039...) : affinage « national_1km_v5_gfs » de C' s44 (poids lus seulement) nourri par
+# GFS a une ECHEANCE TIREE PAR EXEMPLE parmi f0, f24, f48 (un seul modele pour les trois cases : analyse, +24 h,
+# +48 h). Aeroports en entree seulement quand l'echeance tiree est f0 (comme le service : aucune station aux heures
+# a venir), avec le masquage aleatoire de stations de l'entrainement de C' (p_station 0,8). Sortie = la verite
+# d'entrainement v3 inchangee (cache_v3_partie_*), jours d'entrainement 2023-2025 seulement ; epoque choisie sur la
+# VALIDATION 2021 par le critere DSO de la v4 (dso1_rmse, dso2_masse, dso3_rugosite), le modele de depart etant le
+# premier candidat (Trainer._baseline_for_finetune).
+# Forcages : pcfno3d.gfs --national --splits train,val --echeance {0,24,48} (carnet A de
+# scripts/make_national_gfs_v5_nb.py), copies sur le disque local par le carnet B. Run NEUF : rien n'est ecrase.
+# configs/national_v5_gfs_colab.yaml (ancienne proposition OS7, jamais approuvee) n'est pas utilise ni modifie.
+name: national_1km_v5_gfs
+
+paths:
+  data_dir: /content/national/jeu
+  cache_dir: /content/national/cache
+  run_dir: /content/drive/MyDrive/pcfno3d_national/runs/national_1km_v5_gfs
+  # forcage de la GEOMETRIE (mailles, hauteurs) ; les trois echeances tirees sont dans forcages_echeances
+  forcage_era5: /content/donnees/national/gfs_v5/forcage_gfs_f0.csv
+  forcages_echeances:
+    0: /content/donnees/national/gfs_v5/forcage_gfs_f0.csv
+    24: /content/donnees/national/gfs_v5/forcage_gfs_f24.csv
+    48: /content/donnees/national/gfs_v5/forcage_gfs_f48.csv
+  cache_mirror: null
+  local_dir: /content/run_local_national_1km_v5_gfs
+  web_dir: /content/national/web
+
+model:                      # architecture de C' s44 (= v2 = Grand Tunis v4) : ses poids servent de depart
+  width: 48
+  modes: [6, 32, 32]
+  n_layers: 4
+  pad: [4, 8, 8]
+  proj_hidden: 128
+  local_conv: true
+  pool_surface: true
+  recalcul_activations: false   # le carnet passe a true si la memoire du GPU ne suffit pas
+  residuel_era5: true       # u, v = GFS au noeud + correction apprise
+
+train:
+  epochs: 12                # regle : affinage 12 epoques
+  steps_per_epoch: 200
+  val_samples: 64
+  batch_size: 1
+  accum_steps: 2
+  lr: 5.0e-5                # regle : lr 5e-5
+  weight_decay: 1.0e-4
+  warmup_phys_epochs: 3
+  num_workers: 4
+  ema_decay: 0.999
+  grad_clip: 1.0
+  save_every: 5
+  seed: 44                  # la regle ne fixe pas de graine : celle de C' s44, le modele de depart
+  init_from: /content/drive/MyDrive/pcfno3d_national/runs/national_1km_v4_Cp_s44/best.pt   # le carnet passe le poids verifie
+  select_by: dso            # epoque choisie sur la VALIDATION 2021 (verite v3)
+  select_criteres: [dso1_rmse, dso2_masse, dso3_rugosite]
+  sync_last: false          # last.pt (~7 Go) reste sur le disque local ; une coupure : dossier mis de cote, jamais ecrase
+
+loss:                       # reglages de perte de la v4 nationale (C' : national_1km_colab + lambda_rough 1,0)
+  lambda_mass: 5.0
+  mass_ref: 5.0e-7
+  lambda_bc: 0.1
+  lambda_smooth: 0.0
+  lambda_grad: 0.5
+  lambda_rough: 1.0
+  w_weight: 2.0
+  w_level_max: 25.0
+
+mask:
+  entree: era5_stations     # reseau regulier a 10 m tous les 2 km...
+  pas_era5_m: 2000.0
+  p_station: 0.8            # masquage aleatoire des stations de l'entrainement de C' (echeance f0 seulement)
+  e_source: forcage         # ... tire du forcage GFS de l'echeance tiree
+  stations_entree: true     # aeroports a f0 ; aucun a f24 / f48 (pcfno3d.dataset.echeance_exemple)
+  keep_train: [0.2, 1.0]
+  keep_eval: 1.0
+
+dso:
+  rmse: 0.5
+  r2: 0.95
+  r2_all: 0.95
+  mass_rms: 1.0e-4
+  roughness_range: [0.9, 1.1]
+  time_s: 1.0
+  rmse_25pct: 0.7
+  min_level_cover: 0.05
+
+inference:
+  tta: 1
+  tta_keep: 0.7
+  w_continuite: true
+  # w par continuite SEULE pendant l'affinage : c'est ainsi que le critere DSO de la v4 (dso2_masse) a choisi
+  # l'epoque de C' (w_beta n'existait pas avant le 14/11). Le w servi d'un C1 / C3 livre (w_beta) n'est pas fixe
+  # par la regle et n'entre pas dans la metrique jugee (vent horizontal a 10 m).
+  w_beta: 0.0
+
+terrain_smooth_m: 300.0
+f_coriolis: 8.131e-5
+
+real:
+  origin_lat: 30.15
+  origin_lon: 7.45
+  rotation_deg: 0.0
+  origin_assumed: false

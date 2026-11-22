@@ -103,6 +103,10 @@ class Geometry:
             from .forcage import ForcageERA5, InterpERA5
             self.forcage = ForcageERA5(cfg.paths.forcage_era5)
             self.interp_era5 = InterpERA5(self.forcage, self)
+        # regle_national_gfs_v5_1, candidat C1 : un forcage par echeance, tire par exemple (pcfno3d.dataset)
+        self.forcages_echeances = None
+        if getattr(cfg.paths, "forcages_echeances", None):
+            self.forcages_echeances = charger_forcages_echeances(cfg, self.forcage)
         # candidat D2 national : canal d'innovation (pcfno3d.innovation) ; None = rien ne change
         self.oi = None
         self.configurer_innovation(cfg.innovation)
@@ -386,3 +390,21 @@ class Geometry:
         return (f"grille {self.nz} x {self.ny} x {self.nx} (dx={self.dx:.0f} m) | "
                 f"noeuds valides {self.valid.sum():,} / {self.valid.size:,} | "
                 f"canaux d'entree {self.c_in}")
+
+
+def charger_forcages_echeances(cfg, reference) -> dict:
+    """{echeance: ForcageERA5} de paths.forcages_echeances (regle_national_gfs_v5_1, C1). Chaque forcage doit avoir
+    les mailles et les hauteurs du forcage de la geometrie (paths.forcage_era5) : sinon refus."""
+    from .forcage import ForcageERA5
+
+    if reference is None:
+        raise ValueError("paths.forcages_echeances demande paths.forcage_era5 (mailles et hauteurs de la geometrie)")
+    out = {}
+    for e, chemin in cfg.paths.forcages_echeances.items():
+        f = ForcageERA5(chemin)
+        if (f.forme_cellules != reference.forme_cellules or not np.allclose(f.lat, reference.lat)
+                or not np.allclose(f.lon, reference.lon) or not np.allclose(f.hauteurs, reference.hauteurs)):
+            raise ValueError(f"paths.forcages_echeances[{e}] ({chemin}) : mailles ou hauteurs differentes de "
+                             f"paths.forcage_era5")
+        out[int(e)] = f
+    return out

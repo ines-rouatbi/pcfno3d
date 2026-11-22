@@ -63,6 +63,14 @@ class Paths:
     # Affinage sur les stations (pcfno3d.stations_reelles) : dossier des metar_*.csv /
     # synop_*.csv des anemometres du domaine. Utilise seulement si loss.lambda_station > 0.
     stations_obs: Path | None = None
+    # Regle configs/national/regle_national_gfs_v5_1.json, candidat C1 (national_1km_v5_gfs) : forcages GFS d'une
+    # meme grille par ECHEANCE {0: forcage_gfs_f0.csv, 24: ..._f24.csv, 48: ..._f48.csv}. Renseigne : a
+    # l'entrainement, chaque exemple tire au hasard une echeance (uniforme) et prend son forcage (scalaires,
+    # cellules et reseau a 10 m) ; en evaluation l'echeance est fixee par l'indice (i modulo le nombre
+    # d'echeances) ; les stations n'entrent qu'a l'echeance 0 (aux echeances futures, comme le service, aucune).
+    # paths.forcage_era5 reste le forcage de la geometrie (memes mailles et hauteurs exigees). None = un seul
+    # forcage (tous les modeles d'avant).
+    forcages_echeances: dict[int, Path] | None = None
 
     def __post_init__(self) -> None:
         # un chemin relatif dans un YAML est relatif a la racine du depot, pas au cwd :
@@ -80,6 +88,14 @@ class Paths:
             self.forcage_era5 = _resolve(self.forcage_era5)
         if self.stations_obs is not None:
             self.stations_obs = _resolve(self.stations_obs)
+        if self.forcages_echeances is not None:
+            if isinstance(self.forcages_echeances, str):          # --set paths.forcages_echeances='{"0": ...}'
+                import json
+                self.forcages_echeances = json.loads(self.forcages_echeances)
+            f = {int(k): _resolve(v) for k, v in dict(self.forcages_echeances).items()}
+            if any(k < 0 for k in f):
+                raise ValueError(f"paths.forcages_echeances : echeances >= 0 attendues, recu {sorted(f)}")
+            self.forcages_echeances = dict(sorted(f.items())) or None
 
     @property
     def web_root(self) -> Path:
@@ -774,6 +790,8 @@ def _unbuild(obj: Any) -> Any:
         return str(obj)
     if isinstance(obj, (tuple, list)):
         return [_unbuild(v) for v in obj]
+    if isinstance(obj, dict):
+        return {k: _unbuild(v) for k, v in obj.items()}
     return obj
 
 

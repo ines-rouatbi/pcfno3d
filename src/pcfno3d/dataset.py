@@ -76,9 +76,12 @@ class ANEO3D(Dataset):
             aneo = entree_aneo(self.geom)
         elif self.aneo_eval is not None:
             aneo = self.aneo_eval
-        if self.geom.forcage is not None:
+        # regle_national_gfs_v5_1 (C1) : echeance GFS de l'exemple (tiree a l'entrainement, fixee par l'indice en
+        # evaluation) ; sans paths.forcages_echeances : le forcage de la geometrie, comme avant
+        forcage, echeance = echeance_exemple(self.geom, rng if self.train else None, i)
+        if forcage is not None:
             from .forcage import horodatage
-            vec = self.geom.forcage.vecteur(horodatage(self.geom, stem))
+            vec = forcage.vecteur(horodatage(self.geom, stem))
             if aneo is not None:
                 n_sc = len(vec) - self.geom.forcage.n_cellules
                 cel, delta_e, zone = aneo.appliquer(vec[n_sc:], rng)
@@ -97,7 +100,9 @@ class ANEO3D(Dataset):
         elif self.geom.cfg.mask.entree == "era5_stations":
             r = entree_era5_stations(S, self.cache_dir / f"{stem}_E.npy", self.geom,
                                      rng, self.train, keep=keep, delta_e=delta_e, zone=zone,
-                                     capteurs=capt, avec_points=oi is not None)
+                                     capteurs=capt, avec_points=oi is not None,
+                                     forcage=forcage if getattr(self.geom, "forcages_echeances", None) else None,
+                                     stations=None if echeance is None else echeance == 0)
             S, sensor = r[0], r[1]
             points = r[2] if oi is not None else None
         elif not self.train and self.reseau is not None:
@@ -119,6 +124,19 @@ class ANEO3D(Dataset):
                torch.from_numpy(tfeat), torch.from_numpy(Y), j)
         # 6e element seulement a l'entrainement avec affinage (Trainer._epochs le lit)
         return out if cible is None else out + (torch.from_numpy(cible),)
+
+
+def echeance_exemple(geom: Geometry, rng: np.random.Generator | None, i: int) -> tuple:
+    """(forcage, echeance) d'un exemple. Sans paths.forcages_echeances : (geom.forcage, None), rien ne change.
+    Avec (regle_national_gfs_v5_1, C1) : a l'entrainement (`rng` donne) une echeance tiree uniformement parmi les
+    cles ; en evaluation (`rng` None) l'echeance d'indice i modulo leur nombre (memes echeances a chaque
+    evaluation, toutes representees)."""
+    fe = getattr(geom, "forcages_echeances", None)
+    if not fe:
+        return geom.forcage, None
+    cles = list(fe)
+    e = cles[int(rng.integers(len(cles)))] if rng is not None else cles[int(i) % len(cles)]
+    return fe[e], int(e)
 
 
 def affinage_stations(cfg: Config) -> bool:
@@ -144,7 +162,8 @@ def cellules_stations(geom: Geometry) -> np.ndarray:
 def entree_era5_stations(S: np.ndarray, chemin_e, geom: Geometry, rng: np.random.Generator,
                          train: bool, keep: float = 1.0, delta_e: np.ndarray | None = None,
                          zone: np.ndarray | None = None, capteurs=None,
-                         avec_points: bool = False) -> tuple:
+                         avec_points: bool = False, forcage=None,
+                         stations: bool | None = None) -> tuple:
     """Entree de production du modele reel : vent ERA5 a 10 m sur un reseau regulier (tous
     les `mask.pas_era5_m`) + les stations reelles (valeur du cache = verite generee au point).
 
@@ -156,10 +175,13 @@ def entree_era5_stations(S: np.ndarray, chemin_e, geom: Geometry, rng: np.random
     sans effet a l'entrainement, ou l'entree est tiree comme ci-dessus.
 
     avec_points (candidat D2) : renvoie aussi {"stations": masque (ny, nx) des stations EN ENTREE,
-    "capteurs": cellules (n, 2) des capteurs ANEO ou None}, les points de mesure de l'innovation."""
+    "capteurs": cellules (n, 2) des capteurs ANEO ou None}, les points de mesure de l'innovation.
+
+    forcage / stations (regle_national_gfs_v5_1, C1) : forcage de l'echeance tiree pour le reseau a 10 m, et
+    stations en entree ou non (False aux echeances futures) ; None = geom.forcage et mask.stations_entree."""
     m = geom.cfg.mask
     from .forcage import charger_e
-    E = charger_e(geom, chemin_e)
+    E = charger_e(geom, chemin_e, forcage)
     if delta_e is not None:                     # candidat D : ERA5 degradee (aneo_entree)
         E = E + delta_e
     k = max(int(round(m.pas_era5_m / geom.dx)), 1)
@@ -169,7 +191,8 @@ def entree_era5_stations(S: np.ndarray, chemin_e, geom: Geometry, rng: np.random
     if zone is not None:                        # candidat D : zone sans ERA5 (aneo_entree)
         reseau &= ~zone
     st = np.zeros_like(reseau)
-    for iy, ix in (cellules_stations(geom) if m.stations_entree else ()):
+    avec_stations = m.stations_entree if stations is None else bool(stations) and m.stations_entree
+    for iy, ix in (cellules_stations(geom) if avec_stations else ()):
         if not train or rng.random() < m.p_station:
             st[iy, ix] = True
     if not train and keep < 1.0:
