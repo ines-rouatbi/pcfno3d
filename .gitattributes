@@ -66,3 +66,7 @@ Dockerfile text eol=lf
 *.ttf   binary
 *.woff  binary
 *.woff2 binary
+
+# Regle approuvee et hachee avec des fins de ligne CRLF (ecrite sous Windows) : octets gardes tels quels,
+# sinon son empreinte (570713841039...) ne correspondrait plus sur Colab.
+configs/national/regle_national_gfs_v5_1.json -text
