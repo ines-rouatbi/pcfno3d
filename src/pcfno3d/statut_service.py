@@ -45,11 +45,32 @@ REGLE_GFS_V5 = Path(__file__).resolve().parents[2] / "configs" / "national" / "r
 # cases jugees par regle_national_gfs_v5_2 (critere.cases_jugees) -> echeance servie
 CASES_V5 = {"national 3D / analyse": 0, "national 3D / +24 h": 1, "national 3D / +48 h": 2}
 # regle de service (zones) : recopie des valeurs de son texte, verifiee par tests/test_statut_service.py
+# regle_national_gfs_v6 (9babee63..., 23/11/2026) : cases acceptees sur novembre 2026, lues dans un fichier de verdicts
+# portant SON empreinte (PCFNO3D_VERDICTS_GFS_V6) ; valables seulement si le service sert la variante qu'elle a jugee
+REGLE_GFS_V6 = Path(__file__).resolve().parents[2] / "configs" / "national" / "regle_national_gfs_v6.json"
 REGLE_ZONES = Path(__file__).resolve().parents[2] / "configs" / "national" / "regle_service_zones_v5.json"
 ZONE_TABARKA = {"code": "DTKA", "nom": "Tabarka", "lat": 36.95, "lon": 8.75, "rayon_km": 50.0}
 LIBELLE_ZONE = "experimental (zone Tabarka)"
 TOLERANCE_CENTRE_DEG = 0.01
 RAYON_TERRE_KM = 6371.0
+
+
+def verdicts_gfs_v6(chemin: str | Path | None = None) -> dict:
+    """{"cases": {case: acceptee}, "candidat": variante jugee} de regle_national_gfs_v6 ; {} si le fichier
+    (PCFNO3D_VERDICTS_GFS_V6) manque ou ne porte pas l'empreinte de CETTE regle."""
+    sha_f = REGLE_GFS_V6.with_name(REGLE_GFS_V6.name + ".sha256")
+    chemin = chemin or os.environ.get("PCFNO3D_VERDICTS_GFS_V6")
+    if not sha_f.exists() or not chemin or not Path(chemin).exists():
+        return {}
+    try:
+        v = json.loads(Path(chemin).read_text(encoding="utf-8"))
+        sha = sha_f.read_text(encoding="utf-8").split()[0]
+    except (OSError, ValueError, IndexError):
+        return {}
+    if v.get("regle_sha256") != sha:
+        return {}
+    cases = {str(k): x is True or x == "accepte" for k, x in (v.get("cases") or {}).items() if k in CASES_V5}
+    return {"cases": cases, "candidat": v.get("candidat") or {}}
 
 
 def regle_zones() -> dict | None:
@@ -136,12 +157,14 @@ def mode_instant(source: str | None, archive_era5: bool = False) -> str:
 def statut(national: bool, mode: str, couche_10m: bool = False, j: int = 0,
            prevision_os7: bool = False, verdicts: dict[str, bool] | None = None,
            verdicts_v5: dict[str, bool] | None = None, zones: dict | None = None,
-           lat: float | None = None, lon: float | None = None) -> dict:
+           lat: float | None = None, lon: float | None = None,
+           verdicts_v6: dict[str, bool] | None = None) -> dict:
     """{"statut", "preuve"} d'une donnee. `couche_10m` : la valeur lue a 10 m vient de la couche fond + aeroports ;
     `j` : 0 aujourd'hui, 1 demain, 2 apres-demain ; `prevision_os7` : le modele Grand Tunis servi est v5 (OS7) ;
     `verdicts` : cases acceptees de regle_national_gfs_v4 ; `verdicts_v5` : celles de regle_national_gfs_v5_2 (champ
     3D national seulement) ; `zones` : regle_zones() quand le service sert le candidat c3_a0.75_H100 (sinon None),
-    avec `lat`, `lon` du point (absents : statut d'une journee entiere, « valide (hors zone Tabarka) »)."""
+    avec `lat`, `lon` du point (absents : statut d'une journee entiere, « valide (hors zone Tabarka) ») ;
+    `verdicts_v6` : cases acceptees de regle_national_gfs_v6 pour la variante SERVIE (sinon vide), avant les zones."""
     verdicts = verdicts or {}
     verdicts_v5 = verdicts_v5 or {}
     if mode == ANALYSE:
@@ -169,6 +192,9 @@ def statut(national: bool, mode: str, couche_10m: bool = False, j: int = 0,
             if verdicts_v5.get(cle5):
                 return {"statut": VALIDE, "preuve": f"regle_national_gfs_v5_2, case « {cle5} » acceptee (candidat "
                                                     "retenu sur la validation 2021, juge sur 2026)"}
+            if (verdicts_v6 or {}).get(cle5):
+                return {"statut": VALIDE, "preuve": f"regle_national_gfs_v6, case « {cle5} » acceptee (variante "
+                                                    "choisie sur 2021 avec marge, jugee du 1er au 23 novembre 2026)"}
             if zones:
                 return _statut_zones(zones, lat, lon)
             # champ 3D nourri par GFS : refuse le 18/11 (gfs_v4, Tabarka) et le 23/11 (gfs_v5_2, Tabarka) ; un cas

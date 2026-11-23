@@ -64,7 +64,9 @@ def echantillon_2026() -> list[pd.Timestamp]:
     """Les instants juges : 2026-01-01 -> 2026-10-31, jours de l'annee impairs, 00 / 06 / 12 / 18 UTC (608)."""
     from pcfno3d.gfs import instants_echantillon
     return instants_echantillon(DEBUT_2026, FIN_2026, HEURES_2026, jours_impairs=True)
-SORTIES = ("verdicts_gfs_v5.json", "paires.csv", "arret.json")
+# noms des sorties (regle_national_gfs_v6 reutilise ce script avec les siens : scripts/juger_national_gfs_v6.py)
+FICHIER_VERDICTS, FICHIER_RAPPORT = "verdicts_gfs_v5.json", "gfs_v5.md"
+SORTIES = (FICHIER_VERDICTS, "paires.csv", "arret.json")
 
 
 # ---------------------------------------------------------------------- entree de production (temps_reel)
@@ -364,7 +366,7 @@ def juger(cp_cfg, c1_cfg, selection_f: Path, dossiers_tn, dossier_obs: Path, sor
 
     sha = C.verifier_regle()
     sortie = Path(sortie)
-    deja = [n for n in SORTIES if (sortie / n).exists()]
+    deja = [n for n in (FICHIER_VERDICTS, "paires.csv", "arret.json") if (sortie / n).exists()]
     if deja:
         raise SystemExit(f"{sortie} contient deja {deja} : une seule lecture de 2026, rien n'est ecrase")
     sel = json.loads(Path(selection_f).read_text(encoding="utf-8"))
@@ -413,9 +415,8 @@ def juger(cp_cfg, c1_cfg, selection_f: Path, dossiers_tn, dossier_obs: Path, sor
     v["cp_s44_gfs_calcule"] = "cp" in passes
     b = C.bilan(p, ["gfs_brut", "candidat"] + (["cp_s44_gfs"] if "cp" in passes else []))
     b.to_csv(sortie / "bilan.csv", index=False)
-    (sortie / "verdicts_gfs_v5.json").write_text(json.dumps(v, indent=2, ensure_ascii=False, default=str),
-                                                 encoding="utf-8")
-    (sortie / "gfs_v5.md").write_text(rapport(v, b, info), encoding="utf-8")
+    (sortie / FICHIER_VERDICTS).write_text(json.dumps(v, indent=2, ensure_ascii=False, default=str), encoding="utf-8")
+    (sortie / FICHIER_RAPPORT).write_text(rapport(v, b, info), encoding="utf-8")
     return v
 
 

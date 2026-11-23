@@ -270,12 +270,38 @@ def verifier_regle_zones(wf) -> None:
                            f"regle_service_zones_v5 ({z['lat']}, {z['lon']})")
 
 
+def variante_servie(wf) -> dict | None:
+    """La variante de regle_national_gfs_v5_2 / v6 que le service sert en temps reel et prevision (famille, a0, H),
+    deduite de la configuration ; None hors domaine national ou sans ancrage ni poids dedies."""
+    if not est_national(wf):
+        return None
+    inf = wf.cfg.inference
+    c1 = "national_1km_v5_gfs" in str(getattr(inf, "checkpoint_temps_reel", None) or "").replace("\\", "/")
+    a0 = getattr(inf, "ancrage_gfs_a0", None)
+    if a0 is None:
+        return {"famille": "c1", "a0": None, "H": None} if c1 else None
+    return {"famille": "c3" if c1 else "c2", "a0": float(a0), "H": float(getattr(inf, "ancrage_gfs_h", 100.0))}
+
+
+def verdicts_v6_de(wf) -> dict:
+    """Cases acceptees de regle_national_gfs_v6, seulement si le service sert la variante qu'elle a jugee."""
+    from pcfno3d import statut_service as st
+    v = st.verdicts_gfs_v6()
+    cand, servie = v.get("candidat") or {}, variante_servie(wf)
+    if not v or servie is None or cand.get("famille") != servie["famille"]:
+        return {}
+    if servie["famille"] != "c1" and (cand.get("a0") is None or abs(float(cand["a0"]) - servie["a0"]) > 1e-9
+                                      or abs(float(cand["H"]) - servie["H"]) > 1e-9):
+        return {}
+    return v["cases"]
+
+
 def statut_de(wf, mode: str, couche_10m: bool = False, j: int = 0, lat: float | None = None,
               lon: float | None = None) -> dict:
     from pcfno3d import statut_service as st
     return st.statut(est_national(wf), mode, couche_10m=couche_10m, j=j, prevision_os7=prevision_os7(wf),
                      verdicts=st.verdicts_gfs_v4(), verdicts_v5=st.verdicts_gfs_v5(), zones=zones_de(wf),
-                     lat=lat, lon=lon)
+                     lat=lat, lon=lon, verdicts_v6=verdicts_v6_de(wf))
 
 
 def annoter(wf, payload: dict, j: int = 0, analyse: bool = False) -> dict:
