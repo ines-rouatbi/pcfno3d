@@ -1,4 +1,4 @@
-"""Regle configs/national/regle_national_gfs_v5_1.json : empreinte, constantes recopiees, ancrage GFS (C2), tirage de
+"""Regle configs/national/regle_national_gfs_v5_2.json (remplace la v5.1, arretee sans verdict) : empreinte, constantes recopiees, ancrage GFS (C2), tirage de
 l'echeance a l'entrainement (C1), critere identique a gfs_v4, choix des variantes (ex aequo, arret), controle de
 l'entree de production, jugement 2026 (refus si deja lu) et lecture des verdicts par le service. CPU, mini-jeu
 synthetique, aucun acces reseau, aucune donnee reelle."""
@@ -36,12 +36,14 @@ REGLE = json.loads(C.REGLE.read_text(encoding="utf-8"))
 # ---------------------------------------------------------------------- empreinte et constantes
 def test_regle_hachee_et_constantes_recopiees():
     sha = C.verifier_regle()
-    assert sha == "570713841039a5fda8e4d8727a047a4c6a3171a9c212b5402cdb2b7356be9cdd"
+    assert sha == "542e676c90da2a6440ef3e64f323f8ebc3cf41f9926777934db54f5827583cb0"
     assert J.REGLE == C.REGLE
     assert list(C.CASES) == REGLE["critere"]["cases_jugees"]
     assert "2000 tirages, graine 2030" in REGLE["metrique"] and (C.TIRAGES, C.GRAINE) == (2000, 2030)
     assert "plus de 5 %" in REGLE["critere"]["par_case"] and C.DEGRADATION_MAX == 0.05
-    assert "au plus 2 %" in REGLE["critere"]["controle_d_echeances"] and C.ABSENTS_MAX == 0.02
+    ctl = REGLE["critere"]["controle_d_echeances"]
+    assert "au plus 2 % d'echeances absentes" in ctl and C.ABSENTS_MAX == 0.02
+    assert "retire pour TOUTES les sources" in ctl and "pas d'arret pour ces instants retires" in ctl
     assert "0,005 m/s" in REGLE["etape_3_choix_sur_validation_2021"]["retenu"] and C.EX_AEQUO == 0.005
     assert "(C2, puis C1, puis C3)" in REGLE["etape_3_choix_sur_validation_2021"]["retenu"]
     assert C.ORDRE_SIMPLICITE == ("c2", "c1", "c3")
@@ -62,7 +64,24 @@ def test_regle_hachee_et_constantes_recopiees():
     # la v5 (jamais executee) reste hachee et intacte, mais n'est plus la regle executee
     v5 = C.REGLE.with_name("regle_national_gfs_v5.json")
     assert C.verifier_regle(v5) == "519ebd64ba700df855f60ba26c625923f7da8677f4949f3dbda1207cf6688d73"
-    assert C.REGLE.name == "regle_national_gfs_v5_1.json"
+    # la v5.1 (arretee sans verdict le 23/11) reste hachee et intacte, elle non plus n'est plus executee
+    v51 = C.REGLE.with_name("regle_national_gfs_v5_1.json")
+    assert C.verifier_regle(v51) == "570713841039a5fda8e4d8727a047a4c6a3171a9c212b5402cdb2b7356be9cdd"
+    assert C.REGLE.name == "regle_national_gfs_v5_2.json"
+    # seul le controle d'echeances change : tout le reste est recopie de la v5.1 a l'identique
+    r51 = json.loads(v51.read_text(encoding="utf-8"))
+    for k in ("objet", "periodes", "etape_1_diagnostic_validation_2021", "metrique", "consequences", "interdits"):
+        assert REGLE[k] == r51[k], k
+    assert REGLE["critere"]["par_case"] == r51["critere"]["par_case"]
+    assert REGLE["critere"]["cases_jugees"] == r51["critere"]["cases_jugees"]
+    e2, e2_51 = dict(REGLE["etape_2_candidats"]), r51["etape_2_candidats"]
+    c1 = dict(e2.pop("C1_v5_gfs"))
+    assert "REUTILISE tel quel, PAS reentraine" in c1.pop("deja_fait")
+    c1["nom"] = e2_51["C1_v5_gfs"]["nom"]
+    assert c1 == e2_51["C1_v5_gfs"] and e2 == {k: v for k, v in e2_51.items() if k != "C1_v5_gfs"}
+    e3 = {k: v for k, v in REGLE["etape_3_choix_sur_validation_2021"].items() if k not in ("calcul", "sortie", "gpu")}
+    assert e3 == {k: v for k, v in r51["etape_3_choix_sur_validation_2021"].items() if k != "calcul"}
+    assert REGLE["etape_4_jugement_2026"] == r51["etape_4_jugement_2026"]
     # le critere est recopie de gfs_v4 : memes constantes que son script
     assert (C.TIRAGES, C.GRAINE, C.DEGRADATION_MAX, C.ABSENTS_MAX) == \
         (J4.TIRAGES, J4.GRAINE, J4.DEGRADATION_MAX, J4.ABSENTS_MAX)
@@ -426,7 +445,7 @@ def test_statut_service_lit_les_verdicts_v5(tmp_path, monkeypatch):
     v5 = S.verdicts_gfs_v5(f)
     assert v5 == {"national 3D / analyse": True, "national 3D / +24 h": False, "national 3D / +48 h": True}
     s = S.statut(True, S.TEMPS_REEL, verdicts_v5=v5)
-    assert s["statut"] == S.VALIDE and "regle_national_gfs_v5_1" in s["preuve"]
+    assert s["statut"] == S.VALIDE and "regle_national_gfs_v5_2" in s["preuve"]
     assert S.statut(True, S.PREVISION, j=1, verdicts_v5=v5)["statut"] == S.EXPERIMENTAL          # +24 h refuse
     assert S.statut(True, S.PREVISION, j=2, verdicts_v5=v5)["statut"] == S.VALIDE                # +48 h accepte
     assert S.statut(True, S.TEMPS_REEL, couche_10m=True, verdicts_v5=v5)["statut"] == S.EXPERIMENTAL   # couche 10 m
@@ -436,10 +455,13 @@ def test_statut_service_lit_les_verdicts_v5(tmp_path, monkeypatch):
     f.write_text(json.dumps({"regle_sha256": J4.verifier_regle(), "cases": {"national 3D / analyse": "accepte"}}),
                  encoding="utf-8")
     assert S.verdicts_gfs_v5(f) == {}
-    # empreinte de la v5 (jamais executee) : refusee, seule la v5.1 compte
-    f.write_text(json.dumps({"regle_sha256": "519ebd64ba700df855f60ba26c625923f7da8677f4949f3dbda1207cf6688d73",
-                             "cases": {"national 3D / analyse": "accepte"}}), encoding="utf-8")
-    assert S.verdicts_gfs_v5(f) == {} and S.REGLE_GFS_V5.name == "regle_national_gfs_v5_1.json"
+    # empreintes de la v5 (jamais executee) et de la v5.1 (arretee sans verdict) : refusees, seule la v5.2 compte
+    for vieux in ("519ebd64ba700df855f60ba26c625923f7da8677f4949f3dbda1207cf6688d73",
+                  "570713841039a5fda8e4d8727a047a4c6a3171a9c212b5402cdb2b7356be9cdd"):
+        f.write_text(json.dumps({"regle_sha256": vieux, "cases": {"national 3D / analyse": "accepte"}}),
+                     encoding="utf-8")
+        assert S.verdicts_gfs_v5(f) == {}
+    assert S.REGLE_GFS_V5.name == "regle_national_gfs_v5_2.json"
     monkeypatch.setenv("PCFNO3D_VERDICTS_GFS_V5", str(tmp_path / "absent.json"))
     assert S.verdicts_gfs_v5() == {}
     # gfs_v4 inchange : ses cases gardent leur preuve
@@ -545,6 +567,27 @@ def test_choix_de_bout_en_bout(jeu_v5, tmp_path):
         C.calculer(base, copy.deepcopy(base), forc, obs, sortie, device="cpu", verbose=False)
 
 
+def test_instant_sans_echeance_retire_sans_arret(jeu_v5, tmp_path, monkeypatch):
+    """Regle v5.2, controle_d_echeances (b) : un instant de validation sans l'une des trois echeances est retire
+    pour toutes les sources et les trois cases, publie, et le choix continue (la v5.1 s'arretait ici)."""
+    base, forc, _, obs, _ = jeu_v5
+    stems, row = C.stems_validation(base)
+    retire = sorted(stems)[0]
+    t_retire = C.instant_utc(row, retire)
+    lire = C.temps_du_forcage
+    monkeypatch.setattr(C, "temps_du_forcage",
+                        lambda f: lire(f) - {t_retire} if Path(f).name == "forcage_gfs_f24.csv" else lire(f))
+    sortie = tmp_path / "validation_2021_v5_2"
+    sel = C.calculer(base, copy.deepcopy(base), forc, obs, sortie, device="cpu", verbose=False)
+    info = sel["instants"]
+    assert info["absents"] == 1 and info["absents_liste"] == [retire] and info["absents_utc"] == [str(t_retire)]
+    assert info["absents_par_echeance"] == {"analyse": 0, "+24 h": 1, "+48 h": 0}
+    assert not (sortie / "arret.json").exists() and (sortie / "selection.json").exists()
+    p = pd.read_csv(sortie / "paires_validation.csv")
+    assert retire not in set(p["stem"]) and set(p["echeance_h"]) == set(C.ECHEANCES)
+    assert str(t_retire) in (sortie / "validation_gfs_v5.md").read_text(encoding="utf-8")
+
+
 def test_controle_entree_de_production(jeu_v5, tmp_path):
     """Regle v5.1 : les parties VENT de l'entree de production (temps_reel) et du cache sont identiques (forcage,
     reseau GFS 10 m, stations, carte des capteurs) : le controle passe ; la surface T, rho, HR, p du cache
@@ -639,39 +682,47 @@ def test_carnets_commit_fige_empreintes_et_dossiers_neufs():
     finally:
         sys.path.remove(sys_path)
     sha = C.verifier_regle()
+    sha_v51 = C.verifier_regle(C.REGLE.with_name("regle_national_gfs_v5_1.json"))
     sha_v5 = C.verifier_regle(C.REGLE.with_name("regle_national_gfs_v5.json"))
     for commit in (g.COMMIT, "a" * 40):
         nbs = g.carnets(commit)
-        assert set(nbs) == {"A", "B1", "B2"}
-        for k, nb in nbs.items():
-            src = "\n".join("".join(c["source"]) for c in nb["cells"] if c["cell_type"] == "code")
-            assert src.index("COMMIT_FIGE") < src.index("UNITES_DEJA_UTILISEES") < src.index("drive.mount")
-            assert sha in src and J4.verifier_regle() in src                     # empreintes v5.1 et gfs_v4 verifiees
-            assert sha_v5 not in src                                             # la v5 n'est pas executee
-            assert "cout ESTIME" in src and "plafond de la regle : 90 unites" in src
-            assert f'COMMIT = "{commit}"' in src and "runtime.unassign()" in src
-            assert 'NAT / "gfs_v5_regle"' in src and "national_1km_v5_gfs" in src
-            for interdit in ("cdsapirc", "apikey", "rmtree(GV5", "rmtree(R5", "unlink(", "verdicts_gfs_v4.json"):
-                assert interdit not in src, (k, interdit)
+        assert set(nbs) == {"C", "B2"}
         src = {k: "\n".join("".join(c["source"]) for c in nb["cells"] if c["cell_type"] == "code")
                for k, nb in nbs.items()}
-        a, b1, b2 = src["A"], src["B1"], src["B2"]
-        assert "--periode 2026-01-01T00:00,2026-10-31T18:00 --jours-impairs --heures 0,6,12,18" in a
-        assert '"Colab CPU", 0.1' in a or "~0.1 unites/h" in a
-        assert "~11.8 unites/h" in b1 and "~4.8 unites/h" in b2
-        # B1 : A100, affinage + etapes 1 + 3, aucune lecture de 2026
-        assert nbs["B1"]["metadata"]["colab"]["gpuType"] == "A100" and "30 * 1024" in b1
-        assert "choisir_national_gfs_v5.py" in b1 and 'if sel["arret"]' in b1
-        assert "juger_national_gfs_v5.py" not in b1 and "historique_metar.py" not in b1
-        # B2 : L4 ou A100 >= 22 Go ; refus sans selection / si ARRET / si deja juge, AVANT l'extraction du cache
-        assert nbs["B2"]["metadata"]["colab"]["gpuType"] == "L4"
-        assert "22 * 1024" in b2 and '("L4", "A100")' in b2 and "30 * 1024" not in b2
-        assert "choisir_national_gfs_v5.py" not in b2 and "pcfno3d -c national_v5_gfs_mixte_colab" not in b2
+        for k, x in src.items():
+            assert x.index("COMMIT_FIGE") < x.index("UNITES_DEJA_UTILISEES") < x.index("drive.mount")
+            assert x.index("22 * 1024") < x.index("drive.mount")                 # GPU verifie avant le Drive
+            assert sha in x and sha_v51 in x and J4.verifier_regle() in x      # v5.2, marqueur v5.1, gfs_v4
+            assert sha_v5 not in x                                             # la v5 n'est pas executee
+            assert f'SHA_REGLE = "{sha}"' in x and f'SHA_V5_1 = "{sha_v51}"' in x
+            assert "cout ESTIME" in x and "plafond : 90 unites (v5.1 + v5.2)" in x and "~4.8 unites/h" in x
+            assert f'COMMIT = "{commit}"' in x and "runtime.unassign()" in x
+            assert 'GV5 / "validation_2021_v5_2"' in x and 'GV5 / "validation_2021"\n' not in x
+            assert nbs[k]["metadata"]["colab"]["gpuType"] == "L4" and '("L4", "A100")' in x
+            # C1 reutilise : verifie (marqueur v5.1, 12 epoques, epoque 2), jamais reentraine
+            assert "verifier_c1()" in x and 'R5 / "regle_gfs_v5_1.json"' in x and "if ep != 2:" in x
+            assert "pcfno3d -c national_v5_gfs_mixte_colab" not in x and "entrainer_c1" not in x
+            assert "recalcul_activations" not in x
+            for interdit in ("cdsapirc", "apikey", "rmtree(GV5", "rmtree(R5", "unlink(", "verdicts_gfs_v4.json",
+                             "shutil.move(", "marqueur.write_text"):
+                assert interdit not in x, (k, interdit)
+        c, b2 = src["C"], src["B2"]
+        # C : etapes 1 + 3 seulement ; refus si la selection v5.2 existe deja, AVANT l'extraction du cache
+        assert "choisir_national_gfs_v5.py" in c and 'if sel["arret"]' in c
+        assert "juger_national_gfs_v5.py" not in c and "historique_metar.py" not in c
+        assert c.index('(VAL / "selection.json").exists()') < c.index("zf.extract(m, CACHE)")
+        assert c.index("verifier_c1()", c.index("PARTIE C")) < c.index("choisir_national_gfs_v5.py")
+        # B2 : refus sans selection v5.2 / si ARRET / si deja juge, AVANT l'extraction du cache
+        assert "choisir_national_gfs_v5.py" not in b2
+        assert b2.index('_sel.get("regle_sha256") != SHA_REGLE') < b2.index("zf.extract(m, CACHE)")
         assert b2.index('_sel.get("arret")') < b2.index("zf.extract(m, CACHE)")
         assert b2.index('"verdicts_gfs_v5.json", "paires.csv"') < b2.index("zf.extract(m, CACHE)")
         assert b2.index("juger_national_gfs_v5.py controle") < b2.index("historique_metar.py") \
             < b2.index("juger_national_gfs_v5.py juger")
-        assert 'if not ctrl["passe"]' in b2 and "RAPPORT_CP_S44 = True" in b2 and "--sans-cp-s44" in b2
+    # les carnets de la v5.1 restent tels quels (histoire) et ne sont plus produits par le generateur
+    for n in ("pcfno3d_national_gfs_v5_A_cpu.ipynb", "pcfno3d_national_gfs_v5_B1_a100.ipynb"):
+        assert (REPO / "notebooks" / "current" / n).exists()
+    assert set(g.NOMS.values()) == {"pcfno3d_national_gfs_v5_2_C_l4.ipynb", "pcfno3d_national_gfs_v5_2_B2_l4.ipynb"}
 
 
 def test_echantillon_2026_et_lecture_de_l_archive(jeu_v5):

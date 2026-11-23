@@ -15,10 +15,10 @@ Ce qui est valide aujourd'hui (preuves dans docs/resultats/) :
 - Grand Tunis, prevision J+1 / J+2 : seulement si le modele servi est v5 (OS7 : PREV1 et PREV2 conformes) ;
 - national, temps reel et prevision : seulement les cases ACCEPTEES de regle_national_gfs_v4, lues dans un
   fichier de verdicts qui porte l'empreinte hachee de cette regle ; tant qu'elle n'est pas passee : experimental ;
-- champ 3D national, temps reel / J+1 / J+2 : aussi les cases ACCEPTEES de regle_national_gfs_v5_1 (variable
+- champ 3D national, temps reel / J+1 / J+2 : aussi les cases ACCEPTEES de regle_national_gfs_v5_2 (variable
   PCFNO3D_VERDICTS_GFS_V5, fichier portant l'empreinte de CETTE regle). Ces cases valident le CANDIDAT RETENU par
   la regle (nomme dans le fichier) : la variable ne se renseigne que lorsque le service sert ce candidat (decision
-  d'Ines apres lecture des resultats, regle_national_gfs_v5_1 « consequences »). Les verdicts gfs_v4 sont lus a part,
+  d'Ines apres lecture des resultats, regle_national_gfs_v5_2 « consequences »). Les verdicts gfs_v4 sont lus a part,
   inchanges.
 Le temps reel du Grand Tunis (v4 nourri par GFS + stations) n'a pas de regle a courte echeance : experimental.
 """
@@ -31,9 +31,10 @@ from pathlib import Path
 VALIDE, EXPERIMENTAL = "valide", "experimental"
 ANALYSE, TEMPS_REEL, PREVISION = "analyse", "temps reel", "prevision"
 REGLE_GFS = Path(__file__).resolve().parents[2] / "configs" / "national" / "regle_national_gfs_v4.json"
-# regle executee : la v5.1 (la v5, jamais executee, est archivee et n'est jamais lue ici)
-REGLE_GFS_V5 = Path(__file__).resolve().parents[2] / "configs" / "national" / "regle_national_gfs_v5_1.json"
-# cases jugees par regle_national_gfs_v5_1 (critere.cases_jugees) -> echeance servie
+# regle executee : la v5.2 (la v5, jamais executee, et la v5.1, arretee sans verdict le 23/11, sont archivees et
+# ne sont jamais lues ici)
+REGLE_GFS_V5 = Path(__file__).resolve().parents[2] / "configs" / "national" / "regle_national_gfs_v5_2.json"
+# cases jugees par regle_national_gfs_v5_2 (critere.cases_jugees) -> echeance servie
 CASES_V5 = {"national 3D / analyse": 0, "national 3D / +24 h": 1, "national 3D / +48 h": 2}
 
 
@@ -55,7 +56,7 @@ def verdicts_gfs_v4(chemin: str | Path | None = None) -> dict[str, bool]:
 
 
 def verdicts_gfs_v5(chemin: str | Path | None = None) -> dict[str, bool]:
-    """Cases de regle_national_gfs_v5_1 ACCEPTEES (cles de CASES_V5). Vide si le fichier (PCFNO3D_VERDICTS_GFS_V5)
+    """Cases de regle_national_gfs_v5_2 ACCEPTEES (cles de CASES_V5). Vide si le fichier (PCFNO3D_VERDICTS_GFS_V5)
     manque, si la regle n'a pas d'empreinte ou si le fichier ne porte pas l'empreinte de CETTE regle."""
     sha_f = REGLE_GFS_V5.with_name(REGLE_GFS_V5.name + ".sha256")
     chemin = chemin or os.environ.get("PCFNO3D_VERDICTS_GFS_V5")
@@ -83,7 +84,7 @@ def statut(national: bool, mode: str, couche_10m: bool = False, j: int = 0,
            verdicts_v5: dict[str, bool] | None = None) -> dict:
     """{"statut", "preuve"} d'une donnee. `couche_10m` : la valeur lue a 10 m vient de la couche fond + aeroports ;
     `j` : 0 aujourd'hui, 1 demain, 2 apres-demain ; `prevision_os7` : le modele Grand Tunis servi est v5 (OS7) ;
-    `verdicts` : cases acceptees de regle_national_gfs_v4 ; `verdicts_v5` : celles de regle_national_gfs_v5_1 (champ
+    `verdicts` : cases acceptees de regle_national_gfs_v4 ; `verdicts_v5` : celles de regle_national_gfs_v5_2 (champ
     3D national seulement)."""
     verdicts = verdicts or {}
     verdicts_v5 = verdicts_v5 or {}
@@ -110,7 +111,7 @@ def statut(national: bool, mode: str, couche_10m: bool = False, j: int = 0,
             cle5 = "national 3D / analyse" if mode == TEMPS_REEL else (
                 "national 3D / +48 h" if j >= 2 else "national 3D / +24 h")
             if verdicts_v5.get(cle5):
-                return {"statut": VALIDE, "preuve": f"regle_national_gfs_v5_1, case « {cle5} » acceptee (candidat "
+                return {"statut": VALIDE, "preuve": f"regle_national_gfs_v5_2, case « {cle5} » acceptee (candidat "
                                                     "retenu sur la validation 2021, juge sur 2026)"}
         return {"statut": EXPERIMENTAL, "preuve": f"nourri par GFS : regle_national_gfs_v4 (case « {cle} ») pas encore "
                                                   "passee"}

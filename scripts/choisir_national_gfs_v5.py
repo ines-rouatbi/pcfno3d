@@ -1,4 +1,5 @@
-"""Regle configs/national/regle_national_gfs_v5_1.json (approuvee par Ines le 22/11/2026 au soir, remplace la v5 jamais executee, hachee) : etapes 1 et 3, sur
+"""Regle configs/national/regle_national_gfs_v5_2.json (approuvee par Ines le 23/11/2026, hachee 542e676c... ; remplace la v5.1, arretee
+sans verdict le 23/11 par son controle d'echeances, et la v5 jamais executee) : etapes 1 et 3, sur
 la VALIDATION 2021 seulement (aucune lecture de 2022 ni de 2026).
 
 Etape 1, diagnostic : C' s44 tel que livre, nourri par GFS (f0-f5, f24, f48), aux instants synoptiques de la
@@ -14,6 +15,10 @@ des JOURS, 2000 tirages, graine 2030, memes tirages partout) de l'ecart moyenne(
 <= 0 ET aucun aeroport degrade de plus de 5 %. Retenue : parmi les variantes qui passent les TROIS cases, celle de
 plus bas RMSE vectoriel moyen (moyenne des trois cases) ; ex aequo a 0,005 m/s pres : la plus simple (C2, puis C1,
 puis C3). Si aucune ne passe : ARRET (selection.json « arret »), 2026 n'est pas lu.
+
+Instants (v5.2, controle_d_echeances (b)) : un instant de validation auquel manque l'une des trois echeances GFS est
+retire pour toutes les sources, les trois cases et toutes les notes ; la liste est publiee, sans arret (le seuil de
+2 % porte sur le TELECHARGEMENT, (a), controle par pcfno3d.gfs a la partie A).
 
     python scripts/choisir_national_gfs_v5.py --cp national_v4_eval --c1 national_v5_gfs_eval \
         --gfs <dossier des forcage_gfs_f{0,24,48}.csv (instants d'entrainement et de validation)> \
@@ -40,7 +45,7 @@ import pandas as pd
 
 REPO = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(REPO / "src")]
-REGLE = REPO / "configs" / "national" / "regle_national_gfs_v5_1.json"
+REGLE = REPO / "configs" / "national" / "regle_national_gfs_v5_2.json"
 # recopies de la regle (verifies par tests/test_gfs_v5_national.py contre son texte)
 ECHEANCES = (0, 24, 48)
 NOM_ECHEANCE = {0: "analyse", 24: "+24 h", 48: "+48 h"}
@@ -356,13 +361,15 @@ def md_table(df: pd.DataFrame) -> str:
 
 def rapport(sel: dict, res: dict, diag: pd.DataFrame, prof: pd.DataFrame, b: pd.DataFrame, info: dict,
             sha: str) -> str:
-    L = ["# Règle `regle_national_gfs_v5_1` : diagnostic et choix sur la validation 2021", "",
-         f"Règle `configs/national/regle_national_gfs_v5_1.json` (sha256 `{sha[:12]}…`), approuvée par Ines le "
-         "22/11/2026 et vérifiée avant le calcul. Validation 2021 seulement (2022 et 2026 ne sont pas lus). Les "
+    L = ["# Règle `regle_national_gfs_v5_2` : diagnostic et choix sur la validation 2021", "",
+         f"Règle `configs/national/regle_national_gfs_v5_2.json` (sha256 `{sha[:12]}…`), approuvée par Ines le "
+         "23/11/2026 et vérifiée avant le calcul (elle remplace la v5.1, arrêtée sans verdict le 23/11 par son "
+         "contrôle d'échéances, avant tout calcul aux aéroports). Validation 2021 seulement (2022 et 2026 ne sont pas lus). Les "
          "seules mesures sont les METAR ; GFS est une prévision. Chaque aéroport jugé est retiré de l'entrée (11 "
          "autres à l'analyse, aucun aux échéances).", "",
          f"Instants : {info['instants']} sur {info['instants_attendus']} ({info['absents']} écartés pour toutes "
-         f"les sources faute d'échéance GFS) ; {info['jours']} jours ; IC 95 % par {TIRAGES} tirages des jours "
+         f"les sources, les trois cases et toutes les notes faute d'échéance GFS : "
+         f"{', '.join(info['absents_utc']) or 'aucun'}) ; {info['jours']} jours ; IC 95 % par {TIRAGES} tirages des jours "
          f"(graine {GRAINE}).", "", "## Étape 3 : les 13 variantes", "",
          "| Variante | analyse | +24 h | +48 h | RMSE moyen (3 cases) | passe les trois |", "|---|---|---|---|---:|---|"]
     for n, r in res.items():
@@ -398,14 +405,18 @@ def calculer(cp_cfg, c1_cfg, dossier_gfs: Path, dossier_obs: Path, sortie: Path,
     stems, row = stems_validation(cp_cfg)
     presents = {e: temps_du_forcage(f) for e, f in forcages.items()}
     communs = [s for s in stems if all(instant_utc(row, s) in presents[e] for e in ECHEANCES)]
-    info = {"instants_attendus": len(stems), "instants": len(communs), "absents": len(stems) - len(communs),
-            "absents_liste": sorted(set(stems) - set(communs))}
+    absents = sorted(set(stems) - set(communs))
+    info = {"instants_attendus": len(stems), "instants": len(communs), "absents": len(absents),
+            "absents_liste": absents,
+            "absents_utc": [str(instant_utc(row, s)) for s in sorted(absents, key=lambda s: instant_utc(row, s))],
+            "absents_par_echeance": {NOM_ECHEANCE[e]: sum(instant_utc(row, s) not in presents[e] for s in stems)
+                                     for e in ECHEANCES}}
     sortie.mkdir(parents=True, exist_ok=True)
-    print(f"validation 2021 : {len(communs)} instants sur {len(stems)}", flush=True)
-    if info["absents"] > ABSENTS_MAX * len(stems):
-        (sortie / "arret.json").write_text(json.dumps({**info, "regle_sha256": sha, "verdict": "arret sans verdict"},
-                                                      indent=2, ensure_ascii=False), encoding="utf-8")
-        raise SystemExit(f"plus de {ABSENTS_MAX:.0%} d'instants sans echeance GFS : arret sans verdict (regle)")
+    # regle v5.2, controle_d_echeances (b) : instants retires pour toutes les sources et cases, publies, sans arret
+    print(f"validation 2021 : {len(communs)} instants sur {len(stems)} ; retires faute d'echeance GFS : "
+          f"{info['absents_utc']}", flush=True)
+    if not communs:
+        raise SystemExit("aucun instant de validation n'a les trois echeances GFS : rien a juger")
     from types import SimpleNamespace
     cellules = cellules_codes(SimpleNamespace(cfg=cp_cfg))          # data_dir/stations.json : les 12 aeroports
     obs = lire_observations(Path(dossier_obs), verbose=verbose, codes=list(cellules))

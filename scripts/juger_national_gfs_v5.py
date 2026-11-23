@@ -1,5 +1,5 @@
-"""Regle configs/national/regle_national_gfs_v5_1.json (approuvee par Ines le 22/11/2026 au soir, hachee 570713841039... ;
-remplace regle_national_gfs_v5, jamais executee) : etape 4, le jugement UNIQUE du candidat retenu sur la validation 2021
+"""Regle configs/national/regle_national_gfs_v5_2.json (approuvee par Ines le 23/11/2026, hachee 542e676c... ; remplace
+la v5.1, arretee sans verdict le 23/11 par son controle d'echeances, et la v5 jamais executee) : etape 4, le jugement UNIQUE du candidat retenu sur la validation 2021
 (scripts/choisir_national_gfs_v5.py), sur l'ECHANTILLON 2026 fixe par la regle : du 2026-01-01 au 2026-10-31, jours
 de l'annee impairs, 00, 06, 12 et 18 UTC (heures de cycle : l'analyse est toujours f000), ~608 instants.
 
@@ -324,9 +324,9 @@ def juger_paires(p: pd.DataFrame, stations: list, sha: str, selection: dict) -> 
 
 
 def rapport(v: dict, b: pd.DataFrame, info: dict) -> str:
-    L = ["# Règle `regle_national_gfs_v5_1` : jugement 2026 aux 12 aéroports", "",
-         f"Règle `configs/national/regle_national_gfs_v5_1.json` (sha256 `{v['regle_sha256'][:12]}…`), approuvée par "
-         "Ines le 22/11/2026 (soir), vérifiée avant le calcul. Candidat retenu sur la validation 2021 seulement : "
+    L = ["# Règle `regle_national_gfs_v5_2` : jugement 2026 aux 12 aéroports", "",
+         f"Règle `configs/national/regle_national_gfs_v5_2.json` (sha256 `{v['regle_sha256'][:12]}…`), approuvée par "
+         "Ines le 23/11/2026, vérifiée avant le calcul. Candidat retenu sur la validation 2021 seulement : "
          f"`{(v.get('candidat') or {}).get('nom')}`. Échantillon fixé par la règle : 2026-01-01 → 2026-10-31, jours "
          "impairs, 00 / 06 / 12 / 18 UTC (analyse toujours f000 ; les heures 03 / 09 / 15 / 21 du service ne sont pas "
          "jugées), "
@@ -383,15 +383,20 @@ def juger(cp_cfg, c1_cfg, selection_f: Path, dossiers_tn, dossier_obs: Path, sor
     instants = echantillon_2026()
     dossiers = [Path(d) for d in dossiers_tn]
     communs = [t for t in instants if all(trouver_national(t, e, dossiers) is not None for e in ECHEANCES)]
+    par_ech = {NOM_ECHEANCE[e]: sum(trouver_national(t, e, dossiers) is None for t in instants) for e in ECHEANCES}
     info = {"instants_attendus": len(instants), "instants": len(communs), "absents": len(instants) - len(communs),
             "absents_liste": [str(t) for t in sorted(set(instants) - set(communs))][:200],
+            "absents_par_echeance": par_ech,
             "fichier_exemple": str(fichier_national(dossiers[0], instants[0], 0)) if dossiers else None}
     sortie.mkdir(parents=True, exist_ok=True)
-    print(f"2026 : {len(communs)} instants sur {len(instants)}", flush=True)
-    if info["absents"] > ABSENTS_MAX * len(instants):
+    print(f"2026 : {len(communs)} instants sur {len(instants)} ; echeances absentes {par_ech}", flush=True)
+    # regle v5.2, controle_d_echeances (a) : au plus 2 % d'echeances absentes PAR ECHEANCE sur l'echantillon
+    # telecharge, sinon arret sans verdict ; (b) les instants incomplets sont retires partout, sans arret
+    trop = {k: n for k, n in par_ech.items() if n > ABSENTS_MAX * len(instants)}
+    if trop or not communs:
         (sortie / "arret.json").write_text(json.dumps({**info, "regle_sha256": sha, "verdict": "arret sans verdict"},
                                                       indent=2, ensure_ascii=False), encoding="utf-8")
-        raise SystemExit(f"plus de {ABSENTS_MAX:.0%} d'instants sans echeance GFS : arret sans verdict (regle)")
+        raise SystemExit(f"plus de {ABSENTS_MAX:.0%} d'echeances GFS absentes ({trop}) : arret sans verdict (regle)")
     geo = SimpleNamespace(cfg=cp_cfg)
     cellules, noms = cellules_codes(geo), noms_stations(geo)
     obs = lire_observations(Path(dossier_obs), verbose=verbose, codes=list(cellules))      # SEULE lecture de 2026
