@@ -350,3 +350,78 @@ def test_scenario_de_panne(jeu):
         atom_wind.scenario_panne(wf, src, "2026-10-26", 20, ["DTTA"], maintenant=pd.Timestamp("2026-10-26T07:20:00"))
     with pytest.raises(ValueError, match="inconnues"):
         atom_wind.scenario_panne(wf, src, "2026-10-26", 7, ["XX"], maintenant=pd.Timestamp("2026-10-26T07:20:00"))
+
+
+def test_journee_temps_reel_ancree_sur_gfs(jeu):
+    """inference.ancrage_gfs_a0 (candidat c3 de regle_national_gfs_v5_2) : le champ servi est ancre sur GFS pres du
+    sol ; a0 = 1 laisse le champ inchange ; la journee dit l'ancrage."""
+    import copy
+
+    from pcfno3d import atom_wind, temps_reel
+    from pcfno3d.inference import WindFieldModel
+
+    maintenant = pd.Timestamp("2026-10-26T07:20:00")
+
+    def vent(cfg):
+        wf = WindFieldModel(cfg, device="cpu", verbose=False)
+        d = atom_wind.jour_direct(wf, temps_reel.SourceDirect(wf.geom, lire=fausse_source), "2026-10-26",
+                                  maintenant=maintenant)
+        return d, np.frombuffer(base64.b64decode(d["vent"]), dtype="<i2").reshape(d["forme"]).astype(float)
+
+    d0, v0 = vent(jeu)
+    assert d0["ancrage_gfs"] is None
+    c1 = copy.deepcopy(jeu)
+    c1.inference.ancrage_gfs_a0, c1.inference.ancrage_gfs_h = 1.0, 100.0
+    _, v1 = vent(c1)
+    np.testing.assert_array_equal(v0, v1)                    # a0 = 1 : identite
+    c2 = copy.deepcopy(jeu)
+    c2.inference.ancrage_gfs_a0, c2.inference.ancrage_gfs_h = 0.25, 100.0
+    d2, v2 = vent(c2)
+    assert d2["ancrage_gfs"] == {"a0": 0.25, "H_m": 100.0}
+    ok = (v0 != -32768) & (v2 != -32768)
+    assert np.abs(v2 - v0)[ok].max() > 1                     # l'ancrage agit (cm/s)
+
+
+def test_poids_temps_reel_a_cote_des_poids_principaux(jeu):
+    """inference.checkpoint_temps_reel : un second modele sur la meme geometrie et sous le meme verrou ; le
+    service (atom_outils.jour) s'en sert pour le temps reel ; hors domaine national, pas de regle de zones."""
+    import copy
+
+    from pcfno3d.inference import WindFieldModel
+    from service import atom_outils
+
+    c = copy.deepcopy(jeu)
+    wf = WindFieldModel(c, device="cpu", verbose=False)
+    assert atom_outils.attacher_temps_reel(wf) is None and atom_outils.modele_temps_reel(wf) is wf
+    c.inference.checkpoint_temps_reel = wf.checkpoint_path
+    wt = atom_outils.attacher_temps_reel(wf)
+    assert wt is not None and wt.geom is wf.geom and wt._lock is wf._lock
+    assert atom_outils.modele_temps_reel(wf) is wt
+    assert atom_outils.candidat_c3(wf) is False and atom_outils.zones_de(wf) is None
+    atom_outils.verifier_regle_zones(wf)                     # rien a verifier hors candidat
+
+
+def test_regle_zones_verifiee_au_demarrage(monkeypatch):
+    """regle_service_zones_v5 : avec le candidat c3 servi, le service verifie l'empreinte et le centre de Tabarka
+    (stations.json) au demarrage, et refuse de demarrer sinon."""
+    from types import SimpleNamespace
+
+    from pcfno3d import statut_service as st
+    from service import atom_outils
+
+    inf = SimpleNamespace(ancrage_gfs_a0=0.75, ancrage_gfs_h=100.0,
+                          checkpoint_temps_reel="/content/drive/MyDrive/pcfno3d_national/runs/national_1km_v5_gfs/best.pt")
+    wf = SimpleNamespace(cfg=SimpleNamespace(inference=inf), geom=SimpleNamespace(nx=388, dx=1000.0, ny=828, dy=1000.0))
+    assert atom_outils.candidat_c3(wf) is True and atom_outils.zones_de(wf)["sha256"].startswith("b239c5c6")
+    stations = [{"code": "DTKA", "nom": "DTKA Tabarka", "lat": 36.95, "lon": 8.75}]
+    monkeypatch.setattr(atom_outils, "grille", lambda _wf: {"stations": stations})
+    atom_outils.verifier_regle_zones(wf)
+    stations[0]["lat"] = 36.97                                # centre different de plus de 0,01 deg
+    with pytest.raises(RuntimeError, match="different"):
+        atom_outils.verifier_regle_zones(wf)
+    stations[0]["lat"] = 36.95
+    monkeypatch.setattr(st, "regle_zones", lambda: None)     # regle modifiee depuis son hachage
+    with pytest.raises(RuntimeError, match="hachage"):
+        atom_outils.verifier_regle_zones(wf)
+    inf.ancrage_gfs_a0 = 0.5                                  # autre reglage : pas le candidat, pas de zones
+    assert atom_outils.candidat_c3(wf) is False

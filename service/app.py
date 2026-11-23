@@ -2103,6 +2103,10 @@ def create_app() -> FastAPI:
             c_n = Config.load(cfg_nat)
             modeles[c_n.name] = WindFieldModel(c_n, checkpoint=os.environ.get("PCFNO3D_CHECKPOINT_NATIONAL") or None,
                                                device=os.environ.get("PCFNO3D_DEVICE") or None)
+        # temps reel / prevision : poids dedies (inference.checkpoint_temps_reel) sur la meme geometrie
+        for m in modeles.values():
+            atom_outils.attacher_temps_reel(m)
+            atom_outils.verifier_regle_zones(m)       # regle_service_zones_v5 : empreinte et centre, sinon arret
         atom_outils.enregistrer_domaines(modeles if len(modeles) > 1 else {})
         STATE["modeles"] = modeles
         # alertes (lot M4) : strictement opt-in ; un seul moteur (un seul journal) pour

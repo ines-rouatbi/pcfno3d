@@ -259,7 +259,7 @@ function renderAnswer(){
       <div class="fact"><div class="k">Il vient</div><div class="v" style="font-size:17px">${arrowSvg(deg,22,css("--accent"))}${dirName(r.u,r.v)}</div></div>
     </div>
     <p class="muted" style="font-size:15px">${beaufort(kmh(r.sp))}</p>
-    ${window.ATOM?.donneeHtml ? window.ATOM.donneeHtml(state.hour, a.z) : ""}
+    ${window.ATOM?.donneeHtml ? window.ATOM.donneeHtml(state.hour, a.z, x, y) : ""}
     <button class="btn whybtn" id="whybtn" aria-expanded="${whyOpen}">Pourquoi ce vent ?</button>
     <div id="whybox" ${whyOpen?"":"hidden"}>${explainHtml(x,y,a.z,state.hour)}</div>
   </div>`;

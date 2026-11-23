@@ -431,8 +431,9 @@ _STATUTS_PRIVES = {"valide", "experimental"}
 def _sans_modele(x):
     if isinstance(x, dict):
         return {k: _sans_modele(v) for k, v in x.items()
-                if not (k.endswith("_preuve") or k == "preuve"
-                        or (k.startswith("statut") and isinstance(v, str) and v in _STATUTS_PRIVES))}
+                if not (k.endswith("_preuve") or k == "preuve" or k == "zone_experimentale"
+                        or (k.startswith("statut") and isinstance(v, str)
+                            and v.split(" (", 1)[0] in _STATUTS_PRIVES))}
     if isinstance(x, list):
         return [_sans_modele(v) for v in x]
     if isinstance(x, str):

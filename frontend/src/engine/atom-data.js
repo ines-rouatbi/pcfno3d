@@ -137,13 +137,38 @@ A.statutHeure = (h, z = 10) => {
   return { mode, statut: c10 ? i.statut_couche_10m : (i.statut || null), date: i.date_donnee || i.timestamp_utc || A.jour.date,
            preuve: (c10 ? A.jour.statut_couche_10m_preuve : A.jour.statut_preuve) || "" };
 };
-A.donneeHtml = (h, z = 10) => {
+// regle_service_zones_v5 (23/11/2026) : en temps réel et en prévision, le champ 3D national est « validé » à plus
+// de 50 km de Tabarka et « expérimental (zone Tabarka) » dans ce rayon ; le service envoie la zone avec la journée
+const LIGNE_ZONE = "Temps réel et prévision : validé hors d'un rayon de 50 km autour de Tabarka (règle de service du 23/11/2026, fondée sur le jugement 2026 : −10 % face à GFS, 11 aéroports sur 12) ; expérimental dans ce rayon.";
+function distanceKm(lat1, lon1, lat2, lon2){
+  const r = Math.PI / 180, p1 = lat1 * r, p2 = lat2 * r, dp = p2 - p1, dl = (lon2 - lon1) * r;
+  const a = Math.sin(dp/2) ** 2 + Math.cos(p1) * Math.cos(p2) * Math.sin(dl/2) ** 2;
+  return 2 * 6371 * Math.asin(Math.min(1, Math.sqrt(a)));
+}
+// statut du point (x, y en km de la page) : celui de l'heure, et « expérimental (zone Tabarka) » dans la zone
+A.statutPoint = (h, z = 10, x = null, y = null) => {
+  const s = A.statutHeure(h, z);
+  if(!s || !s.statut) return null;
+  const zone = A.jour && A.jour.zone_experimentale, d = A.domaine();
+  const c10 = z <= 10 && !!(A.jour.instants || []).some(i => i.statut_couche_10m);
+  if(zone && !c10 && s.mode !== "analyse" && d && x !== null && y !== null){
+    const lat = d.lat0 + y / d.ky, lon = d.lon0 + x / d.kx;
+    if(distanceKm(lat, lon, zone.centre.lat, zone.centre.lon) <= zone.rayon_km)
+      return { valide: false, libelle: "Expérimental (zone Tabarka)" };
+  }
+  return { valide: s.statut === "valide", libelle: s.statut === "valide" ? "Validé" : "Expérimental" };
+};
+A.donneeHtml = (h, z = 10, x = null, y = null) => {
   const s = A.statutHeure(h, z);
   if(!s) return "";                      // aucune donnée servie : la page montre l'état du service, jamais d'exemple
   const quand = /T/.test(String(s.date)) ? fmtInstant(s.date) : fmtDate(s.date);
   const hors = A.dernierEtat ? ` · <b>Service hors ligne</b> : dernier état réel connu, reçu le ${fmtInstant(A.dernierEtat)}.` : "";
-  // ni statut validé / expérimental ni sa preuve : la page ne juge pas le calcul (décision d'Ines)
-  return `<p class="aw-donnee">${MODES_FR[s.mode] || s.mode} · donnée du ${quand}${hors}</p>`;
+  // badge du statut tel que le service le donne (regle_service_zones_v5 : suit la position du point) ; jamais la preuve
+  const st = A.statutPoint(h, z, x, y);
+  const badge = st ? ` <span class="aw-statut ${st.valide ? "is-valide" : "is-exp"}">${st.libelle}</span>` : "";
+  // la vue « Données & fiabilité » est retirée : la ligne qui explique la zone suit la donnée
+  const zone = A.jour.zone_experimentale && s.mode !== "analyse" ? `<p class="aw-zone muted">${LIGNE_ZONE}</p>` : "";
+  return `<p class="aw-donnee">${MODES_FR[s.mode] || s.mode} · donnée du ${quand}${badge}${hors}</p>${zone}`;
 };
 
 // ------------------------------------------------------------------ domaine servi (phase 8 nationale)

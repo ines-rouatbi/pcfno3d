@@ -277,6 +277,10 @@ def jour_direct(wf, source, date_locale: str, maintenant: pd.Timestamp | None = 
     instants, blocs_vent, blocs_t, blocs_hr, blocs_sigma, blocs_raf = [], [], [], [], [], []
     b = facteur(geom)
     fiabilite = bool(fiabilite and wf.cfg.inference.reliability is not None)
+    inf = wf.cfg.inference
+    ancrage = None if inf.ancrage_gfs_a0 is None else (inf.ancrage_gfs_a0, inf.ancrage_gfs_h)
+    if ancrage is not None:
+        from .ancrage_gfs import ancrer_volume
     for h in range(24):
         t = pd.Timestamp(date_locale) + pd.Timedelta(hours=h - UTC_LOCAL_H)
         it = index_t.get(int(t.value // 10 ** 9))
@@ -286,8 +290,13 @@ def jour_direct(wf, source, date_locale: str, maintenant: pd.Timestamp | None = 
         mesures = tr.mesures_a(obs, t) if passe else {}
         S = tr.entree(geom, c, f, it, mesures)
         stamp = t.strftime("%Y-%m-%dT%H:%M:%SZ")
+        vec = f.vecteur(t)
         vol = wf.predict(S, t.hour + t.minute / 60, int(t.dayofyear), timestamp=stamp,
-                         forcage=f.vecteur(t), reliability=fiabilite)
+                         forcage=vec, reliability=fiabilite)
+        if ancrage is not None:
+            # champ servi ancre sur GFS pres du sol (inference.ancrage_gfs_a0) ; NaN sous le relief gardes
+            vol.u, vol.v, vol.w = (x.astype(np.float32) for x in ancrer_volume(geom, vol.u, vol.v, vol.w, vec,
+                                                                              *ancrage))
         c10 = None
         if getattr(wf.cfg.inference, "couche_10m_oi", False):
             # fond GFS 10 m (comme tr.entree) + mesures des stations de l'heure ; le gain mesure l'a ete
@@ -343,7 +352,8 @@ def jour_direct(wf, source, date_locale: str, maintenant: pd.Timestamp | None = 
             "grande_echelle": "GFS 0,25 deg (NOAA, via Open-Meteo), formules du forcage ERA5",
             "stations_sources": tr.description_stations(geom),
             "mis_a_jour_utc": maintenant.strftime("%Y-%m-%dT%H:%M:%SZ"),
-            "modele": wf.checkpoint_path.name}
+            "modele": wf.checkpoint_path.name,
+            "ancrage_gfs": None if ancrage is None else {"a0": ancrage[0], "H_m": ancrage[1]}}
 
 
 def date_locale_aujourdhui(decalage_j: int = 0) -> str:

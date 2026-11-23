@@ -401,9 +401,26 @@ class InferenceCfg:
     # interpolation optimale des mesures des stations (pcfno3d.vent10m_oi ; produit national v4,
     # configs/national/regle_produit_vent10m_v4.json). Ne touche ni au champ 3D ni aux DSO.
     couche_10m_oi: bool = False
+    # Temps reel et prevision J+1 / J+2 nourris par GFS (atom_wind.jour_direct) : ancrage du champ 3D sur GFS pres du
+    # sol (pcfno3d.ancrage_gfs : u = u_gfs + a(h) (u_modele - u_gfs), a = a0 a 10 m -> 1 a H, w par continuite).
+    # None = pas d'ancrage. Le candidat c3_a0.75_H100 de regle_national_gfs_v5_2 : a0 0,75, H 100 m, poids C1.
+    ancrage_gfs_a0: float | None = None
+    ancrage_gfs_h: float = 100.0
+    # Poids servis pour le temps reel et la prevision seulement (ex. C1, runs/national_1km_v5_gfs/best.pt) ; les
+    # journees d'analyse (ERA5) gardent les poids principaux. None = memes poids partout.
+    checkpoint_temps_reel: Path | str | None = None
 
     def __post_init__(self) -> None:
         self.couche_10m_oi = bool(self.couche_10m_oi)
+        if self.ancrage_gfs_a0 is not None:
+            self.ancrage_gfs_a0 = float(self.ancrage_gfs_a0)
+            if not 0.0 <= self.ancrage_gfs_a0 <= 1.0:
+                raise ValueError("inference.ancrage_gfs_a0 doit etre dans [0, 1]")
+        self.ancrage_gfs_h = float(self.ancrage_gfs_h)
+        if self.ancrage_gfs_h <= 10.0:
+            raise ValueError("inference.ancrage_gfs_h doit depasser 10 m")
+        if self.checkpoint_temps_reel is not None:
+            self.checkpoint_temps_reel = _resolve(self.checkpoint_temps_reel)
         self.tta = int(self.tta)
         if self.tta < 1:
             raise ValueError("inference.tta doit etre >= 1")

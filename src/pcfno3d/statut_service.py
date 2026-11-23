@@ -21,10 +21,18 @@ Ce qui est valide aujourd'hui (preuves dans docs/resultats/) :
   d'Ines apres lecture des resultats, regle_national_gfs_v5_2 « consequences »). Les verdicts gfs_v4 sont lus a part,
   inchanges.
 Le temps reel du Grand Tunis (v4 nourri par GFS + stations) n'a pas de regle a courte echeance : experimental.
+
+Statut de SERVICE (regle_service_zones_v5, hachee b239c5c6..., decision d'Ines du 23/11/2026, ecrite APRES le
+jugement 2026 de regle_national_gfs_v5_2, dont le verdict « refuse » reste publie) : quand le service sert le candidat
+c3_a0.75_H100 (C1 + ancrage GFS a0 0,75, H 100 m), le champ 3D national en temps reel et en prevision est
+« valide » a plus de 50 km de l'aeroport de Tabarka et « experimental (zone Tabarka) » a 50 km ou moins. Ce n'est
+pas une acceptation par test ; la regle le dit. Un cas refuse n'est jamais dit « pas encore passe ».
 """
 from __future__ import annotations
 
+import hashlib
 import json
+import math
 import os
 from pathlib import Path
 
@@ -36,6 +44,52 @@ REGLE_GFS = Path(__file__).resolve().parents[2] / "configs" / "national" / "regl
 REGLE_GFS_V5 = Path(__file__).resolve().parents[2] / "configs" / "national" / "regle_national_gfs_v5_2.json"
 # cases jugees par regle_national_gfs_v5_2 (critere.cases_jugees) -> echeance servie
 CASES_V5 = {"national 3D / analyse": 0, "national 3D / +24 h": 1, "national 3D / +48 h": 2}
+# regle de service (zones) : recopie des valeurs de son texte, verifiee par tests/test_statut_service.py
+REGLE_ZONES = Path(__file__).resolve().parents[2] / "configs" / "national" / "regle_service_zones_v5.json"
+ZONE_TABARKA = {"code": "DTKA", "nom": "Tabarka", "lat": 36.95, "lon": 8.75, "rayon_km": 50.0}
+LIBELLE_ZONE = "experimental (zone Tabarka)"
+TOLERANCE_CENTRE_DEG = 0.01
+RAYON_TERRE_KM = 6371.0
+
+
+def regle_zones() -> dict | None:
+    """La regle de service par zones si son empreinte correspond a son .sha256 : {"sha256", "zone"} ; sinon None."""
+    sha_f = REGLE_ZONES.with_name(REGLE_ZONES.name + ".sha256")
+    try:
+        attendu = sha_f.read_text(encoding="ascii").split()[0]
+        h = hashlib.sha256(REGLE_ZONES.read_bytes()).hexdigest()
+    except (OSError, IndexError):
+        return None
+    return {"sha256": h, "zone": dict(ZONE_TABARKA)} if h == attendu else None
+
+
+def distance_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Distance du grand cercle (km), rayon terrestre 6371 km (regle_service_zones_v5, zone.definition)."""
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dp, dl = p2 - p1, math.radians(lon2 - lon1)
+    a = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
+    return 2 * RAYON_TERRE_KM * math.asin(min(1.0, math.sqrt(a)))
+
+
+def dans_zone_tabarka(lat: float, lon: float) -> bool:
+    z = ZONE_TABARKA
+    return distance_km(lat, lon, z["lat"], z["lon"]) <= z["rayon_km"]
+
+
+def _statut_zones(zones: dict, lat: float | None, lon: float | None) -> dict:
+    sha = zones["sha256"][:8]
+    z = zones["zone"]
+    zone = {"centre": {"lat": z["lat"], "lon": z["lon"]}, "rayon_km": z["rayon_km"], "aeroport": z["nom"],
+            "statut": LIBELLE_ZONE}
+    if lat is not None and lon is not None and dans_zone_tabarka(lat, lon):
+        return {"statut": EXPERIMENTAL, "libelle": LIBELLE_ZONE, "zone_experimentale": zone,
+                "preuve": f"regle_service_zones_v5 ({sha}...) : a {z['rayon_km']:.0f} km ou moins de {z['nom']}, ou "
+                          "regle_national_gfs_v5_2 a refuse le candidat (Tabarka +6 % face a GFS en 2026)"}
+    return {"statut": VALIDE, "libelle": "valide" if lat is not None else "valide (hors zone Tabarka)",
+            "zone_experimentale": zone,
+            "preuve": f"regle_service_zones_v5 ({sha}...) du 23/11/2026 : valide a plus de {z['rayon_km']:.0f} km de "
+                      f"{z['nom']} ; fondee sur le jugement 2026 de regle_national_gfs_v5_2 (refuse pour Tabarka seul ; "
+                      "-10 % face a GFS, 11 aeroports sur 12)"}
 
 
 def verdicts_gfs_v4(chemin: str | Path | None = None) -> dict[str, bool]:
@@ -81,11 +135,13 @@ def mode_instant(source: str | None, archive_era5: bool = False) -> str:
 
 def statut(national: bool, mode: str, couche_10m: bool = False, j: int = 0,
            prevision_os7: bool = False, verdicts: dict[str, bool] | None = None,
-           verdicts_v5: dict[str, bool] | None = None) -> dict:
+           verdicts_v5: dict[str, bool] | None = None, zones: dict | None = None,
+           lat: float | None = None, lon: float | None = None) -> dict:
     """{"statut", "preuve"} d'une donnee. `couche_10m` : la valeur lue a 10 m vient de la couche fond + aeroports ;
     `j` : 0 aujourd'hui, 1 demain, 2 apres-demain ; `prevision_os7` : le modele Grand Tunis servi est v5 (OS7) ;
     `verdicts` : cases acceptees de regle_national_gfs_v4 ; `verdicts_v5` : celles de regle_national_gfs_v5_2 (champ
-    3D national seulement)."""
+    3D national seulement) ; `zones` : regle_zones() quand le service sert le candidat c3_a0.75_H100 (sinon None),
+    avec `lat`, `lon` du point (absents : statut d'une journee entiere, « valide (hors zone Tabarka) »)."""
     verdicts = verdicts or {}
     verdicts_v5 = verdicts_v5 or {}
     if mode == ANALYSE:
@@ -113,8 +169,15 @@ def statut(national: bool, mode: str, couche_10m: bool = False, j: int = 0,
             if verdicts_v5.get(cle5):
                 return {"statut": VALIDE, "preuve": f"regle_national_gfs_v5_2, case « {cle5} » acceptee (candidat "
                                                     "retenu sur la validation 2021, juge sur 2026)"}
-        return {"statut": EXPERIMENTAL, "preuve": f"nourri par GFS : regle_national_gfs_v4 (case « {cle} ») pas encore "
-                                                  "passee"}
+            if zones:
+                return _statut_zones(zones, lat, lon)
+            # champ 3D nourri par GFS : refuse le 18/11 (gfs_v4, Tabarka) et le 23/11 (gfs_v5_2, Tabarka) ; un cas
+            # refuse n'est jamais dit « pas encore passe »
+            return {"statut": EXPERIMENTAL, "preuve": f"nourri par GFS : refuse par regle_national_gfs_v4 (case "
+                                                      f"« {cle} », 18/11/2026) et par regle_national_gfs_v5_2 "
+                                                      "(23/11/2026), a cause de Tabarka"}
+        return {"statut": EXPERIMENTAL, "preuve": "couche 10 m nourrie par GFS : verdict de regle_national_gfs_v4 "
+                                                  f"(case « {cle} ») non lu par ce service (PCFNO3D_VERDICTS_GFS_V4)"}
     if mode == PREVISION and j >= 1 and prevision_os7:
         return {"statut": VALIDE, "preuve": "modele Grand Tunis v5 nourri par GFS : PREV1 (+24 h) et PREV2 (+48 h) "
                                             "conformes (OS7, 2022)"}

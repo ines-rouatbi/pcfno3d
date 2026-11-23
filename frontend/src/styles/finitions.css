@@ -73,3 +73,9 @@ nav.workspace-navigation .count:not(:empty):not([data-zero]){animation:aw-pouls 
   nav.workspace-navigation .count{animation:none!important}
   .aw-squelette::after,#aw-chargement .aw-chargement-barre i{animation:none}
 }
+
+/* Badge de statut de la donnee servie (regle_service_zones_v5 : suit la position du point) */
+.aw-statut{display:inline-block;margin-left:6px;padding:1px 8px;border-radius:999px;font-size:12px;font-weight:700;
+  vertical-align:1px;color:#fff;background:#2f9e7a}
+.aw-statut.is-exp{background:#d9731d}
+.aw-zone{margin:2px 0 0;font-size:13px;line-height:1.4}

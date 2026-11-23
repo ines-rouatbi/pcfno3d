@@ -130,6 +130,14 @@ c["name"] = "national"
 c["paths"]["run_dir"], c["paths"]["local_dir"] = str(RUN), "/content/run_local_national_service"
 c["paths"]["stations_obs"] = str(G / "obs")       # vraies mesures METAR des 12 aeroports
 c.setdefault("inference", {})["couche_10m_oi"] = True
+# temps reel et prevision (GFS) : candidat c3_a0.75_H100 de regle_national_gfs_v5_2, servi par decision d'Ines
+# (regle_service_zones_v5, 23/11/2026 : « valide » hors 50 km de Tabarka) ; les journees d'analyse (ERA5) restent
+# servies par C' s44 (RUN). Sans les poids de C1 sur le Drive : C' s44 partout, sans ancrage.
+C1 = NAT / "runs" / "national_1km_v5_gfs" / "best.pt"
+if C1.exists():
+    c["inference"].update({"checkpoint_temps_reel": str(C1), "ancrage_gfs_a0": 0.75, "ancrage_gfs_h": 100.0})
+print("temps reel et prevision :", f"C1 + ancrage GFS (a0 0,75, H 100 m) : {C1}" if C1.exists()
+      else "C' s44 sans ancrage (C1 absent du Drive)")
 yaml.safe_dump(c, open(CODE / "configs" / "national_v4_service.yaml", "w"), sort_keys=False)
 OS5 = NAT / "os5"
 OS5.mkdir(exist_ok=True)

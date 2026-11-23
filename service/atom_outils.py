@@ -195,14 +195,34 @@ def entree_production_active(wf) -> bool:
     return tr.entree_production_active(wf)
 
 
+def attacher_temps_reel(wf, device: str | None = None):
+    """Poids du temps reel et de la prevision (inference.checkpoint_temps_reel, ex. C1 de regle_national_gfs_v5_2)
+    charges a cote des poids principaux, sur la MEME geometrie et sous le MEME verrou de calcul (un seul GPU) ;
+    les journees d'analyse (ERA5) gardent les poids principaux. Sans reglage : rien."""
+    ck = getattr(wf.cfg.inference, "checkpoint_temps_reel", None)
+    if wf is None or not ck:
+        return None
+    from pcfno3d.inference import WindFieldModel
+    wt = WindFieldModel(wf.cfg, checkpoint=ck, device=device or str(wf.device), geom=wf.geom)
+    wt._lock = wf._lock
+    wf.modele_temps_reel = wt
+    return wt
+
+
+def modele_temps_reel(wf):
+    """Le modele qui calcule le temps reel et la prevision : celui de attacher_temps_reel, sinon wf."""
+    return getattr(wf, "modele_temps_reel", None) or wf
+
+
 def jour(wf, j: int) -> dict:
     """La journee relative j (0 aujourd'hui, 1 demain, 2 apres-demain), cachee 30 min."""
     from pcfno3d import atom_wind
     date = atom_wind.date_locale_aujourdhui(j)
     # incertitude en temps reel (BF8) : PCFNO3D_SIGMA_DIRECT=1 et un modele calibre (inference.reliability)
     fiab = os.environ.get("PCFNO3D_SIGMA_DIRECT", "0") == "1"
+    wt = modele_temps_reel(wf)
     return _avec_cache("direct", wf, date, TTL_DIRECT_S,
-                       lambda: archiver(wf, j, annoter(wf, atom_wind.jour_direct(wf, source(wf), date, fiabilite=fiab),
+                       lambda: archiver(wf, j, annoter(wf, atom_wind.jour_direct(wt, source(wf), date, fiabilite=fiab),
                                                         j=j)))
 
 
@@ -216,10 +236,46 @@ def prevision_os7(wf) -> bool:
     return "v5_gfs" in Path(str(wf.cfg.paths.run_dir)).name or "v5_gfs" in str(wf.cfg.name)
 
 
-def statut_de(wf, mode: str, couche_10m: bool = False, j: int = 0) -> dict:
+def candidat_c3(wf) -> bool:
+    """Le service sert-il le candidat c3_a0.75_H100 de regle_national_gfs_v5_2 (C1 + ancrage GFS a0 0,75, H 100 m)
+    pour le temps reel et la prevision du domaine national ? C'est la condition de regle_service_zones_v5."""
+    inf = wf.cfg.inference
+    ck = str(getattr(inf, "checkpoint_temps_reel", None) or "")
+    return (est_national(wf) and getattr(inf, "ancrage_gfs_a0", None) == 0.75
+            and float(getattr(inf, "ancrage_gfs_h", 0.0)) == 100.0 and "national_1km_v5_gfs" in ck.replace("\\", "/"))
+
+
+def zones_de(wf) -> dict | None:
+    from pcfno3d import statut_service as st
+    return st.regle_zones() if candidat_c3(wf) else None
+
+
+def verifier_regle_zones(wf) -> None:
+    """Au demarrage (regle_service_zones_v5) : si le candidat est servi, la regle doit porter son empreinte et le
+    centre de la zone (Tabarka, stations.json) differer de moins de 0,01 deg de celui de la regle ; sinon le service
+    refuse de demarrer."""
+    if wf is None or not candidat_c3(wf):
+        return
+    from pcfno3d import statut_service as st
+    if st.regle_zones() is None:
+        raise RuntimeError("regle_service_zones_v5.json modifiee depuis son hachage (ou .sha256 absent) : "
+                           "le service ne demarre pas")
+    z = st.ZONE_TABARKA
+    s = next((s for s in grille(wf)["stations"] if s.get("code") == z["code"]), None)
+    if s is None or s.get("lat") is None:
+        raise RuntimeError(f"{z['code']} absent de stations.json : centre de la zone Tabarka introuvable")
+    if abs(float(s["lat"]) - z["lat"]) > st.TOLERANCE_CENTRE_DEG or \
+            abs(float(s["lon"]) - z["lon"]) > st.TOLERANCE_CENTRE_DEG:
+        raise RuntimeError(f"centre de Tabarka dans stations.json ({s['lat']}, {s['lon']}) different de celui de "
+                           f"regle_service_zones_v5 ({z['lat']}, {z['lon']})")
+
+
+def statut_de(wf, mode: str, couche_10m: bool = False, j: int = 0, lat: float | None = None,
+              lon: float | None = None) -> dict:
     from pcfno3d import statut_service as st
     return st.statut(est_national(wf), mode, couche_10m=couche_10m, j=j, prevision_os7=prevision_os7(wf),
-                     verdicts=st.verdicts_gfs_v4(), verdicts_v5=st.verdicts_gfs_v5())
+                     verdicts=st.verdicts_gfs_v4(), verdicts_v5=st.verdicts_gfs_v5(), zones=zones_de(wf),
+                     lat=lat, lon=lon)
 
 
 def annoter(wf, payload: dict, j: int = 0, analyse: bool = False) -> dict:
@@ -237,6 +293,11 @@ def annoter(wf, payload: dict, j: int = 0, analyse: bool = False) -> dict:
     payload.update({"mode": modes[0] if len(modes) == 1 else " / ".join(modes), "modes": modes,
                     "date_donnee": payload.get("date"),
                     "statut": st.resume(sts), "statut_preuve": " ; ".join(dict.fromkeys(s["preuve"] for s in sts))})
+    # regle_service_zones_v5 : la journee est « valide (hors zone Tabarka) » et porte la zone, que la page marque
+    zone = next((s["zone_experimentale"] for s in sts if s.get("zone_experimentale")), None)
+    if zone is not None:
+        payload["zone_experimentale"] = zone
+        payload["statut_libelle"] = next((s.get("libelle") for s in sts if s.get("libelle")), payload["statut"])
     if couche:
         sc = [statut_de(wf, m, couche_10m=True, j=j) for m in modes]
         payload.update({"statut_couche_10m": st.resume(sc),
@@ -375,11 +436,13 @@ def lire_point(wf, j: int, z_agl: float, h: float, lat=None, lon=None, lieu=None
     from pcfno3d import statut_service as st
     mode = st.mode_instant(inst.get("source") or ("prevision" if p.get("prevision") else "temps reel"))
     couche = bool(getattr(wf.cfg.inference, "couche_10m_oi", False)) and z_agl < 25
-    sta = statut_de(wf, mode, couche_10m=couche and z_agl <= 10, j=j)
+    plat, plon = (float(a) for a in georef(wf).to_latlon(x * 1000.0, y * 1000.0))
+    sta = statut_de(wf, mode, couche_10m=couche and z_agl <= 10, j=j, lat=plat, lon=plon)
     return {"lieu": nom, "date": p["date"], "heure_locale": h, "hauteur_sol_m": z_agl,
             "vitesse_m_s": round(s, 2), "vitesse_km_h": round(s * 3.6, 1), "direction_provenance_deg": _direction(u, v),
             "source": mode, "mode": mode, "date_donnee": inst.get("timestamp_utc") or p["date"],
             "statut": sta["statut"], "statut_preuve": sta["preuve"],
+            "statut_libelle": sta.get("libelle", sta["statut"]),
             "domaine": nom_domaine(wf), "source_vent": source_vent(wf, z_agl, temps_reel=True, mode=mode),
             "temperature_2m_c": _arrondi(_surface(wf, p, "t2m", x, y, h)),
             "humidite_2m_pct": _arrondi(_surface(wf, p, "hr2m", x, y, h)),
