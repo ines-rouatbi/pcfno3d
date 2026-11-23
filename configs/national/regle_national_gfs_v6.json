@@ -1,0 +1,59 @@
+{
+  "fixee_le": "2026-11-23 (soir), APRES le jugement 2026 de regle_national_gfs_v5_2 (refuse a cause de Tabarka) et AVANT toute lecture de donnees du 1er au 23 novembre 2026 (ni GFS, ni METAR, ni passe de modele) ; regle_national_gfs_v5_2 (542e676c...) et regle_service_zones_v5 (b239c5c6...) ne sont pas modifiees",
+  "statut": "PROPOSITION soumise a l'accord ecrit d'Ines ; l'empreinte .sha256 est ecrite au moment de l'accord, sur ce texte exact",
+  "objet": "rendre valides, par un jugement honnete sur des donnees jamais utilisees, les trois cases du champ 3D national nourri par GFS (analyse = temps reel, +24 h, +48 h), refusees le 18/11 (gfs_v4) et le 23/11 (gfs_v5_2) a cause de Tabarka seul",
+  "ce_qui_est_connu_en_ecrivant": [
+    "le verdict 2026 de regle_national_gfs_v5_2 : candidat c3_a0.75_H100 a -10 % face a GFS en moyenne, meilleur aux 11 autres aeroports, Tabarka +6,0 a +6,3 % (limite 5 %) ; c'est ce resultat qui motive une marge plus stricte au choix",
+    "le tableau des verdicts des 13 variantes sur la validation 2021 (validation_gfs_v5.md) ; les degradations par aeroport de chaque variante (variantes.json) existent sur le Drive et n'ont pas ete relues pour ecrire cette regle",
+    "aucune donnee de novembre 2026 n'a ete lue ni calculee par le projet"
+  ],
+  "ce_qui_ne_change_pas": [
+    "les modeles : C' s44 et C1 (runs/national_1km_v5_gfs, epoque 2) tels quels ; aucun entrainement",
+    "les 13 variantes de regle_national_gfs_v5_2 (C1 ; C2 = ancrage GFS de C' s44, a0 dans {0,25 ; 0,5 ; 0,75}, H dans {100 ; 300 m} ; C3 = C1 + meme ancrage), la formule de l'ancrage et w par continuite",
+    "la metrique et le critere de jugement de regle_national_gfs_v4 / v5_2, recopies a l'identique (aucun seuil assoupli, aucun aeroport retire)",
+    "les verdicts publies de gfs_v4 et gfs_v5_2, jamais reecrits"
+  ],
+  "etape_1_choix_sur_validation_2021": {
+    "donnees": "les resultats deja calcules de regle_national_gfs_v5_2 sur la validation 2021 : MyDrive/pcfno3d_national/gfs_v5_regle/validation_2021_v5_2/variantes.json (111 instants, 12 aeroports retires a tour de role, memes tirages des jours) ; aucun nouveau calcul de modele",
+    "admissible": "une variante est admissible si, dans CHACUNE des trois cases sur 2021 : (1) la borne haute de l'IC 95 % de l'ecart moyenne(variante) - moyenne(gfs_brut) est <= 0 ET (2) chacun des 12 aeroports a une degradation RMSE variante / RMSE gfs_brut - 1 <= +3 % (MARGE fixee d'avance, plus stricte que la limite de jugement de +5 %)",
+    "retenue": "parmi les admissibles, le plus bas RMSE vectoriel moyen (moyenne des trois cases) ; ex aequo a 0,005 m/s pres : la plus simple (C2, puis C1, puis C3), puis le RMSE, puis le nom",
+    "si_aucune_admissible": "ARRET : novembre 2026 n'est pas lu ; le statut de service de regle_service_zones_v5 reste en place"
+  },
+  "etape_2_jugement_novembre_2026": {
+    "periode": "du 2026-11-01 00 UTC au 2026-11-23 21 UTC inclus, toutes les 3 heures : 184 instants ; periode jamais utilisee par aucun modele, aucun reglage, aucune validation ni aucun test du projet ; lue UNE fois, pour la seule variante retenue",
+    "heures_intermediaires": "les instants 03, 09, 15 et 21 UTC sont juges comme le service les calcule : dernier cycle GFS a au moins l'echeance demandee (pcfno3d.gfs.run_pour) : analyse = f003 du cycle precedent, +24 h = f027, +48 h = f051 ; aux heures de cycle : f000, f024, f048",
+    "entree": "construite exactement comme le service temps reel (pcfno3d.temps_reel), a partir de l'archive GFS NOAA (AWS) et des METAR IEM ; METAR des 11 AUTRES aeroports a l'analyse, aucun aux echeances",
+    "controle_prealable": "le meme que regle_national_gfs_v5_2 (parties vent de l'entree de production identiques au chemin du cache sur des instants de validation 2021, ecart max <= 1e-5 ; canaux de surface rapportes sans arret), refait avant toute lecture de novembre ; sinon arret",
+    "sources": "la variante retenue et GFS brut (reference) ; C' s44 + GFS sans correction n'est PAS calcule (gain de temps)",
+    "controle_d_echeances": "celui de regle_national_gfs_v5_2 : au plus 2 % d'echeances absentes de l'archive par echeance sur la periode apres 3 passes, sinon arret sans verdict ; instants incomplets retires pour toutes les sources et les trois cases, publies"
+  },
+  "metrique": "recopiee de regle_national_gfs_v4 : RMSE vectoriel a 10 m par aeroport sur les instants ou il est mesure (METAR a 30 min au plus, la plus proche ; calme garde ; exclusions et mois de panne de stations_reelles) ; moyenne des 12 ; ecart = moyenne(candidat) - moyenne(gfs_brut) ; IC 95 % par bootstrap des JOURS, 2000 tirages, graine 2030, memes tirages pour toutes les sources et echeances",
+  "critere": {
+    "par_case": "ACCEPTE si (1) la borne haute de l'IC 95 % de l'ecart est <= 0 ET (2) aucun aeroport degrade de plus de 5 % (RMSE candidat / RMSE gfs_brut - 1 <= 0,05 a chacun des 12) ; sinon REFUSE",
+    "cases_jugees": [
+      "national 3D / analyse",
+      "national 3D / +24 h",
+      "national 3D / +48 h"
+    ]
+  },
+  "limites_annoncees_avant": [
+    "echantillon court : 184 instants sur 23 jours d'une seule saison (automne) ; le hasard peut faire passer un aeroport au-dessus de 5 % ou elargir l'IC jusqu'a 0",
+    "la conception n'est pas aveugle a 2026 : on sait que l'ancrage a0 = 0,75 ne suffisait pas a Tabarka ; la periode jugee, elle, n'a jamais ete vue",
+    "rien ne garantit que les trois cases passeront ; un echec est publie tel quel"
+  ],
+  "consequences": {
+    "cases_acceptees": "statut « valide » pour ces cases partout (fichier de verdicts neuf portant l'empreinte de cette regle, lu par le service) ; si les TROIS sont acceptees, regle_service_zones_v5 est remplacee",
+    "cases_refusees": "regle_service_zones_v5 reste en place pour elles ; chiffres publies tels quels",
+    "service": "servir la variante retenue (si elle differe de c3_a0.75_H100) reste une decision d'Ines apres lecture"
+  },
+  "lecture": "une seule ; resultats dans MyDrive/pcfno3d_national/gfs_v6_regle/ (dossier neuf) et docs/resultats/national/gfs_v6.md",
+  "budget": "au plus 15 unites Colab pour cette regle (CPU : choix et telechargements ; L4 : controle et jugement) ; le plafond de 90 unites de la famille v5 + v6 reste (22,8 deja utilisees) ; au-dela, arret et demande a Ines",
+  "interdits": [
+    "aucun reglage choisi sur novembre 2026, aucune relecture de 2022 ni de 2026 (janvier-octobre)",
+    "aucun seuil change, aucun aeroport ecarte, aucun facteur propre a Tabarka",
+    "aucun bruit ajoute aux predictions",
+    "GFS, ERA5 et la verite generee jamais appeles mesures ; les METAR sont les mesures",
+    "rien n'est supprime ni ecrase sur le Drive ni dans runs/ ; dossiers de sortie neufs",
+    "aucun secret dans le code, le carnet ou les journaux"
+  ]
+}
