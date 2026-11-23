@@ -1,3 +1,4 @@
+import { windColor } from './terrain/national-forecast';
 type Point = [number, number];
 type Place = { name: string; point: Point; speed: string; selected: boolean };
 type Territory = {
@@ -31,8 +32,10 @@ export function renderTerritory(container: HTMLElement, data: Territory) {
   const arrows: string[] = [];
   for (let y=step*5/7; y<height; y+=step) for (let x=step*4/7; x<width; x+=step) {
     const [u,v] = data.sample(x,y), speed = Math.hypot(u,v), [px,py] = project([x,y]);
-    const angle = Math.atan2(u,v)*180/Math.PI;
-    arrows.push(`<g transform="translate(${px},${py}) rotate(${angle})" opacity="${Math.min(.7,.25+speed/22)}"><path d="M0 9V-9M-3-5L0-9L3-5" fill="none" stroke="var(--map-vector)" stroke-width="1.25" stroke-linecap="round"/></g>`);
+    if (!Number.isFinite(speed)) continue;
+    const angle = Math.atan2(u,v)*180/Math.PI, [r,g,b] = windColor(speed);
+    // couleur = force du vent (même échelle que Mon vent et les Gouvernorats), halo clair pour la lisibilité sur le relief
+    arrows.push(`<g transform="translate(${px},${py}) rotate(${angle})"><path d="M0 9V-9M-3.5-4.5L0-9L3.5-4.5" fill="none" stroke="var(--map-land)" stroke-width="4" stroke-linecap="round" opacity=".85"/><path d="M0 9V-9M-3.5-4.5L0-9L3.5-4.5" fill="none" stroke="rgb(${r},${g},${b})" stroke-width="2" stroke-linecap="round"/></g>`);
   }
   const labels = new Set([0,1,2,5,6,7,8,10,11]);
   const markers = data.places.map((place,index) => {

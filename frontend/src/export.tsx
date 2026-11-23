@@ -13,7 +13,7 @@ import { initializeTheme } from './theme';
 const ExportInstruments = memo(() => <div className="export-instruments" dangerouslySetInnerHTML={{__html: markup}}/>);
 function ExportApp() {
   useEffect(() => { import('./engine/export-runtime.js'); }, []);
-  return <><div className="science-masthead"><Mark small/><a href="/app/atom-wind/">Retour à l’espace ATOM Wind ↗</a></div><div className="science-intro"><span className="eyebrow">VISUALISEUR D’EXPORT · PC-FNO3D</span><h1>Lire un export</h1><p>Les valeurs du fichier exporté, par niveau et par coupe. Altitudes en mètres au-dessus de la mer.</p></div><ExportInstruments/></>;
+  return <><div className="science-masthead"><Mark small/><a href="/app/atom-wind/">Retour à l’espace ATOM Wind ↗</a></div><div className="science-intro"><span className="eyebrow">VISUALISEUR D’EXPORT · ATOM Wind</span><h1>Lire un export</h1><p>Les valeurs du fichier exporté, par niveau et par coupe. Altitudes en mètres au-dessus de la mer.</p></div><ExportInstruments/></>;
 }
 initializeTheme();
 createRoot(document.getElementById('root')!).render(<ExportApp/>);

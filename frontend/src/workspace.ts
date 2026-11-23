@@ -15,6 +15,10 @@ export type WorkspaceState = {
   service?: { etat: 'pret' | 'dernier_etat' | 'modele_absent' | 'cle' | 'hors_ligne'; detail?: string | null; depuis?: string | null } | null;
   sceneMode?: 'terrain' | 'analysis';
   terrainSource?: 'national' | 'local';
+  // point choisi (latitude, longitude) ; externe : hors de la zone du modèle, valeurs de la prévision GFS
+  pin?: { lat: number; lon: number };
+  externe?: boolean;
+  activite?: string;
 };
 
 export const initialWorkspace: WorkspaceState = {
@@ -36,6 +40,10 @@ declare global {
         allowed?: (view: string) => boolean;
         role?: () => string;
         placer?: (latitude: number, longitude: number) => string | null;
+        placerExterne?: (latitude: number, longitude: number, nom: string, source: string, vent: (hauteur: number, heure: number) => [number, number] | null) => string;
+        analyser3d?: (longitude: number, latitude: number) => boolean;
+        rafaleMax?: (latitude: number, longitude: number) => { kmh: number; heure: number } | null;
+        zoneServie?: () => { lat0: number; lon0: number; lat1: number; lon1: number; nom: string; national: boolean };
         activite?: (activity: string) => boolean;
         lieux?: () => { nom: string; lat: number; lon: number }[];
         bulletin?: () => any;
@@ -73,6 +81,8 @@ export function startApplication() {
     // fonctions du service sans écran jusque-là (sillage, maintenance, alertes du service, SMS, exports…)
     await import('./engine/services-atom.js');
     await import('./engine/atom-data.js');
+    // finitions de l'interface (apparitions, chiffres clés, « Mon espace », notifications, application installable)
+    await import('./ui-finitions');
   })();
 }
 

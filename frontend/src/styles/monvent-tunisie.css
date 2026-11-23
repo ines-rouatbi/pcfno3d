@@ -1,0 +1,40 @@
+/* Mon vent : carte « Tunisie » des 24 gouvernorats, zoom sur un gouvernorat (monvent-tunisie.tsx) */
+.tnbox{border-radius:12px;overflow:hidden}
+.tn-carte{display:grid;gap:8px;padding:12px;background:linear-gradient(180deg,#0f2a33,#12313b);color:#e8f2f1;border-radius:12px}
+.tn-tete{display:flex;align-items:center;gap:10px;min-height:34px;flex-wrap:wrap}
+.tn-sur{display:inline-flex;align-items:center;gap:6px;font:600 11px var(--f-data);letter-spacing:.04em;color:#9fc0c4}
+.tn-titre{display:grid;gap:1px;flex:1;min-width:0}.tn-titre b{font:600 18px var(--f-editorial)}.tn-titre span{font-size:12px;color:#bcd2d3}
+.tn-haut{margin-left:auto;font:600 11px var(--f-data);color:#9fc0c4;white-space:nowrap}
+.tn-carte .btn{background:#ffffff14;border-color:#ffffff30;color:#e8f2f1;min-height:30px;padding:4px 10px;font-size:12px;display:inline-flex;align-items:center;gap:6px}
+.tn-carte .btn:hover{background:#ffffff26}
+.tn-zone{position:relative;width:100%;aspect-ratio:4/5;max-height:72vh;border-radius:8px;overflow:hidden;background:#0b2028;touch-action:pan-x pan-y}
+.tn-fond,.tn-svg,.tn-traits{position:absolute;inset:0;width:100%;height:100%}
+.tn-traits{pointer-events:none;mix-blend-mode:screen}.tn-fond{pointer-events:none}
+.tn-svg{cursor:zoom-in}.tn-svg.is-zoom{cursor:crosshair}
+.tn-gouv{stroke:#0f2a33;stroke-width:1.2;fill:#2b4a52;opacity:.9;transition:fill .6s var(--ease-instrument,ease),opacity .3s}
+.tn-gouv:focus,.tn-svg:focus{outline:none}
+.tn-gouv:hover,.tn-gouv:focus-visible{opacity:1;stroke:#fff;stroke-width:2;outline:none}
+.tn-gouv.is-voisin{opacity:.28}.tn-gouv.is-voisin:hover{opacity:.5}
+.tn-gouv.is-choisi{opacity:1;stroke:#f1d394;stroke-width:2.6}
+.tn-zone-modele{fill:none;stroke:#f1d394;stroke-width:1.4;stroke-dasharray:5 4;opacity:.75;pointer-events:none}
+.tn-mini,.tn-fleche,.tn-chef,.tn-pin{pointer-events:none}
+.tn-mini path{fill:#0f2a33;opacity:.8}
+.tn-fleche path{fill:#0f2a33;stroke:#ffffffb0;stroke-width:1;opacity:.85}
+.tn-chef circle{fill:#fff;stroke:#0f2a33;stroke-width:.3}.tn-chef text{fill:#fff;font-weight:700;paint-order:stroke;stroke:#0f2a33;stroke-width:.5}
+.tn-pin circle{fill:var(--accent);stroke:#fff;stroke-width:.4}.tn-pin .tn-pin-c{fill:#fff;stroke:none}
+.tn-bulle{position:absolute;transform:translate(12px,-50%);pointer-events:none;display:grid;gap:1px;background:#0b1f26ee;border:1px solid #ffffff2a;border-radius:8px;padding:7px 10px;font-size:12px;color:#e8f2f1;white-space:nowrap;z-index:2}
+.tn-bulle b{font-size:13px}.tn-bulle small{color:#9fc0c4;font-size:11px}
+.tn-pied{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.tn-legende{display:flex;align-items:center;gap:6px;font:10px var(--f-data);color:#bcd2d3}
+.tn-legende i{width:90px;height:6px;border-radius:9px;background:linear-gradient(90deg,#bfe3f2,#59c3a0,#b6d84a,#f4c430,#f08a2c,#e0414b,#a73a9e)}
+.tn-source{font-size:11px;color:#a9c1c2;margin:0;line-height:1.4}
+.tn-squelette{position:absolute;inset:12% 25%;border-radius:40% 30% 45% 35%;background:#ffffff10;animation:tn-pulse 1.2s ease-in-out infinite alternate}
+@keyframes tn-pulse{from{opacity:.4}to{opacity:.9}}
+@media (prefers-reduced-motion: reduce){.tn-gouv{transition:none}.tn-squelette{animation:none}}
+.ext-note{font-size:13px;color:var(--muted);border-left:3px solid var(--warn);padding:6px 10px;margin:10px 0 0;background:var(--warn-soft)}
+/* Vue d'ensemble : aperçu (modèle national servi), sans zoom ; et légende des flèches de la carte de zone */
+.territory-map-tn .tn-carte{border-radius:0;padding:10px 12px}
+.tn-apercu .tn-zone{aspect-ratio:auto;height:420px;max-height:none}
+.territory-ramp{display:inline-flex;align-items:center;gap:5px;margin-left:8px}
+.territory-ramp i{width:64px;height:5px;border-radius:9px;background:linear-gradient(90deg,#bfe3f2,#59c3a0,#b6d84a,#f4c430,#f08a2c,#e0414b,#a73a9e)}
+.gv-bascule{margin-top:12px}.gv-bascule button{display:inline-flex;align-items:center;gap:6px;font-size:13px;padding:6px 14px}

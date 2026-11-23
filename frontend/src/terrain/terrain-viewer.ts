@@ -68,7 +68,7 @@ async function createViewer(host: HTMLElement) {
   const quality=document.getElementById('terrain-quality') as HTMLSelectElement;
   function syncView(){
     const country=camera.position.distanceTo(controls.target)>280000;
-    const title=document.getElementById('terrain-title')!,name=windSource==='national'||country?'Tunisie':'Grand Tunis';if(title.textContent!==name)title.textContent=name;
+    const title=document.getElementById('terrain-title')!,name=windSource==='national'||country?'Tunisie':'Zone détaillée';if(title.textContent!==name)title.textContent=name;
     document.getElementById('terrain-return-wind')!.hidden=windSource==='national'||!country||!windEnabled;
     document.getElementById('terrain-country')!.setAttribute('aria-pressed',String(country));
     document.getElementById('terrain-local')!.setAttribute('aria-pressed',String(!country));
@@ -150,7 +150,7 @@ async function createViewer(host: HTMLElement) {
     const national=windSource==='national',time=forecast?.data.times[forecastIndex];
     const hour=national&&forecast?forecastIndex%24:state.hour;
     const date=national&&time?localDate(time,{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}):'';
-    const label=national?(forecast?.data.source===MODEL_SOURCE?MODEL_SOURCE:'Prévision GFS'):state.source==='hors_ligne'?'Champ local indisponible':'PC-FNO3D · modèle local';
+    const label=national?(forecast?.data.source===MODEL_SOURCE?'ATOM Wind · Tunisie entière':'Prévision GFS'):state.source==='hors_ligne'?'ATOM Wind · Grand Tunis indisponible':'ATOM Wind · Grand Tunis';
     text('terrain-wind-source',windEnabled?`${label} · ${height} m AGL · ${national?date:`${hour} h`}`:'Vent masqué');
     text('terrain-live-meta',`${label} · ${height} m du sol${national&&date?` · ${date}`:''}`);
     text('terrain-native-hour',`${hour} h`);
@@ -165,16 +165,16 @@ async function createViewer(host: HTMLElement) {
     for(const option of heightSelect.options)option.hidden=national&&![10,80].includes(+option.value);
     heightSelect.value=String(height);
     if(national&&forecast){
-      text('terrain-forecast-provenance',forecast.data.source===MODEL_SOURCE?`Modèle national PC-FNO3D (C' s44), blocs de 4 km, journée du ${localDate(forecast.data.times[0],{day:'2-digit',month:'short'})}`:`NOAA GFS via Open-Meteo · grille de lecture 0,5° · récupéré le ${localDate(forecast.data.retrievedAt/1000,{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}${forecast.stale?' · cache':''}`);
-    }else text('terrain-forecast-provenance',national?'Prévision nationale en cours de chargement.':'Champ local limité au Grand Tunis.');
-    sourceSelect.querySelector<HTMLOptionElement>('[value="local"]')!.textContent=state.source==='hors_ligne'?'Grand Tunis · indisponible':'Grand Tunis · PC-FNO3D';
+      text('terrain-forecast-provenance',forecast.data.source===MODEL_SOURCE?`Vent calculé par ATOM Wind, blocs de 4 km, journée du ${localDate(forecast.data.times[0],{day:'2-digit',month:'short'})}`:`NOAA GFS via Open-Meteo · grille de lecture 0,5° · récupéré le ${localDate(forecast.data.retrievedAt/1000,{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}${forecast.stale?' · cache':''}`);
+    }else text('terrain-forecast-provenance',national?'Prévision nationale en cours de chargement.':'Vent ATOM Wind limité au Grand Tunis.');
+    sourceSelect.querySelector<HTMLOptionElement>('[value="local"]')!.textContent=state.source==='hors_ligne'?'Zone détaillée · indisponible':'Zone détaillée · ATOM Wind';
     queueMicrotask(playerState);updatePoint();syncView();render();
   }
   async function prepareWind(){
     if(!terrain)return;
     const revision=++sourceRevision,source=windSource,domain=source==='national'?NATIONAL_DOMAIN:LOCAL_DOMAIN;
     windLoading=true;sourceReady=false;flow.root.visible=false;
-    text('terrain-flow-state',source==='national'?'Chargement des prévisions nationales…':'Préparation du champ local…');
+    text('terrain-flow-state',source==='national'?'Chargement des prévisions nationales…':'Préparation du vent du Grand Tunis…');
     document.getElementById('terrain-forecast-retry')!.hidden=true;
     try{
       const [nextForecast]=await Promise.all([
@@ -190,7 +190,7 @@ async function createViewer(host: HTMLElement) {
       }
       flow.activate(domain);sourceReady=true;lastWindKey='';updateVectors();text('terrain-flow-state','');
     }catch(error){if(!lifetime.signal.aborted&&revision===sourceRevision){
-      text('terrain-flow-state',source==='national'?'Prévision nationale indisponible. Aucune météo de remplacement n’est affichée.':'Champ local indisponible. Réessayez le chargement.');
+      text('terrain-flow-state',source==='national'?'Prévision nationale indisponible. Aucune météo de remplacement n’est affichée.':'Vent du Grand Tunis indisponible. Réessayez le chargement.');
       document.getElementById('terrain-forecast-retry')!.hidden=false;console.error(error);
     }}finally{if(revision===sourceRevision)windLoading=false;}
   }
@@ -219,17 +219,20 @@ async function createViewer(host: HTMLElement) {
     if(!selected){button.hidden=true;return;}
     // gouvernorat du point et moment affiché (heure du curseur, jour choisi) : demande d'Ines, 20/11/2026
     const gv=gouvernoratDe(selected.lon,selected.lat);
-    text('terrain-region',gv?`Gouvernorat de ${gv.nom}`:'Hors de Tunisie');
+    text('terrain-region',gv?`Gouvernorat de ${gv.nom}${gv.exact?'':' (chef-lieu le plus proche)'}`:'En mer ou hors de Tunisie');
     const national=windSource==='national',t=forecast?.data.times[forecastIndex];
     const jourLocal=(window.ATOM as any).jour?.date as string|undefined;
     text('terrain-time',national&&t?localDate(t,{weekday:'long',day:'numeric',month:'long',hour:'2-digit',minute:'2-digit'})
       :`${jourLocal?new Intl.DateTimeFormat(document.documentElement.lang||'fr',{weekday:'long',day:'numeric',month:'long'}).format(new Date(jourLocal+'T12:00:00'))+' · ':''}${workspaceState.hour} h`);
     const sample=fieldSample(selected.lon,selected.lat,height);
-    text('terrain-wind-reading',sample?`${sample.formatted} · ${sample.direction} · ${height} m du sol`:windSource==='national'?'Prévision indisponible à ce point':'Hors du champ de vent Grand Tunis');
+    text('terrain-wind-reading',sample?`${sample.formatted} · ${sample.direction} · ${height} m du sol`:windSource==='national'?'Prévision indisponible à ce point':'Hors de la zone ATOM Wind · Grand Tunis');
     const localAvailable=window.ATOM.workspace?.terrainWind?.(selected.lon,selected.lat,height);
     button.hidden=!sample||!localAvailable;
-    button.textContent=windSource==='national'?'Comparer au champ local ↗':'Ouvrir les conditions locales ↗';
-    text('terrain-point-source',windSource==='national'?'Prévision nationale · NOAA GFS':workspaceState.source==='hors_ligne'?'Champ local indisponible':'PC-FNO3D · Grand Tunis');
+    button.textContent='Ouvrir les conditions locales ↗';
+    // reconstruction 3D du modèle servi : seulement dans sa zone (double clic sur le relief = même chose)
+    const zone=window.ATOM.workspace?.zoneServie?.(),dansZone=!!zone&&selected.lat>=zone.lat0&&selected.lat<=zone.lat1&&selected.lon>=zone.lon0&&selected.lon<=zone.lon1;
+    document.getElementById('terrain-analyse-point')!.hidden=!dansZone;
+    text('terrain-point-source',windSource==='national'?(forecast?.data.source===MODEL_SOURCE?'ATOM Wind · Tunisie entière':'Prévision nationale · NOAA GFS'):workspaceState.source==='hors_ligne'?'ATOM Wind · Grand Tunis indisponible':'ATOM Wind · Grand Tunis');
   }
 
   async function selectPoint(lon:number,lat:number,meshHeight?:number){
@@ -252,6 +255,13 @@ async function createViewer(host: HTMLElement) {
     const box=renderer.domElement.getBoundingClientRect();mouse.set((event.clientX-box.left)/box.width*2-1,1-(event.clientY-box.top)/box.height*2);ray.setFromCamera(mouse,camera);
     const hit=ray.intersectObjects([terrain.land,terrain.water],true).find(item=>visible(item.object));
     if(hit){const point=sceneToGps(hit.point.toArray());void selectPoint(point.longitude,point.latitude,point.heightEGM2008);}
+  });
+  // double clic sur le relief : la reconstruction 3D (PC-FNO3D) centrée sur ce lieu
+  renderer.domElement.addEventListener('dblclick',event=>{
+    if(!terrain)return;
+    const box=renderer.domElement.getBoundingClientRect();mouse.set((event.clientX-box.left)/box.width*2-1,1-(event.clientY-box.top)/box.height*2);ray.setFromCamera(mouse,camera);
+    const hit=ray.intersectObjects([terrain.land,terrain.water],true).find(item=>visible(item.object));
+    if(hit){const point=sceneToGps(hit.point.toArray());window.ATOM.workspace?.analyser3d?.(point.longitude,point.latitude);}
   });
   host.onkeydown=event=>{
     if(event.key==='Escape'){closePoint();host.querySelector<HTMLDetailsElement>('.terrain-options')!.open=false;}
@@ -277,6 +287,7 @@ async function createViewer(host: HTMLElement) {
   (document.getElementById('terrain-height') as HTMLSelectElement).onchange=event=>{height=+(event.target as HTMLSelectElement).value;updateVectors();};
   quality.onchange=()=>{scheduleDetail();updateVectors();};
   document.getElementById('terrain-open-point')!.onclick=()=>{if(selected)window.ATOM.workspace?.terrainPoint?.(selected.lon,selected.lat);};
+  document.getElementById('terrain-analyse-point')!.onclick=()=>{if(selected)window.ATOM.workspace?.analyser3d?.(selected.lon,selected.lat);};
   const locate=document.getElementById('terrain-locate') as HTMLButtonElement;
   locate.onclick=()=>{
     if(!navigator.geolocation){status('La géolocalisation n’est pas disponible.');return;}

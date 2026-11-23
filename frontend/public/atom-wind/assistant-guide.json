@@ -16,15 +16,11 @@
     },
     "carte3d": {
       "nom": "Atmosphère 3D",
-      "resume": "Le vent en 3D au-dessus du relief, à toutes les hauteurs, avec coupes et fiabilité."
+      "resume": "Le vent en 3D au-dessus du relief, à toutes les hauteurs, avec coupes."
     },
     "eolien": {
       "nom": "Énergie éolienne",
       "resume": "Production estimée, vent sur la hauteur du rotor et carte du gisement."
-    },
-    "fiabilite": {
-      "nom": "Données & fiabilité",
-      "resume": "Les stations de mesure, la couverture et les écarts aux vraies mesures."
     },
     "alertes": {
       "nom": "Alertes",
@@ -440,8 +436,7 @@
         "Ouvrez « Atmosphère 3D ».",
         "Réglez « Hauteur au-dessus du sol » pour lire le vent des cultures jusqu’à 1 000 m.",
         "« Tracer une coupe » montre le vent sur une verticale ; « Voir la brise de mer » rejoue l’effet de la côte.",
-        "« Lâcher dans le vent » suit une graine, un grain de sable ou un ballon.",
-        "« Afficher la fiabilité » colore les zones où le vent est moins sûr."
+        "« Lâcher dans le vent » suit une graine, un grain de sable ou un ballon."
       ],
       "questions": [
         "Quel est le profil du vent de 10 à 1 000 m à La Marsa à 15 h ?"
@@ -457,7 +452,7 @@
         },
         {
           "cible": "#terrain-mode-analysis",
-          "texte": "Le mode analyse donne la coupe, la fiabilité et le lâcher dans le vent.",
+          "texte": "Le mode analyse donne la coupe et le lâcher dans le vent.",
           "action": "pointer"
         }
       ]
@@ -495,45 +490,6 @@
         {
           "cible": ".inspect-button",
           "texte": "Puis « Inspecter le point » ouvre sa fiche : profil vertical et explication du vent.",
-          "action": "pointer"
-        }
-      ]
-    },
-    {
-      "id": "fiabilite",
-      "titre": "Savoir si je peux me fier aux chiffres",
-      "vue": "fiabilite",
-      "mots_cles": [
-        "fiabilite",
-        "fiable",
-        "precision",
-        "incertitude",
-        "erreur",
-        "mesure",
-        "anemometre",
-        "stations",
-        "confiance"
-      ],
-      "etapes": [
-        "Ouvrez « Données & fiabilité ».",
-        "La carte « Où le vent est-il bien connu ? » montre les zones sûres (foncées) et moins sûres (pâles).",
-        "« Vérifié sur de vraies mesures » compare ATOM Wind aux anémomètres de Tunis-Carthage, Zaghouan et Nabeul."
-      ],
-      "questions": [
-        "Quelle est la fiabilité du vent près de Zaghouan ?"
-      ],
-      "demo": [
-        {
-          "vue": "fiabilite"
-        },
-        {
-          "cible": "#map2",
-          "texte": "Les zones pâles sont celles où le vent est moins sûr.",
-          "action": "pointer"
-        },
-        {
-          "cible": "#aw-val-mesures",
-          "texte": "Et ici, l'écart du modèle aux vraies mesures.",
           "action": "pointer"
         }
       ]
@@ -604,7 +560,7 @@
       ],
       "etapes": [
         "Ouvrez le menu utilisateur en haut à droite et connectez-vous ou créez un compte.",
-        "Le rôle ouvre les espaces : agriculteur (Agriculture), exploitant éolien (Éolien, Vue d’ensemble, Fiabilité), administrateur (tout).",
+        "Le rôle ouvre les espaces : agriculteur (Agriculture), exploitant éolien (Éolien, Vue d’ensemble), administrateur (tout).",
         "« Mon vent », « Atmosphère 3D » et « Alertes » sont ouverts à tous."
       ],
       "questions": [],
@@ -659,7 +615,6 @@
         "Mon vent : votre lieu et votre activité.",
         "Alertes : ce qui demande attention.",
         "Atmosphère 3D : le vent au-dessus du relief.",
-        "Données & fiabilité : ce que valent les chiffres.",
         "Outils de terrain et Historique."
       ],
       "questions": [
@@ -696,14 +651,6 @@
         {
           "cible": "#terrain-host",
           "texte": "Le vent en 3D au-dessus du relief.",
-          "action": "pointer"
-        },
-        {
-          "vue": "fiabilite"
-        },
-        {
-          "cible": "#map2",
-          "texte": "Où le vent est bien connu, et l'écart aux vraies mesures.",
           "action": "pointer"
         },
         {

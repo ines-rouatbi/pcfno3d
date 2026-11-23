@@ -1,0 +1,8 @@
+/* Ligne de vigilance de la page Alertes (vigilance.tsx) */
+.vg-ligne{display:flex;align-items:center;flex-wrap:wrap;gap:8px 12px;margin:0 0 14px;padding:12px 16px;border-radius:12px;
+  border:1px solid var(--line);border-left:5px solid;background:var(--surface);font-size:14px;line-height:1.5}
+.vg-ligne.is-vert{border-left-color:#2f9e7a}.vg-ligne.is-orange{border-left-color:#d9731d}.vg-ligne.is-rouge{border-left-color:#c9303a}
+.vg-ligne > svg{flex:none;color:var(--accent)}
+.vg-pastille{padding:2px 10px;border-radius:999px;font-size:12px;font-weight:700;color:#fff;white-space:nowrap}
+.vg-ligne.is-vert .vg-pastille{background:#2f9e7a}.vg-ligne.is-orange .vg-pastille{background:#d9731d}.vg-ligne.is-rouge .vg-pastille{background:#c9303a}
+.vg-texte{flex:1;min-width:220px;color:var(--ink)}

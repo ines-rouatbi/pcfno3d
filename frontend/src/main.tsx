@@ -9,10 +9,11 @@ import './styles/atmos.css';
 import './styles/workspace-layout.css';
 import './styles/terrain.css';
 import InstrumentViews from './views/InstrumentViews';
-import { Navigation, Topbar, PageHeading, DataContext, WindReadout, Assistant } from './components';
+import { Navigation, Topbar, PageHeading, DataContext, WindReadout, Assistant, BarreMobile, BasculeGouvernorats } from './components';
 import { useWorkspace } from './workspace';
 import { ServiceState, VUES_DONNEES } from './service-state';
 import { initializeTheme } from './theme';
+import { BulletinDuJour } from './bulletin';
 
 class ErrorBoundary extends Component<{children: ReactNode}, {error: boolean}> {
   state = { error: false };
@@ -61,7 +62,8 @@ function App() {
       previous?.focus({ preventScroll: true });
     };
   }, [menu]);
-  return <ErrorBoundary><a className="skip-link" href="#workspace">Aller à l’espace de travail</a><div className="workspace-main" data-view={state.view} data-gated={gated || undefined}><Topbar onMenu={() => setMenu(!menu)} menuOpen={menu} national={national}/><Navigation open={menu} close={() => setMenu(false)} national={national}/><main className="workspace-content" id="workspace" tabIndex={-1}><PageHeading state={state}/><DataContext state={state}/>{error && <div className="startup-error" role="alert">L’espace n’a pas pu démarrer : {error} <button onClick={() => location.reload()}>Réessayer</button></div>}<WindReadout state={state}/><div className="instruments" data-gated={gated || undefined}>{gated && <ServiceState state={state}/>}<InstrumentViews/></div><footer className="workspace-footer"><span>ATOM Wind <span> / </span> PC-FNO3D</span><span>{national ? 'Tunisie · Prévisions GFS · Outils locaux dans le Grand Tunis' : 'Grand Tunis · Altitudes et sources précisées dans chaque vue'}</span><Assistant state={state}/></footer></main></div><aside className="sheet card" id="sheet" hidden/><div className="tour" id="tour" hidden/><div className="tour" id="authm" hidden/><div className="toast" id="toast" role="status" hidden/><div className="gtip" id="gtip" hidden/><div className="palette" id="palette" hidden/></ErrorBoundary>;
+  const ensemble = state.view === 'tableau' || state.view === 'monvent';   // Vue d'ensemble, avec Mon vent dedans
+  return <ErrorBoundary><a className="skip-link" href="#workspace">Aller à l’espace de travail</a><div className="workspace-main" data-view={state.view} data-gated={gated || undefined}><Topbar onMenu={() => setMenu(!menu)} menuOpen={menu}/><Navigation open={menu} close={() => setMenu(false)}/><BarreMobile onMenu={() => setMenu(true)}/><main className="workspace-content" id="workspace" tabIndex={-1}><PageHeading state={state}/>{ensemble && <BulletinDuJour/>}<DataContext state={state}/>{ensemble && <><div id="aw-chiffres-place"/><div className="overview-bascule"><BasculeGouvernorats vue={state.view}/></div></>}{error && <div className="startup-error" role="alert">L’espace n’a pas pu démarrer : {error} <button onClick={() => location.reload()}>Réessayer</button></div>}<WindReadout state={state}/><div className="instruments" data-gated={gated || undefined}>{gated && <ServiceState state={state}/>}<InstrumentViews/></div><footer className="workspace-footer"><span>ATOM Wind</span><span>{national ? 'Tunisie · Prévisions GFS · Outils locaux dans le Grand Tunis' : 'Tunisie · Altitudes et sources précisées dans chaque vue'}</span><Assistant state={state}/></footer></main></div><aside className="sheet card" id="sheet" hidden/><div className="tour" id="tour" hidden/><div className="tour" id="authm" hidden/><div className="toast" id="toast" role="status" hidden/><div className="gtip" id="gtip" hidden/><div className="palette" id="palette" hidden/></ErrorBoundary>;
 }
 
 initializeTheme();

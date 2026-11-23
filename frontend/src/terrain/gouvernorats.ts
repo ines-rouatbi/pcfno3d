@@ -1,6 +1,6 @@
-// Les 24 gouvernorats de Tunisie (chef-lieu de chacun), pour nommer le point choisi sur la carte 3D.
-// Sans les contours officiels, le gouvernorat affiché est celui du CHEF-LIEU LE PLUS PROCHE : juste à l'intérieur
-// d'un gouvernorat, approximatif près d'une limite entre deux gouvernorats (la page le dit).
+// Les 24 gouvernorats de Tunisie : chef-lieu de chacun, et leurs CONTOURS officiels (geoBoundaries, d'après
+// OpenStreetMap, ODbL ; fichier public/atom-wind/gouvernorats-tn.json, ~160 Ko) pour nommer un point exactement.
+// Tant que les contours ne sont pas chargés, le gouvernorat est celui du chef-lieu le plus proche (la page le dit).
 export const GOUVERNORATS: [string, number, number][] = [
   ['Ariana', 36.8625, 10.1956], ['Béja', 36.7256, 9.1817], ['Ben Arous', 36.7531, 10.2189], ['Bizerte', 37.2744, 9.8739],
   ['Gabès', 33.8815, 10.0982], ['Gafsa', 34.425, 8.7842], ['Jendouba', 36.5011, 8.7802], ['Kairouan', 35.6781, 10.0963],
@@ -10,18 +10,45 @@ export const GOUVERNORATS: [string, number, number][] = [
   ['Tataouine', 32.9297, 10.4518], ['Tozeur', 33.9197, 8.1335], ['Tunis', 36.8065, 10.1815], ['Zaghouan', 36.4029, 10.1429],
 ];
 
+export type Gouvernorat = { nom: string; ar: string; chef_lieu: [number, number]; contours: [number, number][][] };
+export type Contours = { source: string; licence: string; url: string; gouvernorats: Gouvernorat[] };
+
+let contours: Contours | null = null;
+let chargement: Promise<Contours | null> | null = null;
+/** Les contours des 24 gouvernorats (chargés une fois) ; null si le fichier manque. */
+export function chargerContours(): Promise<Contours | null> {
+  return chargement ??= fetch(`${import.meta.env.BASE_URL}atom-wind/gouvernorats-tn.json`)
+    .then(r => (r.ok ? r.json() : null)).then((d: Contours | null) => (contours = d && d.gouvernorats?.length === 24 ? d : null))
+    .catch(() => null);
+}
+
+function dansAnneau(lon: number, lat: number, r: [number, number][]) {
+  let dedans = false;
+  for (let i = 0, j = r.length - 1; i < r.length; j = i++) {
+    const [xi, yi] = r[i], [xj, yj] = r[j];
+    if ((yi > lat) !== (yj > lat) && lon < (xj - xi) * (lat - yi) / (yj - yi) + xi) dedans = !dedans;
+  }
+  return dedans;
+}
+
 const km = (la1: number, lo1: number, la2: number, lo2: number) => {
   const r = Math.PI / 180, a = Math.sin((la2 - la1) * r / 2) ** 2
     + Math.cos(la1 * r) * Math.cos(la2 * r) * Math.sin((lo2 - lo1) * r / 2) ** 2;
   return 12742 * Math.asin(Math.sqrt(a));
 };
 
-/** Le gouvernorat du chef-lieu le plus proche et la distance (km) ; null au-delà de 200 km (hors de Tunisie). */
-export function gouvernoratDe(lon: number, lat: number): { nom: string; distanceKm: number } | null {
-  let best: { nom: string; distanceKm: number } | null = null;
+/** Le gouvernorat d'un point : par ses contours (`exact`) s'ils sont chargés, sinon le chef-lieu le plus proche ;
+ *  null hors de Tunisie (en mer ou à l'étranger avec les contours ; au-delà de 200 km sans eux). */
+export function gouvernoratDe(lon: number, lat: number): { nom: string; distanceKm: number; exact: boolean } | null {
+  if (contours) {
+    const g = contours.gouvernorats.find(x => x.contours.some(r => dansAnneau(lon, lat, r)));
+    return g ? { nom: g.nom, distanceKm: km(lat, lon, g.chef_lieu[0], g.chef_lieu[1]), exact: true } : null;
+  }
+  let best: { nom: string; distanceKm: number; exact: boolean } | null = null;
   for (const [nom, la, lo] of GOUVERNORATS) {
     const d = km(lat, lon, la, lo);
-    if (!best || d < best.distanceKm) best = { nom, distanceKm: d };
+    if (!best || d < best.distanceKm) best = { nom, distanceKm: d, exact: false };
   }
   return best && best.distanceKm <= 200 ? best : null;
 }
+void chargerContours();

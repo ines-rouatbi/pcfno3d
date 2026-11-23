@@ -91,8 +91,8 @@ function style(){
 const carte = (id, titre, intro, formulaire = "") =>
   `<div class="card" id="${id}"><h3>${titre}</h3>${intro ? `<p class="muted sv-note" style="margin:0 0 8px">${intro}</p>` : ""}`
   + (enLigne() ? formulaire : "") + `<div class="sv-res" id="${id}-res" aria-live="polite"></div></div>`;
-const absent = () => `<p class="muted" style="margin:6px 0 0"><span class="pill m">service absent</span> Disponible quand le service PC-FNO3D répond.</p>`;
-const enCours = t => `<p class="muted" style="margin:6px 0 0">${esc(t || "Calcul par le service PC-FNO3D…")}</p>`;
+const absent = () => `<p class="muted" style="margin:6px 0 0"><span class="pill m">service absent</span> Disponible quand le service ATOM Wind répond.</p>`;
+const enCours = t => `<p class="muted" style="margin:6px 0 0">${esc(t || "Calcul par le service ATOM Wind…")}</p>`;
 const echec = t => `<p style="margin:6px 0 0"><span class="pill bad">indisponible</span> ${esc(t)}</p>`;
 const note = t => t ? `<p class="muted sv-note">${esc(t)}</p>` : "";
 const kpis = L => `<div class="kpis">${L.map(([k, v, s]) => `<div class="card kpi"><div class="k">${k}</div><div class="v">${v}</div>${s ? `<div class="s muted">${s}</div>` : ""}</div>`).join("")}</div>`;
@@ -163,11 +163,11 @@ let jourEol = 0;
 function vueEolien(){
   const neuf = monter("svc-eolien",
     `<div class="card"><h3>Outils du service pour le parc et les travaux</h3>`
-    + `<p class="muted sv-note" style="margin:0 0 8px">Calculés par le service PC-FNO3D sur le vent ATOM Wind de la journée choisie (aujourd'hui en temps réel, demain et après-demain en prévision).</p>`
+    + `<p class="muted sv-note" style="margin:0 0 8px">Calculés par le service ATOM Wind sur le vent de la journée choisie (aujourd'hui en temps réel, demain et après-demain en prévision).</p>`
     + (enLigne() ? `<div><b style="font-size:14px">Jour</b><div class="chips" id="sv-eo-jour" style="margin-top:4px">`
       + JOURS.map(([j, t]) => `<button class="chip" data-j="${j}" aria-pressed="${j === jourEol}">${t}</button>`).join("") + `</div></div>` : absent()) + `</div>`
     + carte("sv-sillage", "Production du parc avec et sans sillage",
-        "Parc virtuel de trois éoliennes : la production heure par heure avec les pertes de sillage (modèle de Jensen) et sans elles, et les hausses ou chutes rapides utiles au gestionnaire du réseau.")
+        "Parc virtuel de trois éoliennes : la production heure par heure avec les pertes de sillage (méthode de Jensen) et sans elles, et les hausses ou chutes rapides utiles au gestionnaire du réseau.")
     + carte("sv-maint", "Créneaux sûrs pour le travail en hauteur",
         "Heures où le vent moyen à la nacelle ou au mât reste sous le seuil du site, en plages d'au moins la durée demandée.",
         `<div class="sv-form">${choixLieu("sv-maint-lieu", "Lieu", "", "Parc virtuel (Djebel Ressas)")}`
@@ -288,14 +288,14 @@ function porteurs(){
 const GENRE = { station_muette: "Station muette", physique: "Résidu de masse", vent_fort: "Vent fort" };
 function vueAlertes(){
   monter("svc-alertes", carte("sv-alertes", "Alertes du service en temps réel",
-    "Calculées par le service PC-FNO3D sur le vent du jour : station muette, résidu de masse au-dessus du seuil, vent fort aujourd'hui et demain. Ce sont celles que le service notifie (une seule fois chacune)."));
+    "Calculées par le service ATOM Wind sur le vent du jour : station muette, vent fort aujourd'hui et demain. Ce sont celles que le service notifie (une seule fois chacune)."));
   charger("sv-alertes", "/atom-wind/alertes", d => {
-    const L = d.alertes || [];
+    // les alertes « physique » (résidu de masse) jugent le calcul lui-même : elles ne sont pas affichées
+    const L = (d.alertes || []).filter(a => a.kind !== "physique");
     if(!L.length) return `<p style="margin:6px 0 0"><span class="pill good">rien à signaler</span> Aucune alerte du service en ce moment.</p>`;
     return tableau(["Niveau", "Alerte", "Pourquoi", "Que faire"], L.map(a => {
       const sv = a.station_virtuelle;
-      const virt = sv && ok(sv.vitesse_m_s) ? `<br><span class="muted">Valeur de remplacement à ${entier(sv.heure_locale)} h (station virtuelle) : ${kmh(sv.vitesse_m_s)}`
-        + (ok(sv.erreur_type_m_s) ? ` (erreur type sans elle : ± ${kmh(sv.erreur_type_m_s)}).` : ".") + `</span>` : "";
+      const virt = sv && ok(sv.vitesse_m_s) ? `<br><span class="muted">Valeur de remplacement à ${entier(sv.heure_locale)} h (station virtuelle) : ${kmh(sv.vitesse_m_s)}.</span>` : "";
       return [`<span class="pill ${a.niveau === "important" ? "bad" : "m"}">${a.niveau === "important" ? "important" : "information"}</span>`,
               `<b>${esc(GENRE[a.kind] || a.kind)}</b><br>${esc(a.titre)}`, esc(a.cause) + virt, esc(a.recommandation)];
     }));
@@ -317,11 +317,11 @@ function vueAdmin(){
       "Envoie maintenant les alertes importantes du service qui n'ont pas encore été notifiées (journal, e-mail ou WhatsApp selon la configuration du service).",
       `<div class="sv-form">${bouton("sv-notif-go", "Notifier maintenant")}</div>`)
     + carte("sv-exp", "Exports d'un instant",
-      "Le champ 3D d'un instant du cache du modèle, en NetCDF (CF) ou en CSV des nœuds, avec la version du modèle et l'horodatage source.",
+      "Le champ 3D d'un instant calculé par ATOM Wind, en NetCDF (CF) ou en CSV des nœuds, avec l'horodatage source.",
       `<div class="sv-form"><label for="sv-exp-stem">Instant<select class="inp" id="sv-exp-stem"></select></label>`
       + bouton("sv-exp-nc", "NetCDF (.nc)") + bouton("sv-exp-csv", "CSV des nœuds") + `</div>`)
     + carte("sv-imp", "Importer un fichier de mesures",
-      "Un CSV de mesures d'un seul instant passe d'abord par le contrat de données ANEO : conforme ou en quarantaine, le modèle reconstruit le vent ; rejeté, le rapport dit pourquoi.",
+      "Un CSV de mesures d'un seul instant passe d'abord par le contrat de données ANEO : conforme ou en quarantaine, ATOM Wind calcule le vent ; rejeté, le rapport dit pourquoi.",
       `<div class="sv-form"><label for="sv-imp-f">Fichier CSV (ou .csv.gz)<input class="inp" type="file" id="sv-imp-f" accept=".csv,.gz,text/csv"></label>`
       + bouton("sv-imp-go", "Contrôler et reconstruire") + `</div>`));
   if(!enLigne()){ ["sv-sms", "sv-notif", "sv-exp", "sv-imp"].forEach(id => poser(id, absent())); return; }
@@ -421,7 +421,7 @@ async function importer(){
   const f = document.getElementById("sv-imp-f").files[0];
   if(!f){ poser("sv-imp", echec("Choisissez d'abord un fichier CSV de mesures.")); return; }
   const corps = new FormData(); corps.append("file", f, f.name);
-  poser("sv-imp", enCours("Contrôle du fichier et reconstruction par le modèle (jusqu'à quelques minutes)…"));
+  poser("sv-imp", enCours("Contrôle du fichier et calcul du vent par ATOM Wind (jusqu'à quelques minutes)…"));
   let r;
   try { r = await requete("POST", "/reconstruct/upload", corps); }
   catch(e){ poser("sv-imp", echec(`Service injoignable : ${e.message}`)); return; }
@@ -437,7 +437,7 @@ async function importer(){
       ? "Fichier accepté en quarantaine : les stations signalées ont été masquées avant le calcul."
       : "Fichier conforme au contrat de données."}</p>`
     + kpis([["Instant", esc(d.timestamp_utc || "—"), "UTC"], ["Capteurs utilisés", entier(d.capteurs_utilises), ""],
-            ["Temps de reconstruction", `${num(d.inference_s, 2)} s`, ""], ["Vent maximal", `${num(d.vitesse_max_m_s, 1)} m/s`, kmh(d.vitesse_max_m_s)]])
+            ["Vent maximal", `${num(d.vitesse_max_m_s, 1)} m/s`, kmh(d.vitesse_max_m_s)]])
     + ((d.avertissements || []).length ? `<p style="margin:6px 0 0"><b>Avertissements</b></p><ul class="sv-liste">${d.avertissements.map(m => `<li>${esc(m)}</li>`).join("")}</ul>` : "")
     + (d.stem ? `<p class="muted sv-note">Volume gardé dans le cache du service sous ${esc(d.stem)}.</p>` : "")
     + rapportContrat({ ...d.qualite, motifs: [] }));
@@ -513,13 +513,13 @@ function vueFiabilite(){
   if(panneLa !== admin) delete montees["svc-fiabilite"];      // le rôle a changé : la vue se remonte
   const neuf = monter("svc-fiabilite",
     (admin ? carte("sv-panne", "Et si une station tombait en panne ?",
-      "Une heure déjà mesurée aujourd'hui, recalculée par le modèle sans les stations choisies : ce que la panne change dans le champ, et ce que le reste du réseau devine sans elles.",
+      "Une heure déjà mesurée aujourd'hui, recalculée par ATOM Wind sans les stations choisies : ce que la panne change dans le vent calculé.",
       `<div class="sv-form">${champ("sv-panne-h", "Heure (Tunis)", h0, 0, 23)}`
       + `<fieldset style="border:0;padding:0;margin:0;display:flex;flex-wrap:wrap;gap:4px 12px"><legend style="font-size:13px;font-weight:700">Stations retirées</legend>`
       + stationsDomaine().map((n, i) => `<label style="display:flex;gap:6px;align-items:center;font-weight:400"><input type="checkbox" data-sv-station="${esc(n)}"${i === 0 ? " checked" : ""}> ${esc(n)}</label>`).join("")
       + `</fieldset>${bouton("sv-panne-go", "Recalculer sans ces stations")}</div>`) : "")
     + carte("sv-hist", "Journées archivées par le service",
-      "Chaque journée en temps réel et chaque prévision déjà calculées sont gardées par le service ; une prévision se compare ensuite au temps réel du même jour."));
+      "Chaque journée en temps réel et chaque prévision déjà calculées sont gardées par le service."));
   if(!enLigne()){ poser("sv-panne", absent()); poser("sv-hist", absent()); return; }
   if(neuf && admin){
     document.getElementById("sv-panne-go").onclick = panne;
@@ -536,11 +536,11 @@ function panne(){
     return `<p style="margin:0 0 4px">${date(d.date)}, ${entier(d.heure_locale)} h · retirées : <b>${esc(d.retirees.join(", "))}</b> · mesurées à cette heure : ${esc(d.mesurees.join(", ") || "aucune")}</p>`
       + tableau(["Hauteur", "Écart moyen", "Écart maximal", "Part du domaine au-delà de 0,5 m/s"],
           Object.entries(D).map(([h, x]) => [esc(h.replace("m", " m")), `${num(x.ecart_moyen_m_s, 2)} m/s`, `${num(x.ecart_max_m_s, 2)} m/s`, `${num(x.part_au_dessus_0_5_m_s * 100, 1)} %`]))
-      + tableau(["Station", "État", "Écart du champ", "Erreur avec toutes", "Erreur sans les retirées"],
+      + tableau(["Station", "État", "Écart du champ"],
           S.map(([n, x]) => [esc(n), x.retiree ? `<span class="pill bad">retirée</span>` : x.mesuree ? `<span class="pill good">mesurée</span>` : `<span class="pill m">sans mesure</span>`,
-            `${num(x.ecart_m_s, 2)} m/s`, ok(x.erreur_avec_m_s) ? `${num(x.erreur_avec_m_s, 2)} m/s` : "—", ok(x.erreur_sans_m_s) ? `${num(x.erreur_sans_m_s, 2)} m/s` : "—"]))
-      + `<p class="muted sv-note">Écart : ce que la panne change dans le champ. Erreur sans les retirées, à une station retirée : ce que le reste du réseau et GFS devinent sans elle.</p>`;
-  }, { attente: "Deux passes du modèle à cette heure, avec et sans les stations…" });
+            `${num(x.ecart_m_s, 2)} m/s`]))
+      + `<p class="muted sv-note">Écart : ce que la panne change dans le vent calculé.</p>`;
+  }, { attente: "Deux calculs à cette heure, avec et sans les stations…" });
 }
 function historique(frais = false){
   charger("sv-hist", "/atom-wind/historique", d => {

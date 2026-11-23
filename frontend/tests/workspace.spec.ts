@@ -3,7 +3,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { start as demarrer, admin, ADMIN_EMAIL, ADMIN_MDP } from './helpers';
 
 const directory='output/redesign';
-const views=['tableau','monvent','carte3d','agri','eolien','outils','fiabilite','historique','alertes','admin'];
+const views=['tableau','monvent','carte3d','agri','eolien','outils','historique','alertes','admin'];
 const start=(page:Page)=>demarrer(page,'monvent');
 async function route(page:Page,view:string,mobile=false) {
   if(mobile)await page.getByRole('button',{name:'Ouvrir la navigation',exact:true}).click();

@@ -1,0 +1,39 @@
+/* Alertes en cartes animées (renderAlerts, atom-runtime.js) */
+#alertlist{display:grid;gap:14px}
+#alertlist .alert{position:relative;overflow:hidden;isolation:isolate;border:1px solid var(--line);border-left:6px solid;border-radius:14px;
+  background:var(--surface);box-shadow:0 6px 22px #0b2a3314;padding:18px 18px 16px;transition:transform .25s ease,box-shadow .25s ease}
+#alertlist .alert.stop{border-left-color:var(--stop)} #alertlist .alert.warn{border-left-color:var(--warn)}
+#alertlist .alert.info{border-left-color:var(--info)} #alertlist .alert.go{border-left-color:var(--go)}
+/* halo de la couleur de l'alerte et traînée de vent qui traverse la carte */
+#alertlist .alert::before{content:'';position:absolute;inset:0;z-index:-1;pointer-events:none;opacity:.10;
+  background:radial-gradient(120% 90% at 0% 0%,currentColor,transparent 60%)}
+#alertlist .alert.stop{color:var(--stop)} #alertlist .alert.warn{color:var(--warn)} #alertlist .alert.info{color:var(--info)} #alertlist .alert.go{color:var(--go)}
+#alertlist .alert > div:last-child{color:var(--ink)}
+#alertlist .alert::after{content:'';position:absolute;top:0;left:-40%;width:40%;height:100%;z-index:-1;pointer-events:none;opacity:.12;
+  background:linear-gradient(100deg,transparent,currentColor 50%,transparent);animation:al-souffle 4.5s ease-in-out infinite;animation-delay:calc(var(--i,0) * .6s)}
+@keyframes al-souffle{0%{transform:translateX(0)}60%,100%{transform:translateX(360%)}}
+/* icône : battement doux, plus marqué pour le danger */
+#alertlist .alert .ic{position:relative;border-radius:12px;width:44px;height:44px}
+#alertlist .alert .ic::after{content:'';position:absolute;inset:-4px;border-radius:15px;border:2px solid currentColor;opacity:0;animation:al-onde 2.4s ease-out infinite}
+#alertlist .alert.stop .ic::after{animation-duration:1.4s}
+#alertlist .alert.go .ic::after,#alertlist .alert.info .ic::after{animation:none}
+@keyframes al-onde{0%{transform:scale(.9);opacity:.6}100%{transform:scale(1.35);opacity:0}}
+#alertlist .alert.stop .ic{animation:al-bat 1.4s ease-in-out infinite}
+@keyframes al-bat{0%,100%{transform:scale(1)}50%{transform:scale(1.08)}}
+/* entrée en cascade, seulement quand les alertes changent */
+#alertlist .alert.entree,#alertlist .alertes-calme.entree{animation:al-entree .55s cubic-bezier(.2,.8,.2,1) both;animation-delay:calc(var(--i,0) * 90ms)}
+@keyframes al-entree{from{opacity:0;transform:translateY(14px) scale(.98)}to{opacity:1;transform:none}}
+#alertlist .alert:hover{transform:translateY(-3px);box-shadow:0 12px 30px #0b2a3324}
+#alertlist .alert.sel{outline:3px solid var(--accent);outline-offset:2px}
+/* compte à rebours : la barre brille doucement */
+#alertlist .cdown .bar i{position:relative;overflow:hidden}
+#alertlist .cdown .bar i::after{content:'';position:absolute;inset:0;background:linear-gradient(90deg,transparent,#ffffff80,transparent);animation:al-brille 2.2s linear infinite}
+@keyframes al-brille{from{transform:translateX(-100%)}to{transform:translateX(100%)}}
+/* aucune alerte : un vent calme qui ondule */
+#alertlist .alertes-calme{display:grid;justify-items:start;gap:6px;border-radius:14px;padding:20px}
+#alertlist .calme-ic{width:44px;height:44px;fill:none;stroke:var(--go);stroke-width:3;stroke-linecap:round;animation:al-calme 3.5s ease-in-out infinite}
+@keyframes al-calme{0%,100%{transform:translateX(0)}50%{transform:translateX(6px)}}
+@media (prefers-reduced-motion: reduce){
+  #alertlist .alert,#alertlist .alert::after,#alertlist .alert .ic,#alertlist .alert .ic::after,#alertlist .cdown .bar i::after,#alertlist .calme-ic{animation:none!important}
+}
+#alertlist .alert.stop .ic::after{border-color:var(--stop)} #alertlist .alert.warn .ic::after{border-color:var(--warn)}

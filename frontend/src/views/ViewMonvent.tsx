@@ -1,4 +1,5 @@
 import { memo, type CSSProperties } from "react";
+import CarteTunisie from "../monvent-tunisie";
 export default memo(function ViewMonvent(){ return (
 <section className="view" id="v-monvent">
 <div className="grid2">
@@ -7,8 +8,9 @@ export default memo(function ViewMonvent(){ return (
 <div className="row">
 <select className="inp" id="town" aria-label="Choisir une ville" style={{"flex": "1", "minWidth": "180px"} as CSSProperties}></select>
 </div>
-<div className="mapbar"><div className="seg" role="group" aria-label="Fond de carte"><button id="bm-relief" aria-pressed="true">{"Relief"}</button><button id="bm-osm" aria-pressed="false">{"Vraie carte"}</button></div><button className="btn" id="locate" hidden={true}>{"Me localiser"}</button></div>
-<div className="mapbox" id="map1"><canvas id="c1"></canvas><div className="maphint" id="hint1">{"Touchez la carte pour placer votre position"}</div></div>
+<div className="mapbar"><div className="seg" role="group" aria-label="Fond de carte"><button id="bm-tunisie" aria-pressed="true">{"Tunisie"}</button><button id="bm-relief" aria-pressed="false">{"Relief"}</button><button id="bm-osm" aria-pressed="false">{"Vraie carte"}</button></div><button className="btn" id="locate" hidden={true}>{"Me localiser"}</button></div>
+<div className="tnbox" id="tnbox"><CarteTunisie/></div>
+<div className="mapbox" id="map1" hidden={true}><canvas id="c1"></canvas><div className="maphint" id="hint1">{"Touchez la carte pour placer votre position"}</div></div>
 <div className="lmapbox" id="lmapbox" hidden={true}><div id="lmap"></div><div className="glass lnotice" id="lnotice" hidden={true}></div></div>
 <div className="legend"><span>{"Calme"}</span><span className="ramp"></span><span>{"Très fort"}</span><span className="tip" tabIndex={0} data-tip="Les traits qui bougent montrent le vent : leur couleur indique sa force, leur mouvement sa direction.">{"?"}</span></div>
 </div>

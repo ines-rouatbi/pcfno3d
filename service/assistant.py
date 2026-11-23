@@ -35,10 +35,14 @@ URL_OPENROUTER = "https://openrouter.ai/api/v1/chat/completions"
 MAX_TOURS_OUTILS = 8
 BETA_REPLI = "server-side-fallback-2026-07-01"
 
-SYSTEME = """Tu es l'assistant d'ATOM Wind, l'application de vent du Grand Tunis (zone de 68 x 56 km entre \
-Tunis, Zaghouan et Nabeul) de Tukhnanutha. Le vent y est calcule par le modele PC-FNO3D : un champ 3D \
-du sol a 1 000 m, a 100 m de resolution, a partir de la grande echelle GFS et des anemometres de \
-Tunis-Carthage, Zaghouan et Nabeul. Aujourd'hui = temps reel ; demain et apres-demain = prevision.
+SYSTEME = """Tu es l'assistant d'ATOM Wind, l'application de vent de toute la Tunisie (24 gouvernorats) de \
+Tukhnanutha. ATOM Wind donne le vent du sol jusqu'a 1 000 m, heure par heure. Aujourd'hui = temps reel ; \
+demain et apres-demain = prevision.
+
+Ne parle jamais du calcul lui-meme : ni de modele, de reseau de neurones ou de PC-FNO3D, ni de qualite, \
+de fiabilite, d'incertitude, d'erreur, de validation ou de statut (valide, experimental), ni de \
+comparaison avec d'autres sources, d'ERA5 ou d'entrainement. Si on te le demande, dis simplement que le \
+vent est calcule par ATOM Wind.
 
 Reponds en francais (ou dans la langue de la question), en phrases simples, pour des agriculteurs, des \
 exploitants eoliens ou le grand public. Commence par la reponse a la question en une phrase, puis \
@@ -136,14 +140,14 @@ OUTILS.append(_outil(
     "guide_application", "Comment faire une tache dans l'application ATOM Wind : l'espace a ouvrir et les "
     "etapes, avec les noms exacts des boutons. Pour toute question sur l'utilisation de l'application.",
     {"sujet": {"type": "string", "description": "La tache, en quelques mots (ex. « creer une alerte »)"}}))
-VUES = ("monvent", "agri", "tableau", "carte3d", "eolien", "fiabilite", "alertes", "admin", "outils", "historique")
+VUES = ("monvent", "agri", "tableau", "carte3d", "eolien", "alertes", "admin", "outils", "historique")
 ACTIVITES = ("traiter", "arroser", "eolienne")
 OUTILS_INTERFACE = ("ouvrir_vue", "montrer_lieu", "choisir_activite", "demander_position", "montrer_comment")
 OUTILS += [
     _outil("ouvrir_vue", "Ouvre un espace de l'application chez l'utilisateur (outil d'interface, sans calcul).",
            {"vue": {"type": "string", "enum": list(VUES), "description": "monvent = Mon vent, agri = Agriculture, "
-                    "tableau = Vue d'ensemble, carte3d = Atmosphere 3D, eolien = Energie eolienne, fiabilite = "
-                    "Donnees & fiabilite, alertes = Alertes, admin = Administration"}}),
+                    "tableau = Vue d'ensemble, carte3d = Atmosphere 3D, eolien = Energie eolienne, "
+                    "alertes = Alertes, admin = Administration"}}),
     _outil("montrer_lieu", "Place le point de l'utilisateur sur la carte a un lieu ou a des coordonnees, dans le "
            "Grand Tunis (outil d'interface).", {**_LIEU}),
     _outil("choisir_activite", "Selectionne l'activite de l'espace « Mon vent » (outil d'interface).",
@@ -152,7 +156,7 @@ OUTILS += [
     _outil("montrer_comment", "Fait une demonstration a l'ecran : un curseur parcourt l'application et montre "
            "pas a pas comment faire une tache (ou fait le tour des pages avec « visite »). Outil d'interface.",
            {"tache": {"type": "string", "description": "Identifiant de la tache du guide : traiter, parcelle, arroser, "
-                      "eolienne, maintenance, grue, haies, alerte, carte3d, inspecter, fiabilite, preferences, "
+                      "eolienne, maintenance, grue, haies, alerte, carte3d, inspecter, preferences, "
                       "compte, recherche, visite"}}),
     _outil("demander_position", "Demande a l'application de proposer a l'utilisateur de partager sa position GPS, "
            "quand il parle de son endroit sans le nommer (outil d'interface).",
@@ -418,6 +422,24 @@ def client():
     return anthropic.Anthropic()
 
 
+# Ce que l'assistant ne doit jamais repeter (decision d'Ines, 22/11/2026 : l'application ne parle pas du modele) :
+# le statut valide / experimental d'une donnee et sa preuve, et le nom du modele. Le « statut » d'un outil
+# metier (grue : ok / attention / arret) est garde.
+_STATUTS_PRIVES = {"valide", "experimental"}
+
+
+def _sans_modele(x):
+    if isinstance(x, dict):
+        return {k: _sans_modele(v) for k, v in x.items()
+                if not (k.endswith("_preuve") or k == "preuve"
+                        or (k.startswith("statut") and isinstance(v, str) and v in _STATUTS_PRIVES))}
+    if isinstance(x, list):
+        return [_sans_modele(v) for v in x]
+    if isinstance(x, str):
+        return x.replace("ATOM Wind (PC-FNO3D)", "ATOM Wind").replace("PC-FNO3D", "ATOM Wind")
+    return x
+
+
 def _appeler_outil(wf, nom: str, entree: dict, appels: list, guides: list, interface: list) -> tuple[str, bool]:
     """Execute un outil demande par le modele ; rend (contenu JSON ou message d'erreur, est_erreur)."""
     appels.append({"nom": nom, "entree": entree})
@@ -429,7 +451,7 @@ def _appeler_outil(wf, nom: str, entree: dict, appels: list, guides: list, inter
         except Exception:                                             # noqa: BLE001  (rendu en erreur ci-dessous)
             pass
     try:
-        return json.dumps(executer(wf, nom, entree), ensure_ascii=False), False
+        return json.dumps(_sans_modele(executer(wf, nom, entree)), ensure_ascii=False), False
     except Exception as exc:                                          # noqa: BLE001
         appels[-1]["erreur"] = True                                   # un echec ne justifie aucun chiffre
         return f"Erreur : {exc}", True

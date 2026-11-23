@@ -3,6 +3,7 @@ import { test, expect, type Page } from '@playwright/test';
 async function startTerrain(page:Page,source:'local'|'national'='local') {
   await page.addInitScript(()=>{localStorage.setItem('aw-tour','1');localStorage.setItem('aw-theme',JSON.stringify('light'));});
   await page.goto('/app/atom-wind/#carte3d');
+  await page.locator('#terrain-mode-map').click();   // la reconstruction 3D s'ouvre par défaut
   await page.waitForFunction(()=>window.ATOM?.terrainStats?.().ready,{timeout:45000});
   await expect(page.locator('#terrain-loading')).toBeHidden({timeout:45000});
   await expect(page.locator('#terrain-host canvas')).toBeVisible();
@@ -54,14 +55,14 @@ test('national forecasts cover southern Tunisia and stay distinct from the local
   await page.locator('#terrain-hour').fill('14');await page.locator('#terrain-hour').dispatchEvent('input');
   const changed=await page.evaluate(()=>window.ATOM.terrainStats());expect(changed.forecastTime).toBeGreaterThan(stats.forecastTime);
   await page.locator('#terrain-source').selectOption('local');
-  await expect(page.locator('#terrain-live-meta')).toContainText('PC-FNO3D');
-  await expect(page.locator('.rail-territory b')).toHaveText('Grand Tunis');
+  await expect(page.locator('#terrain-live-meta')).toContainText('ATOM Wind');
+  await expect(page.locator('.rail-territory b')).toHaveText('Tunisie');
   await page.waitForFunction(()=>window.ATOM.terrainStats().windReady);
   expect(await page.evaluate(()=>window.ATOM.terrainExplore.sample(8.13,33.92))).toBeNull();
   await page.locator('#terrain-source').selectOption('national');
   await expect(page.locator('.rail-territory b')).toHaveText('Tunisie');
   await page.locator('#terrain-mode-analysis').click();
-  await expect(page.locator('.rail-territory b')).toHaveText('Grand Tunis');
+  await expect(page.locator('.rail-territory b')).toHaveText('Tunisie');
   await page.locator('#terrain-mode-map').click();
   await expect(page.locator('.rail-territory b')).toHaveText('Tunisie');
 });
@@ -71,7 +72,7 @@ test('wind remains within its domain and selection opens the same geographic poi
   expect(await page.evaluate(()=>window.ATOM.workspace!.terrainWind!(9,34,80))).toBeNull();
   await expect(page.locator('#terrain-wind')).toHaveAttribute('aria-pressed','true');
   await expect.poll(()=>page.evaluate(()=>window.ATOM.terrainStats().windVectors),{timeout:45000}).toBeGreaterThan(30);
-  await expect(page.locator('#terrain-wind-source')).toContainText(/PC-FNO3D/);
+  await expect(page.locator('#terrain-wind-source')).toContainText(/ATOM Wind/);
   await page.evaluate(()=>window.ATOM.terrainExplore.select(10.29,36.68));
   await expect(page.locator('#terrain-elevation')).toContainText('Sol DEM');
   await expect(page.locator('#terrain-wind-reading')).toContainText('80 m du sol');
@@ -113,7 +114,7 @@ test('terrain works on a phone and stops drawing when hidden',async({page})=>{
   await expect(page.locator('#terrain-selection')).toBeVisible();
   await page.evaluate(()=>{(document.activeElement as HTMLElement)?.blur();window.scrollTo({top:0,behavior:'instant'});});
   await page.screenshot({path:'output/redesign/terrain-mobile.png',fullPage:true});
-  await page.locator('.mobile-menu').click();await page.locator('a[data-v="monvent"]').click();
+  await page.locator('.mobile-menu').click();await page.locator('#workspace-navigation a[data-v="tableau"]').click();
   await page.waitForTimeout(500);const frames=await page.evaluate(()=>window.ATOM.terrainStats().frames);
   await page.waitForTimeout(500);expect(await page.evaluate(()=>window.ATOM.terrainStats().frames)).toBe(frames);
 });

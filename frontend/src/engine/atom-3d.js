@@ -6,9 +6,9 @@
 //   V3D2 lignes de courant 3D à 10, 120 et 500 m, colorées par la vitesse, flèche de direction
 //   V3D3 hauteur au-dessus du sol (120 m par défaut) ou altitude, repère « moyeu éolien »
 //   V3D4 coupe horizontale à la hauteur choisie (la coupe verticale est celle de la maquette)
-//   V3D5 fiche d'un point : statut, incertitude, fiabilité, station la plus proche, profil à 80 %
+//   V3D5 fiche d'un point : vent, profil vertical (sans bande d'incertitude : rien sur la qualité du calcul)
 //   V3D6 couches : stations, réseau ANEO prévu, éoliennes, parcelle, coupes, particules, lignes
-//   V3D7 couleur par vitesse, incertitude ou fiabilité, avec légende chiffrée
+//   V3D7 couleur par vitesse, avec légende chiffrée
 //   V3D8 frise : choisir l'heure, rejouer la journée
 //   V3D10 fluidité : nombre de particules et résolution ajustés pour tenir 30 images par seconde
 (() => {
@@ -41,7 +41,7 @@ A.vue3d = ctx => {
           fmtSpeed, dirName, fromDeg, nearestName, openSheet, setHour, hs } = ctx;
   const EX0 = ctx.ex();
   const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
-  const cfg = { mode: "sol", couleur: "vitesse", fact: 5,
+  const cfg = { mode: "sol", couleur: "vitesse", fact: 8,
                 couches: { particules: true, lignes: true, stations: true, aneo: true, eoliennes: true,
                            parcelle: true, coupes: true, horizontale: false, colonnes: false } };
   // relief affiché (grille réelle fine si chargée, sinon grille de la page) : même source que le maillage
@@ -59,8 +59,18 @@ A.vue3d = ctx => {
     if(sigmaModele()){ const s = A.sigma(x, y, z, state.hour); if(s !== null && isFinite(s)) return s; }
     return sigma(x, y, "reel").s;
   }
+  // Flèches et traînées du vent en bleu (demande d'Ines, 22/11/2026) : bleu clair pour un vent faible, bleu
+  // profond à 62 km/h et plus. La même rampe sert à la légende (.ramp-bleu).
+  const BLEUS = [[0, [86, 176, 255]], [20, [36, 126, 240]], [40, [20, 82, 210]], [62, [10, 40, 140]]];
+  function bleu(k){
+    for(let i = 1; i < BLEUS.length; i++) if(k <= BLEUS[i][0]){
+      const [k0, a] = BLEUS[i-1], [k1, b] = BLEUS[i], t = Math.max(0, (k - k0) / (k1 - k0));
+      return [a[0] + (b[0]-a[0])*t, a[1] + (b[1]-a[1])*t, a[2] + (b[2]-a[2])*t];
+    }
+    return BLEUS[BLEUS.length-1][1];
+  }
   function couleur(x, y, z, sp){
-    if(cfg.couleur === "vitesse") return speedColor(kmh(sp));
+    if(cfg.couleur === "vitesse") return bleu(kmh(sp));
     const s = incert(x, y, z);
     return cfg.couleur === "incertitude" ? rampe(COUL_SIGMA, s) : COUL_FIAB[relClass(s)[0]];
   }
@@ -88,16 +98,8 @@ A.vue3d = ctx => {
   };
   function poserLegende(){
     if(!legende) return;
-    if(cfg.couleur === "vitesse"){
-      legende.innerHTML = `<span>0</span><span class="ramp"></span><span>62 km/h et plus</span><span>· vitesse du vent</span>`;
-    } else if(cfg.couleur === "incertitude"){
-      const g = COUL_SIGMA.map(([s, c]) => `rgb(${c}) ${s / 2.5 * 100}%`).join(",");
-      legende.innerHTML = `<span>0</span><span class="ramp" style="background:linear-gradient(90deg,${g})"></span><span>2,5 m/s</span>`
-        + `<span>· écart-type ${sigmaModele() ? "calibré du modèle" : "estimé selon la distance aux stations"}</span>`;
-    } else {
-      legende.innerHTML = ["good", "mid", "bad"].map((k, i) => `<span class="pill ${k}">${["bonne < 0,9 m/s", "moyenne 0,9 à 1,5", "faible > 1,5 m/s"][i]}</span>`).join("")
-        + `<span>· fiabilité (écart-type de la vitesse)</span>`;
-    }
+    // une seule couleur proposée : la vitesse du vent
+    legende.innerHTML = `<span>0</span><span class="ramp ramp-bleu"></span><span>62 km/h et plus</span><span>· vitesse du vent</span>`;
   }
 
   const pan = document.createElement("details");
@@ -107,12 +109,11 @@ A.vue3d = ctx => {
   const coche = (k, t) => `<label style="display:flex;gap:6px;align-items:center"><input type="checkbox" data-c="${k}" ${cfg.couches[k] ? "checked" : ""}>${t}</label>`;
   pan.innerHTML = `<summary style="cursor:pointer;font-weight:700">Affichage 3D</summary>
     <div style="display:grid;gap:8px;margin-top:8px">
-      <p style="font-size:11px;margin:0;color:inherit">${A.pret() ? `Niveaux servis : ${A.jour.hauteurs_agl_m.join(", ")} m du sol. Entre les niveaux : interpolation. Sous le premier niveau : extrapolation de surface non validée.` : "Champ de vent indisponible : le service de calcul ne répond pas."}</p>
-      <label>Relief exagéré : <b id="aw3d-ext">× ${cfg.fact}</b><input type="range" id="aw3d-ex" min="1" max="10" step="1" value="${cfg.fact}" style="width:100%"></label>
+      <p style="font-size:11px;margin:0;color:inherit">${A.pret() ? `Niveaux servis : ${A.jour.hauteurs_agl_m.join(", ")} m du sol. Entre les niveaux : interpolation.` :"Champ de vent indisponible : le service de calcul ne répond pas."}</p>
+      <label>Relief exagéré : <b id="aw3d-ext">× ${cfg.fact}</b><input type="range" id="aw3d-ex" min="1" max="15" step="1" value="${cfg.fact}" style="width:100%"></label>
       <div role="radiogroup" aria-label="Référence de hauteur" style="display:flex;gap:6px;flex-wrap:wrap">
         <label><input type="radio" name="aw3d-mode" value="sol" checked> au-dessus du sol</label>
         <label><input type="radio" name="aw3d-mode" value="alt"> altitude</label></div>
-      <label>Couleur <select class="inp" id="aw3d-coul"><option value="vitesse">vitesse</option><option value="incertitude">incertitude</option><option value="fiabilite">fiabilité</option></select></label>
       <fieldset style="border:0;padding:0;margin:0;display:grid;gap:2px"><legend class="muted" style="font-size:13px">Couches</legend>
         ${coche("particules", "particules")}${coche("lignes", "lignes de courant (3 hauteurs)")}${coche("horizontale", "coupe horizontale à la hauteur choisie")}${coche("colonnes", "colonnes de vent par nœud")}
         ${coche("coupes", "coupe verticale")}${coche("stations", "stations de mesure")}${coche("aneo", "réseau ANEO prévu")}
@@ -128,7 +129,8 @@ A.vue3d = ctx => {
   let socle = null, cote = null;
   function construireSocle(){
     if(socle){ scene.remove(socle); socle.geometry.dispose(); socle.material.dispose(); }
-    const ex = ctx.ex(), bas0 = -1.2 - 400 * ex, n = 160, v = [], ind = [], col = [];
+    // épaisseur du socle à l'échelle du domaine (× 12 sur la Tunisie entière) : même aspect que la carte du Grand Tunis
+    const ex = ctx.ex(), bas0 = -(1.2 * (ctx.echelle || 1) + 400 * ex), n = 160, v = [], ind = [], col = [];
     const bord = [];
     for(let i = 0; i <= n; i++) bord.push([W * i / n, 0]);
     for(let i = 1; i <= n; i++) bord.push([W, H * i / n]);
@@ -190,7 +192,8 @@ A.vue3d = ctx => {
   // ---------------------------------------------------------------- V3D1 : exagération
   const posSt = (o, dy) => o.m.position.set(o.p[0] - W/2, sol(...o.p) * ctx.ex() + dy, -(o.p[1] - H/2));
   function appliquerExageration(f){
-    const ex0 = ctx.ex(), ex = f / 1000, r = ex / ex0;
+    // sur un grand domaine (Tunisie entière, 12 fois le Grand Tunis), le relief est relevé à l'échelle : montagnes visibles
+    const ex0 = ctx.ex(), ex = f / 1000 * Math.max(1, (ctx.echelle || 1) * .6), r = ex / ex0;
     ctx.setEx(ex);
     for(let i = 0; i < pos.count; i++){
       const x = pos.getX(i) + W/2, y = -pos.getZ(i) + H/2;
@@ -238,7 +241,7 @@ A.vue3d = ctx => {
   lignes.geometry.setAttribute("position", new THREE.BufferAttribute(lp, 3));
   lignes.geometry.setAttribute("color", new THREE.BufferAttribute(lc, 3));
   lignes.frustumCulled = false; scene.add(lignes);
-  const fleches = new THREE.InstancedMesh(new THREE.ConeGeometry(.12, .42, 8), new THREE.MeshBasicMaterial({ color: 0xffffff }), nGr);
+  const fleches = new THREE.InstancedMesh(new THREE.ConeGeometry(.07, .26, 8), new THREE.MeshBasicMaterial({ color: 0xffffff }), nGr);
   fleches.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(nGr * 3), 3);
   fleches.frustumCulled = false; scene.add(fleches);
   const M4 = new THREE.Matrix4(), Q = new THREE.Quaternion(), HAUT = new THREE.Vector3(0, 1, 0), DIR = new THREE.Vector3(), POS = new THREE.Vector3(), UN = new THREE.Vector3(1, 1, 1), C = new THREE.Color();
@@ -260,7 +263,7 @@ A.vue3d = ctx => {
         if(x2 < 0 || x2 > W || y2 < 0 || y2 > H) break;
         const z2 = cfg.mode === "sol" ? zc : zc - sol(x2, y2);
         if(z2 < 2) break;
-        const c = speedColor(kmh(sp)), o = n * 6;
+        const c = bleu(kmh(sp)), o = n * 6;
         lp[o] = x - W/2; lp[o+1] = ySc(x, y, z); lp[o+2] = -(y - H/2);
         lp[o+3] = x2 - W/2; lp[o+4] = ySc(x2, y2, z2); lp[o+5] = -(y2 - H/2);
         for(let q = 0; q < 6; q += 3){ lc[o+q] = c[0]/255; lc[o+q+1] = c[1]/255; lc[o+q+2] = c[2]/255; }
@@ -285,7 +288,7 @@ A.vue3d = ctx => {
   // chaque hauteur (couleur selon le reglage de couleur), pour lire le cisaillement et la rotation.
   const H_COL = [10, 50, 100, 200, 500, 1000], PAS_COL_KM = 5;
   const nCol = Math.ceil(W / PAS_COL_KM) * Math.ceil(H / PAS_COL_KM) * H_COL.length;
-  const geoFl = new THREE.ConeGeometry(.28, 1.1, 6); geoFl.rotateX(Math.PI / 2);     // pointe vers +z
+  const geoFl = new THREE.ConeGeometry(.16, .65, 6); geoFl.rotateX(Math.PI / 2);     // pointe vers +z
   const colonnes = new THREE.InstancedMesh(geoFl, new THREE.MeshBasicMaterial({ color: 0xffffff }), nCol);
   colonnes.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(nCol * 3), 3);
   colonnes.frustumCulled = false; colonnes.visible = false; scene.add(colonnes);
@@ -341,7 +344,7 @@ A.vue3d = ctx => {
   const tailGeometry=new THREE.BufferGeometry();
   tailGeometry.setAttribute("position",new THREE.BufferAttribute(tailPosition,3));
   tailGeometry.setAttribute("color",new THREE.BufferAttribute(tailColor,3));
-  const tails=new THREE.LineSegments(tailGeometry,new THREE.LineBasicMaterial({vertexColors:true,transparent:true,opacity:.7,depthWrite:false}));
+  const tails=new THREE.LineSegments(tailGeometry,new THREE.LineBasicMaterial({vertexColors:true,transparent:true,opacity:.95,depthWrite:false}));
   tails.frustumCulled=false;scene.add(tails);
   let particleTime=performance.now();
   const animate=!reduce;
@@ -350,7 +353,7 @@ A.vue3d = ctx => {
   perspectives.innerHTML=`<button class="btn" data-camera="perspective" aria-pressed="true">Perspective</button><button class="btn" data-camera="top" aria-pressed="false">Dessus</button><button class="btn" data-camera="profile" aria-pressed="false">Profil</button><button class="btn scene-pause" id="scene-pause" aria-pressed="${!animate}">${animate?"Pause du vent":"Animer le vent"}</button>`;
   host.append(perspectives);
   const hint=document.createElement("div");hint.className="scene-hint";
-  hint.textContent="Vecteurs horizontaux · animation accélérée · relief × 5";host.append(hint);
+  hint.textContent=`Vecteurs horizontaux · animation accélérée · relief × ${cfg.fact}`;host.append(hint);
   perspectives.querySelectorAll("[data-camera]").forEach(button=>button.onclick=()=>{
     const views={perspective:[-20,68,82],top:[0,105,.01],profile:[88,34,15]};
     cam.position.set(...views[button.dataset.camera]).multiplyScalar(Math.max(1,.95/cam.aspect)*(ctx.echelle||1));ctl.target.set(0,2,0);ctl.update();
@@ -389,7 +392,7 @@ A.vue3d = ctx => {
       pp[o] = p.x - W/2; pp[o+1] = sol(p.x, p.y) * ex + Math.max(.15, z * ex * 1.4); pp[o+2] = -(p.y - H/2);
       const c = couleur(p.x, p.y, z, Math.hypot(u, v));
       pc[o] = c[0]/255; pc[o+1] = c[1]/255; pc[o+2] = c[2]/255;
-      const k=i*6,sp=Math.hypot(u,v)||1, length=.20+Math.min(sp,20)*.035;
+      const k=i*6,sp=Math.hypot(u,v)||1, length=(.18+Math.min(sp,20)*.03)*(ctx.echelle||1);
       tailPosition[k]=pp[o]-u/sp*length;tailPosition[k+1]=pp[o+1];tailPosition[k+2]=pp[o+2]+v/sp*length;
       tailPosition[k+3]=pp[o];tailPosition[k+4]=pp[o+1];tailPosition[k+5]=pp[o+2];
       for(let j=0;j<6;j++)tailColor[k+j]=c[j%3]/255;
@@ -449,39 +452,27 @@ A.vue3d = ctx => {
     const z = Math.max(2, zSol(x, y));
     openSheet(x, y, Math.round(z));
     const sh = document.getElementById("sheet"); if(!sh) return true;
-    const s = incert(x, y, z), [rc, rl] = relClass(s);
-    const prochesSt = STATIONS.map(st => [st.n, Math.hypot(x - st.p[0], y - st.p[1])]).sort((a, b) => a[1] - b[1])[0];
-    const procheStation = prochesSt[1] < .75;
-    // statut, fiabilité, incertitude et station la plus proche à la place des pastilles de la maquette
+    // la fiche ne dit rien de la qualité du calcul (ni incertitude, ni fiabilité, ni station la plus proche)
     const pastilles = sh.querySelector(".pill.m"), ligne0 = pastilles && pastilles.closest(".row");
-    if(ligne0) ligne0.innerHTML = `<span class="pill ${procheStation ? "good" : "m"}">${procheStation ? "Point calculé · proche d’une station" : "Point estimé (calculé)"}</span>`
-      + `<span class="pill ${rc}">Fiabilité ${rl}</span>`;
-    const bloc = document.createElement("p");
-    bloc.style.cssText = "margin:0;font-size:15px";
-    bloc.innerHTML = (sigmaModele() ? `Incertitude : ± ${fmtSpeed(s)} (écart-type calibré sur l'ensemble du modèle). `
-      : `Incertitude calibrée du modèle non servie : fiabilité estimée selon la distance aux stations. `)
-      + `Station la plus proche : <b>${prochesSt[0]}</b>, à ${prochesSt[1].toFixed(1).replace(".", ",")} km.`
-      + (cfg.mode === "alt" ? ` Altitude ${ctx.z3()} m, soit ${Math.round(z)} m au-dessus du sol ici.` : "");
+    if(cfg.mode === "alt"){
+      const bloc = document.createElement("p");
+      bloc.style.cssText = "margin:0;font-size:15px";
+      bloc.textContent = `Altitude ${ctx.z3()} m, soit ${Math.round(z)} m au-dessus du sol ici.`;
+      const apres = ligne0 || sh.querySelector("header");
+      if(apres) apres.after(bloc);
+    }
     const svg = sh.querySelector('svg[aria-label="Profil vertical du vent"]');
     if(svg){
-      // profil avec l'intervalle à 80 % (vitesse ± 1,28 écart-type)
-      const pr = PROFIL_Z.map(zz => { const [u, v] = wind(x, y, zz, state.hour), sp = Math.hypot(u, v), sg = sigmaModele() ? incert(x, y, zz) : 0;
-        return [kmh(sp), kmh(Math.max(0, sp - Z80 * sg)), kmh(sp + Z80 * sg)]; });
-      const mx = Math.max(...pr.map(q => q[2])) * 1.1, Wp = 300, Hp = 170;
+      // profil vertical de la vitesse, sans bande
+      const pr = PROFIL_Z.map(zz => { const [u, v] = wind(x, y, zz, state.hour); return kmh(Math.hypot(u, v)); });
+      const mx = Math.max(...pr) * 1.1, Wp = 300, Hp = 170;
       const X = s2 => 34 + s2 / mx * (Wp - 44), Yz = zz => Hp - 18 - Math.log10(zz / 10) / 2 * (Hp - 30);
-      const bande = pr.map((q, i) => `${X(q[2]).toFixed(1)},${Yz(PROFIL_Z[i]).toFixed(1)}`).concat(pr.slice().reverse().map((q, i) => `${X(q[1]).toFixed(1)},${Yz(PROFIL_Z[PROFIL_Z.length-1-i]).toFixed(1)}`)).join(" ");
-      const ligne = pr.map((q, i) => `${X(q[0]).toFixed(1)},${Yz(PROFIL_Z[i]).toFixed(1)}`).join(" ");
+      const ligne = pr.map((q, i) => `${X(q).toFixed(1)},${Yz(PROFIL_Z[i]).toFixed(1)}`).join(" ");
       svg.innerHTML = [10, 100, 1000].map(zz => `<line x1="34" x2="${Wp-8}" y1="${Yz(zz)}" y2="${Yz(zz)}" stroke="var(--line)"/><text x="30" y="${Yz(zz)+4}" text-anchor="end">${zz} m</text>`).join("")
-        + `<polygon points="${bande}" fill="var(--accent)" opacity=".18"/>`
         + `<polyline points="${ligne}" fill="none" stroke="var(--accent)" stroke-width="2.5"/>`
-        + pr.map((q, i) => `<circle cx="${X(q[0])}" cy="${Yz(PROFIL_Z[i])}" r="3" fill="var(--accent)"/>`).join("")
+        + pr.map((q, i) => `<circle cx="${X(q)}" cy="${Yz(PROFIL_Z[i])}" r="3" fill="var(--accent)"/>`).join("")
         + `<text x="${Wp-8}" y="${Hp-4}" text-anchor="end">km/h →</text>`;
-      const leg = document.createElement("div"); leg.className = "muted"; leg.style.fontSize = "13px";
-      leg.textContent = sigmaModele() ? "Bande claire : intervalle à 80 % du modèle." : "Intervalle d’incertitude non disponible : le modèle ne sert pas d’incertitude calibrée.";
-      svg.after(leg);
     }
-    const p = sh.querySelector("p");
-    if(p) p.replaceWith(bloc); else (ligne0 || sh.querySelector("header")).after(bloc);
     return true;
   }
 
@@ -492,8 +483,9 @@ A.vue3d = ctx => {
     const ancien = cfg.mode; cfg.mode = r.value; if(ancien === cfg.mode) return;
     poserHauteurs(cfg.mode === "sol" ? MOYEU_M : 500);
   });
+  // plus de choix de couleur (incertitude et fiabilité retirées) : cfg.couleur reste « vitesse »
   const coul = pan.querySelector("#aw3d-coul");
-  coul.onchange = () => { cfg.couleur = coul.value; poserLegende(); sale = true; };
+  if(coul) coul.onchange = () => { cfg.couleur = coul.value; poserLegende(); sale = true; };
   function appliquerCouches(){
     const c = cfg.couches;
     tails.visible=c.particules;

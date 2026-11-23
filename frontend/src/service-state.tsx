@@ -4,12 +4,12 @@ import type { WorkspaceState } from './workspace';
 import './styles/service.css';
 
 /** Vues qui n'ont de sens qu'avec le champ de vent du modèle. */
-export const VUES_DONNEES = new Set(['tableau', 'monvent', 'agri', 'eolien', 'fiabilite', 'outils', 'historique']);
+export const VUES_DONNEES = new Set(['tableau', 'monvent', 'agri', 'eolien', 'outils', 'historique']);
 
 const TEXTES = {
   modele_absent: {
-    titre: 'Le modèle de vent arrive bientôt',
-    texte: 'Le service ATOM Wind est en ligne, mais le modèle PC-FNO3D n’est pas encore installé. Dès qu’il le sera, les cartes, les conseils et les alertes de vent s’afficheront ici d’eux-mêmes.',
+    titre: 'Le vent arrive bientôt',
+    texte: 'Le service ATOM Wind est en ligne, mais le calcul du vent n’est pas encore disponible. Dès qu’il le sera, les cartes, les conseils et les alertes de vent s’afficheront ici d’eux-mêmes.',
   },
   cle: {
     titre: 'Connectez-vous pour voir le vent',

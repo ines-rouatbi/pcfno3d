@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { PastillesFlottantes, SLOGAN } from './hero';
 import { ArrowRight, Box } from 'lucide-react';
 import { useEtatPage } from './api';
 import './styles/bulletin.css';
@@ -36,7 +37,9 @@ function Ciel({ b }: { b: Bulletin }) {
       ctx.globalCompositeOperation = 'source-over'; ctx.strokeStyle = couleur; ctx.lineCap = 'round';
       for (const p of parts) {
         const [u, v] = vent(p.x, p.y), s = Math.hypot(u, v);
-        if (!isFinite(s)) { Object.assign(p, nouveau(), { age: 0 }); continue; }
+        // pas de vent (hors des données, sous le relief) : la particule renaît ailleurs au lieu de rester sur place —
+        // immobile, elle était redessinée au même endroit et formait une ligne blanche au bord de la zone calculée
+        if (!isFinite(s) || s < .15) { Object.assign(p, nouveau(), { age: 0 }); continue; }
         const nx = p.x + u * .28, ny = p.y + v * .28;
         ctx.globalAlpha = Math.min(.55, .12 + s / 22); ctx.lineWidth = 1 + Math.min(2.2, s / 7);
         ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(nx, ny); ctx.stroke();
@@ -76,17 +79,21 @@ export function BulletinDuJour() {
     <Ciel b={b}/>
     <div className="bulletin-copy">
       <p className="bulletin-hello">{salut(b.heure)}</p>
-      <h2 className="bulletin-sentence">{`À ${b.lieu}, à ${b.heure} h, le vent vient ${b.direction} à ${b.vitesse}.`}</h2>
-      <p className="bulletin-detail"><span>{b.beaufort}</span> <span>{`Rafales autour de ${b.rafales}.`}</span> <span>{`Sur le Grand Tunis, ${b.moyenne} en moyenne, avec un pic de rafales de ${b.picRafale} vers ${b.picHeure} h.`}</span> <span>{vigilance}</span></p>
+      <h2 className="bulletin-sentence">{`${/^(À |En mer)/.test(b.lieu) ? b.lieu : `À ${b.lieu}`}, à ${b.heure} h, le vent vient ${b.direction} à ${b.vitesse}.`}</h2>
+      <p className="bulletin-detail"><span>{b.beaufort}</span> <span>{`Rafales autour de ${b.rafales}.`}</span> <span>{`Sur ${window.ATOM?.domaine?.()?.national ? 'la Tunisie' : 'le Grand Tunis'}, ${b.moyenne} en moyenne, avec un pic de rafales de ${b.picRafale} vers ${b.picHeure} h.`}</span> <span>{vigilance}</span></p>
       <div className="bulletin-actions">
         <a className="btn primary" href="#monvent">Que puis-je faire ici ?<ArrowRight size={16}/></a>
         <a className="btn" href="#carte3d"><Box size={16}/>Voir le vent en 3D</a>
       </div>
     </div>
+    <div className="bulletin-side">
+    <p className="bulletin-slogan">{SLOGAN}</p>
+    <PastillesFlottantes/>
     <svg className="bulletin-compass" viewBox="-40 -40 80 80" role="img" aria-label={`Le vent va vers ${Math.round(b.versDeg)} degrés`}>
       <circle r="34"/>
       {['N', 'E', 'S', 'O'].map((n, i) => <text key={n} x={27 * Math.sin(i * Math.PI / 2)} y={-27 * Math.cos(i * Math.PI / 2) + 3.5} textAnchor="middle">{n}</text>)}
       <g transform={`rotate(${b.versDeg})`}><path d="M0 -20L6 6L0 2L-6 6Z"/></g>
     </svg>
+    </div>
   </section>;
 }

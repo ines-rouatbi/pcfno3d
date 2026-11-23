@@ -45,7 +45,7 @@ async function directForecast(signal:AbortSignal):Promise<NationalSnapshot>{
   const points:NationalSnapshot['points']=[];let times:number[]=[];
   for(let offset=0;offset<170;offset+=32){
     const coordinates=Array.from({length:Math.min(32,170-offset)},(_,n)=>({latitude:30+Math.floor((offset+n)/10)*.5,longitude:7.5+(offset+n)%10*.5}));
-    const params=new URLSearchParams({latitude:coordinates.map(p=>p.latitude).join(','),longitude:coordinates.map(p=>p.longitude).join(','),hourly:VARIABLES.join(','),wind_speed_unit:'ms',timeformat:'unixtime',timezone:'Africa/Tunis',forecast_days:'2',cell_selection:'nearest'});
+    const params=new URLSearchParams({latitude:coordinates.map(p=>p.latitude).join(','),longitude:coordinates.map(p=>p.longitude).join(','),hourly:VARIABLES.join(','),wind_speed_unit:'ms',timeformat:'unixtime',timezone:'Africa/Tunis',forecast_days:'3',cell_selection:'nearest'});
     const response=await fetch(`https://api.open-meteo.com/v1/gfs?${params}`,{signal:AbortSignal.any([signal,AbortSignal.timeout(25000)])});
     if(!response.ok)throw new Error(`Forecast HTTP ${response.status}`);
     const records=await response.json();if(!Array.isArray(records)||records.length!==coordinates.length)throw new Error('Invalid forecast locations');
@@ -80,11 +80,16 @@ async function modelForecast(signal:AbortSignal):Promise<ModelForecast|null>{
   if(!A.domaine?.()?.national)return null;                        // service sans modele national : GFS
   const [y,m,d]=String(A.jour.date).split('-').map(Number);
   const times=Array.from({length:24},(_,h)=>Date.UTC(y,m-1,d,h-1)/1000);   // heures de Tunis (UTC+1)
-  return new ModelForecast({version:1,source:MODEL_SOURCE,sourceUrl:'',attribution:'PC-FNO3D national C\' s44 (service ATOM Wind)',
+  return new ModelForecast({version:1,source:MODEL_SOURCE,sourceUrl:'',attribution:'ATOM Wind · Tunisie entière',
     retrievedAt:Date.now(),timezone:'Africa/Tunis',grid:{west:7.45,south:30.15,step:.5,nx:10,ny:17},heights:[10,80],times,points:[]});
 }
 export async function loadNationalForecast(signal:AbortSignal){
   const model=await modelForecast(signal);if(model)return model;
+  return loadGfsForecast(signal);
+}
+/** La prévision GFS seule (cache du navigateur, copie du site, puis Open-Meteo), sans attendre le modèle servi :
+ *  la carte « Tunisie » de Mon vent l'utilise hors de la zone du modèle. */
+export async function loadGfsForecast(signal:AbortSignal){
   let cached:NationalSnapshot|undefined;
   try{cached=validate(JSON.parse(localStorage.getItem(CACHE)||'null'));if(usable(cached,HOUR))return new NationalForecast(cached);}catch{}
   try{

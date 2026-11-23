@@ -7,37 +7,16 @@ async function dashboard(page: Page) {
   await page.evaluate(() => window.ATOM.workspace!.navigate('tableau'));
 }
 
-test('territory selection carries the place into local conditions and agriculture', async ({ page }) => {
+test('the overview shows the governorates and opens one', async ({ page }) => {
+  // Vue d'ensemble (22/11/2026) : sous la carte du bulletin, le contenu des Gouvernorats remplace la carte et le point de lecture
   await page.setViewportSize({ width: 1440, height: 1000 });
   await dashboard(page);
-  await page.locator('#tbmap [data-place="7"]').focus();
-  await page.keyboard.press('Enter');
-  await expect(page.locator('#tb-place')).toHaveValue('7');
-  await expect(page.locator('#tbmap [data-place="7"]')).toBeFocused();
-  const speed = await page.locator('.point-reading strong').innerText();
-  await page.locator('#tb-profile').click();
-  await expect(page.locator('#sheet')).toContainText('Soliman');
-  await expect(page.locator('#sheet h2')).toContainText(speed.replace(/\s+/g, ' ').trim());
-  await page.locator('#sheet .x').click();
-  await page.locator('.point-primary').click();
-  await expect(page.locator('.readout-location b')).toHaveText('Soliman');
-  await expect(page.locator('#town')).toHaveValue('7');
-  await page.locator('#town').selectOption('0');
-  await page.locator('a[data-v="tableau"]').click();
-  await expect(page.locator('#tb-place')).toHaveValue('0');
-  await page.locator('#tb-place').selectOption('10');
-  await page.locator('[data-context="agri"]').click();
-  await expect(page.locator('#v-agri')).toHaveClass(/on/);
-  await expect(page.locator('#ag-place')).toHaveValue('10');
-  await expect(page).toHaveURL(/#agri$/);
-  await page.goBack();
-  await expect(page.locator('#v-tableau')).toHaveClass(/on/);
-  await expect(page.locator('#tb-place')).toHaveValue('10');
-  await page.goForward();
-  await expect(page.locator('#v-agri')).toHaveClass(/on/);
-  await expect(page.locator('#ag-place')).toHaveValue('10');
-  await page.locator('a[data-v="admin"]').click();
-  await expect(page.locator('.data-context')).toBeHidden();
+  const bloc = page.locator('#v-tableau .overview-gouvernorats');
+  await expect(bloc.locator('.gv-gouv')).toHaveCount(24);
+  await bloc.locator('.gv-tete select').selectOption('Sfax');
+  await expect(bloc.locator('.gv-tete h2')).toHaveText('Sfax');
+  await page.locator('.bulletin .btn.primary').click();
+  await expect(page.locator('#v-monvent')).toHaveClass(/on/);
 });
 
 test('a dashboard alert opens its corresponding detail', async ({ page }) => {
@@ -62,6 +41,6 @@ test('tablet navigation contains focus and the overview fits intermediate widths
   for (const width of [768, 900, 1024, 1280]) {
     await page.setViewportSize({ width, height: 1024 });
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), `${width}px overflow`).toBe(true);
-    await expect(page.locator('#tb-place')).toBeVisible();
+    await expect(page.locator('#v-tableau .overview-gouvernorats')).toBeVisible();
   }
 });

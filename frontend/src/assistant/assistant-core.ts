@@ -2,8 +2,8 @@
 // POST /api/assistant, géolocalisation et exécution des actions d'interface (liste blanche).
 // Le guide JSON est le même fichier que celui de service/assistant.py (outil guide_application).
 
-export type Vue = 'monvent' | 'agri' | 'tableau' | 'carte3d' | 'eolien' | 'fiabilite' | 'alertes' | 'admin' | 'outils' | 'historique';
-export const VUES: Vue[] = ['monvent', 'agri', 'tableau', 'carte3d', 'eolien', 'fiabilite', 'alertes', 'admin', 'outils', 'historique'];
+export type Vue = 'monvent' | 'agri' | 'tableau' | 'carte3d' | 'eolien' | 'alertes' | 'admin' | 'outils' | 'historique';
+export const VUES: Vue[] = ['monvent', 'agri', 'tableau', 'carte3d', 'eolien', 'alertes', 'admin', 'outils', 'historique'];
 
 import type { EtapeDemo } from './curseur';
 export type Tache = { id: string; titre: string; vue: Vue | null; mots_cles: string[]; etapes: string[]; questions: string[]; demo?: EtapeDemo[] };
@@ -72,7 +72,6 @@ const NOMS_VUES: [Vue, RegExp][] = [
   ['eolien', /[eé]olien|[eé]nergie|production|gisement|wind energy|طاقة/i],
   ['carte3d', /\b3d\b|atmosph[eè]re|relief|carte 3d/i],
   ['alertes', /alerte|alert|تنبيه/i],
-  ['fiabilite', /fiabilit|donn[eé]es|reliab/i],
   ['tableau', /vue d.ensemble|tableau de bord|dashboard|overview/i],
   ['admin', /administr|comptes|admin/i],
   ['monvent', /mon vent|my wind/i],

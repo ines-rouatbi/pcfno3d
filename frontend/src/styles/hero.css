@@ -1,0 +1,10 @@
+/* pastilles flottantes dans la carte du bulletin (fond sombre), sous le slogan */
+.aw-flottant{margin-right:56px}
+.aw-flottant ul{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;max-width:360px}
+.aw-flottant li{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:999px;white-space:nowrap;font-size:12.5px;font-weight:600;
+  color:#ffffff;background:#ffffff1c;border:1px solid #ffffff40;backdrop-filter:blur(4px);box-shadow:0 6px 18px #0b2a3330;
+  animation:aw-flotte 5s ease-in-out infinite}
+.aw-flottant li svg{color:#f1d394}
+@keyframes aw-flotte{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}
+@media (max-width:760px){.aw-flottant{margin:0}.aw-flottant ul{justify-content:flex-start;max-width:none}}
+@media (prefers-reduced-motion: reduce){.aw-flottant li{animation:none}}

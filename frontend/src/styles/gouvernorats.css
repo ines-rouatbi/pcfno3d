@@ -1,0 +1,67 @@
+/* Gouvernorats : carte interactive et page de chaque gouvernorat (ViewGouvernorats.tsx) */
+.gv-grille{display:grid;grid-template-columns:minmax(300px,440px) minmax(0,1fr);gap:18px;align-items:start}
+.gv-sur{display:inline-flex;align-items:center;gap:6px;font:600 10px var(--f-data);letter-spacing:.08em;color:var(--muted)}
+.gv-carte{position:sticky;top:84px;padding:16px;overflow:hidden;background:linear-gradient(180deg,#0f2a33,#12313b);color:#e8f2f1;border:0}
+.gv-carte .muted{color:#a9c1c2}.gv-carte .gv-sur{color:#9fc0c4}
+.gv-carte-tete{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;margin-bottom:8px}
+.gv-carte-tete>div:first-child{display:grid;gap:2px}.gv-carte-tete b{font:600 19px var(--f-editorial)}
+.gv-legende{display:flex;align-items:center;gap:6px;font:10px var(--f-data);color:#bcd2d3;white-space:nowrap}
+.gv-legende i{width:70px;height:6px;border-radius:9px;background:linear-gradient(90deg,#bfe3f2,#59c3a0,#b6d84a,#f4c430,#f08a2c,#e0414b,#a73a9e)}
+.gv-carte-zone{position:relative;aspect-ratio:520/760;width:100%}
+.gv-svg,.gv-particules{position:absolute;inset:0;width:100%;height:100%}
+.gv-particules{pointer-events:none;mix-blend-mode:screen}
+.gv-gouv{stroke:#0f2a33;stroke-width:1.2;fill:#2b4a52;cursor:pointer;transition:fill .6s var(--ease-instrument,ease),opacity .25s,stroke-width .2s;opacity:.86}
+.gv-gouv:hover,.gv-gouv:focus-visible{opacity:1;stroke:#fff;stroke-width:2;outline:none}
+.gv-gouv.is-choisi{opacity:1;stroke:#f1d394;stroke-width:2.6}
+.gv-point{pointer-events:none}.gv-mini-fleche{transition:transform .6s var(--ease-instrument,ease)}.gv-mini-fleche path{fill:#0f2a33;opacity:.8}
+.gv-bulle{position:absolute;transform:translate(12px,-50%);pointer-events:none;display:grid;gap:1px;background:#0b1f26ee;border:1px solid #ffffff2a;border-radius:8px;padding:8px 10px;font-size:12px;color:#e8f2f1;box-shadow:0 8px 24px #0006;backdrop-filter:blur(6px);white-space:nowrap;animation:gv-apparait .15s ease}
+.gv-bulle b{font-size:13px}.gv-source{font-size:11px;color:#a9c1c2;margin:8px 0 0}
+.gv-detail{display:grid;gap:16px;min-width:0}
+.gv-tete{display:grid;gap:12px;background:linear-gradient(135deg,var(--surface),var(--surface-2))}
+.gv-tete-haut{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
+.gv-tete-haut select{width:auto;min-width:150px;max-width:220px}
+.gv-tete h2{margin:2px 0 0;font:600 34px/1.05 var(--f-editorial)}.gv-ar{font-size:18px;color:var(--muted)}
+.gv-maintenant{display:flex;justify-content:space-between;align-items:center;gap:16px}
+.gv-maintenant>div{display:grid;gap:4px}.gv-maintenant .muted::first-letter{text-transform:uppercase}
+.gv-compteur{font:700 64px/1 var(--f-display);letter-spacing:-.03em;font-variant-numeric:tabular-nums}
+.gv-compteur small{font-size:18px;font-weight:600;margin-left:6px;color:var(--muted)}
+.gv-dir{display:flex;align-items:center;gap:6px;font-weight:600}
+.gv-boussole{width:132px;flex:none}.gv-boussole svg{width:100%;height:auto}
+.gv-b-cercle{fill:var(--surface);stroke:var(--line);stroke-width:2}.gv-b-trait{stroke:var(--muted);stroke-width:1.4}
+.gv-b-lettre{font:700 11px var(--f-data);fill:var(--muted)}
+.gv-b-aiguille{transform-origin:60px 60px;transition:transform 1s cubic-bezier(.34,1.56,.64,1)}.gv-b-aiguille path,.gv-b-aiguille circle{fill:var(--accent)}
+.gv-heures{display:grid;gap:10px}
+.gv-heures-tete{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.gv-jours{display:flex;gap:6px}.gv-jours button{display:grid;text-align:left;gap:1px;border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:10px;padding:6px 12px;cursor:pointer;transition:all .2s}
+.gv-jours button span::first-letter{text-transform:uppercase}.gv-jours button small{color:var(--muted);font-size:11px}
+.gv-jours button.on{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}.gv-jours button.on small{color:inherit;opacity:.85}
+.gv-bande{display:grid;grid-template-columns:repeat(24,minmax(38px,1fr));gap:4px;overflow-x:auto;padding-bottom:4px;scroll-snap-type:x mandatory}
+.gv-h{position:relative;display:grid;justify-items:center;gap:4px;padding:8px 2px 26px;border:1px solid transparent;border-radius:10px;background:var(--surface-2);color:var(--ink);cursor:pointer;scroll-snap-align:start;overflow:hidden;transition:transform .18s,border-color .18s,box-shadow .18s}
+.gv-h:hover{transform:translateY(-2px);box-shadow:var(--shadow)}.gv-h.on{border-color:var(--accent);background:var(--surface);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 20%,transparent)}
+.gv-h-heure{font:11px var(--f-data);color:var(--muted)}.gv-h-val{font:700 13px var(--f-data)}
+.gv-h-barre{position:absolute;left:0;right:0;bottom:0;opacity:.28;max-height:22px;transition:height .5s}
+.gv-fleche{transition:transform .5s var(--ease-instrument,ease)}.gv-unite{font-size:12px}
+.gv-bas{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
+.gv-bas .card{display:grid;gap:8px;align-content:start}
+.gv-rose{width:100%;max-width:220px;justify-self:center}.gv-rose-cercle{fill:none;stroke:var(--line)}
+.gv-rose-petale{fill:var(--accent);opacity:.8;transform-origin:100px 100px;animation:gv-pousse .7s cubic-bezier(.2,.8,.2,1) both}
+.gv-rose-lettre{font:700 10px var(--f-data);fill:var(--muted)}
+.gv-role p{margin:0}.gv-lien{display:inline-flex;align-items:center;gap:6px;font-weight:700;color:var(--accent);text-decoration:none}
+.gv-lien:hover{gap:10px}.gv-lien{transition:gap .2s}
+.gv-classement ol{list-style:none;margin:0;padding:0;display:grid;gap:4px;counter-reset:r}
+.gv-classement li button{width:100%;display:flex;justify-content:space-between;gap:8px;border:0;background:var(--surface-2);border-radius:8px;padding:7px 10px;color:var(--ink);cursor:pointer;font-weight:600;transition:transform .15s}
+.gv-classement li button:hover{transform:translateX(3px)}
+/* squelettes de chargement */
+.gv-squelette{border-radius:12px;background:linear-gradient(90deg,#ffffff10 25%,#ffffff26 50%,#ffffff10 75%);background-size:200% 100%;animation:gv-reflet 1.3s linear infinite}
+.gv-squelette-carte{position:absolute;inset:0}.gv-squelette-tete{height:150px;background-color:var(--surface-2)}
+@keyframes gv-reflet{to{background-position:-200% 0}}
+@keyframes gv-pousse{from{transform:scale(.2);opacity:0}}
+@keyframes gv-apparait{from{opacity:0;transform:translate(6px,-50%)}}
+@media(max-width:1100px){.gv-bas{grid-template-columns:1fr 1fr}.gv-classement{grid-column:1/-1}}
+@media(max-width:900px){.gv-grille{grid-template-columns:1fr}.gv-carte{position:relative;top:0}.gv-compteur{font-size:52px}.gv-boussole{width:108px}}
+@media(max-width:560px){.gv-bas{grid-template-columns:1fr}.gv-tete h2{font-size:28px}}
+@media(prefers-reduced-motion:reduce){.gv-gouv,.gv-b-aiguille,.gv-fleche,.gv-mini-fleche,.gv-h,.gv-rose-petale{transition:none;animation:none}}
+
+/* dans la Vue d'ensemble, sous la carte du bulletin */
+.overview-gouvernorats{margin:0 0 22px}
+.overview-bascule{margin:0 0 14px}.overview-bascule .gv-bascule{margin-top:0}

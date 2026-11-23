@@ -95,8 +95,8 @@ async function get(path, ms = 90000){
       const s = await lireEtat(url);
       if(s){ A.dernierEtat = s.recu || "date inconnue"; A.dernierEtatNavigateur = true; return s.json; }
     }
-    if(e.name === "AbortError") throw new Error("le service PC-FNO3D ne répond pas");
-    if(e instanceof TypeError){ const r = new Error("le service PC-FNO3D est injoignable"); r.reseau = true; throw r; }
+    if(e.name === "AbortError") throw new Error("le service ATOM Wind ne répond pas");
+    if(e instanceof TypeError){ const r = new Error("le service ATOM Wind est injoignable"); r.reseau = true; throw r; }
     throw e;
   } finally { clearTimeout(t); }
 }
@@ -128,11 +128,7 @@ A.etatService = () => {
 A.aSigma = () => !!(A.pret() && A.jour._sigma);
 // mode (analyse, temps réel, prévision), date et statut (validé / expérimental) de l'heure affichée, tels que le
 // service les donne (service.atom_outils.annoter) ; à 10 m, le statut de la couche 10 m quand elle existe
-const MODES_FR = { "analyse": "Analyse (ERA5)", "temps reel": "Temps réel", "prevision": "Prévision" };
-function pillStatut(s){
-  return s === "valide" ? `<span class="pill good">Validé</span>` : s === "experimental" ? `<span class="pill mid">Expérimental</span>`
-    : `<span class="pill">Statut non fourni</span>`;
-}
+const MODES_FR = { "analyse": "Analyse", "temps reel": "Temps réel", "prevision": "Prévision" };
 A.statutHeure = (h, z = 10) => {
   if(!A.pret() || !(A.jour.instants || []).length) return null;
   const I = A.jour.instants, i = I.reduce((b, x) => Math.abs(x.heure_locale - h) < Math.abs(b.heure_locale - h) ? x : b, I[0]);
@@ -146,8 +142,8 @@ A.donneeHtml = (h, z = 10) => {
   if(!s) return "";                      // aucune donnée servie : la page montre l'état du service, jamais d'exemple
   const quand = /T/.test(String(s.date)) ? fmtInstant(s.date) : fmtDate(s.date);
   const hors = A.dernierEtat ? ` · <b>Service hors ligne</b> : dernier état réel connu, reçu le ${fmtInstant(A.dernierEtat)}.` : "";
-  return `<p class="aw-donnee">${pillStatut(s.statut)} ${MODES_FR[s.mode] || s.mode} · donnée du ${quand}${hors}`
-    + (s.preuve ? ` <span class="muted">(${s.preuve})</span>` : "") + `</p>`;
+  // ni statut validé / expérimental ni sa preuve : la page ne juge pas le calcul (décision d'Ines)
+  return `<p class="aw-donnee">${MODES_FR[s.mode] || s.mode} · donnée du ${quand}${hors}</p>`;
 };
 
 // ------------------------------------------------------------------ domaine servi (phase 8 nationale)
@@ -164,7 +160,7 @@ A.domaine = () => {
   const p = g.projection, national = !!(g.domaine && g.domaine.etendue === "national");
   return { lat0: p.lat0, lon0: p.lon0, kx: p.km_par_deg_lon, ky: p.km_par_deg_lat, latc: p.lat_centrale,
            w: g.largeur_km, h: g.hauteur_km, g: 1 / g.pas_km, nx: g.nx, ny: g.ny, national,
-           nom: national ? "Tunisie" : ((g.domaine && g.domaine.nom) || "domaine du modèle"),
+           nom: national ? "Tunisie" : ((g.domaine && g.domaine.nom) || "zone servie"),
            stations: (g.stations || []).filter(s => s.lat !== null && s.lat !== undefined) };
 };
 A.nomDomaine = () => { const d = A.domaine(); return d ? d.nom : "Grand Tunis"; };
@@ -274,7 +270,9 @@ A.appliquerGrille = ({ NX, NY, G, elev, wat, z0, LAKES }) => {
     z0[k] = g.z0_m[gj][gi];
   }
   // relief fin (DEM Copernicus 125 m) quand il est là : plus précis que la grille du modèle pour l'affichage
-  if(A.relief && A.relief.pas_km < g.pas_km){ const z = Float32Array.from(z0); appliquerRelief(NX, NY, G, elev, wat, z0);
+  // seulement sur le Grand Tunis : ce relief fin couvre ses 68 × 56 km, l'appliquer au domaine national effaçait le
+  // relief de toute la Tunisie (mer partout sauf une bande au sud-ouest de la reconstruction 3D)
+  if(A.relief && A.relief.pas_km < g.pas_km && A.estGrandTunis(g)){ const z = Float32Array.from(z0); appliquerRelief(NX, NY, G, elev, wat, z0);
     for(let k = 0; k < NX*NY; k++) if(!wat[k]) z0[k] = z[k]; }
 };
 // ------------------------------------------------------------------ relief réel local (sans API)
@@ -314,13 +312,8 @@ function appliquerRelief(NX, NY, G, elev, wat, z0){
   }
 }
 
-A.noteFiabilite = () => {
-  const f = A.aSigma() ? "Fiabilité du réseau actuel : incertitude calibrée du modèle (ensemble par masquage, DSO6)."
-    : "Fiabilité estimée selon la distance à la station la plus proche : l'incertitude calibrée du modèle n'est pas servie.";
-  const r = (A.plan && A.plan.length) ? ` Réseau ANEO : plan de déploiement OS6 (${A.plan.length} capteurs, placés là où l'erreur du modèle baissait le plus).`
-    : " Réseau ANEO : plan de déploiement pas encore calculé pour ce modèle.";
-  return `<p class="muted" style="font-size:13px;margin-top:0">${f}${r}</p>`;
-};
+// plus de note sur la fiabilité dans la page (décision d'Ines) : gardée pour les appelants, sans texte
+A.noteFiabilite = () => "";
 A.planXY = xy => (A.plan && A.plan.length) ? A.plan.map(p => xy(p.lat, p.lon)) : null;
 
 // ------------------------------------------------------------------ bandeau
@@ -336,35 +329,33 @@ function banniere(){
   if(A.pret()){
     const horsLigne = A.dernierEtat ? `<b>Service hors ligne</b> : dernier état réel connu, reçu le ${fmtInstant(A.dernierEtat)}. ` : "";
     const I = A.jour.instants, hh = I.map(x => `${String(Math.floor(x.heure_locale)).padStart(2,"0")} h`).join(", ");
-    const modele = A.jour.modele || A.grille.modele;
     if(A.jour.archive){
       const maj = fmtInstant(A.jour.mis_a_jour_utc);
-      src.innerHTML = horsLigne + `<b>Historique</b> : vent du <b>${fmtDate(A.jour.date)}</b> tel que calculé par <b>PC-FNO3D</b> (${modele}) `
+      src.innerHTML = horsLigne + `<b>Historique</b> : vent du <b>${fmtDate(A.jour.date)}</b> tel que calculé par <b>ATOM Wind</b> `
         + (A.jour.prevision ? `en prévision (GFS), dernier calcul le ${maj}.` : `en temps réel (GFS et anémomètres), dernier calcul le ${maj}.`);
       if(fr) fr.textContent = `Historique · ${fmtDate(A.jour.date)}`;
     } else if(A.jour.temps_reel && A.jour.prevision){
       const maj = new Date(A.jour.mis_a_jour_utc), hm = maj.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", timeZone: "Africa/Tunis" });
-      src.innerHTML = horsLigne + `<b>Prévision</b> du vent pour le <b>${fmtDate(A.jour.date)}</b>, calculée par <b>PC-FNO3D</b> (${modele}) `
+      src.innerHTML = horsLigne + `<b>Prévision</b> du vent pour le <b>${fmtDate(A.jour.date)}</b>, calculée par <b>ATOM Wind</b> `
         + `à partir de la prévision GFS (pas encore de mesure des stations pour ce jour). Calculée à ${hm}.`
         + (A.jour.avertissement ? ` <span class="muted">(${A.jour.avertissement})</span>` : "");
       if(fr) fr.textContent = `Prévision · ${hm}`;
     } else if(A.jour.temps_reel){
       const maj = new Date(A.jour.mis_a_jour_utc), hm = maj.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", timeZone: "Africa/Tunis" });
       const passees = I.filter(x => x.source === "temps reel"), st = new Set(passees.flatMap(x => x.stations));
-      src.innerHTML = horsLigne + `<b>Temps réel</b> : vent d'aujourd'hui (${fmtDate(A.jour.date)}) calculé par <b>PC-FNO3D</b> (${modele}) `
+      src.innerHTML = horsLigne + `<b>Temps réel</b> : vent d'aujourd'hui (${fmtDate(A.jour.date)}) calculé par <b>ATOM Wind</b> `
         + `à partir de la grande échelle GFS et des anémomètres ${[...st].map(c => A.nomStation(c)).join(", ") || "(aucune mesure reçue)"}. `
         + `Heures passées : temps réel ; heures à venir : prévision. Mis à jour à ${hm}.`
         + (A.jour.avertissement ? ` <span class="muted">(${A.jour.avertissement})</span>` : "");
       if(fr) fr.textContent = `Temps réel · ${hm}`;
     } else {
       const zone = A.domaine() ? (A.domaine().national ? "la Tunisie" : A.domaine().nom) : "le Grand Tunis";
-      src.innerHTML = horsLigne + `Vent calculé par le modèle <b>PC-FNO3D</b> (${modele}) sur ${zone}, `
-        + `journée du <b>${fmtDate(A.jour.date)}</b> (jeu de test, jamais vu à l'entraînement). `
-        + `Sorties du modèle à ${hh} (heure de Tunis), interpolées heure par heure. Ce ne sont pas des mesures en direct.`;
-      if(fr) fr.textContent = `Modèle : ${modele}`;
+      src.innerHTML = horsLigne + `Vent calculé par <b>ATOM Wind</b> sur ${zone}, `
+        + `journée du <b>${fmtDate(A.jour.date)}</b>. `
+        + `Calculs à ${hh} (heure de Tunis), interpolés heure par heure.`;
+      if(fr) fr.textContent = `Archive · ${fmtDate(A.jour.date)}`;
     }
-    if(A.jour.couche_10m) src.insertAdjacentHTML("beforeend", ` <span class="muted">Vent à 10 m : ${A.jour.couche_10m}.</span>`);
-    if(A.jour.statut) src.insertAdjacentHTML("beforeend", ` <span class="aw-statut">${pillStatut(A.jour.statut)} <span class="muted">${A.jour.statut_preuve || ""}</span></span>`);
+    // couche_10m (nom du modèle, ERA5) et statut validé / expérimental : plus affichés (décision d'Ines)
     if((A.domaines || []).length > 1){
       const nat = !!(A.domaine() && A.domaine().national);
       src.insertAdjacentHTML("beforeend", ` <span class="aw-domaines">Zone : `
@@ -387,9 +378,9 @@ function banniere(){
     }
   } else {
     const e = A.etatService();
-    if(fr) fr.textContent = e.etat === "modele_absent" ? "Modèle en installation" : e.etat === "cle" ? "Accès requis" : "Service hors ligne";
+    if(fr) fr.textContent = e.etat === "modele_absent" ? "Service en installation" : e.etat === "cle" ? "Accès requis" : "Service hors ligne";
     src.innerHTML = e.etat === "modele_absent"
-      ? `<b>Modèle en cours d'installation</b> : le service répond, mais le modèle PC-FNO3D n'est pas encore installé. Aucune valeur de vent n'est affichée.`
+      ? `<b>ATOM Wind en cours d'installation</b> : le service répond, mais le calcul du vent n'est pas encore installé. Aucune valeur de vent n'est affichée.`
       : e.etat === "cle" ? `<b>Accès requis</b> : ce service demande une connexion ou une clé d'accès.`
       : `<b>Service de calcul hors ligne</b> : aucune valeur de vent n'est affichée tant qu'il ne répond pas.${A.erreur ? ` <span class="muted">(${A.erreur.message})</span>` : ""}`;
     if(A.erreur && A.erreur.auth){
@@ -474,8 +465,7 @@ async function chargerAtlas(){
     + `Vent moyen du domaine ${String(a.vitesse_moyenne_domaine_m_s).replace(".", ",")} m/s, facteur de charge moyen ${Math.round(a.facteur_charge_domaine * 100)} %.</p>`
     + (img ? `<img src="${img}" alt="Atlas éolien : vitesse moyenne et facteur de charge" style="width:100%;border-radius:8px">` : "")
     + `<ol style="margin:8px 0">${sites}</ol>`
-    + (tifs ? `<p style="font-size:13px;margin:4px 0">Export SIG (GeoTIFF, WGS 84) : ${tifs}</p>` : "")
-    + `<p class="muted" style="font-size:12px;margin:0">${a.limites}</p>`;
+    + (tifs ? `<p style="font-size:13px;margin:4px 0">Export SIG (GeoTIFF, WGS 84) : ${tifs}</p>` : "");
   el.querySelectorAll("button[data-tif]").forEach(bt => bt.onclick = async () => {
     const u = await blob(`/atom-wind/atlas/atlas_${bt.dataset.tif}.tif`);
     const lien = document.createElement("a"); lien.href = u; lien.download = `atlas_${bt.dataset.tif}.tif`; lien.click();
@@ -494,7 +484,7 @@ function installerValeurStations(){
   // valeur de chaque station du réseau : outil d'exploitation du réseau, réservé à l'administrateur
   if(!(A.workspace && A.workspace.role && A.workspace.role() === "admin")){ el.hidden = true; el.innerHTML = ""; return; }
   el.innerHTML = `<h3>Valeur de chaque station aujourd'hui</h3>`
-    + `<p class="muted" style="font-size:14px;margin:0 0 8px">Le modèle est relancé sans chaque station, aux heures déjà mesurées : `
+    + `<p class="muted" style="font-size:14px;margin:0 0 8px">ATOM Wind recalcule le vent sans chaque station, aux heures déjà mesurées : `
     + `on voit ce que les autres stations et GFS savent deviner sans elle, et jusqu'où elle change le vent.</p>`
     + `<button class="btn primary" id="aw-valeur-bt">Calculer (environ une minute)</button><div id="aw-valeur-res"></div>`;
   el.hidden = false;
@@ -557,45 +547,18 @@ function installerRapports(){
 A.installerRapports = installerRapports;
 
 // ------------------------------------------------------------------ qualité du modèle servi (TB5)
-// Tout chiffre de qualité vient de l'évaluation du modèle réellement servi (/atom-wind/qualite) : tableau
-// de bord (objectifs DSO), Données & fiabilité (stations) et espace éolien (ballons-sondes). Absente, elle
-// est dite absente.
-const kmhTxt = ms => `${(ms * 3.6).toFixed(1).replace(".", ",")} km/h`;
-function rendreQualite(q){
-  const nb = (v, n = 2) => v === null || v === undefined ? "—" : Number(v).toLocaleString("fr-FR", { maximumSignificantDigits: n });
-  const pill = c => c === null ? `<span class="pill m">à mesurer</span>` : `<span class="pill ${c ? "good" : "mid"}">${c ? "atteint" : "non atteint"}</span>`;
-  const vide = t => `<p class="muted" style="margin:0">${t}</p>`;
-  const bloc = document.querySelector("#v-tableau .dsos");
-  if(bloc) bloc.innerHTML = !q ? vide("Évaluation du modèle servi pas encore disponible.")
-    : `<div><span>Écart moyen sur le champ 3D (u / v)</span><b>${nb(q.rmse_global_u_m_s)} / ${nb(q.rmse_global_v_m_s)} m/s</b></div>`
-    + (q.r2_min_uv !== null ? `<div><span>Part du vent expliquée (R²)</span><b>≥ ${nb(q.r2_min_uv, 3)}</b></div>` : "")
-    + (q.mae_direction_deg ? `<div><span>Erreur sur la direction</span><b>${nb(q.mae_direction_deg)}°</b></div>` : "")
-    + q.dso.map(l => `<div><span>${l.code} ${l.libelle}${l.note ? ` <span class="muted" style="font-size:12px">(${l.note})</span>` : ""}</span>`
-      + `<span>${l.valeur !== null ? `<b style="margin-right:6px">${nb(l.valeur, 3)}${l.unite ? " " + l.unite : ""}</b>` : ""}${pill(l.conforme)}</span></div>`).join("")
-    + `<div class="muted" style="font-size:12px">Modèle ${echapper(q.run)} (${echapper(q.modele || "")}), ${q.instants_synoptiques} instants du test, évaluation ${echapper(q.evaluation)}`
-    + `${q.decision && q.decision.texte ? ` · ${echapper(q.decision.texte)}` : ""}.</div>`;
-  // Données & fiabilité : écart aux vrais anémomètres et aux ballons-sondes
-  const t = document.getElementById("aw-val-mesures");
-  if(t){
-    const L = q ? [...(q.stations || []).map(x => [`Anémomètre de ${x.station}`, x.modele_m_s, x.era5_m_s]),
-                   ...(q.radiosondages || []).map(r => [`Ballons-sondes, ${r.tranche_m.replace(/[(\]]/g, "").replace(", ", " à ")} m`, r.modele_m_s, r.era5_m_s])] : [];
-    t.innerHTML = !L.length ? vide("Pas encore de validation sur de vraies mesures pour le modèle servi.")
-      : `<div class="tblwrap"><table class="t"><thead><tr><th>Mesure réelle</th><th style="text-align:right">ATOM Wind</th><th style="text-align:right">ERA5</th></tr></thead><tbody>`
-      + L.map(([n, a, b]) => `<tr><td>${echapper(n)}</td><td class="n">${a == null ? "—" : (b == null || a <= b ? `<b>${kmhTxt(a)}</b>` : kmhTxt(a))}</td><td class="n">${b == null ? "—" : (a != null && b < a ? `<b>${kmhTxt(b)}</b>` : kmhTxt(b))}</td></tr>`).join("")
-      + `</tbody></table></div><p class="muted" style="margin:8px 0 0;font-size:14px">Erreur vectorielle moyenne sur des jours jamais vus à l'entraînement, chaque station cachée au modèle quand elle est jugée. Une mesure ponctuelle et une valeur calculée sur une maille diffèrent toujours de quelques km/h.</p>`;
-  }
-  // espace éolien : seule mesure en altitude
-  const e = document.getElementById("aw-val-sondes");
-  if(e){
-    const R = q ? (q.radiosondages || []).filter(r => r.modele_m_s != null) : [];
-    e.innerHTML = !R.length ? vide("Pas encore de validation en altitude pour le modèle servi.")
-      : `<div class="dsos">` + R.map(r => `<div><span>${echapper(r.tranche_m.replace(/[(\]]/g, "").replace(", ", " à "))} m · ${r.n} mesures</span><b>${String(r.modele_m_s).replace(".", ",")} m/s${r.era5_m_s != null ? ` <span class="muted">(ERA5 ${String(r.era5_m_s).replace(".", ",")})</span>` : ""}</b></div>`).join("") + `</div>`;
-  }
+// Décision d'Ines : la page ne montre plus rien sur la qualité du calcul (DSO, écarts aux mesures, ballons-sondes,
+// ERA5) ; ces résultats restent dans son mémoire. /atom-wind/qualite n'est plus lu et A.qualite reste null.
+// Les conteneurs qui la montraient (#v-tableau .dsos, #aw-val-mesures, #aw-val-sondes) sont retirés de
+// l'interface : s'il en reste un, il est vidé, et leur absence ne fait jamais d'erreur.
+function rendreQualite(){
+  for(const el of [document.querySelector("#v-tableau .dsos"), document.getElementById("aw-val-mesures"),
+                   document.getElementById("aw-val-sondes")])
+    if(el) el.innerHTML = "";
 }
 async function chargerQualite(){
-  let q = null; try { q = await get("/atom-wind/qualite", 20000); } catch(e){ q = null; }
-  A.qualite = q; rendreQualite(q);
-  if(q && A.rafraichir) A.rafraichir();                         // le bandeau TB1 reprend le résidu de masse
+  A.qualite = null;
+  try { rendreQualite(); } catch(e){}
 }
 A.chargerQualite = chargerQualite;
 
@@ -739,7 +702,7 @@ A.mesureRequete = P.get("test_ux") === "1"
 function installerTestUX(){
   if(P.get("test_ux") !== "1" || document.getElementById("aw-ux")) return;
   // VIS1 : clic sur une vue -> deux images plus tard (rendu fait)
-  const VUES = { tableau: "tableau de bord", carte3d: "vent 3D", fiabilite: "fiabilité" };
+  const VUES = { tableau: "tableau de bord", carte3d: "vent 3D" };
   window.addEventListener("hashchange", () => {
     const v = location.hash.slice(1); if(!VUES[v]) return;
     const t0 = performance.now();
@@ -788,18 +751,15 @@ async function installerSupervision(){
   const carte = document.createElement("div"); carte.className = "card"; carte.id = "aw-sup";
   const tr = Object.entries(d.temps_reel).filter(([, v]) => typeof v === "object")
     .map(([date, v]) => `<li>${fmtDate(date)} : ${v.heures_mesurees} heures mesurées, stations ${v.stations_du_jour.join(", ") || "aucune"}, `
-      + `calculé il y a ${v.calcule_il_y_a_min} min ; ${v.heures_masse_hors_seuil} heure(s) au résidu de masse hors seuil</li>`).join("");
-  const ec = d.ecart_modele_stations.stations ? Object.entries(d.ecart_modele_stations.stations)
-    .map(([n, v]) => `${n} ${v.rmse_vect_m_s === null ? "—" : `${String(v.rmse_vect_m_s).replace(".", ",")} m/s`}`).join(", ") : "indisponible";
+      + `calculé il y a ${v.calcule_il_y_a_min} min</li>`).join("");
   const a = d.acces_24h;
   carte.innerHTML = `<h3>Supervision du service</h3>`
-    + `<p class="muted" style="font-size:13px;margin:0 0 6px">Modèle ${echapper(d.modele)} · état du ${fmtInstant(d.genere_utc)}</p>`
+    + `<p class="muted" style="font-size:13px;margin:0 0 6px">État du ${fmtInstant(d.genere_utc)}</p>`
     + `<ul style="margin:4px 0">${tr || "<li>aucune journée calculée depuis le démarrage</li>"}</ul>`
     + `<p style="margin:4px 0">Accès sur 24 h : ${a.requetes ?? 0} requêtes, ${a.refus ?? 0} refus, ${a.erreurs_serveur ?? 0} erreurs serveur, `
     + `${a.cles_actives ?? 0} clé(s) active(s) ; durée médiane ${a.duree_mediane_ms ?? "—"} ms.</p>`
     + `<p style="margin:4px 0">Historique : ${d.historique.journees} journée(s), ${String(d.historique.taille_mo).replace(".", ",")} Mo. `
-    + `Notifications déjà envoyées : ${d.notifications.alertes_deja_envoyees}.</p>`
-    + `<p style="margin:4px 0">Écart du modèle aux stations aujourd'hui (contrôle de cohérence) : ${ec}.</p>`;
+    + `Notifications déjà envoyées : ${d.notifications.alertes_deja_envoyees}.</p>`;
   vue.appendChild(carte);
 }
 A.installerSupervision = installerSupervision;
@@ -902,41 +862,19 @@ function rendreSerieMoyeu(xy){
   const pos = xy(36.612, 10.33);                                    // E2, au centre du parc virtuel
   const H = Array.from({ length: 24 }, (_, h) => h);
   const v = H.map(h => { const [u, w] = A.vent(pos[0], pos[1], 80, h); return Math.hypot(u, w); });
-  let bande = null, source = "";
-  if(A.aSigma && A.aSigma()){
-    bande = H.map(h => { const s = A.sigma(pos[0], pos[1], 80, h); return isFinite(s) ? [Math.max(0, v[h] - 1.28 * s), v[h] + 1.28 * s] : null; });
-    source = "incertitude calibrée du modèle (ensemble par masquage)";
-  } else if(A.jour.temps_reel && A.ensembles && A.ensembles[A.jour.cle === "prev1" ? 1 : A.jour.cle === "prev2" ? 2 : 0]){
-    const e = A.ensembles[A.jour.cle === "prev1" ? 1 : A.jour.cle === "prev2" ? 2 : 0];
-    const g = A.grille, [i, j] = cellule(pos[0], pos[1]), n = g.nx * g.ny, nq = 3;
-    bande = H.map(() => null);
-    e.instants.forEach((it, k) => {
-      const base = ((k * 2 + 1) * nq) * n + j * g.nx + i;            // hauteur 100 m
-      const q10 = e._q[base], q90 = e._q[base + 2 * n];
-      if(isFinite(q10) && isFinite(q90)) bande[Math.round(it.heure_locale)] = [q10, q90];
-    });
-    source = "quantiles 10-90 % de l'ensemble GEFS à 100 m";
-  }
+  // plus de bande d'incertitude (intervalle) sur la série : décision d'Ines, la page ne juge pas le calcul
   const W = 640, Hh = 220, pl = 52, pb = 24, mx = Math.max(27, ...v.map(z => z + 2));
   const X = h => pl + h * (W - pl - 10) / 23, Y = z => Hh - pb - z / mx * (Hh - pb - 12);
   const ligne = v.map((z, h) => `${h ? "L" : "M"}${X(h).toFixed(1)},${Y(z).toFixed(1)}`).join("");
-  let poly = "";
-  if(bande){
-    const pts = bande.map((b, h) => b ? [h, b] : null).filter(Boolean);
-    if(pts.length > 1) poly = `<path d="${pts.map(([h, b], k) => `${k ? "L" : "M"}${X(h)},${Y(b[1])}`).join("")}`
-      + `${pts.slice().reverse().map(([h, b]) => `L${X(h)},${Y(b[0])}`).join("")}Z" fill="var(--accent)" opacity=".18"/>`
-      + pts.map(([h, b]) => `<line x1="${X(h)}" x2="${X(h)}" y1="${Y(b[0])}" y2="${Y(b[1])}" stroke="var(--accent)" stroke-opacity=".5"/>`).join("");
-  }
   carte.hidden = false;
   carte.innerHTML = `<h3>Vent au moyeu du parc virtuel (80 m), heure par heure</h3>`
-    + `<div class="tblwrap"><svg viewBox="0 0 ${W} ${Hh}" style="width:100%;min-width:320px;height:auto" role="img" aria-label="Vent au moyeu avec intervalle et seuils">`
+    + `<div class="tblwrap"><svg viewBox="0 0 ${W} ${Hh}" style="width:100%;min-width:320px;height:auto" role="img" aria-label="Vent au moyeu et seuils de l'éolienne">`
     + [0, 10, 20].map(z => `<line x1="${pl}" x2="${W - 10}" y1="${Y(z)}" y2="${Y(z)}" stroke="var(--line)"/><text x="${pl - 6}" y="${Y(z) + 4}" text-anchor="end">${z} m/s</text>`).join("")
     + [0, 6, 12, 18, 23].map(h => `<text x="${X(h)}" y="${Hh - 6}" text-anchor="middle">${h} h</text>`).join("")
     + SEUILS_EOL.map(([z, t]) => `<line x1="${pl}" x2="${W - 10}" y1="${Y(z)}" y2="${Y(z)}" stroke="var(--stop)" stroke-dasharray="4 4" stroke-opacity=".7"/>`
       + `<text x="${W - 12}" y="${Y(z) - 4}" text-anchor="end" font-size="11">${t}</text>`).join("")
-    + poly + `<path d="${ligne}" fill="none" stroke="var(--accent)" stroke-width="2.6"/></svg></div>`
-    + `<p class="muted" style="font-size:13px;margin:6px 0 0">${bande ? `Bande claire : intervalle à 80 % (${source}).` : "Intervalle non disponible : incertitude du modèle non servie et ensemble GEFS pas encore calculé."}`
-    + ` Seuils de l'éolienne de référence (générique 2 MW).</p>`;
+    + `<path d="${ligne}" fill="none" stroke="var(--accent)" stroke-width="2.6"/></svg></div>`
+    + `<p class="muted" style="font-size:13px;margin:6px 0 0">Seuils de l'éolienne de référence (générique 2 MW).</p>`;
 }
 A.rendreSerieMoyeu = rendreSerieMoyeu;
 
@@ -961,21 +899,13 @@ A.alertesService = xy => {
     if(n < 3 * c) continue;
     // station virtuelle (BF37) : le vent du modele a sa place, et l'erreur mesuree sans elle (REEL1)
     const h = heureLocale(), [pu, pv] = A.vent(...xy(la, lo), 10, h);
-    const reel = A.qualite && (A.qualite.stations || []).find(st => st.station === nom);
-    const virt = isFinite(pu) ? ` Valeur de remplacement à ${h} h (station virtuelle) : ${Math.round(Math.hypot(pu, pv) * 3.6)} km/h`
-      + (reel && reel.modele_m_s ? ` (erreur type sans elle : ± ${Math.round(reel.modele_m_s * 3.6)} km/h).` : ".") : "";
+    const virt = isFinite(pu) ? ` Valeur de remplacement à ${h} h (station virtuelle) : ${Math.round(Math.hypot(pu, pv) * 3.6)} km/h.` : "";
     out.push({ cls: n >= 6 * c ? "warn" : "info", p: xy(la, lo), r: 1.5, t: `Station muette : ${nom}`, where: nom,
                when: n === I.length ? "aucune mesure reçue aujourd'hui" : `aucune mesure depuis ${n} h`,
-               what: "Le vent est calculé sans cette station : la fiabilité baisse autour d'elle." + virt,
+               what: "Le vent est calculé sans cette station." + virt,
                todo: "Vérifier la transmission de la station (METAR ou SYNOP)." });
   }
-  const mauvais = A.jour.instants.filter(x => x.residu_masse_ok === false);
-  if(mauvais.length)
-    out.push({ cls: "warn", p: A.domaine() ? [A.domaine().w / 2, A.domaine().h / 2] : xy(36.65, 10.42), r: 6,
-               at: mauvais[0].heure_locale, t: "Physique : résidu de masse au-dessus du seuil",
-               where: A.nomDomaine(), when: `${mauvais.length} heure(s), dès ${mauvais[0].heure_locale} h`,
-               what: "Le champ calculé conserve mal la masse à ces heures : valeurs moins sûres.",
-               todo: "Consulter la vue Fiabilité ; signaler à l'équipe si cela se répète." });
+  // l'alerte « résidu de masse » jugeait le calcul lui-même : retirée de la page (décision d'Ines)
   return out;
 };
 
@@ -993,7 +923,7 @@ A.kpisReels = h => {
         : (x.source === "prevision" ? "prévision : pas encore de mesure" : "aucune mesure reçue")]);
     }
     if(typeof x.inference_s === "number")
-      out.push(["Temps de reconstruction", `${x.inference_s.toFixed(2).replace(".", ",")} s`, "une carte 3D par le modèle"]);
+      out.push(["Temps de reconstruction", `${x.inference_s.toFixed(2).replace(".", ",")} s`, "une carte 3D par ATOM Wind"]);
   }
   const g = A.grille; let s = 0, n = 0;
   for(let j = 0; j < g.ny; j += 3) for(let i = 0; i < g.nx; i += 3){
@@ -1001,13 +931,7 @@ A.kpisReels = h => {
     if(isFinite(u) && isFinite(v)){ s += Math.hypot(u, v); n++; }
   }
   if(n) out.push(["Vent au moyeu (80 m)", `${(s / n).toFixed(1).replace(".", ",")} m/s`, "moyenne de la zone"]);
-  const xi = I.length ? I.reduce((b, y) => Math.abs(y.heure_locale - h) < Math.abs(b.heure_locale - h) ? y : b, I[0]) : null;
-  const d2 = A.qualite && A.qualite.dso.find(l => l.code === "DSO2");
-  if(xi && typeof xi.residu_masse_rms === "number")
-    out.push(["Résidu de masse", xi.residu_masse_rms.toExponential(1).replace(".", ","),
-              xi.residu_masse_ok ? "cet instant, sous le seuil" : "cet instant, au-dessus du seuil"]);
-  else if(d2 && d2.valeur !== null)
-    out.push(["Résidu de masse", Number(d2.valeur).toExponential(1).replace(".", ","), d2.conforme ? "sous le seuil (test)" : "au-dessus du seuil (test)"]);
+  // plus de « résidu de masse » (indicateur de qualité du calcul) dans le bandeau (décision d'Ines)
   return out;
 };
 A.htmlInfluence = (x, y) => {
@@ -1024,7 +948,7 @@ function sourceEolien(){
   const el = document.getElementById("aw-eol-src"); if(!el || !A.pret()) return;
   el.textContent = A.jour.temps_reel
     ? "Aujourd'hui : vent en temps réel (GFS et anémomètres) ; demain et après-demain : prévision GFS affinée par ATOM Wind."
-    : `Journée du ${fmtDate(A.jour.date)} (archive du modèle) ; les prévisions de demain et d'après-demain viennent avec le temps réel.`;
+    : `Journée du ${fmtDate(A.jour.date)} (archive ATOM Wind) ; les prévisions de demain et d'après-demain viennent avec le temps réel.`;
 }
 A.sourceEolien = sourceEolien;
 
@@ -1052,10 +976,10 @@ A.htmlProba = (d, x, y) => {
 };
 A.choisirJour = async date => {
   const src = document.getElementById("aw-source");
-  if(src) src.innerHTML = date === "direct" ? "Calcul du vent d'aujourd'hui par le modèle…"
-    : /^prev/.test(date) ? "Calcul de la prévision par le modèle…"
+  if(src) src.innerHTML = date === "direct" ? "Calcul du vent d'aujourd'hui par ATOM Wind…"
+    : /^prev/.test(date) ? "Calcul de la prévision par ATOM Wind…"
     : date.startsWith("hist:") ? "Lecture de l'historique…"
-    : `Calcul du vent du ${fmtDate(date)} par le modèle…`;
+    : `Calcul du vent du ${fmtDate(date)} par ATOM Wind…`;
   try { await chargerJour(date); A.erreur = null; }
   catch(e){ A.erreur = e; }
   A.banniere();
@@ -1078,7 +1002,7 @@ function chargement(msg){
       + "font:16px/1.4 system-ui,sans-serif;text-align:center;padding:24px";
     document.body.appendChild(el);
   }
-  el.innerHTML = `<div style="font-size:22px;font-weight:700">ATOM Wind</div><div>${msg}</div>`;
+  el.innerHTML = `<div style="font-size:22px;font-weight:700">ATOM Wind</div><div>${msg}</div><div class="aw-chargement-barre" aria-hidden="true"><i></i></div>`;
 }
 function lancerPage(){
   installerTestUX();
@@ -1108,7 +1032,7 @@ function heureLocale(){
 }
 
 async function demarrer(){
-  chargement("Connexion au modèle PC-FNO3D…");
+  chargement("Connexion au service ATOM Wind…");
   const relief = chargerRelief();
   try {
     try { A.domaines = (await get("/atom-wind/domaines", 15000)).domaines || []; } catch(e){ A.domaines = []; }
@@ -1130,13 +1054,13 @@ async function demarrer(){
     catch(e){ A.plan = null; }
     let fait = false;
     if(A.direct && P.get("jour") === null){
-      chargement("Calcul du vent d'aujourd'hui en temps réel par le modèle (jusqu'à une minute)…");
+      chargement("Calcul du vent d'aujourd'hui en temps réel par ATOM Wind (jusqu'à une minute)…");
       try { await chargerJour("direct"); fait = true; }
       catch(e){ if(e.auth) throw e; console.warn("ATOM Wind : temps réel indisponible", e); A.avertDirect = e.message; }
     }
     if(!fait){
       const jd = journeeParDefaut();
-      chargement(`Calcul du vent du ${fmtDate(jd)} par le modèle (jusqu'à une minute au premier chargement)…`);
+      chargement(`Calcul du vent du ${fmtDate(jd)} par ATOM Wind (jusqu'à une minute au premier chargement)…`);
       await chargerJour(jd);
     }
   } catch(e){

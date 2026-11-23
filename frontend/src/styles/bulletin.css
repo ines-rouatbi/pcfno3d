@@ -34,3 +34,21 @@
 #aw-moyeu { margin-top: 18px; }
 #aw-moyeu .tblwrap { max-width: 860px; }
 #aw-moyeu svg text { font-family: var(--f-body); }
+
+/* slogan d'ATOM Wind à droite de la phrase du bulletin, au-dessus de la boussole */
+.bulletin-side { align-self: stretch; display: flex; flex-direction: column; justify-content: space-between; align-items: flex-end; gap: 14px; }
+.bulletin-slogan { margin: 0 56px 0 0; max-width: none; white-space: nowrap; text-align: right; font: 500 clamp(20px, 2.2vw, 28px)/1.2 var(--f-editorial);
+  letter-spacing: -.01em; color: #ffffff; text-shadow: 0 2px 12px #0b2a3340; }
+.bulletin-slogan em { display: block; font-style: italic; color: #f1d394; }
+@media (max-width: 760px) { .bulletin-side { display: contents; } .bulletin-slogan { margin: 0; text-align: left; max-width: none; white-space: normal; order: -1; } }
+/* les traînées de vent du ciel ne passent plus sur le slogan ni les pastilles : halo sombre doux derrière eux */
+.bulletin-slogan, .bulletin-side .aw-flottant { position: relative; }
+.bulletin-slogan::before, .bulletin-side .aw-flottant::before { content: ''; position: absolute; inset: -26px -40px; z-index: -1; pointer-events: none;
+  background: radial-gradient(closest-side, #0d3f52f0 45%, #0d3f5299 72%, #0d3f5200 100%); }
+:root[data-theme="dark"] .bulletin-slogan::before, :root[data-theme="dark"] .bulletin-side .aw-flottant::before {
+  background: radial-gradient(closest-side, #071c24f0 45%, #071c2499 72%, #071c2400 100%); }
+
+/* slogan qui glisse doucement de gauche à droite, puis revient (immobile avec « mouvement réduit ») */
+.bulletin-slogan { animation: aw-slogan-glisse 7s ease-in-out infinite alternate; will-change: transform; }
+@keyframes aw-slogan-glisse { from { transform: translateX(-24px); } to { transform: translateX(10px); } }
+@media (prefers-reduced-motion: reduce) { .bulletin-slogan { animation: none; } }

@@ -8,7 +8,7 @@ export class ErreurApi extends Error {
 }
 
 const MESSAGES: Record<string, string> = {
-  'modele non installe sur ce service': 'Le modèle de vent n’est pas encore installé sur ce service.',
+  'modele non installe sur ce service': 'Le calcul du vent n’est pas encore disponible sur ce service.',
 };
 
 export async function api<T = any>(chemin: string, init: RequestInit = {}, ms = 120000): Promise<T> {
@@ -31,10 +31,13 @@ export async function api<T = any>(chemin: string, init: RequestInit = {}, ms = 
 
 /** L'état publié par le moteur (vue ouverte, source des données, rôle) : pour charger une vue quand elle s'ouvre. */
 export function useEtatPage(): WorkspaceState | null {
-  const [etat, setEtat] = useState<WorkspaceState | null>(() => typeof window === 'undefined' ? null : window.ATOM?.workspace?.snapshot?.() ?? null);
+  // snapshot() publie l'état (événement atom:state) : l'appeler pendant le rendu mettait à jour d'autres composants en
+  // plein rendu (avertissement React) ; on le lit donc après le premier rendu
+  const [etat, setEtat] = useState<WorkspaceState | null>(null);
   useEffect(() => {
     const maj = (e: Event) => setEtat((e as CustomEvent<WorkspaceState>).detail);
     window.addEventListener('atom:state', maj);
+    setEtat(window.ATOM?.workspace?.snapshot?.() ?? null);
     return () => window.removeEventListener('atom:state', maj);
   }, []);
   return etat;

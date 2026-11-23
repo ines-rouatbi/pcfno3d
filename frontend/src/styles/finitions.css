@@ -1,0 +1,75 @@
+/* Finitions de l'interface (demande d'Ines, 20/11/2026) : transitions entre espaces, micro-interactions,
+   apparition au défilement, squelettes de chargement, thème en fondu. Tout se coupe avec « mouvement réduit ». */
+
+/* --- transition entre deux espaces (View Transitions API, atom-runtime.js showAnim) --- */
+::view-transition-old(root){animation:aw-vt-sortie .22s cubic-bezier(.4,0,1,1) both}
+::view-transition-new(root){animation:aw-vt-entree .32s cubic-bezier(0,0,.2,1) both}
+@keyframes aw-vt-sortie{to{opacity:0;transform:translateY(-6px)}}
+@keyframes aw-vt-entree{from{opacity:0;transform:translateY(10px)}}
+
+/* --- thème clair / sombre en fondu (classe posée 450 ms par setTheme) --- */
+.aw-theme-anim,.aw-theme-anim *{transition:background-color .4s ease,color .4s ease,border-color .4s ease,fill .4s ease,stroke .4s ease!important}
+
+/* --- micro-interactions --- */
+.btn,.workspace-content button,.search-trigger,.inspect-button,.explore-link{transition:transform .16s cubic-bezier(.2,.8,.2,1),box-shadow .2s,background-color .2s,border-color .2s,color .2s}
+.btn:hover:not(:disabled),.explore-link:hover,.inspect-button:hover{transform:translateY(-1px);box-shadow:0 6px 16px #1d2e2b1f}
+.btn:active:not(:disabled),.workspace-content button:active:not(:disabled){transform:translateY(0) scale(.97)}
+.workspace-content .card{transition:box-shadow .25s ease,transform .25s ease,border-color .25s ease}
+.workspace-content .card:hover{box-shadow:0 2px 4px #1d2e2b0d,0 14px 34px #1d2e2b14}
+nav.workspace-navigation a{transition:background-color .2s,color .2s,padding-inline-start .2s}
+nav.workspace-navigation a:hover{padding-inline-start:16px}
+nav.workspace-navigation .count:not(:empty):not([data-zero]){animation:aw-pouls 2.4s ease-in-out infinite}
+@keyframes aw-pouls{0%,100%{box-shadow:0 0 0 0 color-mix(in srgb,var(--warn) 45%,transparent)}50%{box-shadow:0 0 0 5px transparent}}
+.toast:not([hidden]){animation:aw-toast .32s cubic-bezier(.2,.8,.2,1)}
+@keyframes aw-toast{from{opacity:0;transform:translate(-50%,14px)}}
+.pill{transition:transform .2s}.pill:hover{transform:scale(1.04)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* --- apparition au défilement (classe posée par ui-finitions.ts, IntersectionObserver) --- */
+.aw-revele{opacity:0;transform:translateY(14px);transition:opacity .55s ease,transform .55s cubic-bezier(.2,.8,.2,1)}
+.aw-revele.is-visible{opacity:1;transform:none}
+
+/* --- squelettes de chargement réutilisables --- */
+.aw-squelette{position:relative;overflow:hidden;background:var(--surface-2);border-radius:10px;min-height:14px}
+.aw-squelette::after{content:"";position:absolute;inset:0;transform:translateX(-100%);background:linear-gradient(90deg,transparent,color-mix(in srgb,var(--surface) 70%,transparent),transparent);animation:aw-reflet 1.3s infinite}
+@keyframes aw-reflet{to{transform:translateX(100%)}}
+#aw-chargement .aw-chargement-barre{width:min(320px,70vw);height:4px;border-radius:9px;background:#ffffff1f;overflow:hidden}
+#aw-chargement .aw-chargement-barre i{display:block;height:100%;width:40%;background:linear-gradient(90deg,#7cc2d6,#a5cb7d);border-radius:9px;animation:aw-charge 1.4s ease-in-out infinite}
+@keyframes aw-charge{0%{transform:translateX(-110%)}100%{transform:translateX(260%)}}
+
+/* --- chiffres clés de la vue d'ensemble (ui-finitions.ts) --- */
+.aw-chiffres{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin:0 0 18px}
+.aw-chiffres>div{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px 16px;display:grid;gap:2px}
+.aw-chiffres b{font:700 30px/1.1 var(--f-display);font-variant-numeric:tabular-nums;color:var(--accent)}
+.aw-chiffres span{font-size:12px;color:var(--muted)}
+
+/* --- « Mon espace », notifications, installation --- */
+.aw-mon-espace{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:18px;background:linear-gradient(120deg,color-mix(in srgb,var(--accent) 12%,var(--surface)),var(--surface))}
+.aw-me-tete{display:grid;gap:3px}.aw-me-tete b{font:600 22px var(--f-editorial)}.aw-me-tete a{color:var(--accent);font-weight:700}
+.aw-me-liens{display:flex;gap:8px;flex-wrap:wrap}.aw-me-liens .btn{text-decoration:none}
+.aw-notif{display:grid;gap:6px;margin-bottom:16px;justify-items:start}
+.aw-installer{position:fixed;right:18px;bottom:84px;z-index:70;display:flex;align-items:center;gap:8px;border:0;border-radius:999px;padding:10px 16px;background:var(--ink);color:var(--bg);font-weight:700;box-shadow:0 10px 30px #0004;cursor:pointer;animation:aw-toast .35s cubic-bezier(.2,.8,.2,1)}
+.aw-installer span{font-size:18px}
+
+/* --- barre de navigation du bas (téléphone) --- */
+.aw-barre-mobile{display:none}
+@media(max-width:700px){
+  .aw-barre-mobile{position:fixed;left:0;right:0;bottom:0;z-index:65;display:grid;grid-template-columns:repeat(5,1fr);
+    background:color-mix(in srgb,var(--surface) 88%,transparent);backdrop-filter:blur(14px);border-top:1px solid var(--line);
+    padding:6px 4px max(6px,env(safe-area-inset-bottom))}
+  .aw-barre-mobile a,.aw-barre-mobile button{display:grid;justify-items:center;gap:2px;padding:4px 0;border:0;background:none;color:var(--muted);font:600 10px var(--f-body);text-decoration:none;border-radius:10px;cursor:pointer}
+  .aw-barre-mobile a[aria-current="page"]{color:var(--accent)}
+  .aw-barre-mobile a[aria-current="page"] svg{transform:translateY(-2px);transition:transform .2s}
+  .aw-barre-mobile a[hidden]{display:none}
+  .workspace-main{padding-bottom:74px}
+  .aw-assistant-fab,.aw-installer{bottom:86px}
+  .toast{bottom:calc(84px + env(safe-area-inset-bottom,0px))}
+}
+
+@media(prefers-reduced-motion:reduce){
+  ::view-transition-old(root),::view-transition-new(root){animation:none}
+  .aw-revele{opacity:1;transform:none;transition:none}
+  .btn,.workspace-content .card,nav.workspace-navigation a,.toast,.pill{transition:none!important;animation:none!important}
+  nav.workspace-navigation .count{animation:none!important}
+  .aw-squelette::after,#aw-chargement .aw-chargement-barre i{animation:none}
+}

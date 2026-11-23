@@ -1,0 +1,16 @@
+{
+  "name": "ATOM Wind — le vent de la Tunisie",
+  "short_name": "ATOM Wind",
+  "description": "Le vent des 24 gouvernorats de Tunisie, heure par heure, calculé par ATOM Wind.",
+  "lang": "fr",
+  "start_url": "/app/atom-wind/",
+  "scope": "/app/",
+  "display": "standalone",
+  "background_color": "#0f2a33",
+  "theme_color": "#16607a",
+  "icons": [
+    { "src": "/app/icone-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/app/icone-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/app/icone-masque-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

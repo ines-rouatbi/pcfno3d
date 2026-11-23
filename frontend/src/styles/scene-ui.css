@@ -45,3 +45,5 @@
   .three .scene-north{bottom:152px!important;right:14px!important;width:40px!important;height:40px!important;padding:0!important}.three .scene-north svg{width:35px;height:35px}
   .three .lbl3d{font-size:10px;max-width:110px}.three .ov.tc{top:242px;width:calc(100% - 28px);font-size:12px}
 }
+
+.three .legend .ramp.ramp-bleu{background:linear-gradient(90deg,#56b0ff,#247ef0 32%,#1452d2 65%,#0a288c)}
