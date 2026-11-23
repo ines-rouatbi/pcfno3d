@@ -1,0 +1,44 @@
+{
+  "fixee_le": "2026-11-23 (soir), APRES la lecture unique de 2026 par regle_national_gfs_v5_2 (hachee 542e676c..., jugee le 23/11 a 17:18) ; cette regle ne juge rien et ne relit rien : elle fixe le STATUT DE SERVICE du produit deja juge",
+  "statut": "PROPOSITION soumise a l'accord ecrit d'Ines ; l'empreinte .sha256 est ecrite au moment de l'accord, sur ce texte exact",
+  "decision": "Ines, 23/11/2026 : servir le champ 3D national du candidat c3_a0.75_H100 en temps reel et en prevision, « valide » hors d'une zone autour de Tabarka, « experimental (zone Tabarka) » dans cette zone",
+  "base": {
+    "regle_jugee": "regle_national_gfs_v5_2.json (sha256 542e676c90da2a6440ef3e64f323f8ebc3cf41f9926777934db54f5827583cb0)",
+    "verdict_publie": "les trois cases (analyse, +24 h, +48 h) sont REFUSEES par cette regle, a cause de Tabarka seul ; ce verdict reste publie tel quel (docs/resultats/national/gfs_v5.md) et n'est jamais reecrit",
+    "chiffres_2026": "608 instants (2026-01-01 -> 2026-10-31, jours impairs, 00/06/12/18 UTC), 12 aeroports retires a tour de role : ecart moyen au GFS brut -0,318 / -0,348 / -0,349 m/s, IC 95 % [-0,352 ; -0,286] / [-0,386 ; -0,312] / [-0,390 ; -0,312] ; meilleur que GFS brut aux 11 aeroports autres que Tabarka, aux trois echeances ; Tabarka +6,3 / +6,1 / +6,0 % (limite de la regle : +5 %)"
+  },
+  "produit_servi": {
+    "temps_reel_et_prevision": "C1 (runs/national_1km_v5_gfs/best.pt, epoque 2, affine sous regle_national_gfs_v5_1) nourri par GFS comme le service temps reel, puis ancrage GFS pres du sol : u = u_gfs + a(h) (u_modele - u_gfs), meme chose pour v, a0 = 0,75 a 10 m, a = 1 au-dessus de H = 100 m ; w par continuite comme le service (pcfno3d.ancrage_gfs, inference.ancrage_gfs_a0 / ancrage_gfs_h / checkpoint_temps_reel)",
+    "analyse_era5": "NON couverte par cette regle : les journees d'analyse (ERA5) restent servies par C' s44, valide par ses propres regles (DSO1-DSO6 sur le test 2022, decision_v4_national) ; C1 n'a jamais ete juge avec l'ERA5 en entree"
+  },
+  "zone": {
+    "definition": "disque de 50 km de rayon autour de l'aeroport de Tabarka (code DTKA), distance du grand cercle (rayon terrestre 6371 km) entre le point servi (lat, lon) et l'aeroport",
+    "centre": "36.95 N, 8.75 E : coordonnees de DTKA dans configs/national/stations_metar.csv, source du stations.json de la grille nationale ; le service lit le centre dans stations.json (code DTKA) et refuse de demarrer s'il differe de plus de 0,01 deg de ces valeurs",
+    "pourquoi_ce_rayon": "deux mailles GFS a 0,25 deg (~28 km chacune) autour de l'aeroport : un critere geometrique, fixe sans calculer aucun score par rayon ni par zone sur 2026 ; aucun autre des 12 aeroports n'est dans la zone (le plus proche, Bizerte, est a 98 km ; Tunis-Carthage a 132 km)",
+    "transparence": "le choix d'isoler Tabarka vient des verdicts : Tabarka est le seul aeroport degrade de plus de 5 % en 2022 (gfs_v4, 18/11), en 2021 (diagnostic de la v5.1 / v5.2) et en 2026 (v5.2) ; cette regle est donc ecrite APRES lecture de 2026 et le dit"
+  },
+  "statut_par_point": {
+    "hors_zone": "« valide » ; source du statut : regle_service_zones_v5 (avec son empreinte), fondee sur regle_national_gfs_v5_2",
+    "dans_la_zone": "« experimental (zone Tabarka) » ; le vent servi reste celui du candidat (option : GFS brut dans la zone, NON activee)",
+    "couche_10m": "inchangee : la couche 10 m GFS + aeroports garde le statut de regle_national_gfs_v4 (case b / analyse acceptee le 18/11)"
+  },
+  "ce_que_cette_regle_n_est_pas": [
+    "ce n'est pas une acceptation par test : le verdict de regle_national_gfs_v5_2 reste « refuse »",
+    "aucun seuil de regle_national_gfs_v5_2 n'est modifie, aucun aeroport n'est retire de son jugement",
+    "2026 n'est pas relu ; rien n'est ajuste sur les scores 2026",
+    "aucun fichier de verdicts n'est ecrit pour PCFNO3D_VERDICTS_GFS_V5 (il porterait « accepte » pour des cases refusees)"
+  ],
+  "affichage": {
+    "badge": "le badge de statut de l'application suit le statut renvoye par l'API pour le point consulte",
+    "donnees_et_fiabilite": "une ligne : « Temps réel et prévision : validé hors d'un rayon de 50 km autour de Tabarka (règle de service du 23/11/2026, fondée sur le jugement 2026 : −10 % face à GFS, 11 aéroports sur 12) ; expérimental dans ce rayon. »",
+    "cas_refuse": "un cas refuse n'est jamais affiche « regle pas encore passee »"
+  },
+  "publication": "rapport : le verdict de regle_national_gfs_v5_2 (refuse, Tabarka) et, a cote, ce statut de service (valide hors zone Tabarka), avec la date et l'empreinte des deux regles",
+  "duree": "jusqu'a ce qu'une regle suivante (v6 : correction choisie sur la validation 2021 avec une marge fixee d'avance, jugee sur des donnees futures) soit jugee ; elle remplacera ce statut quel que soit son resultat",
+  "interdits": [
+    "aucun seuil change, aucune relecture de 2026, aucun reglage choisi sur 2026",
+    "GFS, ERA5 et la verite generee jamais appeles mesures ; les METAR sont les mesures",
+    "rien n'est supprime ni ecrase sur le Drive ni dans runs/",
+    "aucun secret dans le code, le carnet ou les journaux"
+  ]
+}
