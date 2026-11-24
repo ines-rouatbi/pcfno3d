@@ -715,12 +715,9 @@ function init3d(){
   // K3 : échelle de la caméra, du brouillard et des repères quand le domaine dépasse le Grand Tunis (national : × 12)
   const K3 = DOM ? Math.max(W, H) / 68 : 1;
   const scene=new THREE.Scene(), cam=new THREE.PerspectiveCamera(45,host.clientWidth/host.clientHeight,.1,500*K3); let EX=11/1000, AW3=null; const OBJ3={stations:[],turb:[]};
-  // ciel et brume d'horizon : le relief lointain se fond dans l'air au lieu de flotter sur un fond uni
-  const HORIZON=0xa7b9b8; scene.fog=new THREE.FogExp2(HORIZON,.0042/K3);
-  { const c=document.createElement("canvas"); c.width=2; c.height=256; const g=c.getContext("2d"), gr=g.createLinearGradient(0,0,0,256);
-    gr.addColorStop(0,"#26404f"); gr.addColorStop(.55,"#6f8f9b"); gr.addColorStop(.8,"#a7b9b8"); gr.addColorStop(1,"#b9c4b8"); g.fillStyle=gr; g.fillRect(0,0,2,256);
-    const sky=new THREE.CanvasTexture(c); sky.colorSpace=THREE.SRGBColorSpace; scene.background=sky; }
-  scene.add(new THREE.HemisphereLight(0xdfeaf2,0x4a4234,1.25)); const sun=new THREE.DirectionalLight(0xfff0d6,3.6);   // lumière rasante plus forte : le relief ressort sun.position.set(-34,30,-18); scene.add(sun);
+  // aspect de la vue 3D d'avant le 14/11 (demande d'Ines, 24/11/2026) : fond vert du cadre, brume verte, lumière douce
+  scene.fog=new THREE.FogExp2(0x21382e,.004/K3);
+  scene.add(new THREE.HemisphereLight(0xeaf1de,0x344838,2.1)); const sun=new THREE.DirectionalLight(0xfff1cf,2.4); sun.position.set(-30,40,20); scene.add(sun);
   // relief affiché : grille réelle à 125 m (Copernicus) quand elle est chargée, sinon la grille de la page
   const RF=(!DOM&&window.ATOM&&ATOM.relief)||null, SEA_FLOOR=-.12, LAKE_FLOOR=-.04;
   const eauV=(x,y)=> RF ? RF.eauA(x,y) : wat[idx(x,y)];
@@ -730,28 +727,18 @@ function init3d(){
   const pos=geo.attributes.position, cols=new Float32Array(pos.count*3);
   for(let i=0;i<pos.count;i++){ const x=pos.getX(i)+W/2, y=H/2-pos.getZ(i); pos.setY(i, yTerrain(x,y)); pos.setX(i,x-W/2); pos.setZ(i,-(y-H/2)); }
   geo.computeVertexNormals(); geo.setAttribute("color",new THREE.BufferAttribute(cols,3));
-  const mesh=new THREE.Mesh(geo,new THREE.MeshLambertMaterial({vertexColors:true})); scene.add(mesh);
-  // surface de la mer et des lacs au niveau 0, légèrement brillante, au-dessus d'un fond plus sombre
-  const seaMat=new THREE.MeshStandardMaterial({color:0x2f6c80,roughness:.28,metalness:.08,transparent:true,opacity:.86});
+  const mesh=new THREE.Mesh(geo,new THREE.MeshStandardMaterial({vertexColors:true,roughness:.95,metalness:0})); scene.add(mesh);
+  // surface de la mer et des lacs au niveau 0, teinte mate de l'ancienne vue
+  const seaMat=new THREE.MeshStandardMaterial({color:0x487e7b,roughness:.95,metalness:0,transparent:true,opacity:.9});
   const sea=new THREE.Mesh(new THREE.PlaneGeometry(W,H),seaMat); sea.rotation.x=-Math.PI/2; sea.renderOrder=1; scene.add(sea);
-  // couleurs naturelles : champs et vergers en plaine, garrigue puis forêt sur les pentes, roche en crête.
-  // Lecture du relief seulement (altitude, pente) : ce n'est pas une carte d'occupation du sol.
-  const hash=(i,j)=>{ const h=Math.sin(i*127.1+j*311.7)*43758.5453; return h-Math.floor(h); };
-  const noise=(x,y)=>{ const i=Math.floor(x), j=Math.floor(y), u=x-i, v=y-j, a=hash(i,j), b=hash(i+1,j), c=hash(i,j+1), d=hash(i+1,j+1), su=u*u*(3-2*u), sv=v*v*(3-2*v); return (a*(1-su)+b*su)*(1-sv)+(c*(1-su)+d*su)*sv; };
-  const sstep=(a,b,t)=>{ const x=Math.min(1,Math.max(0,(t-a)/(b-a))); return x*x*(3-2*x); };
-  const PAL={champ:new THREE.Color(0xc4b27c), verger:new THREE.Color(0x949c5e), humide:new THREE.Color(0x8f9f78), garrigue:new THREE.Color(0x707c49), foret:new THREE.Color(0x4f6238), roche:new THREE.Color(0xa69a80), crete:new THREE.Color(0xc9bfa6), urbain:new THREE.Color(0xa9a396), fond:new THREE.Color(0x24505e), lac:new THREE.Color(0x4f8582)};
+  // couleurs de l'ancienne vue : selon l'altitude seulement (plaine verte, collines sable, sommets clairs), ville grisée
+  const PAL={bas:new THREE.Color(0x839c67), milieu:new THREE.Color(0xb5ab77), haut:new THREE.Color(0xd8d0a4), fond:new THREE.Color(0x487e7b), lac:new THREE.Color(0x608f7b), urbain:new THREE.Color(0x9eaa8b)};
   const tc=new THREE.Color();
   function colorTerrain(){
     for(let i=0;i<pos.count;i++){ const x=pos.getX(i)+W/2, y=-pos.getZ(i)+H/2, k=idx(x,y), e=eauV(x,y); let c=tc;
       if(e===1) c.copy(PAL.fond); else if(e===2) c.copy(PAL.lac); else {
-        const h=solV(x,y), d=.125, sl=Math.hypot(solV(x+d,y)-solV(x-d,y), solV(x,y+d)-solV(x,y-d))/(2*d*1000), n=noise(x*.45,y*.45)*.7+noise(x*1.3,y*1.3)*.3;
-        c.copy(PAL.champ).lerp(PAL.verger, sstep(.35,.75,n));
-        if(h<4) c.lerp(PAL.humide,.55);
-        c.lerp(PAL.garrigue, Math.max(sstep(90,320,h), sstep(.06,.18,sl))*.85);
-        c.lerp(PAL.foret, sstep(.14,.32,sl)*sstep(120,380,h)*.8);
-        c.lerp(PAL.roche, Math.max(sstep(480,760,h)*.7, sstep(.38,.6,sl)*.75));
-        c.lerp(PAL.crete, sstep(650,800,h)*.5);
-        if(z0[k]>.7 && window.ATOM?.grille) c.lerp(PAL.urbain,.55); }
+        const t=Math.min(1,solV(x,y)/700); if(t<.5) c.copy(PAL.bas).lerp(PAL.milieu,t*2); else c.copy(PAL.milieu).lerp(PAL.haut,(t-.5)*2);
+        if(z0[k]>.7 && window.ATOM?.grille) c.lerp(PAL.urbain,.6); }
       cols[i*3]=c.r; cols[i*3+1]=c.g; cols[i*3+2]=c.b; } geo.attributes.color.needsUpdate=true; }
   colorTerrain();
   // particules
