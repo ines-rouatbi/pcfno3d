@@ -161,3 +161,49 @@ def test_les_24_gouvernorats_sont_dans_le_domaine_national():
     assert len(G) == 24 and {"sfax", "gafsa", "tozeur", "bizerte", "tataouine", "le kef"} <= set(G)
     assert all(30.15 <= la <= 37.615 and 7.45 <= lo <= 11.644 for la, lo in G.values())
     assert atom_outils.LIEUX["nabeul"] == (36.455, 10.715)
+
+
+def test_onglet_aneo_lit_la_regle_os4_v4_3(tmp_path, cfg, geom):
+    """regle_os4_oi_v4_3 : prioritaire sur v4_2 une fois jugee ; plan en grille ; couche 0-100 m ; 0-1 km en information."""
+    import json
+
+    import pandas as pd
+
+    from pcfno3d import atom_wind
+    run = tmp_path / "runs" / "national"
+    run.mkdir(parents=True)
+    v42 = tmp_path / atom_wind.NOM_OS4
+    v42.mkdir()
+    pt = lambda k: {"type": "Feature", "geometry": {"type": "Point", "coordinates": [10.0 + k / 10, 35.0]},
+                    "properties": {"id": f"ANEO-{k:03d}", "priorite": k, "phase": 1, "lat": 35.0, "lon": 10.0 + k / 10,
+                                   "hauteur_m": 25.0}}
+    (v42 / "plan_glouton.geojson").write_text(json.dumps({"type": "FeatureCollection", "features": [pt(1)]}))
+    d = tmp_path / atom_wind.NOM_OS4_V43
+    d.mkdir()
+    (d / "plan_grille.geojson").write_text(json.dumps({"type": "FeatureCollection", "features": [pt(k) for k in range(1, 6)]}))
+    assert atom_wind.dossier_os4(run) == v42                     # pas encore de bilan.json : la v4_2 reste servie
+
+    def ligne(s, n, g):
+        r0 = 1.8
+        return {"strategie": s, "N": n, "rmse_vect_0_100m": r0 * (1 - g), "rmse_vect_10m": 2.0 * (1 - g),
+                "rmse_vect_0_1km": 1.7 * (1 - g / 5), "pire_tranche_0_1km": 1.81 * (1 - g / 6),
+                "gain_rmse_vect_0_100m": g, "gain_rmse_vect_0_100m_ic95_bas": g - 0.02,
+                "gain_rmse_vect_0_100m_ic95_haut": g + 0.02, "gain_rmse_vect_0_1km": g / 5}
+    lignes = [ligne("sans_reseau", 0, 0.0)] + [ligne("grille_reguliere", n, n / 400) for n in (10, 50)] \
+        + [ligne("glouton", n, n / 500) for n in (10, 50)] + [ligne(f"aleatoire_{k}", 50, 0.10 + k / 100) for k in (1, 2, 3)]
+    pd.DataFrame(lignes).to_csv(d / "courbe.csv", index=False)
+    (d / "bilan.json").write_text(json.dumps({
+        "sans_reseau": {"rmse_vect_0_100m": 1.8}, "verdict_N50_0_100m": {"grille_reguliere": {"verdict": "CONFORME"}},
+        "N_minimal": {"grille_reguliere": {"N_minimal_ic95_0_100m": 50}}}))
+    assert atom_wind.dossier_os4(run) == d and atom_wind.plan_aneo(run) == d / "plan_grille.geojson"
+    r = atom_wind.reseau_aneo(run, cfg, geom, None)
+    c = r["courbe"]
+    assert c["cle"] == "rmse_0_100m_m_s" and c["couche"] == "0-100 m" and c["strategie_plan"] == "grille"
+    assert c["actuel"]["rmse_0_100m_m_s"] == 1.8 and set(c["strategies"]) == {"grille", "optimise", "hasard"}
+    g50 = next(p for p in c["strategies"]["grille"] if p["n"] == 50)
+    assert g50["seuil_respecte"] is True and abs(g50["gain"] - 0.125) < 1e-9 and g50["rmse_0_1km_m_s"] < 1.7
+    h = c["strategies"]["hasard"][0]
+    assert h["tirages"] == 3 and abs(h["gain"] - 0.12) < 1e-9 and h["gain_ic95"] is None
+    assert len(r["capteurs"]) == 5 and abs(r["seuil_dso1_m_s"] - 1.62) < 1e-9 and r["nombre_recommande"] == 50
+    assert r["os4"]["libelle_hauteur"] == "Mât ANEO · anémomètre à 25 m" and r["os4"]["couche_jugee"] == "0-100 m"
+    assert "0-1 km" in r["os4"]["information"]

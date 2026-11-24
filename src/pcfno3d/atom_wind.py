@@ -249,10 +249,9 @@ def plan_aneo(run_dir: Path) -> Path | None:
         f = d / "plan_aneo.geojson"
         if f.exists():
             return f
-    for d in (run_dir.parent / NOM_OS4, run_dir.parent.parent / NOM_OS4):      # OS4 par OI (national)
-        f = d / "plan_glouton.geojson"
-        if f.exists():
-            return f
+    d = dossier_os4(run_dir)                                                   # OS4 par OI (national)
+    if d is not None:
+        return d / ("plan_grille.geojson" if _est_os4_v43(d) else "plan_glouton.geojson")
     return None
 
 
@@ -664,6 +663,7 @@ def qualite(run_dir: Path, dso, w_continuite: bool = False) -> dict:
 # la premiere). Rien n'est interpole entre deux paliers.
 NOM_OS6 = "os6_reseau_aneo"
 NOM_OS4 = "os4_oi_v4_2"                  # OS4 national par interpolation optimale (regle_os4_oi_v4_2), simulation
+NOM_OS4_V43 = "os4_oi_v4_3"              # regle_os4_oi_v4_3 (24/11/2026) : mats a 25 m, couche jugee 0-100 m, plan en grille
 FICHIERS_OS6 = ("plan_aneo.csv", "plan_aneo.geojson", "courbe_test.csv", "courbe_test_par_niveau.csv",
                 "os6.json", "candidats.csv", "ordre_validation.csv", "courbe.png", "carte.png")
 INSTALLES = "os6_installes.csv"
@@ -678,16 +678,29 @@ def dossier_os6(run_dir: Path) -> Path | None:
     for d in (run_dir / NOM_OS6, run_dir.parent / NOM_OS6):
         if (d / "plan_aneo.csv").exists() or (d / "plan_aneo.geojson").exists():
             return d
-    # sinon le plan OS4 par OI (national : MyDrive/pcfno3d_national/os4_oi_v4_2, a cote de runs/)
-    for d in (run_dir.parent / NOM_OS4, run_dir.parent.parent / NOM_OS4):
-        if (d / "plan_glouton.geojson").exists():
-            return d
+    # sinon le plan OS4 par OI (national : MyDrive/pcfno3d_national/os4_oi_v4_3 s'il est juge, sinon os4_oi_v4_2)
+    return dossier_os4(run_dir)
+
+
+def dossier_os4(run_dir: Path) -> Path | None:
+    """Sorties OS4 a cote de runs/ : la v4_3 quand son jugement est ecrit (bilan.json et plan_grille.geojson),
+    sinon la v4_2 ; jamais un essai (dossiers *_essai)."""
+    run_dir = Path(run_dir)
+    for nom, temoin in ((NOM_OS4_V43, "plan_grille.geojson"), (NOM_OS4, "plan_glouton.geojson")):
+        for d in (run_dir.parent / nom, run_dir.parent.parent / nom):
+            if (d / temoin).exists() and (nom == NOM_OS4 or (d / "bilan.json").exists()):
+                return d
     return None
 
 
 def _est_os4(d: Path | None) -> bool:
-    return (d is not None and (d / "plan_glouton.geojson").exists() and not (d / "plan_aneo.csv").exists()
-            and not (d / "plan_aneo.geojson").exists())
+    return (d is not None and ((d / "plan_glouton.geojson").exists() or (d / "plan_grille.geojson").exists())
+            and not (d / "plan_aneo.csv").exists() and not (d / "plan_aneo.geojson").exists())
+
+
+def _est_os4_v43(d: Path | None) -> bool:
+    """Sorties de regle_os4_oi_v4_3 : plan en grille et courbe 0-100 m."""
+    return _est_os4(d) and (d / "plan_grille.geojson").exists()
 
 
 def _a_cote(run_dir: Path, nom: str) -> Path | None:
@@ -730,7 +743,51 @@ def lire_parametres(run_dir: Path) -> dict:
     return out
 
 
+def _courbe_os4_v43(d: Path) -> dict:
+    """Courbe de regle_os4_oi_v4_3 : couche jugee 0-100 m (cle principale rmse_0_100m_m_s), 0-1 km et pire tranche
+    en information, 10 m descriptif ; « hasard » = moyenne des trois tirages aleatoires (gain moyen, sans IC)."""
+    t = pd.read_csv(d / "courbe.csv")
+
+    def point(r) -> dict:
+        return {"n": int(r["N"]), "rmse_0_100m_m_s": round(float(r["rmse_vect_0_100m"]), 4),
+                "rmse_10m_m_s": round(float(r["rmse_vect_10m"]), 4),
+                "rmse_0_1km_m_s": round(float(r["rmse_vect_0_1km"]), 4),
+                "pire_rmse_niveau_m_s": round(float(r["pire_tranche_0_1km"]), 4),
+                "rmse_vect_m_s": round(float(r["rmse_vect_0_100m"]), 4),
+                "gain": round(float(r["gain_rmse_vect_0_100m"]), 4),
+                "gain_ic95": [round(float(r["gain_rmse_vect_0_100m_ic95_bas"]), 4),
+                              round(float(r["gain_rmse_vect_0_100m_ic95_haut"]), 4)],
+                "gain_0_1km": round(float(r["gain_rmse_vect_0_1km"]), 4),
+                "seuil_respecte": bool(r["gain_rmse_vect_0_100m_ic95_bas"] >= 0.10)}
+    strat = {}
+    for s, nom in (("glouton", "optimise"), ("grille_reguliere", "grille")):
+        g = t[t.strategie == s].sort_values("N")
+        if len(g):
+            strat[nom] = [point(r) for _, r in g.iterrows()]
+    al = t[t.strategie.astype(str).str.startswith("aleatoire")]
+    if len(al):
+        moy = []
+        for n, g in al.groupby("N"):
+            r = g.mean(numeric_only=True)
+            q = {"n": int(n), "rmse_0_100m_m_s": round(float(r["rmse_vect_0_100m"]), 4),
+                 "rmse_10m_m_s": round(float(r["rmse_vect_10m"]), 4), "rmse_0_1km_m_s": round(float(r["rmse_vect_0_1km"]), 4),
+                 "pire_rmse_niveau_m_s": round(float(r["pire_tranche_0_1km"]), 4),
+                 "rmse_vect_m_s": round(float(r["rmse_vect_0_100m"]), 4), "gain": round(float(r["gain_rmse_vect_0_100m"]), 4),
+                 "gain_ic95": None, "gain_0_1km": round(float(r["gain_rmse_vect_0_1km"]), 4),
+                 "seuil_respecte": None, "tirages": int(len(g))}
+            moy.append(q)
+        strat["hasard"] = sorted(moy, key=lambda q: q["n"])
+    sr = t[t.strategie == "sans_reseau"]
+    actuel = point(sr.iloc[0]) if len(sr) else None
+    return {"strategies": strat, "actuel": actuel, "tailles": sorted({p["n"] for v in strat.values() for p in v}),
+            "cle": "rmse_0_100m_m_s", "cle_information": "rmse_0_1km_m_s", "couche": "0-100 m",
+            "hauteur_capteurs_m": 25.0, "strategie_plan": "grille",
+            "jeu": ("test 2022, deuxième lecture non indépendante (regle_os4_oi_v4_3) ; simulation OSSE, pas des mesures")}
+
+
 def _courbe(d: Path, os6j: dict) -> dict | None:
+    if _est_os4_v43(d) and (d / "courbe.csv").exists():
+        return _courbe_os4_v43(d)
     if _est_os4(d) and (d / "courbe.csv").exists():
         t = pd.read_csv(d / "courbe.csv")
         strat = {}
@@ -773,7 +830,7 @@ def _nombre(v) -> float | None:
 def _plan_os6(d: Path, geom, georef) -> list[dict]:
     """Capteurs du plan, dans l'ordre d'installation (CSV, sinon GeoJSON)."""
     if _est_os4(d):
-        g = json.loads((d / "plan_glouton.geojson").read_text(encoding="utf-8"))
+        g = json.loads((d / ("plan_grille.geojson" if _est_os4_v43(d) else "plan_glouton.geojson")).read_text(encoding="utf-8"))
         lignes = []
         for ft in g.get("features", []):
             p = dict(ft.get("properties") or {})
@@ -909,7 +966,18 @@ def reseau_aneo(run_dir: Path, cfg, geom, georef, checkpoint="best.pt", config: 
     d = dossier_os6(run_dir)
     os6j = json.loads((d / "os6.json").read_text(encoding="utf-8")) \
         if d is not None and (d / "os6.json").exists() else {}
-    if _est_os4(d) and (d / "bilan.json").exists():
+    if _est_os4_v43(d) and (d / "bilan.json").exists():
+        b = json.loads((d / "bilan.json").read_text(encoding="utf-8"))
+        nm = (b.get("N_minimal") or {}).get("grille_reguliere", {}).get("N_minimal_ic95_0_100m")
+        os6j = {"seuil_rmse_m_s": round(0.9 * float(b["sans_reseau"]["rmse_vect_0_100m"]), 4),
+                "nombre_recommande": nm if isinstance(nm, int) else None,
+                "verdict_n50": b.get("verdict_N50_0_100m"),
+                "modele": "interpolation optimale 3D (OS4 v4_3, simulation OSSE)", "configuration": cfg.name,
+                "limites": ("Simulation OSSE sur la verite generee (regle_os4_oi_v4_3) : mats ANEO a 25 m ; couche "
+                            "jugee 0-100 m (critere : borne basse de l'IC 95 % du gain >= 10 % avec 50 capteurs) ; "
+                            "0-1 km en information, non visee par des capteurs a 25 m ; deuxieme lecture du test "
+                            "2022, non independante ; regle_os4_oi_v4_2 reste publiee avec son verdict.")}
+    elif _est_os4(d) and (d / "bilan.json").exists():
         b = json.loads((d / "bilan.json").read_text(encoding="utf-8"))
         nm = (b.get("N_minimal") or {}).get("glouton", {}).get("N_minimal_ic95")
         os6j = {"seuil_rmse_m_s": round(0.9 * float(b["sans_reseau"]["pire_tranche_0_1km"]), 4),
@@ -926,7 +994,8 @@ def reseau_aneo(run_dir: Path, cfg, geom, georef, checkpoint="best.pt", config: 
     hors = inst if demo else _associer_installes(capteurs, inst, georef)
     cout = lire_parametres(run_dir)
     seuil = float(os6j.get("seuil_rmse_m_s", cfg.dso.rmse))
-    opt = {p["n"]: p for p in (courbe or {}).get("strategies", {}).get("optimise", [])}
+    cle = (courbe or {}).get("cle", "pire_rmse_niveau_m_s")               # v4_3 : erreur 0-100 m
+    opt = {p["n"]: p for p in (courbe or {}).get("strategies", {}).get((courbe or {}).get("strategie_plan", "optimise"), [])}
     actuel = (courbe or {}).get("actuel")
     if actuel is None and os6j.get("reseau_actuel"):
         a = os6j["reseau_actuel"]
@@ -939,13 +1008,14 @@ def reseau_aneo(run_dir: Path, cfg, geom, georef, checkpoint="best.pt", config: 
             c["phase"] = k
         mes = opt.get(b)
         gain = None
-        if mes is not None and prec is not None and prec.get("pire_rmse_niveau_m_s") is not None:
-            gain = round(prec["pire_rmse_niveau_m_s"] - mes["pire_rmse_niveau_m_s"], 4)
+        if mes is not None and prec is not None and prec.get(cle) is not None:
+            gain = round(prec[cle] - mes[cle], 4)
         lignes.append({"phase": k, "de": a, "a": b, "capteurs": len(sel), "cumul": b,
                        "pire_rmse_niveau_m_s": None if mes is None else mes["pire_rmse_niveau_m_s"],
                        "rmse_vect_m_s": None if mes is None else mes["rmse_vect_m_s"],
+                       "valeur_m_s": None if mes is None else mes[cle],
                        "gain_pire_niveau_m_s": gain,
-                       "seuil_dso1_respecte": None if mes is None else bool(mes["pire_rmse_niveau_m_s"] <= seuil),
+                       "seuil_dso1_respecte": None if mes is None else bool(mes[cle] <= seuil),
                        "installes": sum(c["statut"] == "installé" for c in sel),
                        "cout": None if cout["unitaire"] is None else round(cout["unitaire"] * len(sel), 2),
                        "cout_cumule": None if cout["unitaire"] is None else round(cout["unitaire"] * b, 2)})
@@ -974,6 +1044,10 @@ def reseau_aneo(run_dir: Path, cfg, geom, georef, checkpoint="best.pt", config: 
         "dossier": None if d is None else str(d),
         "fichiers": [] if d is None else [n for n in FICHIERS_OS6 if (d / n).exists()],
         "seuil_dso1_m_s": seuil, "nombre_recommande": os6j.get("nombre_recommande"),
+        "os4": ({"regle": "regle_os4_oi_v4_3", "couche_jugee": "0-100 m", "hauteur_capteurs_m": 25.0,
+                 "libelle_hauteur": "Mât ANEO · anémomètre à 25 m", "plan": "grille régulière",
+                 "verdict_n50": os6j.get("verdict_n50"),
+                 "information": "0-1 km : non visée par des capteurs à 25 m"} if _est_os4_v43(d) else None),
         "reseau_actuel": actuel, "courbe": courbe, "capteurs": capteurs, "phases": lignes,
         "regle_phases": ("paliers de la courbe de dimensionnement (erreur mesurée sur le test, stratégie "
                          "optimisée) ; sans courbe, paliers par défaut de pcfno3d.os6.TAILLES, sans chiffre"),

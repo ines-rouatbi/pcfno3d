@@ -1,0 +1,92 @@
+{
+  "fixee_le": "2026-11-24 (soir), sur la correction ecrite d'Ines datee du 24/11/2026, APRES la lecture du test 2022 par regle_os4_oi_v4_2 (sha256 6f2f4eee159541a87325b7f00c44b1a817c9c2fd14f80e4b75f2dace57f6024a, calcul du 15/11/2026)",
+  "statut": "PROPOSITION soumise a l'accord ecrit d'Ines (« regle v4_3 OK ») ; l'empreinte .sha256 est calculee a ce moment-la, sur ce texte exact ; rien n'est calcule avant",
+  "objet": "OS4 : etude du reseau ANEO (anemometres sur mat a 25 m) par interpolation optimale (OI) 3D, jugee sur la couche que ces capteurs mesurent (0-100 m au-dessus du sol), avec des reglages d'OI choisis sur la validation 2021 seulement",
+  "nature": "experience OSSE sur la verite nationale v3, DISTINCTE du modele C' s44 en service (aucun modele n'est entraine ni modifie) ; les capteurs simules mesurent la verite generee ; ERA5 et verite ne sont jamais appelees mesures",
+  "transparence": {
+    "erreur_de_formulation": "Le critere de regle_os4_oi_v4_2 portait sur la pire tranche 0-1 km au-dessus du sol. C'etait une erreur de formulation de l'objectif OS4 par Ines : un anemometre ANEO mesure seulement a la hauteur du mat (25 m) et ne peut pas renseigner la couche 300-1000 m. Le critere est corrige pour cette raison physique, et NON parce que regle_os4_oi_v4_2 n'est pas passee.",
+    "redaction_apres_lecture": "Cette regle est redigee APRES la lecture du test 2022 par regle_os4_oi_v4_2, dont les resultats sont connus (pire tranche 0-1 km : non atteint jusqu'a N = 400 ; 0-100 m, grille reguliere, N = 50 : +12,1 % en max(RMSE u, RMSE v), sans IC) ; elle RELIT le meme test : c'est une deuxieme lecture, non independante.",
+    "v4_2_reste_publiee": "regle_os4_oi_v4_2 et son verdict d'origine (critere 0-1 km non atteint jusqu'a N = 400, toutes strategies) restent publies tels quels, dans le rapport et dans docs/resultats/national/os4_oi.md ; la v4_3 est presentee a cote, jamais a leur place.",
+    "reglages_d_oi": "regle_os4_oi_v4_2 a repris de regle_produit_vent10m_v4 (aeroports reels) lambda = 4 et L = 150 km ; dans cette simulation, le bruit des capteurs (0,5 m/s) et l'erreur du fond (sigma_u 1,91, sigma_v 2,02 m/s, correlee sur L = 55 km) donnent lambda ~ 0,065 et L ~ 55 km. Ces valeurs et leurs voisines sont mises dans une grille, et le choix est fait sur la validation 2021 uniquement."
+  },
+  "ce_qui_ne_change_pas": {
+    "fond_sans_reseau": "ERA5 degradee, recopiee de regle_os4_oi_v4_2.fond_sans_reseau : sigma_u 1,91 m/s, sigma_v 2,02 m/s, L 55 km, controle runs/degradation_era5_v4.json (0,01 pour sigma, 0,5 km pour L), graine 1000 + numero de l'instant dans son jeu",
+    "capteurs": "hauteur 25 m au-dessus du sol (le mat ANEO) ; valeur = verite (u, v) a 25 m dans la colonne du capteur (pcfno3d.atom_wind.champ_agl) + bruit gaussien 0,5 m/s par composante",
+    "contraintes_de_pose": "recopiees de regle_os4_oi_v4_2.capteurs.contraintes_de_pose : candidats OS6 (terre z0 >= 0,005 m, pente <= 20 deg, altitude <= 650 m, 1 km du bord), hors des rectangles des grands chotts et sebkhas listes dans regle_os4_oi_v4_2, au moins 8 km de chacun des 12 aeroports METAR",
+    "N": [10, 25, 50, 100, 200, 400],
+    "placements": "recopies de regle_os4_oi_v4_2.placements (glouton sur la variance d'erreur du fond a 25 m, 100 instants synoptiques d'ENTRAINEMENT, graine 2030 ; grille reguliere par point le plus eloigne ; aleatoire graines 1, 2, 3), le glouton etant recalcule avec la correlation et le lambda retenus a l'etape 1",
+    "bootstrap": "IC 95 % par bootstrap sur les JOURS du test (2000 tirages, graine 2030 ; les sommes d'erreurs sont recalculees par tirage), comme regle_os4_oi_v4_2.critere_os4.ic"
+  },
+  "oi_3d": {
+    "analyse": "analyse(noeud) = fond + sum_j alpha_j rho_h(d_j) rho_v(h_noeud - 25), alpha = (rho_h(D) + lambda I)^-1 (mesure - fond a 25 m aux capteurs), pour u et v separement",
+    "rho_h": "forme et L choisies a l'etape 1 : gaussienne exp(-d^2 / 2 L^2) ou exponentielle exp(-d / L)",
+    "rho_v": "exp(-|dz| / H), dz = difference de hauteur au-dessus du sol, H choisi a l'etape 1",
+    "w": "l'OI ne corrige que u et v ; aucune composante verticale n'est analysee"
+  },
+  "etape_1_choix_sur_validation_2021": {
+    "donnees": "TOUS les instants synoptiques de la validation 2021 de la verite v3, jamais le test",
+    "grille": {
+      "forme_horizontale": ["gaussienne exp(-d^2 / 2 L^2)", "exponentielle exp(-d / L)"],
+      "L_km": [55, 100, 150],
+      "lambda": [0.065, 0.25, 1.0, 4.0],
+      "H_m": [300, 1000, 3000],
+      "combinaisons": 72
+    },
+    "placement": "grille reguliere seulement",
+    "critere_de_choix": "combinaison qui minimise la moyenne, sur N = 50 et N = 200, de la RMSE vectorielle de la couche 0-100 m (definition dans « metriques »)",
+    "ex_aequo": "ecart < 0,002 m/s : la plus proche de regle_os4_oi_v4_2, dans cet ordre : forme gaussienne, puis L le plus grand, puis lambda le plus grand, puis H = 300 m",
+    "sortie": "MyDrive/pcfno3d_national/os4_oi_v4_3/choix_validation/ : grille.csv (72 lignes : forme, L, lambda, H, RMSE vectorielle 0-100 m, 10 m et pire tranche 0-1 km, a N = 50 et N = 200), choix.json ; ecrits et figes AVANT toute lecture du test"
+  },
+  "etape_2_jugement_test_2022": {
+    "donnees": "les 180 instants synoptiques du test 2022 de la verite v3 (45 jours)",
+    "lecture": "deuxieme lecture du test 2022 pour l'OS4, non independante (voir « transparence ») ; aucun parametre n'est choisi sur le test",
+    "calcul": "reglages de choix.json, 5 placements (glouton, grille reguliere, aleatoire 1, 2, 3), N = 10 ... 400"
+  },
+  "metriques": {
+    "couche_jugee": "0-100 m au-dessus du sol : noeuds valides du modele dont la hauteur au-dessus du sol est dans [0, 100[ m (memes bornes que scripts/dso_hauteur_sol.py)",
+    "rmse_vectorielle": "sqrt(somme sur noeuds et instants de ((u_a - u_t)^2 + (v_a - v_t)^2) / nombre de couples (noeud, instant)), a = analyse, t = verite ; la meme formule pour la reference sans reseau (a = fond)",
+    "gain": "gain(N) = 1 - RMSE(N) / RMSE(sans reseau), en %",
+    "descriptif_avec_ic95": {
+      "10_m": "RMSE vectorielle a 10 m au-dessus du sol sur les colonnes de terre (z0 >= 0,001 m), verite et analyse ramenees a 10 m par champ_agl, et son gain",
+      "par_composante_0_100_m": "RMSE de u et RMSE de v",
+      "R2_0_100_m": "R^2 de u et de v : 1 - SSE / SST, SST autour de la moyenne de la verite sur tous les noeuds et instants evalues",
+      "MAE_vitesse_0_100_m": "moyenne de | |V_a| - |V_t| |",
+      "MAE_direction_0_100_m": "moyenne de l'ecart angulaire (0-180 deg) entre les directions d'ou vient le vent, sur les couples ou la vitesse vraie est >= 1 m/s",
+      "biais_0_100_m": "moyenne de |V_a| - |V_t| (vitesse), et moyennes de u_a - u_t et v_a - v_t",
+      "L_infini_0_100_m": "maximum, sur noeuds et instants, de |V_a - V_t| (erreur vectorielle)",
+      "residu_de_masse": "residu de continuite anelastique de l'analyse avec l'operateur du DSO2 (Geometry.mass_residual), u et v analyses, w et rho de la verite ; meme calcul pour le fond ; il dit si les increments de l'OI, qui ne respectent pas la continuite, degradent la masse"
+    },
+    "information_seulement": {
+      "mention": "« non visee par des capteurs a 25 m »",
+      "valeurs": "RMSE vectorielle de toute la couche 0-1 km au-dessus du sol (noeuds valides de hauteur [0, 1000[ m) et pire tranche 0-1 km au sens de regle_os4_oi_v4_2 (max sur les tranches 0-100, 100-300, 300-600, 600-1000 m et sur u, v), avec leurs gains et IC 95 % ; elles ne servent pas au jugement"
+    },
+    "reference": "chaque metrique est donnee aussi sans reseau (fond seul), sur les memes noeuds et instants"
+  },
+  "critere_os4": {
+    "verdict": "pour chaque strategie : CONFORME si la borne BASSE de l'IC 95 % du gain de RMSE vectorielle 0-100 m est >= 10 % avec N = 50 capteurs ; sinon NON CONFORME",
+    "plan_affiche": "le plan montre dans l'application est celui de la grille reguliere, quel que soit le verdict, avec son verdict",
+    "N_minimal_descriptif": "pour chaque strategie, plus petit N dont la borne basse de l'IC 95 % du gain 0-100 m est >= 10 % (ou « non atteint jusqu'a N = 400 ») ; publie sans servir au verdict",
+    "si_non_conforme": "publie tel quel, sans changer la regle"
+  },
+  "sorties": "MyDrive/pcfno3d_national/os4_oi_v4_3/ (dossier neuf) : choix_validation/ (etape 1), courbe.csv et courbe.png (0-100 m en principal, 10 m, 0-1 km en pointille « information »), metriques.csv (toutes les metriques, strategie x N, avec IC 95 % et reference sans reseau), plan_grille.geojson et plan_glouton.geojson (proprietes id, priorite, phase 1-6, lat, lon, hauteur 25 m), n_minimal.json, bilan.json, bilan.md ; note docs/resultats/national/os4_oi_v4_3.md",
+  "application": {
+    "onglet": "admin « Reseau ANEO » (?domaine=national)",
+    "affichage": [
+      "hauteur fixe « Mat ANEO · anemometre a 25 m »",
+      "indicateurs et courbe principale sur la couche 0-100 m",
+      "courbe 0-1 km en pointille, avec la mention « information »",
+      "plan affiche : grille reguliere",
+      "curseur des profils verticaux supprime"
+    ],
+    "source": "les sorties de cette regle quand elles existent ; avant, l'onglet garde le plan de regle_os4_oi_v4_2 et le dit"
+  },
+  "cout_et_budget": "Colab CPU High-RAM seulement ; demander l'accord d'Ines avant de depasser 10 unites Colab",
+  "interdits": [
+    "aucun parametre choisi ou retouche sur le test 2022",
+    "regle_os4_oi_v4_2 et ses sorties (os4_oi_v4_2/) inchanges ; rien n'est supprime ni renomme sur le Drive",
+    "aucun seuil du critere change apres lecture",
+    "aucun GPU ; le modele C' en service n'est pas touche",
+    "pas de profils verticaux (ce ne sont pas des capteurs ANEO)"
+  ],
+  "code": "scripts/os4_oi_v4_3.py (a ecrire apres l'accord, a partir de scripts/os4_oi_v4.py, avec tests CPU) ; carnet genere par scripts/make_os4_oi_v4_3_nb.py, epingle sur un commit ; lance seulement sur « start execution »"
+}

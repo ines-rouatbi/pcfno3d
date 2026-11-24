@@ -2329,5 +2329,17 @@
  "Tataouine": "Tataouine",
  "Tozeur": "Tozeur",
  "Expérimental (zone Tabarka)": "Experimental (Tabarka zone)",
- "Temps réel et prévision : validé hors d'un rayon de 50 km autour de Tabarka (règle de service du 23/11/2026, fondée sur le jugement 2026 : −10 % face à GFS, 11 aéroports sur 12) ; expérimental dans ce rayon.": "Real time and forecast: validated outside a 50 km radius around Tabarka (service rule of 23/11/2026, based on the 2026 judgement: −10 % against GFS, 11 airports out of 12); experimental within that radius."
+ "Temps réel et prévision : validé hors d'un rayon de 50 km autour de Tabarka (règle de service du 23/11/2026, fondée sur le jugement 2026 : −10 % face à GFS, 11 aéroports sur 12) ; expérimental dans ce rayon.": "Real time and forecast: validated outside a 50 km radius around Tabarka (service rule of 23/11/2026, based on the 2026 judgement: −10 % against GFS, 11 airports out of 12); experimental within that radius.",
+ "), aux seuls paliers calculés ; en pointillé, 0–1 km pour information.": "), at the computed steps only; dotted, 0–1 km for information.",
+ "-10 % (critère OS4, N = 50)": "-10 % (OS4 criterion, N = 50)",
+ "0–1 km : information (non visée par des mâts à 25 m)": "0–1 km: information (not targeted by 25 m masts)",
+ "Critère OS4 (0–100 m, IC 95 %)": "OS4 criterion (0–100 m, 95% CI)",
+ "Critère OS4, grille à 50 mâts :": "OS4 criterion, grid with 50 masts:",
+ "Erreur vectorielle de 0 à 100 m (couche jugée, mâts à 25 m) sur le test (": "Vector error from 0 to 100 m (judged layer, 25 m masts) on the test (",
+ "Erreur vectorielle de 0 à 100 m au-dessus du sol (couche mesurée par un mât à 25 m). Courbes d'exemple, ancrées sur la référence mesurée sans réseau.": "Vector error from 0 to 100 m above ground (layer measured by a 25 m mast). Example curves, anchored on the reference measured without a network.",
+ "Mât ANEO · anémomètre à 25 m": "ANEO mast · anemometer at 25 m",
+ "mâts à 25 m": "masts at 25 m",
+ "non conforme": "not compliant",
+ "Plan OS4 v4_3 (grille) ·": "OS4 v4_3 plan (grid) ·",
+ "seuil DSO1": "DSO1 threshold"
 }
