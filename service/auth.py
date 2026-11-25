@@ -177,6 +177,7 @@ class ApiKeyStore:
         self.erreur: str | None = None
         self._env: dict[str, ApiKeyRecord] = {}
         self._sig: tuple | None = None
+        self._ecrit_ns = 0                # horodatage de la derniere ecriture faite par CE processus
         self._lock = threading.RLock()
         self._usage: dict[str, str] = {}
         self._usage_flushed: float | None = None
@@ -199,11 +200,21 @@ class ApiKeyStore:
     def load(self) -> "ApiKeyStore":
         with self._lock:
             self._sig = self._signature()
+            anciens = self.records
             self.records = []
             self.erreur = None
             if self.path.exists():
                 try:
                     data = json.loads(self.path.read_text(encoding="utf-8"))
+                    # lecture perimee (Google Drive sous Colab : les attributs du fichier changent apres la
+                    # synchronisation et une relecture peut rendre une copie plus ancienne que notre derniere
+                    # ecriture, sans la session qu'on vient de creer -> 401 juste apres la connexion) : on garde
+                    # la memoire et on relira a la requete suivante. Une ecriture plus recente faite ailleurs
+                    # (pcfno3d apikey revoke) porte un horodatage plus grand et reste prise en compte.
+                    if self._ecrit_ns and int(data.get("ecrit_ns") or 0) < self._ecrit_ns:
+                        self._sig = None
+                        self.records = anciens
+                        return self
                     self.records = [ApiKeyRecord.from_dict(r) for r in data.get("keys", [])]
                 except (ValueError, TypeError, AttributeError, OSError) as exc:
                     # trousseau illisible : on ferme (aucune cle valide, pas de mode ouvert)
@@ -237,7 +248,8 @@ class ApiKeyStore:
     def save(self) -> None:
         with self._lock:
             self.path.parent.mkdir(parents=True, exist_ok=True)
-            payload = {"version": 1, "keys": [r.to_dict() for r in self.records]}
+            self._ecrit_ns = max(time.time_ns(), self._ecrit_ns + 1)
+            payload = {"version": 1, "ecrit_ns": self._ecrit_ns, "keys": [r.to_dict() for r in self.records]}
             tmp = self.path.with_name(f"{self.path.name}.{os.getpid()}.tmp")
             tmp.write_text(json.dumps(payload, indent=2), encoding="utf-8")
             os.replace(tmp, self.path)
