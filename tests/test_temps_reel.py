@@ -425,3 +425,59 @@ def test_regle_zones_verifiee_au_demarrage(monkeypatch):
         atom_outils.verifier_regle_zones(wf)
     inf.ancrage_gfs_a0 = 0.5                                  # autre reglage : pas le candidat, pas de zones
     assert atom_outils.candidat_c3(wf) is False
+
+
+def _geom_minimal(tmp_path):
+    from types import SimpleNamespace
+    return SimpleNamespace(forcage=SimpleNamespace(lat=np.array([36.0, 36.25]), lon=np.array([10.0, 10.25]),
+                                                   hauteurs=np.array([10.0, 100.0, 500.0]),
+                                                   u=np.zeros((1, 3, 2, 2), np.float32)),
+                           cfg=SimpleNamespace(paths=SimpleNamespace(data_dir=tmp_path)))
+
+
+def test_source_gfs_muette_repond_vite(tmp_path):
+    """GFS injoignable (poignee TLS expiree depuis Colab, 25/11/2026) : la premiere requete echoue, les suivantes
+    echouent TOUT DE SUITE pendant 5 min sans retenter la source (sinon chaque page attend plus que la
+    passerelle) ; des champs deja obtenus sont resservis au lieu d'echouer."""
+    from pcfno3d import atom_wind
+    from pcfno3d import temps_reel as tr
+
+    n = {"gfs": 0}
+    panne = {"on": True}
+
+    def lire(url):
+        if "open-meteo" in url:
+            n["gfs"] += 1
+            if panne["on"]:
+                raise OSError("The handshake operation timed out")
+        return fausse_source(url)
+
+    src = tr.SourceDirect(_geom_minimal(tmp_path), ttl_s=0.0, lire=lire, ttl_gfs_s=0.0)
+    jour = atom_wind.date_locale_aujourdhui(0)
+    with pytest.raises(OSError):
+        src.journee(jour)
+    essais = n["gfs"]
+    with pytest.raises(ConnectionError):
+        src.journee(jour)
+    assert n["gfs"] == essais                       # pas de nouvel essai pendant la pause
+    # la source revient, la pause est passee : journee servie, puis resservie si la source retombe
+    panne["on"] = False
+    src._panne_gfs = (0.0, "ancien")
+    assert src.journee(jour)["forcage"] is not None
+    panne["on"] = True
+    assert src.journee(jour)["forcage"] is not None  # champs deja obtenus, gardes malgre la panne
+
+
+def test_synop_muet_n_arrete_pas_la_journee(tmp_path):
+    from pcfno3d import atom_wind
+    from pcfno3d import temps_reel as tr
+
+    def lire(url):
+        if "ogimet" in url:
+            raise OSError("The handshake operation timed out")
+        return fausse_source(url)
+
+    src = tr.SourceDirect(_geom_minimal(tmp_path), ttl_s=0.0, lire=lire)
+    src.synop_codes = {"60729": "INM60729"}
+    e = src.journee(atom_wind.date_locale_aujourdhui(0))
+    assert e["forcage"] is not None

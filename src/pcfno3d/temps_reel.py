@@ -445,6 +445,9 @@ class SourceDirect:
         self._cache: dict = {}
         self._cache_gfs: dict = {}
         self._cache_gefs: dict = {}
+        self._panne_gfs: tuple[float, str] | None = None    # (instant, message) du dernier echec GFS
+
+    PAUSE_PANNE_S = 300.0      # apres un echec GFS, repondre « indisponible » tout de suite pendant 5 min
 
     def _fenetre(self, j: pd.Timestamp) -> tuple[str, str]:
         """(debut, fin) des champs GFS d'une journee : la veille au lendemain, ou la fenetre commune."""
@@ -459,8 +462,22 @@ class SourceDirect:
         e = self._cache_gfs.get((debut, fin))
         if e is not None and time.time() - e["obtenu"] < self.ttl_gfs:
             return e
+        # source muette (25/11/2026 : poignee TLS expiree depuis une machine Colab) : sans cette pause, chaque
+        # requete reessaie et attend plus que la passerelle (524, « service hors ligne ») ; avec, la page recoit
+        # vite « temps reel indisponible » et ressert le dernier etat connu. Champs deja obtenus : gardes.
+        if self._panne_gfs and time.time() - self._panne_gfs[0] < self.PAUSE_PANNE_S:
+            if e is not None:
+                return e
+            raise ConnectionError(f"GFS injoignable (nouvel essai dans moins de 5 min) : {self._panne_gfs[1]}")
         g = self.geom
-        c = telecharger_gfs(g.forcage.lat, g.forcage.lon, debut, fin, lire=self.lire)
+        try:
+            c = telecharger_gfs(g.forcage.lat, g.forcage.lon, debut, fin, lire=self.lire)
+        except Exception as exc:                   # noqa: BLE001
+            self._panne_gfs = (time.time(), str(exc))
+            if e is not None:                      # champs plus anciens que ttl_gfs : mieux que rien
+                return e
+            raise
+        self._panne_gfs = None
         temps, scal, u, v = forcage_gfs(c, g.forcage.hauteurs)
         e = {"forcage": ForcageDirect(temps, scal, u, v, g.forcage), "champs": c, "obtenu": time.time()}
         self._cache_gfs[(debut, fin)] = e
@@ -486,7 +503,10 @@ class SourceDirect:
         except Exception:                          # noqa: BLE001
             pass
         if d1 > d0 and self.synop_codes:
-            obs.append(synop_ogimet(d0, d1, lire=self.lire, codes=self.synop_codes))
+            try:                                   # comme le METAR : une station muette n'arrete pas la journee
+                obs.append(synop_ogimet(d0, d1, lire=self.lire, codes=self.synop_codes))
+            except Exception:                      # noqa: BLE001
+                pass
         obs = pd.concat(obs, ignore_index=True) if obs else pd.DataFrame(
             columns=["station_id", "t", "wind_u_m_s", "wind_v_m_s"])
         e = {"forcage": f, "champs": c, "obs": obs, "obtenu": time.time()}
