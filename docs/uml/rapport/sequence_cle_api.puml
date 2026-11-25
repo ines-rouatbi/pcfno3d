@@ -1,0 +1,46 @@
+@startuml
+skinparam defaultFontName Helvetica
+skinparam defaultFontSize 12
+skinparam shadowing false
+skinparam ArrowColor #2B6CB0
+skinparam actorBorderColor #2B6CB0
+skinparam actorBackgroundColor #FEFECE
+skinparam usecaseBorderColor #2B6CB0
+skinparam usecaseBackgroundColor #EAF2FD
+skinparam rectangleBorderColor #2B4870
+skinparam componentBorderColor #2B6CB0
+skinparam componentBackgroundColor #EAF2FD
+skinparam nodeBorderColor #4A5568
+skinparam databaseBorderColor #2B4870
+skinparam participantBorderColor #2B6CB0
+skinparam participantBackgroundColor #EAF2FD
+skinparam sequenceLifeLineBorderColor #2B6CB0
+skinparam noteBackgroundColor #FFFBD7
+autonumber
+actor "Administrateur" as AD
+participant "Programme partenaire" as P
+participant "Garde-fou\n(make_guard)" as G
+database "Trousseau\n(empreintes SHA-256)" as K
+participant "Route de l'API" as RT
+database "Journal d'accès" as J
+AD -> K : créer la clé (portée read, quota 5 / min)
+K --> AD : secret pcf_… affiché une seule fois
+AD -> P : transmet le secret (canal sûr)
+P -> G : GET /api/atom-wind/domaines\nX-API-Key: pcf_…
+G -> K : empreinte SHA-256 du secret connue et non révoquée ?
+alt clé absente, fausse ou révoquée
+  G --> P : 401
+else quota de la minute dépassé
+  G --> P : 429 + Retry-After
+else clé valide
+  G -> RT : requête (portée vérifiée par la route)
+  alt portée insuffisante (route admin)
+    RT --> P : 403
+  else portée suffisante
+    RT --> P : 200 + données
+  end
+end
+G -> J : nom de la clé, route, code, motif\n(jamais le secret)
+AD -> K : révoquer la clé
+note over G, K : le trousseau est relu dès qu'il change :\nla révocation vaut à la requête suivante
+@enduml

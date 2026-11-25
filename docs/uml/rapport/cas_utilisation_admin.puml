@@ -1,0 +1,52 @@
+@startuml
+skinparam defaultFontName Helvetica
+skinparam defaultFontSize 12
+skinparam shadowing false
+skinparam ArrowColor #2B6CB0
+skinparam actorBorderColor #2B6CB0
+skinparam actorBackgroundColor #FEFECE
+skinparam usecaseBorderColor #2B6CB0
+skinparam usecaseBackgroundColor #EAF2FD
+skinparam rectangleBorderColor #2B4870
+skinparam componentBorderColor #2B6CB0
+skinparam componentBackgroundColor #EAF2FD
+skinparam nodeBorderColor #4A5568
+skinparam databaseBorderColor #2B4870
+skinparam participantBorderColor #2B6CB0
+skinparam participantBackgroundColor #EAF2FD
+skinparam sequenceLifeLineBorderColor #2B6CB0
+skinparam noteBackgroundColor #FFFBD7
+left to right direction
+actor "Administrateur" as AD
+rectangle "Espace administration" {
+  usecase "Valider une demande\nde rôle éolien" as C1
+  usecase "Gérer les comptes : confirmer une adresse,\nrenvoyer le lien, changer le rôle" as C2
+  usecase "Désactiver, réactiver\nou supprimer un compte" as C3
+  usecase "Créer une clé d'API pour un programme\n(portée read ou admin, quota)" as C4
+  usecase "Révoquer une clé et suivre\nson dernier usage" as C4b
+  usecase "Consulter la supervision\n(stations, temps, résidu de masse)" as C5
+  usecase "Consulter la qualité\ndu modèle servi (DSO)" as C6
+  usecase "Gérer les abonnés SMS\net envoyer une notification" as C7
+  usecase "Planifier le réseau ANEO\n(mâts à 25 m, plan en grille)" as C8
+  usecase "Outils de terrain\n(grue, haies, mâts, panne de station)" as C9
+  usecase "S'authentifier (rôle admin,\nrelu à chaque requête)" as AUTH
+}
+AD --> C1
+AD --> C2
+AD --> C3
+AD --> C4
+AD --> C4b
+AD --> C5
+AD --> C6
+AD --> C7
+AD --> C8
+AD --> C9
+C1 ..> AUTH : <<include>>
+C2 ..> AUTH : <<include>>
+C3 ..> AUTH : <<include>>
+C4 ..> AUTH : <<include>>
+C4b ..> AUTH : <<include>>
+C7 ..> AUTH : <<include>>
+C8 ..> AUTH : <<include>>
+C9 ..> AUTH : <<include>>
+@enduml

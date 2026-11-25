@@ -1,0 +1,54 @@
+@startuml
+skinparam defaultFontName Helvetica
+skinparam defaultFontSize 12
+skinparam shadowing false
+skinparam ArrowColor #2B6CB0
+skinparam actorBorderColor #2B6CB0
+skinparam actorBackgroundColor #FEFECE
+skinparam usecaseBorderColor #2B6CB0
+skinparam usecaseBackgroundColor #EAF2FD
+skinparam rectangleBorderColor #2B4870
+skinparam componentBorderColor #2B6CB0
+skinparam componentBackgroundColor #EAF2FD
+skinparam nodeBorderColor #4A5568
+skinparam databaseBorderColor #2B4870
+skinparam participantBorderColor #2B6CB0
+skinparam participantBackgroundColor #EAF2FD
+skinparam sequenceLifeLineBorderColor #2B6CB0
+skinparam noteBackgroundColor #FFFBD7
+node "Poste ou téléphone de l'utilisateur" {
+  artifact "Navigateur ou application installée\n(ATOM Wind : manifeste, service worker)" as NAV
+}
+node "Poste de l'opérateur" {
+  artifact "Client MCP / scripts\npcfno3d (CLI)" as CLI
+}
+cloud "Cloudflare" {
+  node "Workers\natom.zelqane.com\natomwind.tukhnanutha.workers.dev" as WK {
+    artifact "worker.js\n(clé injectée, cache du dernier état)" as WJ
+  }
+  node "Tunnel nommé\natom-origin.zelqane.com" as TUN
+}
+node "Google Colab (GPU A100 ou L4)" as COLAB {
+  artifact "cloudflared" as CF
+  artifact "uvicorn : service FastAPI\n+ serveur MCP (/mcp)" as UV
+  artifact "WindFieldModel x 2\n(Grand Tunis, Tunisie entière)" as WF
+}
+database "Google Drive" as GD {
+  artifact "poids, caches, historique,\ncomptes, journaux" as FIC
+}
+cloud "Services externes" {
+  artifact "NOAA GFS / Open-Meteo" as OM
+  artifact "aviationweather.gov (METAR)\nOGIMET (SYNOP)" as AW
+  artifact "Serveur SMTP\n(courriels des comptes)" as SM
+}
+NAV --> WK : HTTPS
+CLI --> WK : HTTPS (clé d'API)
+WK --> TUN : HTTPS
+TUN --> CF
+CF --> UV : HTTP local
+UV --> WF
+WF --> GD : lecture
+UV --> OM : HTTPS
+UV --> AW : HTTPS
+UV --> SM : SMTP (STARTTLS)
+@enduml

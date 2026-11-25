@@ -1,0 +1,46 @@
+@startuml
+skinparam defaultFontName Helvetica
+skinparam defaultFontSize 12
+skinparam shadowing false
+skinparam ArrowColor #2B6CB0
+skinparam actorBorderColor #2B6CB0
+skinparam actorBackgroundColor #FEFECE
+skinparam usecaseBorderColor #2B6CB0
+skinparam usecaseBackgroundColor #EAF2FD
+skinparam rectangleBorderColor #2B4870
+skinparam componentBorderColor #2B6CB0
+skinparam componentBackgroundColor #EAF2FD
+skinparam nodeBorderColor #4A5568
+skinparam databaseBorderColor #2B4870
+skinparam participantBorderColor #2B6CB0
+skinparam participantBackgroundColor #EAF2FD
+skinparam sequenceLifeLineBorderColor #2B6CB0
+skinparam noteBackgroundColor #FFFBD7
+autonumber
+actor "Utilisateur" as U
+participant "Application\nATOM Wind" as APP
+participant "Worker\nCloudflare" as W
+participant "API FastAPI\n(Colab)" as API
+participant "Comptes" as C
+participant "ApiKeyStore" as K
+U -> APP : e-mail, mot de passe
+APP -> W : POST /api/comptes/connexion
+W -> API : relais + clé de lecture
+API -> C : connecter(email, mot_de_passe)
+alt 5 échecs en moins de 15 min
+  C -> C : refus (compte bloqué 15 min)
+  API --> APP : 429 Too Many Requests
+else mot de passe faux ou compte désactivé
+  C -> C : compter l'échec
+  API --> APP : 401 Unauthorized
+else adresse e-mail pas encore vérifiée
+  API --> APP : 403 (ouvrir le lien reçu ou le renvoyer)
+else succès
+  C -> K : session compte-<sha12(email)>, expire dans 8 h
+  K --> C : clé pcf_… (seule l'empreinte SHA-256 est stockée)
+  C --> API : clé de session, compte
+  API --> APP : 200 {cle, compte}
+  APP -> APP : session gardée par onglet (en-tête X-ATOM-Session)
+  APP --> U : espaces réservés au rôle
+end
+@enduml

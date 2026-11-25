@@ -1,0 +1,86 @@
+@startuml
+skinparam defaultFontName Helvetica
+skinparam defaultFontSize 12
+skinparam shadowing false
+skinparam ArrowColor #2B6CB0
+skinparam actorBorderColor #2B6CB0
+skinparam actorBackgroundColor #FEFECE
+skinparam usecaseBorderColor #2B6CB0
+skinparam usecaseBackgroundColor #EAF2FD
+skinparam rectangleBorderColor #2B4870
+skinparam componentBorderColor #2B6CB0
+skinparam componentBackgroundColor #EAF2FD
+skinparam nodeBorderColor #4A5568
+skinparam databaseBorderColor #2B4870
+skinparam participantBorderColor #2B6CB0
+skinparam participantBackgroundColor #EAF2FD
+skinparam sequenceLifeLineBorderColor #2B6CB0
+skinparam noteBackgroundColor #FFFBD7
+left to right direction
+actor "Visiteur" as V
+actor "Agriculteur" as A
+actor "Exploitant éolien" as E
+actor "Administrateur" as AD
+actor "Opérateur ANEO /\nData scientist" as O
+actor "Assistant IA\n(client MCP)" as IA <<système>>
+actor "Programme partenaire\n(clé d'API)" as P <<système>>
+actor "Sources météo\n(GFS, METAR, SYNOP)" as S <<système>>
+actor "Serveur de courriel\n(SMTP)" as M <<système>>
+A --|> V
+E --|> V
+rectangle "ATOM Wind / service PC-FNO3D (Grand Tunis et Tunisie entière)" {
+  usecase "Consulter la vue d'ensemble,\nles 24 gouvernorats et la vigilance" as UC1
+  usecase "Consulter la carte et la vue 3D\ndu vent (J0 à J+2)" as UC2
+  usecase "Lire le vent et le profil\nen un point" as UC3
+  usecase "Installer l'application\n(ordinateur ou téléphone)" as UC4
+  usecase "Créer un compte" as UC5
+  usecase "Vérifier son adresse e-mail\n(lien de 24 h)" as UC6
+  usecase "Se connecter\n(session de 8 h)" as UC7
+  usecase "Mot de passe oublié\n(lien d'1 h)" as UC8
+  usecase "Planifier traitement et irrigation\n(créneaux, besoin FAO-56)" as UC9
+  usecase "Recevoir des alertes\n(appareil, courriel, SMS, WhatsApp)" as UC10
+  usecase "Estimer la production\nd'un parc (sillage, atlas)" as UC11
+  usecase "Gérer comptes, rôles\net clés d'API" as UC12
+  usecase "Superviser le service\net la qualité du modèle" as UC13
+  usecase "Planifier le réseau ANEO\n(mâts à 25 m)" as UC14
+  usecase "Exporter (NetCDF, CSV)\net consulter l'historique" as UC15
+  usecase "Entraîner et évaluer un modèle\n(règle hachée, test unique)" as UC16
+  usecase "Décider avec « Mon vent »\n(activités propres au rôle)" as UC17
+  usecase "Interroger l'API avec une clé\n(portée, quota, journal)" as UC18
+  usecase "Reconstruire le champ 3D\nd'un instant" as R
+}
+V --> UC1
+V --> UC2
+V --> UC3
+V --> UC4
+V --> UC5
+V --> UC7
+V --> UC8
+V --> UC17
+A --> UC9
+A --> UC10
+E --> UC11
+IA --> UC18
+P --> UC18
+UC18 ..> R : <<include>>
+UC17 ..> R : <<include>>
+note right of UC17
+  visiteur et grand public : sortir et se déplacer
+  agriculteur : traiter, arroser par aspersion
+  exploitant éolien : produire avec une éolienne
+  administrateur : toutes (contrôle)
+end note
+AD --> UC12
+AD --> UC13
+AD --> UC14
+O --> UC14
+O --> UC15
+O --> UC16
+UC5 ..> UC6 : <<include>>
+UC6 ..> M
+UC8 ..> M
+UC9 ..> R : <<include>>
+UC2 ..> R : <<include>>
+UC3 ..> R : <<include>>
+R --> S
+@enduml

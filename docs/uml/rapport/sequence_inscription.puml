@@ -1,0 +1,50 @@
+@startuml
+skinparam defaultFontName Helvetica
+skinparam defaultFontSize 12
+skinparam shadowing false
+skinparam ArrowColor #2B6CB0
+skinparam actorBorderColor #2B6CB0
+skinparam actorBackgroundColor #FEFECE
+skinparam usecaseBorderColor #2B6CB0
+skinparam usecaseBackgroundColor #EAF2FD
+skinparam rectangleBorderColor #2B4870
+skinparam componentBorderColor #2B6CB0
+skinparam componentBackgroundColor #EAF2FD
+skinparam nodeBorderColor #4A5568
+skinparam databaseBorderColor #2B4870
+skinparam participantBorderColor #2B6CB0
+skinparam participantBackgroundColor #EAF2FD
+skinparam sequenceLifeLineBorderColor #2B6CB0
+skinparam noteBackgroundColor #FFFBD7
+autonumber
+actor "Utilisateur" as U
+participant "Application\nATOM Wind" as APP
+participant "Worker\nCloudflare" as W
+participant "API FastAPI\n(Colab)" as API
+participant "Comptes" as C
+participant "Courriel\n(SMTP)" as M
+actor "Administrateur" as AD
+U -> APP : nom, e-mail, mot de passe, profil
+APP -> W : POST /api/comptes
+W -> API : relais
+API -> C : creer(email, mdp, rôle)
+C -> C : scrypt salé ; adresse NON vérifiée
+C -> C : jeton aléatoire, 24 h\n(seule son empreinte SHA-256 est gardée)
+API -> M : lien #verifier-email=jeton
+API --> APP : 201 (aucune session ouverte)
+APP --> U : « Vérifiez votre adresse e-mail »
+alt connexion avant d'ouvrir le lien
+  U -> API : connexion (bon mot de passe)
+  API --> U : 403 adresse non vérifiée (renvoyer le lien)
+end
+M --> U : e-mail reçu (lien à usage unique)
+U -> API : POST /api/comptes/verification (jeton)
+API -> C : verifier_email(jeton)
+C -> C : jeton valide, effacé
+API --> APP : adresse confirmée : se connecter
+opt rôle éolien demandé
+  AD -> API : POST /api/comptes/{email}/validation
+  API -> C : rôle eolien accordé
+end
+U -> API : connexion : session de 8 h, espaces du rôle
+@enduml

@@ -1,0 +1,55 @@
+@startuml
+skinparam defaultFontName Helvetica
+skinparam defaultFontSize 12
+skinparam shadowing false
+skinparam ArrowColor #2B6CB0
+skinparam actorBorderColor #2B6CB0
+skinparam actorBackgroundColor #FEFECE
+skinparam usecaseBorderColor #2B6CB0
+skinparam usecaseBackgroundColor #EAF2FD
+skinparam rectangleBorderColor #2B4870
+skinparam componentBorderColor #2B6CB0
+skinparam componentBackgroundColor #EAF2FD
+skinparam nodeBorderColor #4A5568
+skinparam databaseBorderColor #2B4870
+skinparam participantBorderColor #2B6CB0
+skinparam participantBackgroundColor #EAF2FD
+skinparam sequenceLifeLineBorderColor #2B6CB0
+skinparam noteBackgroundColor #FFFBD7
+rectangle "Personnes" {
+  actor "Visiteur" as V
+  actor "Agriculteur" as A
+  actor "Exploitant éolien" as E
+  actor "Administrateur" as AD
+}
+rectangle "Système ATOM Wind (frontière)" {
+  component "Application web installable (PWA)\n[React, TypeScript, Vite]\ncarte, 3D, gouvernorats, espaces métier,\ntrois langues, thème sombre" as APP
+  component "Passerelles\n[Workers Cloudflare]\nclé de lecture injectée, dernier état" as W
+  component "API REST\n[FastAPI]\nroutes, clés, comptes, rôles, quotas" as API
+  component "Serveur MCP\n[MCP]\n23 outils" as MCP
+  component "Moteur PC-FNO3D\n[PyTorch, paquet pcfno3d]\nGrand Tunis + Tunisie entière" as MOT
+  database "Stockage\n[Google Drive, fichiers]\npoids, cache, historique,\ncomptes, clés (SHA-256)" as DB
+}
+rectangle "Systèmes externes" {
+  component "Courriel (SMTP)\nliens de vérification\net de mot de passe" as SMTP
+  component "Twilio\n(SMS, WhatsApp)" as TW
+  component "NOAA GFS / Open-Meteo\n(GFS, GEFS)" as GFS
+  component "METAR / SYNOP" as OBS
+  component "Assistant IA\n(client MCP)" as IA
+}
+V --> APP
+A --> APP
+E --> APP
+AD --> APP
+APP --> W : HTTPS, JSON
+W --> API : HTTPS (tunnel nommé)
+API --> MOT
+MCP --> MOT
+API --> DB
+MOT --> DB
+API --> SMTP
+API --> TW
+API --> GFS
+API --> OBS
+IA --> MCP : HTTPS
+@enduml
