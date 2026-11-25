@@ -86,7 +86,8 @@ new MutationObserver(()=>CSS_CACHE.clear()).observe(document.documentElement,{at
 const ICONS = {
   spray:'<path d="M4 20h7M7 20V9h4l3-3h5M14 6v5M17 13c0 1.5-1 2-1 3M20 12c0 1.5-1 2-1 3M17 18c0 1.5-1 2-1 3" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/>',
   irr:'<path d="M12 3c3 4 5 7 5 10a5 5 0 0 1-10 0c0-3 2-6 5-10z" stroke="currentColor" stroke-width="2" fill="none"/>',
-  turbine:'<path d="M12 10v11M9 21h6M12 10L12 3M12 10l6 3.5M12 10l-6 3.5" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/><circle cx="12" cy="10" r="1.6" fill="currentColor"/>'
+  turbine:'<path d="M12 10v11M9 21h6M12 10L12 3M12 10l6 3.5M12 10l-6 3.5" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/><circle cx="12" cy="10" r="1.6" fill="currentColor"/>',
+  sortie:'<circle cx="13" cy="4.5" r="1.8" fill="currentColor"/><path d="M9 21l3-6 2.5 2.5V21M12 15l1-5.5-3 1.5-1.5 3M13 9.5l2.5 2.5 3 .5" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>'
 };
 const ACTS = {
   spray:{n:"Traiter mes cultures", z:10, kind:"speed", rule:k => k<3 ? ["warn","Attention : air trop calme"] : k<=15 ? ["go","Oui, vous pouvez traiter"] : k<=19 ? ["warn","Attention : le produit peut dériver"] : ["stop","Non, vent trop fort pour traiter"],
@@ -94,8 +95,16 @@ const ACTS = {
   irr:{n:"Arroser par aspersion", z:10, kind:"speed", rule:k => k<=15 ? ["go","Oui, bon moment pour arroser"] : k<=25 ? ["warn","Attention : l'eau est emportée en partie"] : ["stop","Non, trop de vent pour l'aspersion"],
     todo:{go:"Arrosez maintenant : l'eau tombera là où il faut.", warn:"Préférez le goutte-à-goutte ou attendez le soir, quand le vent baisse.", stop:"Attendez : une grande partie de l'eau serait perdue."}},
   turbine:{n:"Produire avec une éolienne", z:80, kind:"power", rule:k => k<11 ? ["info","Production très faible : vent trop faible"] : k<90 ? ["go","Bonne production"] : ["stop","Arrêt de sécurité : vent trop fort"],
-    todo:{go:"Bonne période pour produire ; reportez la maintenance.", info:"Bon moment pour la maintenance : l'éolienne produit peu.", stop:"L'éolienne se met en sécurité automatiquement."}}
+    todo:{go:"Bonne période pour produire ; reportez la maintenance.", info:"Bon moment pour la maintenance : l'éolienne produit peu.", stop:"L'éolienne se met en sécurité automatiquement."}},
+  sortie:{n:"Sortir et me déplacer", z:10, kind:"speed", rule:k => k<30 ? ["go","Oui, le vent ne gêne pas"] : k<50 ? ["warn","Attention : vent fort"] : ["stop","Non, vent violent : limitez vos sorties"],
+    todo:{go:"Sortez normalement : marche, vélo, terrasse.", warn:"Prudence à vélo et en deux-roues ; évitez le bord de mer et les arbres isolés.", stop:"Restez à l'abri si possible ; reportez les sorties à vélo et en mer."}}
 };
+// « Mon vent » propre à chaque espace (demande d'Ines, 25/11/2026) : l'agriculteur traite et arrose, l'exploitant
+// éolien produit, le grand public et le visiteur sortent ; l'administrateur voit tout pour contrôler
+const ACTS_ROLE = { visiteur:["sortie"], public:["sortie"], agri:["spray","irr"], eolien:["turbine"], admin:["spray","irr","turbine","sortie"] };
+const actsDu = role => ACTS_ROLE[role] || ACTS_ROLE.visiteur;
+// alertes SMS : les mêmes activités, plus le vent fort pour tous
+const ALERTES_ROLE = { spray:["traiter","Traiter mes cultures"], irr:["arroser","Arroser par aspersion"], turbine:["eolienne","Produire avec une éolienne"] };
 // alertes : les activités de « Mon vent », plus le vent fort (rafales à 10 m)
 const ALERT_ACTS = { vent_fort:{n:"Vent fort", z:10, kind:"gust", rule:k => k>=70 ? ["stop","Danger : rafales très fortes"] : k>=50 ? ["warn","Attention : rafales fortes"] : ["go","Pas de vent fort"],
   todo:{go:"Rien à signaler.", warn:"Arrimez ce qui peut s'envoler et reportez les travaux en hauteur.", stop:"Restez à l'abri ; fermez serres et tunnels, reportez tous les travaux en extérieur."}} };
@@ -109,7 +118,7 @@ const PLACES = DOM ? (GOUVERNORATS.some(g => DANS_DOM(g[1],g[2])) ? GOUVERNORATS
     : [[`${ZONE} (centre)`, LAT0 + H/2/KY, LON0 + W/2/KX]]) : [["Tunis-Carthage (aéroport)",36.8504,10.2156],["Tunis centre",36.80,10.18],["La Marsa",36.878,10.325],["Ben Arous",36.75,10.23],["Hammam-Lif",36.728,10.34],["Mornag (vignes)",36.68,10.29],["Djebel Ressas",36.61,10.33],["Soliman",36.69,10.49],["Grombalia (agrumes)",36.60,10.50],["Korbous",36.82,10.57],["Nabeul",36.455,10.715],["Zaghouan (station)",36.4333,10.0833],["Mohamedia",36.68,10.16]];
 
 const P0 = DOM ? (PLACES.find(p => /Tunis/.test(p[0])) || PLACES[0]) : null;
-const state = { hour:15, act:"spray", pin: P0 ? xy(P0[1],P0[2]) : xy(36.68,10.29), pinName: P0 ? P0[0] : "Mornag (vignes)" };
+const state = { hour:15, act:"sortie", pin: P0 ? xy(P0[1],P0[2]) : xy(36.68,10.29), pinName: P0 ? P0[0] : "Mornag (vignes)" };
 function evalAt(actKey, x, y, h){
   const a = ACTS[actKey]||ALERT_ACTS[actKey], [u,v] = wind(x,y,a.z,h), sp = Math.hypot(u,v), g = sp*gustF(x,y,a.z);
   const val = a.kind==="gust" ? kmh(g) : kmh(sp), [cls,title] = a.rule(val);
@@ -214,7 +223,10 @@ townSel.addEventListener("change", () => { if(townSel.value===""||townSel.value=
 const map1 = makeMap("c1","map1",{ pin:true, z:()=>ACTS[state.act].z, onClick:(x,y) => placePin(x,y) });
 function placePin(x,y){ const k=idx(x,y); state.pin=[x,y]; let near=PLACES.map(p=>[p[0],Math.hypot(x-xy(p[1],p[2])[0],y-xy(p[1],p[2])[1])]).sort((a,b)=>a[1]-b[1])[0];
   state.pinName = wat[k]===1 ? `En mer, à ${Math.round(near[1])} km de ${near[0].split(" (")[0]}` : near[1]<2 ? near[0] : `À ${Math.round(near[1])} km de ${near[0].split(" (")[0]}`; townSel.value="pin"; townSel.querySelector('[value="pin"]').hidden=false; document.getElementById("hint1").textContent="Position placée. Touchez ailleurs pour la déplacer."; renderAnswer(); if(typeof syncLeafletPin==="function") syncLeafletPin(); }
-document.getElementById("acts").innerHTML = Object.entries(ACTS).map(([k,a]) => `<button class="act" data-a="${k}" aria-pressed="${k===state.act}"><svg width="28" height="28" viewBox="0 0 24 24" aria-hidden="true">${ICONS[k]}</svg>${a.n}</button>`).join("");
+function renderActs(role){ const ks=actsDu(role); if(!ks.includes(state.act)) state.act=ks[0];
+  document.getElementById("acts").innerHTML = ks.map(k => { const a=ACTS[k]; return `<button class="act" data-a="${k}" aria-pressed="${k===state.act}"><svg width="28" height="28" viewBox="0 0 24 24" aria-hidden="true">${ICONS[k]}</svg>${a.n}</button>`; }).join("");
+  const al=document.getElementById("al-act"); if(al) al.innerHTML = [...ks.filter(k=>ALERTES_ROLE[k]).map(k=>ALERTES_ROLE[k]), ["vent_fort","Vent fort (rafales)"]].map(([k,n])=>`<option value="${k}">${n}</option>`).join(""); }
+renderActs("visiteur");
 document.getElementById("acts").addEventListener("click", e => { const b=e.target.closest(".act"); if(!b) return; state.act=b.dataset.a; document.querySelectorAll(".act").forEach(x=>x.setAttribute("aria-pressed", x===b)); renderAnswer(); });
 
 const VERD_ICON = {go:'<path d="M5 12l5 5 9-10" stroke="#fff" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/>', warn:'<path d="M12 6v8M12 17.5v.5" stroke="#fff" stroke-width="3" stroke-linecap="round"/>', stop:'<path d="M7 7l10 10M17 7L7 17" stroke="#fff" stroke-width="3" stroke-linecap="round"/>', info:'<path d="M12 11v7M12 6.5v.5" stroke="#fff" stroke-width="3" stroke-linecap="round"/>'};
@@ -374,7 +386,6 @@ function renderEol(){
 
 // ---------------- alertes : formulaire et carte ----------------
 document.getElementById("al-place").innerHTML = PLACES.map((p,i)=>`<option value="${i}">${p[0]}</option>`).join("");
-document.getElementById("al-act").innerHTML = [["traiter","Traiter mes cultures"],["arroser","Arroser par aspersion"],["eolienne","Produire avec une éolienne"],["vent_fort","Vent fort (rafales)"]].map(([k,n])=>`<option value="${k}">${n}</option>`).join("");
 document.getElementById("al-add").onclick = async () => { const err=document.getElementById("al-err"), tel=document.getElementById("al-tel").value.replace(/[\s.-]/g,""), pl=PLACES[+document.getElementById("al-place").value];
   err.textContent=""; if(!/^\+\d{8,15}$/.test(tel)){ err.textContent="Numéro au format international, par exemple +216 12 345 678."; return; }
   const r=await ATOM.ajouterAbonnement({numero:tel, lieu:pl[0], lat:pl[1], lon:pl[2], activite:document.getElementById("al-act").value, langue:document.getElementById("al-lang").value});
@@ -893,7 +904,7 @@ const toastEl=document.getElementById("toast"); let toastT=null;
 function toast(msg){ toastEl.textContent=msg; toastEl.hidden=false; clearTimeout(toastT); toastT=setTimeout(()=>toastEl.hidden=true,3200); }
 const esc = t => String(t).replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const initials = n => n.split(/\s+/).filter(Boolean).slice(0,2).map(w=>w[0].toUpperCase()).join("");
-function applyAccess(){ document.querySelectorAll("nav.tabs a").forEach(a=>{ a.hidden = !allowed(a.dataset.v); });document.querySelectorAll("[data-access-view]").forEach(a=>{a.hidden=!allowed(a.dataset.accessView);}); renderUserBox(); }
+function applyAccess(){ renderActs(roleOf()); if(typeof renderAnswer==="function") try{ renderAnswer(); }catch(e){} document.querySelectorAll("nav.tabs a").forEach(a=>{ a.hidden = !allowed(a.dataset.v); });document.querySelectorAll("[data-access-view]").forEach(a=>{a.hidden=!allowed(a.dataset.accessView);}); renderUserBox(); }
 function renderUserBox(){ const ub=document.getElementById("userbox");
   if(!me){ ub.innerHTML=`<button class="btn" id="b-login">Se connecter</button><button class="btn primary" id="b-reg">Créer un compte</button>`; document.getElementById("b-login").onclick=()=>openAuth("login"); document.getElementById("b-reg").onclick=()=>openAuth("register"); return; }
   ub.innerHTML=`<button class="btn" id="b-user" aria-label="Compte de ${esc(me.name)}" aria-haspopup="true" aria-expanded="false"><span class="avatar">${esc(initials(me.name))}</span><span style="text-align:left;line-height:1.15"><span style="display:block">${esc(me.name.split(",")[0])}</span><span class="muted" style="font-size:12px;font-weight:400">${ROLES[me.role].n}${me.requested?" · demande en cours":""}</span></span></button><div class="menu card" id="umenu" hidden>
@@ -1125,7 +1136,7 @@ const pal=document.getElementById("palette"); let palSel=0, palItems=[];
 const norm=t=>t.normalize("NFD").replace(/[̀-ͯ]/g,"").toLowerCase();
 function palAll(){ const L=[];
   PLACES.forEach((p,i)=>L.push({t:p[0], k:"Lieu", go:()=>{ state.pin=xy(p[1],p[2]); state.pinName=p[0]; townSel.value=String(i); navigate("monvent"); renderAnswer(); }}));
-  Object.entries(ACTS).forEach(([k,a])=>L.push({t:a.n, k:"Activité", go:()=>{ state.act=k; document.querySelectorAll(".act").forEach(x=>x.setAttribute("aria-pressed",x.dataset.a===k)); navigate("monvent"); renderAnswer(); }}));
+  actsDu(roleOf()).map(k=>[k,ACTS[k]]).forEach(([k,a])=>L.push({t:a.n, k:"Activité", go:()=>{ state.act=k; document.querySelectorAll(".act").forEach(x=>x.setAttribute("aria-pressed",x.dataset.a===k)); navigate("monvent"); renderAnswer(); }}));
   Object.keys(ACCESS).filter(allowed).forEach(v=>L.push({t:TABNAME[v], k:"Espace", go:()=>navigate(v)}));
   L.push({t:"Rejouer la journée en 3D", k:"Action", go:()=>{ navigate("carte3d"); setTimeout(()=>document.getElementById("breeze").click(),900); }});
   L.push({t:"Rejouer la journée", k:"Action", go:()=>document.getElementById("play").click()});
@@ -1260,7 +1271,7 @@ if(window.ATOM) ATOM.workspace={navigate,snapshot:publishWorkspace,
     for(let k=0;k<24;k++){const h=(state.hour+k)%24,r=evalAt("vent_fort",x,y,h);if(isFinite(r.val)&&r.val>m){m=r.val;hm=h;}}return m<0?null:{kmh:m,heure:hm};},
   zoneServie:()=>({lat0:LAT0,lon0:LON0,lat1:LAT0+H/KY,lon1:LON0+W/KX,nom:ZONE,national:!!(DOM&&DOM.national)}),
   placer:(lat,lon)=>{const [x,y]=xy(lat,lon);if(!Number.isFinite(x)||x<0||x>W||y<0||y>H)return null;placePin(x,y);if(currentView!=="monvent")navigate("monvent");else renderAnswer();return state.pinName;},
-  activite:k=>{const a={traiter:"spray",arroser:"irr",eolienne:"turbine"}[k]||k;if(!ACTS[a])return false;state.act=a;document.querySelectorAll(".act").forEach(x=>x.setAttribute("aria-pressed",x.dataset.a===a));if(currentView!=="monvent")navigate("monvent");renderAnswer();return true;},
+  activite:k=>{const a={traiter:"spray",arroser:"irr",eolienne:"turbine",sortir:"sortie"}[k]||k;if(!ACTS[a]||!actsDu(roleOf()).includes(a))return false;state.act=a;document.querySelectorAll(".act").forEach(x=>x.setAttribute("aria-pressed",x.dataset.a===a));if(currentView!=="monvent")navigate("monvent");renderAnswer();return true;},
   inspect:()=>openSheet(...state.pin,currentView==="carte3d"?z3:ACTS[state.act].z),
   // bulletin de la vue d'ensemble : le vent réel de l'heure affichée, au point choisi et sur le territoire
   bulletin:()=>{ if(!PRET()) return null; const [u,v]=wind(...state.pin,10,state.hour), sp=Math.hypot(u,v); if(!isFinite(sp)) return null;
