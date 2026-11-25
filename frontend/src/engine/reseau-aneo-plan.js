@@ -186,8 +186,10 @@ function w2s(lon,lat){return[VW/2+(lon-view.cx)*K*view.z,VH/2-(lat-view.cy)*view
 function s2w(x,y){return[view.cx+(x-VW/2)/(K*view.z),view.cy-(y-VH/2)/view.z];}
 function fitZ(){var w=(11.75-7.45)*K,h=37.5-30.15;return Math.max(5,Math.min((VW-24)/w,(VH-100)/h));}
 function resize(){var r=wrap.getBoundingClientRect();DPR=Math.min(2,window.devicePixelRatio||1);VW=Math.max(10,r.width);VH=Math.max(10,r.height);
-  [base,flow].forEach(function(c){c.width=Math.round(VW*DPR);c.height=Math.round(VH*DPR);});FITZ=fitZ();
-  if(!resize.done){view={cx:9.6,cy:33.82,z:FITZ};resize.done=true;}clamp();draw();resetFlow();if(T3.on)T3.resize();}
+  [base,flow].forEach(function(c){c.width=Math.round(VW*DPR);c.height=Math.round(VH*DPR);});var fz0=FITZ;FITZ=fitZ();
+  /* carte entiere par defaut (demande d'Ines, 25/11/2026) : tant qu'on n'a ni zoome ni deplace, chaque
+     redimensionnement (onglet cache puis affiche, fenetre) recadre sur toute la Tunisie */
+  if(!resize.done||Math.abs(view.z-fz0)<1e-9){view={cx:9.6,cy:33.82,z:FITZ};resize.done=true;}clamp();draw();resetFlow();if(T3.on)T3.resize();}
 function tnPath(ctx){ctx.beginPath();TN.forEach(function(p,i){var s=w2s(p[0],p[1]);if(i)ctx.lineTo(s[0],s[1]);else ctx.moveTo(s[0],s[1]);});ctx.closePath();}
 function drawMast(c,s,r,col){c.beginPath();c.arc(s[0],s[1],r,0,Math.PI*2);c.fillStyle=col;c.fill();c.lineWidth=1.3;c.strokeStyle="#0a1319";c.stroke();}
 function drawDrone(c,s,col){c.strokeStyle="#0a1319";c.lineWidth=4;c.beginPath();c.moveTo(s[0],s[1]);c.lineTo(s[0],s[1]-18);c.stroke();
@@ -575,10 +577,10 @@ function copy(text,label){var out=$("rp-x-out");out.hidden=false;out.value=text;
 $("rp-x-csv").addEventListener("click",function(){copy("id,type,priorite,phase,latitude,longitude,hauteur,statut\n"+rowsAll().map(function(r){return[r.id,r.type,r.prio,r.phase,r.lat.toFixed(5),r.lon.toFixed(5),r.haut,r.statut].join(",");}).join("\n"),"CSV");});
 $("rp-x-geo").addEventListener("click",function(){copy(JSON.stringify({type:"FeatureCollection",features:rowsAll().map(function(r){return{type:"Feature",geometry:{type:"Point",coordinates:[+r.lon.toFixed(5),+r.lat.toFixed(5)]},properties:{id:r.id,type:r.type,priorite:r.prio,phase:r.phase,hauteur:r.haut,statut:r.statut,source:"exemple"}};})},null,1),"GeoJSON");});
 
-/* demarrage : zone d'exemple sur la Dorsale, autour de Kasserine */
+/* demarrage : carte entiere ; zone d'exemple sur la Dorsale (Kasserine) choisie dans le panneau, sans y zoomer */
 recompute();ZONE={lon:8.95,lat:35.3,R:30,nm:10,nd:1,name:"Kasserine",pots:[],sel:null};computeZone();ZONE.sel=ZONE.pots[0]||null;
 renderAll();tab("zone");
-new ResizeObserver(function(){resize();}).observe(wrap);resize();focusZone(true);
+new ResizeObserver(function(){resize();}).observe(wrap);resize();
 (function tick(){step2D();requestAnimationFrame(tick);})();
 chargerOS6();
 hote._rp={recharger:chargerOS6,redimensionner:resize};
