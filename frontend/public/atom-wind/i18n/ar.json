@@ -2322,7 +2322,6 @@
  "Tataouine": "تطاوين",
  "Tozeur": "توزر",
  "Expérimental (zone Tabarka)": "تجريبي (منطقة طبرقة)",
- "Temps réel et prévision : validé hors d'un rayon de 50 km autour de Tabarka (règle de service du 23/11/2026, fondée sur le jugement 2026 : −10 % face à GFS, 11 aéroports sur 12) ; expérimental dans ce rayon.": "الوقت الحقيقي والتوقع: مُعتمد خارج دائرة نصف قطرها 50 كم حول طبرقة (قاعدة الخدمة بتاريخ 23/11/2026، المستندة إلى تقييم 2026: ‎−10 %‎ مقارنة بـ GFS، 11 مطارًا من 12)؛ تجريبي داخل هذه الدائرة.",
  "), aux seuls paliers calculés ; en pointillé, 0–1 km pour information.": "), عند المراحل المحسوبة فقط ؛ بالخط المنقط، 0–1 كم للعلم فقط.",
  "-10 % (critère OS4, N = 50)": "‎-10 % (معيار OS4، N = 50)",
  "0–1 km : information (non visée par des mâts à 25 m)": "0–1 كم: للعلم (غير مستهدفة بصواري 25 م)",
@@ -2341,5 +2340,6 @@
  "Non, vent violent : limitez vos sorties": "لا، رياح عنيفة: قلّلوا من الخروج",
  "Sortez normalement : marche, vélo, terrasse.": "اخرجوا بشكل عادي: المشي، الدراجة، الجلوس في الخارج.",
  "Prudence à vélo et en deux-roues ; évitez le bord de mer et les arbres isolés.": "احذروا على الدراجات والدراجات النارية؛ تجنبوا شاطئ البحر والأشجار المعزولة.",
- "Restez à l'abri si possible ; reportez les sorties à vélo et en mer.": "ابقوا في مكان محمي إن أمكن؛ أجّلوا الخروج بالدراجة وإلى البحر."
+ "Restez à l'abri si possible ; reportez les sorties à vélo et en mer.": "ابقوا في مكان محمي إن أمكن؛ أجّلوا الخروج بالدراجة وإلى البحر.",
+ "Temps réel et prévision : validé à plus de 50 km de Tabarka (règle de service du 23/11/2026, fondée sur le jugement 2026 : −10 % face à GFS, 11 aéroports sur 12).": "الوقت الحقيقي والتوقعات: معتمدة على بعد أكثر من 50 كم من طبرقة (قاعدة الخدمة بتاريخ 23/11/2026، المبنية على تقييم 2026: −10 % مقارنة بـ GFS، 11 مطارًا من 12)."
 }

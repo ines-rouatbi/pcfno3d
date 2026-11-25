@@ -157,7 +157,8 @@ A.statutHeure = (h, z = 10) => {
 };
 // regle_service_zones_v5 (23/11/2026) : en temps réel et en prévision, le champ 3D national est « validé » à plus
 // de 50 km de Tabarka et « expérimental (zone Tabarka) » dans ce rayon ; le service envoie la zone avec la journée
-const LIGNE_ZONE = "Temps réel et prévision : validé hors d'un rayon de 50 km autour de Tabarka (règle de service du 23/11/2026, fondée sur le jugement 2026 : −10 % face à GFS, 11 aéroports sur 12) ; expérimental dans ce rayon.";
+// le mot « expérimental » n'est plus affiché dans l'application (décision d'Ines, 25/11/2026) : seule la validation est dite
+const LIGNE_ZONE = "Temps réel et prévision : validé à plus de 50 km de Tabarka (règle de service du 23/11/2026, fondée sur le jugement 2026 : −10 % face à GFS, 11 aéroports sur 12).";
 function distanceKm(lat1, lon1, lat2, lon2){
   const r = Math.PI / 180, p1 = lat1 * r, p2 = lat2 * r, dp = p2 - p1, dl = (lon2 - lon1) * r;
   const a = Math.sin(dp/2) ** 2 + Math.cos(p1) * Math.cos(p2) * Math.sin(dl/2) ** 2;
@@ -183,7 +184,8 @@ A.donneeHtml = (h, z = 10, x = null, y = null) => {
   const hors = A.dernierEtat ? ` · <b>Service hors ligne</b> : dernier état réel connu, reçu le ${fmtInstant(A.dernierEtat)}.` : "";
   // badge du statut tel que le service le donne (regle_service_zones_v5 : suit la position du point) ; jamais la preuve
   const st = A.statutPoint(h, z, x, y);
-  const badge = st ? ` <span class="aw-statut ${st.valide ? "is-valide" : "is-exp"}">${st.libelle}</span>` : "";
+  // seul « Validé » est affiché ; une donnée non validée n'a pas de badge (décision d'Ines, 25/11/2026)
+  const badge = st && st.valide ? ` <span class="aw-statut is-valide">${st.libelle}</span>` : "";
   // la vue « Données & fiabilité » est retirée : la ligne qui explique la zone suit la donnée
   const zone = A.jour.zone_experimentale && s.mode !== "analyse" ? `<p class="aw-zone muted">${LIGNE_ZONE}</p>` : "";
   return `<p class="aw-donnee">${MODES_FR[s.mode] || s.mode} · donnée du ${quand}${badge}${hors}</p>${zone}`;

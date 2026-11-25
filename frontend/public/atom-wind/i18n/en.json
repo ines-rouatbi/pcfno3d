@@ -2329,7 +2329,6 @@
  "Tataouine": "Tataouine",
  "Tozeur": "Tozeur",
  "Expérimental (zone Tabarka)": "Experimental (Tabarka zone)",
- "Temps réel et prévision : validé hors d'un rayon de 50 km autour de Tabarka (règle de service du 23/11/2026, fondée sur le jugement 2026 : −10 % face à GFS, 11 aéroports sur 12) ; expérimental dans ce rayon.": "Real time and forecast: validated outside a 50 km radius around Tabarka (service rule of 23/11/2026, based on the 2026 judgement: −10 % against GFS, 11 airports out of 12); experimental within that radius.",
  "), aux seuls paliers calculés ; en pointillé, 0–1 km pour information.": "), at the computed steps only; dotted, 0–1 km for information.",
  "-10 % (critère OS4, N = 50)": "-10 % (OS4 criterion, N = 50)",
  "0–1 km : information (non visée par des mâts à 25 m)": "0–1 km: information (not targeted by 25 m masts)",
@@ -2348,5 +2347,6 @@
  "Non, vent violent : limitez vos sorties": "No, violent wind: limit your outings",
  "Sortez normalement : marche, vélo, terrasse.": "Go out as usual: walking, cycling, terraces.",
  "Prudence à vélo et en deux-roues ; évitez le bord de mer et les arbres isolés.": "Take care on bicycles and two-wheelers; avoid the seafront and isolated trees.",
- "Restez à l'abri si possible ; reportez les sorties à vélo et en mer.": "Stay sheltered if you can; postpone cycling and boat trips."
+ "Restez à l'abri si possible ; reportez les sorties à vélo et en mer.": "Stay sheltered if you can; postpone cycling and boat trips.",
+ "Temps réel et prévision : validé à plus de 50 km de Tabarka (règle de service du 23/11/2026, fondée sur le jugement 2026 : −10 % face à GFS, 11 aéroports sur 12).": "Real time and forecast: validated more than 50 km from Tabarka (service rule of 23/11/2026, based on the 2026 judgment: −10 % against GFS, 11 airports out of 12)."
 }
