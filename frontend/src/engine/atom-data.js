@@ -38,10 +38,28 @@ function session(){ try { return sessionStorage.getItem(SESSION_STORAGE); } catc
 function poserSession(k){ try { if(k) sessionStorage.setItem(SESSION_STORAGE, k); else sessionStorage.removeItem(SESSION_STORAGE); } catch(e) {} }
 // 401 alors qu'une session était présentée : expirée, fermée par un changement de mot de passe ou un compte
 // désactivé ; la page se déconnecte et redemande le mot de passe (atom-runtime.js, « atom:session-expiree »)
+// Un 401 isolé n'est pas forcément une session expirée : sur le service Colab, le trousseau est sur Google Drive et
+// une relecture périmée peut, quelques secondes, ne pas connaître une session toute neuve (25/11/2026). Avant de
+// déconnecter, la page revérifie la session (/comptes/moi) jusqu'à 4 fois sur ~10 s ; elle ne se déconnecte que si
+// le service la refuse à chaque fois.
+let verifSession = null;
 function sessionRefusee(statut){
-  if(statut !== 401 || !session()) return;
-  poserSession(null);
-  try { document.dispatchEvent(new Event("atom:session-expiree")); } catch(e) {}
+  if(statut !== 401 || !session() || verifSession) return;
+  const s0 = session();
+  verifSession = (async () => {
+    for(const attente of [1500, 2500, 3000, 3000]){
+      await new Promise(r => setTimeout(r, attente));
+      if(session() !== s0) return;                              // déconnexion ou nouvelle connexion entre-temps
+      try {
+        const r = await fetch(`${BASE}/api/comptes/moi`, { headers: { "X-API-Key": s0, "X-ATOM-Session": s0 } });
+        if(r.ok){ const d = await r.json().catch(() => ({})); if(d && d.compte) return; }   // session reconnue
+        else if(r.status !== 401) return;                        // service indisponible : ne pas déconnecter
+      } catch(e) { return; }
+    }
+    if(session() !== s0) return;
+    poserSession(null);
+    try { document.dispatchEvent(new Event("atom:session-expiree")); } catch(e) {}
+  })().finally(() => { verifSession = null; });
 }
 function entetes(){
   const s = session(), k = cle();

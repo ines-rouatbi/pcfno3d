@@ -1765,6 +1765,7 @@
 "{0}.nc",
 "{0}.tif",
 "{0}/api/assistant",
+"{0}/api/comptes/moi",
 "{0}/api/health",
 "{0}/api{1}",
 "{0}_noeuds.csv",
