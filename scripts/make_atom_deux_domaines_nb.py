@@ -251,12 +251,25 @@ del identifiants
 '''
 
 DEMO = r'''# B7 : demonstration de bout en bout (service local, cle de demonstration creee puis revoquee, jamais affichee)
-import urllib.request, urllib.parse
+import time, urllib.request, urllib.parse, urllib.error
 from service.auth import ApiKeyStore
+# le tunnel met jusqu'a ~2 min a s'enregistrer chez Cloudflare apres le lancement : tant qu'il n'est pas vu,
+# l'adresse publique repond 530 (ou 502/503/1033). On reessaie toutes les 10 s pendant 5 min avant d'echouer.
 req = urllib.request.Request(f"https://{HOTE}/api/health", headers={"User-Agent": "pcfno3d-colab/1.0"})
-with urllib.request.urlopen(req, timeout=120) as r:
-    sante = json.loads(r.read().decode())
+fin, sante, derniere = time.time() + 300, None, None
+while sante is None:
+    try:
+        with urllib.request.urlopen(req, timeout=60) as r:
+            sante = json.loads(r.read().decode())
+    except (urllib.error.URLError, TimeoutError, ConnectionError) as exc:
+        derniere = getattr(exc, "code", None) or type(exc).__name__
+        if time.time() > fin:
+            raise RuntimeError(f"tunnel toujours injoignable apres 5 min (derniere reponse : {derniere})") from exc
+        print(time.strftime("%H:%M:%S"), "| tunnel pas encore vu par Cloudflare (", derniere, ") : nouvel essai dans 10 s",
+              flush=True)
+        time.sleep(10)
 assert sante["status"] == "ok", sante
+print("tunnel en ligne :", sante["status"])
 store = ApiKeyStore(PROD / "api_keys.json")
 # une cle temporaire d'un run interrompu (jamais affichee) est d'abord revoquee, sinon create refuse le nom
 if store.revoke("demo-os5"):
